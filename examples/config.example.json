@@ -1,0 +1,26 @@
+{
+  "refreshMinutes": 15,
+  "accountLabels": [
+    {
+      "email": "work@example.com",
+      "organizationUuid": "00000000-0000-0000-0000-000000000000",
+      "nickname": "Work",
+      "emoji": "💼",
+      "color": "#4F8EF7"
+    },
+    {
+      "email": "personal@example.com",
+      "nickname": "Personal",
+      "emoji": "🏠",
+      "color": "#F59E0B"
+    }
+  ],
+  "accounts": [
+    {
+      "id": "claude-code",
+      "name": "Claude",
+      "provider": "claudeCode",
+      "notes": "Reads Claude Code OAuth credentials from macOS Keychain and calls Anthropic OAuth usage."
+    }
+  ]
+}
