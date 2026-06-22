@@ -4,7 +4,7 @@ import SwiftUI
 
 private let defaultConfigPath = "~/.tokenbar/config.json"
 private let defaultStatePath = "~/.tokenbar/usage-state.json"
-private let appUserAgent = "TokenBar/0.1"
+private let appUserAgent = "TokenBar/1.0"
 
 enum Provider: String, Codable {
     case openai
