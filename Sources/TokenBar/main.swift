@@ -4,7 +4,7 @@ import SwiftUI
 
 private let defaultConfigPath = "~/.tokenbar/config.json"
 private let defaultStatePath = "~/.tokenbar/usage-state.json"
-private let appUserAgent = "TokenBar/1.0"
+private let appUserAgent = "TokenBar/1.1"
 
 enum Provider: String, Codable {
     case openai
@@ -1015,7 +1015,7 @@ struct CodexAppServerPayload {
 
 enum CodexAppServerClient {
     static func fetch() throws -> CodexAppServerPayload {
-        let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"TokenBar","version":"1.0"},"capabilities":{"experimentalApi":true}}}"#
+        let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"TokenBar","version":"1.1"},"capabilities":{"experimentalApi":true}}}"#
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
         let usage = #"{"jsonrpc":"2.0","id":2,"method":"account/usage/read","params":null}"#
         let rateLimits = #"{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":null}"#
