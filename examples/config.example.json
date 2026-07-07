@@ -5,13 +5,11 @@
       "email": "work@example.com",
       "organizationUuid": "00000000-0000-0000-0000-000000000000",
       "nickname": "Work",
-      "emoji": "💼",
       "color": "#4F8EF7"
     },
     {
       "email": "personal@example.com",
       "nickname": "Personal",
-      "emoji": "🏠",
       "color": "#F59E0B"
     }
   ],
@@ -20,13 +18,25 @@
       "id": "claude-code",
       "name": "Claude",
       "provider": "claudeCode",
+      "claudeSwapCommand": "claude-swap",
       "notes": "Reads Claude Code OAuth credentials from macOS Keychain and calls Anthropic OAuth usage."
     },
     {
       "id": "codex",
       "name": "Codex",
       "provider": "codex",
+      "codexAuthPath": "~/.codex/auth.json",
       "notes": "Reads local Codex login from ~/.codex/auth.json and asks Codex app-server for usage."
+    },
+    {
+      "id": "chatgpt-manual",
+      "name": "ChatGPT",
+      "provider": "chatgpt",
+      "limitLabel": "messages",
+      "used": 12,
+      "limit": 80,
+      "resetEveryHours": 3,
+      "notes": "Optional local ledger for consumer plans when an official usage API is unavailable."
     }
   ]
 }

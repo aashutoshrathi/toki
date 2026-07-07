@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2 - 2026-07-08
+
+### Changed
+
+- Rebranded the product from TokenBar to Toki, including package, executable, app bundle, docs, and visible app chrome.
+- Overhauled the menu bar popover with a `/toki` header, quota summary strip, compact account rows, always-visible progress, and cleaner expanded details.
+- Swapped the popover header to a new `/toki` wallet-and-terminal app logo.
+- Reworked README and repository docs for a more professional open-source project surface.
+- Expanded the example config with `claudeSwapCommand`, `codexAuthPath`, and an optional manual ChatGPT ledger entry.
+- Updated README guidance for the 1.2 UI and Codex logo resource.
+
+### Added
+
+- Added the bundled Codex SVG logo resource and copy step for generated `.app` bundles.
+- Added a bundled `/toki` SVG logo asset.
+- Added a self-contained README preview image and contribution guide.
+
 ## 1.1 - 2026-07-08
 
 ### Added
@@ -8,7 +25,7 @@
 
 ## 1.0 - 2026-06-22
 
-TokenBar 1.0 is the first stable release.
+Toki 1.0 is the first stable release.
 
 ### Added
 

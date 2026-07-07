@@ -3,14 +3,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "TokenBar",
+    name: "Toki",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "TokenBar", targets: ["TokenBar"])
+        .executable(name: "Toki", targets: ["Toki"])
     ],
     targets: [
-        .executableTarget(name: "TokenBar")
+        .executableTarget(
+            name: "Toki",
+            resources: [
+                .process("Resources")
+            ]
+        )
     ]
 )

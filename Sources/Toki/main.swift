@@ -2,9 +2,18 @@ import AppKit
 import Foundation
 import SwiftUI
 
-private let defaultConfigPath = "~/.tokenbar/config.json"
-private let defaultStatePath = "~/.tokenbar/usage-state.json"
-private let appUserAgent = "TokenBar/1.1"
+private let defaultConfigPath = "~/.toki/config.json"
+private let defaultStatePath = "~/.toki/usage-state.json"
+private let legacyConfigPath = "~/.tokenbar/config.json"
+private let legacyStatePath = "~/.tokenbar/usage-state.json"
+private let appVersion = "1.2"
+private let appUserAgent = "Toki/\(appVersion)"
+
+private extension Calendar {
+    func startOfCurrentMonth() -> Date {
+        dateInterval(of: .month, for: Date())?.start ?? startOfDay(for: Date())
+    }
+}
 
 enum Provider: String, Codable {
     case openai
@@ -33,15 +42,19 @@ enum Provider: String, Codable {
         case .openai, .codex, .anthropic, .claudeCode: return false
         }
     }
+
+    var isClaudeAccount: Bool {
+        self == .claudeCode || self == .claude
+    }
 }
 
-struct AppConfig: Decodable {
+struct AppConfig: Codable {
     var refreshMinutes: Int?
     var accountLabels: [AccountLabelConfig]?
     var accounts: [AccountConfig]
 }
 
-struct AccountLabelConfig: Decodable {
+struct AccountLabelConfig: Codable {
     var email: String
     var organizationUuid: String?
     var organizationName: String?
@@ -50,7 +63,7 @@ struct AccountLabelConfig: Decodable {
     var color: String?
 }
 
-struct AccountConfig: Decodable, Identifiable {
+struct AccountConfig: Codable, Identifiable {
     var id: String
     var name: String
     var provider: Provider
@@ -99,6 +112,7 @@ struct AccountSnapshot: Identifiable, Hashable {
     var isError: Bool = false
     var canAdjust: Bool = false
     var switchTarget: String?
+    var switchCommand: String?
     var emoji: String?
     var colorHex: String?
 
@@ -127,13 +141,14 @@ final class UsageStore: ObservableObject {
     private var config: AppConfig?
     private var usageState = UsageState()
     private var timer: Timer?
+    private var isRefreshing = false
 
     init() {
         reloadConfig()
     }
 
     var refreshInterval: TimeInterval {
-        TimeInterval(max(config?.refreshMinutes ?? 15, 1) * 60)
+        TimeInterval(max(config?.refreshMinutes ?? 5, 1) * 60)
     }
 
     func reloadConfig() {
@@ -144,7 +159,7 @@ final class UsageStore: ObservableObject {
             configError = nil
             snapshots = config?.accounts.map(AccountSnapshot.loading) ?? []
             scheduleRefresh()
-            refresh()
+            refresh(keepsExistingSnapshots: true)
         } catch {
             config = nil
             configError = error.localizedDescription
@@ -165,17 +180,24 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    func refresh() {
-        guard let config else { return }
+    func refresh(keepsExistingSnapshots: Bool = true) {
+        guard let config, !isRefreshing else { return }
+        isRefreshing = true
         statusText = "Refreshing"
-        snapshots = config.accounts.map(AccountSnapshot.loading)
+        if !keepsExistingSnapshots || snapshots.isEmpty {
+            snapshots = config.accounts.map(AccountSnapshot.loading)
+        }
         let currentState = usageState
 
         Task {
+            defer { isRefreshing = false }
             let fetched = await UsageFetcher.fetch(config: config, state: currentState)
-            snapshots = fetched
+            let sorted = sortedByAvailability(fetched)
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                snapshots = sorted
+            }
             lastUpdated = Date()
-            statusText = menuBarStatus(provider: .claudeCode, ratio: fetched.compactMap(\.remainingRatio).min())
+            statusText = menuBarStatus(for: sorted)
         }
     }
 
@@ -202,13 +224,53 @@ final class UsageStore: ObservableObject {
         refresh()
     }
 
-    func switchClaudeAccount(target: String) {
+    func renameAccount(snapshot: AccountSnapshot, alias: String) {
+        let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var config else { return }
+
+        if snapshot.provider.isClaudeAccount,
+           let email = emailAddress(in: snapshot) {
+            var labels = config.accountLabels ?? []
+            if let index = labels.firstIndex(where: { $0.email.caseInsensitiveCompare(email) == .orderedSame }) {
+                labels[index].nickname = trimmed
+            } else {
+                labels.append(AccountLabelConfig(
+                    email: email,
+                    organizationUuid: nil,
+                    organizationName: organizationName(in: snapshot),
+                    nickname: trimmed,
+                    emoji: nil,
+                    color: nil
+                ))
+            }
+            config.accountLabels = labels
+        } else if let index = config.accounts.firstIndex(where: { $0.id == snapshot.id }) {
+            config.accounts[index].name = trimmed
+        } else {
+            return
+        }
+
+        do {
+            try ConfigLoader.save(config)
+            self.config = config
+            snapshots = snapshots.map { current in
+                guard current.id == snapshot.id else { return current }
+                var updated = current
+                updated.name = trimmed
+                return updated
+            }
+        } catch {
+            configError = "Could not save alias: \(error.localizedDescription)"
+        }
+    }
+
+    func switchClaudeAccount(target: String, command: String?) {
         statusText = "Switching"
         let currentSnapshots = snapshots
         Task {
             let result = await Task.detached {
                 Result {
-                    try ClaudeSwapRunner.switchTo(target: target)
+                    try ClaudeSwapRunner.switchTo(target: target, command: command)
                 }
             }.value
 
@@ -231,7 +293,7 @@ final class UsageStore: ObservableObject {
     private func scheduleRefresh() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.refresh(keepsExistingSnapshots: true) }
         }
     }
 
@@ -258,8 +320,25 @@ final class UsageStore: ObservableObject {
 }
 
 enum ConfigLoader {
+    static var path: String {
+        if let path = ProcessInfo.processInfo.environment["TOKI_CONFIG"], !path.isEmpty {
+            return expandedPath(path)
+        }
+        if let path = ProcessInfo.processInfo.environment["TOKENBAR_CONFIG"], !path.isEmpty {
+            return expandedPath(path)
+        }
+
+        let preferred = expandedPath(defaultConfigPath)
+        let legacy = expandedPath(legacyConfigPath)
+        if !FileManager.default.fileExists(atPath: preferred),
+           FileManager.default.fileExists(atPath: legacy) {
+            return legacy
+        }
+        return preferred
+    }
+
     static func load() throws -> AppConfig {
-        let path = expandedPath(ProcessInfo.processInfo.environment["TOKENBAR_CONFIG"] ?? defaultConfigPath)
+        let path = Self.path
         guard FileManager.default.fileExists(atPath: path) else {
             throw LocalizedErrorMessage("Missing config at \(path)")
         }
@@ -270,31 +349,58 @@ enum ConfigLoader {
         }
         return config
     }
+
+    static func save(_ config: AppConfig) throws {
+        let url = URL(fileURLWithPath: path)
+        let data = try JSONEncoder.toki.encode(config)
+        try data.write(to: url, options: .atomic)
+    }
+
+    static func openInDefaultEditor() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
 }
 
 enum StateLoader {
+    static var path: String {
+        if let path = ProcessInfo.processInfo.environment["TOKI_STATE"], !path.isEmpty {
+            return expandedPath(path)
+        }
+        if let path = ProcessInfo.processInfo.environment["TOKENBAR_STATE"], !path.isEmpty {
+            return expandedPath(path)
+        }
+
+        let preferred = expandedPath(defaultStatePath)
+        let legacy = expandedPath(legacyStatePath)
+        if !FileManager.default.fileExists(atPath: preferred),
+           FileManager.default.fileExists(atPath: legacy) {
+            return legacy
+        }
+        return preferred
+    }
+
     static func load() -> UsageState {
-        let path = expandedPath(ProcessInfo.processInfo.environment["TOKENBAR_STATE"] ?? defaultStatePath)
+        let path = Self.path
         guard FileManager.default.fileExists(atPath: path),
               let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-              let state = try? JSONDecoder.tokenBar.decode(UsageState.self, from: data) else {
+              let state = try? JSONDecoder.toki.decode(UsageState.self, from: data) else {
             return UsageState()
         }
         return state
     }
 
     static func save(_ state: UsageState) {
-        let path = expandedPath(ProcessInfo.processInfo.environment["TOKENBAR_STATE"] ?? defaultStatePath)
+        let path = Self.path
         let url = URL(fileURLWithPath: path)
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = try? JSONEncoder.tokenBar.encode(state) {
+        if let data = try? JSONEncoder.toki.encode(state) {
             try? data.write(to: url, options: .atomic)
         }
     }
 }
 
 extension JSONDecoder {
-    static var tokenBar: JSONDecoder {
+    static var toki: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
@@ -302,7 +408,7 @@ extension JSONDecoder {
 }
 
 extension JSONEncoder {
-    static var tokenBar: JSONEncoder {
+    static var toki: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -401,7 +507,12 @@ struct OpenAIUsageClient {
 
         let tokenBudget = account.dailyTokenBudget
         let tokenRemaining = tokenBudget.map { max($0 - tokenUsage.totalTokens, 0) }
-        let tokenRatio = tokenBudget.flatMap { $0 > 0 ? tokenRemaining! / $0 : nil }
+        let tokenRatio: Double?
+        if let tokenBudget, tokenBudget > 0, let tokenRemaining {
+            tokenRatio = tokenRemaining / tokenBudget
+        } else {
+            tokenRatio = nil
+        }
 
         var metrics = [
             MetricLine(label: "Today", value: "\(formatCompact(tokenUsage.totalTokens)) tokens"),
@@ -439,7 +550,7 @@ struct OpenAIUsageClient {
     private func fetchCosts(apiKey: String) async throws -> Double {
         var components = URLComponents(string: "https://api.openai.com/v1/organization/costs")!
         components.queryItems = [
-            URLQueryItem(name: "start_time", value: "\(Int(Calendar.current.dateInterval(of: .month, for: Date())!.start.timeIntervalSince1970))"),
+            URLQueryItem(name: "start_time", value: "\(Int(Calendar.current.startOfCurrentMonth().timeIntervalSince1970))"),
             URLQueryItem(name: "end_time", value: "\(Int(Date().timeIntervalSince1970))"),
             URLQueryItem(name: "bucket_width", value: "1d")
         ]
@@ -497,7 +608,12 @@ struct AnthropicUsageClient {
 
         let tokenBudget = account.dailyTokenBudget
         let tokenRemaining = tokenBudget.map { max($0 - tokenUsage.totalTokens, 0) }
-        let tokenRatio = tokenBudget.flatMap { $0 > 0 ? tokenRemaining! / $0 : nil }
+        let tokenRatio: Double?
+        if let tokenBudget, tokenBudget > 0, let tokenRemaining {
+            tokenRatio = tokenRemaining / tokenBudget
+        } else {
+            tokenRatio = nil
+        }
 
         var metrics = [
             MetricLine(label: "Today", value: "\(formatCompact(tokenUsage.totalTokens)) tokens"),
@@ -538,7 +654,7 @@ struct AnthropicUsageClient {
     private func fetchCosts(apiKey: String) async throws -> Double {
         var components = URLComponents(string: "https://api.anthropic.com/v1/organizations/cost_report")!
         components.queryItems = [
-            URLQueryItem(name: "starting_at", value: iso8601(Calendar.current.dateInterval(of: .month, for: Date())!.start)),
+            URLQueryItem(name: "starting_at", value: iso8601(Calendar.current.startOfCurrentMonth())),
             URLQueryItem(name: "ending_at", value: iso8601(Date()))
         ]
         let json = try await requestJSON(url: components.url!, headers: anthropicHeaders(apiKey))
@@ -621,6 +737,7 @@ struct ClaudeCodeUsageClient {
                 accountInfo: accountInfoLines(for: record),
                 isError: true,
                 switchTarget: switchTarget(for: record),
+                switchCommand: account.claudeSwapCommand,
                 emoji: record.label?.emoji,
                 colorHex: record.label?.color
             )
@@ -654,7 +771,7 @@ struct ClaudeCodeUsageClient {
         let primary = "\(Int((remainingRatio * 100).rounded()))% left"
         let email = record.email ?? ClaudeCodeCredentialReader.emailIdentifier(from: credentials)
 
-            return AccountSnapshot(
+        return AccountSnapshot(
             id: record.id,
             name: record.label?.nickname ?? record.name,
             provider: .claudeCode,
@@ -665,6 +782,7 @@ struct ClaudeCodeUsageClient {
             metrics: usage.metrics,
             accountInfo: accountInfoLines(for: record, credentials: credentials),
             switchTarget: switchTarget(for: record),
+            switchCommand: account.claudeSwapCommand,
             emoji: record.label?.emoji,
             colorHex: record.label?.color
         )
@@ -810,7 +928,7 @@ enum ClaudeCodeAccountDiscovery {
               let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             return nil
         }
-        return try? JSONDecoder.tokenBar.decode(ClaudeSwapSequence.self, from: data)
+        return try? JSONDecoder.toki.decode(ClaudeSwapSequence.self, from: data)
     }
 }
 
@@ -863,7 +981,7 @@ enum ClaudeCodeCredentialReader {
 
     static func emailIdentifier(from credentials: String) -> String? {
         guard let json = credentialJSON(credentials) else { return nil }
-        return TokenBar.emailIdentifier(in: json)
+        return Toki.emailIdentifier(in: json)
     }
 
     static func organizationName(from credentials: String) -> String? {
@@ -884,7 +1002,7 @@ enum ClaudeCodeCredentialReader {
             return lines
         }
 
-        if let email = TokenBar.emailIdentifier(in: json) {
+        if let email = Toki.emailIdentifier(in: json) {
             lines.append(MetricLine(label: "Email", value: email))
         } else if let account = firstString(in: json, keys: ["accountEmail", "account_email", "login", "username", "preferred_username"]) {
             lines.append(MetricLine(label: "Account", value: account))
@@ -1015,7 +1133,7 @@ struct CodexAppServerPayload {
 
 enum CodexAppServerClient {
     static func fetch() throws -> CodexAppServerPayload {
-        let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"TokenBar","version":"1.1"},"capabilities":{"experimentalApi":true}}}"#
+        let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"Toki","version":"\#(appVersion)"},"capabilities":{"experimentalApi":true}}}"#
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
         let usage = #"{"jsonrpc":"2.0","id":2,"method":"account/usage/read","params":null}"#
         let rateLimits = #"{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":null}"#
@@ -1355,9 +1473,10 @@ struct TokenUsage {
 }
 
 enum ClaudeSwapRunner {
-    static func switchTo(target: String) throws {
+    static func switchTo(target: String, command configuredCommand: String?) throws {
         let path = "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        let command = "PATH=\"\(path)\" claude-swap --switch-to '\(shellEscaped(target))'"
+        let executable = configuredCommand?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "claude-swap"
+        let command = "PATH=\"\(path)\" '\(shellEscaped(executable))' --switch-to '\(shellEscaped(target))'"
         _ = try SecretResolver.runShell(command)
     }
 }
@@ -1558,6 +1677,21 @@ func emailIdentifier(in json: [String: Any]) -> String? {
     return nil
 }
 
+func emailAddress(in snapshot: AccountSnapshot) -> String? {
+    if let email = snapshot.accountInfo.first(where: { $0.label == "Email" })?.value,
+       email.contains("@") {
+        return email
+    }
+    if snapshot.subtitle.contains("@") {
+        return snapshot.subtitle
+    }
+    return nil
+}
+
+func organizationName(in snapshot: AccountSnapshot) -> String? {
+    snapshot.accountInfo.first(where: { $0.label == "Org" })?.value
+}
+
 func jwtPayload(_ token: String) -> [String: Any]? {
     let parts = token.split(separator: ".")
     guard parts.count >= 2 else { return nil }
@@ -1592,6 +1726,12 @@ func expandedPath(_ rawPath: String) -> String {
             .path
     }
     return rawPath
+}
+
+extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
 }
 
 func usageFromRemaining(_ account: AccountConfig) -> Double {
@@ -1648,176 +1788,271 @@ func formatDuration(seconds: Double) -> String {
     return "\(total)s"
 }
 
+func remainingText(from value: String) -> String {
+    if let usedPercent = usedPercent(in: value) {
+        let remaining = max(0, min(100, 100 - Int(usedPercent.rounded())))
+        return "\(remaining)% left"
+    }
+    return value.components(separatedBy: " - ").first ?? value
+}
+
+func usedPercent(in value: String) -> Double? {
+    guard let percentIndex = value.firstIndex(of: "%") else { return nil }
+    let prefix = value[..<percentIndex]
+    let candidates = prefix.split { character in
+        !character.isNumber && character != "."
+    }
+    return candidates.last.flatMap { Double($0) }
+}
+
 struct LocalizedErrorMessage: LocalizedError {
     var message: String
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
 }
 
+struct PointerOnHoverModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+    }
+}
+
+extension View {
+    func pointerOnHover() -> some View {
+        modifier(PointerOnHoverModifier())
+    }
+}
+
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             header
+            overview
             if let configError = store.configError {
-                Text(configError)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                ErrorBanner(message: configError)
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(store.snapshots) { snapshot in
-                        AccountCard(snapshot: snapshot, store: store)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(store.snapshots) { snapshot in
+                            AccountCard(snapshot: snapshot, store: store) { id in
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                        proxy.scrollTo(id, anchor: .top)
+                                    }
+                                }
+                            }
+                            .id(snapshot.id)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                     }
+                    .padding(.trailing, 2)
+                    .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.snapshots.map(\.id))
                 }
-                .padding(.trailing, 2)
+                .frame(maxHeight: accountListHeight())
             }
-            .frame(maxHeight: accountListHeight())
-            footer
         }
-        .padding(16)
+        .padding(12)
         .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.regularMaterial)
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.22))
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("TokenBar")
-                    .font(.system(size: 22, weight: .semibold))
-                Text(store.lastUpdated.map { "Updated \(relativeDate($0))" } ?? "Clean quota glance")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 9) {
+            HStack(spacing: 5) {
+                Button {
+                    store.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 25, height: 25)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .help("Refresh")
+                .pointerOnHover()
+
+                Button {
+                    ConfigLoader.openInDefaultEditor()
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 25, height: 25)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .help("Open config")
+                .pointerOnHover()
+
+                Button {
+                    NSApp.terminate(nil)
+                } label: {
+                    Image(systemName: "power")
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 25, height: 25)
+                .foregroundStyle(.red)
+                .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(Color.red.opacity(0.42), lineWidth: 1)
+                )
+                .help("Quit")
+                .pointerOnHover()
+            }
+
+            TokiLogoMark(size: 34)
+                .padding(5)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("/toki")
+                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                    Text("v\(appVersion)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.primary.opacity(0.07), in: Capsule())
+                }
             }
             Spacer()
-            Button {
-                store.refresh()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.plain)
-            .help("Refresh")
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Button {
-                store.reloadConfig()
-            } label: {
-                Label("Reload", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            Spacer()
-            Button {
-                NSApp.terminate(nil)
-            } label: {
-                Label("Quit", systemImage: "xmark.circle")
-            }
-            .buttonStyle(.bordered)
+    private var overview: some View {
+        HStack(spacing: 8) {
+            StatBlock(title: "Accounts", value: "\(store.snapshots.count)", systemImage: "person.2")
+            StatBlock(title: "Lowest", value: lowestRemainingText, systemImage: "gauge.with.dots.needle.bottom.50percent")
         }
-        .controlSize(.small)
-        .font(.system(size: 12, weight: .medium))
+    }
+
+    private var lowestRemainingText: String {
+        guard let ratio = store.snapshots.compactMap(\.remainingRatio).min() else { return "--" }
+        return "\(Int((ratio * 100).rounded()))%"
     }
 }
 
 struct AccountCard: View {
     var snapshot: AccountSnapshot
     @ObservedObject var store: UsageStore
+    var onExpand: (String) -> Void = { _ in }
     @State private var isExpanded = false
+    @State private var isEditingAlias = false
+    @State private var aliasDraft = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isExpanded.toggle()
-                    }
+                    toggleExpanded()
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .frame(width: 12)
-
-                        AccountBadge(snapshot: snapshot)
-
-                        Text(accountIdentifier)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-                        Spacer(minLength: 12)
-
-                        Text(collapsedStatus)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(snapshot.isError ? .red : .secondary)
-                            .lineLimit(1)
-                    }
-                    .contentShape(Rectangle())
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 12)
                 }
                 .buttonStyle(.plain)
                 .help(isExpanded ? "Collapse account" : "Show account details")
+                .pointerOnHover()
+                .padding(.top, 8)
+
+                AccountBadge(snapshot: snapshot, size: 26)
+                    .padding(.top, 3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    aliasEditor
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(snapshot.provider.displayName)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        if let secondaryIdentifier {
+                            Text(secondaryIdentifier)
+                                .font(.system(size: 9, weight: .regular))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 12)
+
+                collapsedSummary
 
                 if let switchTarget = snapshot.switchTarget {
-                    Button {
-                        store.switchClaudeAccount(target: switchTarget)
-                    } label: {
-                        Text("Switch")
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if snapshot.isError {
+                            StatusBadge(text: "not connected")
+                        }
+                        Button {
+                            store.switchClaudeAccount(target: switchTarget, command: snapshot.switchCommand)
+                        } label: {
+                            Label("Switch", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Switch Claude Code to this account")
+                        .pointerOnHover()
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Switch Claude Code to this account")
                 }
+            }
+
+            if let ratio = progressRatio {
+                ProgressView(value: ratio)
+                    .tint(progressTint(ratio))
+                    .scaleEffect(y: 0.65, anchor: .center)
             }
 
             if isExpanded {
                 Divider()
+                    .padding(.top, 1)
 
-                HStack(alignment: .firstTextBaseline) {
-                    Text(snapshot.provider.displayName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(snapshot.subtitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(snapshot.isError ? .red : .secondary)
+                HStack(alignment: .center, spacing: 8) {
+                    Text(snapshot.primary)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(snapshot.isError ? .red : .primary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Text(snapshot.primary)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(snapshot.isError ? .red : .primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-
-                if let ratio = snapshot.progressRatio ?? snapshot.remainingRatio.map({ 1 - $0 }) {
-                    ProgressView(value: ratio)
-                        .tint(progressTint(ratio))
+                        .minimumScaleFactor(0.75)
+                    Spacer()
+                    ProviderPill(provider: snapshot.provider)
                 }
 
                 if !snapshot.metrics.isEmpty {
-                    VStack(spacing: 5) {
+                    VStack(spacing: 3) {
                         ForEach(snapshot.metrics) { metric in
                             MetricRow(metric: metric)
                         }
                     }
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                 }
 
                 if !snapshot.accountInfo.isEmpty {
                     Divider()
-                    VStack(spacing: 5) {
+                        .padding(.vertical, 1)
+                    VStack(spacing: 3) {
                         ForEach(snapshot.accountInfo) { metric in
                             MetricRow(metric: metric)
                         }
                     }
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                 }
 
                 if snapshot.canAdjust {
@@ -1838,40 +2073,287 @@ struct AccountCard: View {
 
                         Spacer()
 
-                        Button("Reset") {
+                        Button {
                             store.resetUsage(accountID: snapshot.id)
+                        } label: {
+                            Label("Reset", systemImage: "arrow.counterclockwise")
                         }
                         .help("Reset usage for this account")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .pointerOnHover()
                 }
             }
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.78), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(borderColor, lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .gesture(
+            TapGesture().onEnded {
+                guard !isEditingAlias else { return }
+                toggleExpanded()
+            },
+            including: .gesture
+        )
+        .pointerOnHover()
+    }
+
+    @ViewBuilder
+    private var aliasEditor: some View {
+        HStack(spacing: 5) {
+            if isEditingAlias {
+                TextField("Alias", text: $aliasDraft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 120)
+                    .onSubmit(saveAlias)
+                Button {
+                    saveAlias()
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .buttonStyle(.plain)
+                .help("Save alias")
+                .pointerOnHover()
+            } else {
+                Text(accountIdentifier)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Button {
+                    aliasDraft = accountIdentifier
+                    isEditingAlias = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Edit alias")
+                .pointerOnHover()
+            }
+        }
     }
 
     private var accountIdentifier: String {
-        if let email = snapshot.accountInfo.first(where: { $0.label == "Email" })?.value {
-            return email
-        }
-        if snapshot.subtitle.contains("@") {
-            return snapshot.subtitle
-        }
         return snapshot.name
+    }
+
+    private var secondaryIdentifier: String? {
+        emailAddress(in: snapshot) ?? (snapshot.subtitle.isEmpty ? nil : snapshot.subtitle)
     }
 
     private var collapsedStatus: String {
         snapshot.isError ? "Not connected" : snapshot.primary
     }
 
+    @ViewBuilder
+    private var collapsedSummary: some View {
+        if snapshot.isError && snapshot.switchTarget != nil {
+            EmptyView()
+        } else if snapshot.isError {
+            Text(collapsedStatus)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(statusColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        } else {
+            VStack(alignment: .trailing, spacing: 2) {
+                QuotaSummaryLine(label: "current", value: currentSessionAvailability)
+                QuotaSummaryLine(label: "weekly", value: weeklyAvailability)
+            }
+        }
+    }
+
+    private var currentSessionAvailability: String {
+        availabilityText(for: ["Daily", "5h", "Today"]) ?? snapshot.primary
+    }
+
+    private var weeklyAvailability: String {
+        availabilityText(for: ["7d", "Weekly", "Week"]) ?? "--"
+    }
+
+    private func availabilityText(for labels: Set<String>) -> String? {
+        guard let metric = snapshot.metrics.first(where: { labels.contains($0.label) }) else {
+            return nil
+        }
+        return remainingText(from: metric.value)
+    }
+
+    private var progressRatio: Double? {
+        snapshot.progressRatio ?? snapshot.remainingRatio.map { 1 - $0 }
+    }
+
+    private var statusColor: Color {
+        if snapshot.isError { return .red }
+        guard let remaining = snapshot.remainingRatio else { return .secondary }
+        if remaining <= 0.15 { return .red }
+        if remaining <= 0.40 { return .orange }
+        return .green
+    }
+
+    private var borderColor: Color {
+        if snapshot.isError { return Color.red.opacity(0.25) }
+        return Color.primary.opacity(0.08)
+    }
+
     private func progressTint(_ ratio: Double) -> Color {
         if ratio >= 0.85 { return .red }
         if ratio >= 0.60 { return .orange }
         return .green
+    }
+
+    private func saveAlias() {
+        store.renameAccount(snapshot: snapshot, alias: aliasDraft)
+        isEditingAlias = false
+    }
+
+    private func toggleExpanded() {
+        let willExpand = !isExpanded
+        withAnimation(.easeInOut(duration: 0.15)) {
+            isExpanded = willExpand
+        }
+        if willExpand {
+            onExpand(snapshot.id)
+        }
+    }
+}
+
+struct StatusBadge: View {
+    var text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.red)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.red.opacity(0.08), in: Capsule())
+            .overlay(Capsule().stroke(Color.red.opacity(0.22), lineWidth: 1))
+            .fixedSize()
+    }
+}
+
+struct QuotaSummaryLine: View {
+    var label: String
+    var value: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+            valueView
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    @ViewBuilder
+    private var valueView: some View {
+        if let availability = availabilityPercent {
+            HStack(spacing: 3) {
+                Text("\(availability)%")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(availabilityColor(for: availability))
+                Text("left")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Text(value)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private var availabilityPercent: Int? {
+        guard value.hasSuffix(" left"),
+              let percentIndex = value.firstIndex(of: "%"),
+              let percent = Int(value[..<percentIndex]) else {
+            return nil
+        }
+        return percent
+    }
+}
+
+struct StatBlock: View {
+    var title: String
+    var value: String
+    var systemImage: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.64), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+    }
+}
+
+struct ErrorBanner: View {
+    var message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+        )
+    }
+}
+
+struct ProviderPill: View {
+    var provider: Provider
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ProviderLogo(provider: provider, size: 11)
+            Text(provider.displayName)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.primary.opacity(0.06), in: Capsule())
+        .foregroundStyle(.secondary)
     }
 }
 
@@ -1888,10 +2370,10 @@ struct MetricRow: View {
                 copied = false
             }
         } label: {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(metric.label)
                     .foregroundStyle(.secondary)
-                    .frame(width: 64, alignment: .leading)
+                    .frame(width: 52, alignment: .leading)
                     .lineLimit(1)
                 Text(copied ? "Copied" : metric.value)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1902,13 +2384,7 @@ struct MetricRow: View {
         }
         .buttonStyle(.plain)
         .help("Copy \(metric.label)")
-        .onHover { hovering in
-            if hovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
+        .pointerOnHover()
     }
 }
 
@@ -1922,7 +2398,9 @@ struct ProviderLogo: View {
             case .claude, .claudeCode, .anthropic:
                 ClaudeLogoMark()
                     .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
-            case .openai, .codex, .chatgpt:
+            case .codex:
+                CodexLogoMark(size: size)
+            case .openai, .chatgpt:
                 OpenAILogoMark()
                     .foregroundStyle(Color.primary)
             case .manual:
@@ -1932,6 +2410,97 @@ struct ProviderLogo: View {
         }
         .frame(width: size, height: size)
         .accessibilityLabel(provider.displayName)
+    }
+}
+
+enum CodexLogoAsset {
+    static let image: NSImage? = loadImage()
+
+    private static func loadImage() -> NSImage? {
+        let executableResourceURL = Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/codex-logo.svg")
+        let urls = [
+            Bundle.module.url(forResource: "codex-logo", withExtension: "svg"),
+            Bundle.main.url(forResource: "codex-logo", withExtension: "svg"),
+            Bundle.main.resourceURL?.appendingPathComponent("codex-logo.svg"),
+            executableResourceURL
+        ]
+
+        for url in urls.compactMap({ $0 }) {
+            if let image = NSImage(contentsOf: url) {
+                return image
+            }
+        }
+        return nil
+    }
+}
+
+enum TokiLogoAsset {
+    static let image: NSImage? = loadImage()
+
+    private static func loadImage() -> NSImage? {
+        let executableResourceURL = Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/toki-logo.svg")
+        let urls = [
+            Bundle.module.url(forResource: "toki-logo", withExtension: "svg"),
+            Bundle.main.url(forResource: "toki-logo", withExtension: "svg"),
+            Bundle.main.resourceURL?.appendingPathComponent("toki-logo.svg"),
+            executableResourceURL
+        ]
+
+        for url in urls.compactMap({ $0 }) {
+            if let image = NSImage(contentsOf: url) {
+                return image
+            }
+        }
+        return nil
+    }
+}
+
+struct TokiLogoMark: View {
+    var size: CGFloat
+
+    var body: some View {
+        Group {
+            if let image = TokiLogoAsset.image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                    Image(systemName: "wallet.pass")
+                        .font(.system(size: size * 0.48, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("/toki")
+    }
+}
+
+struct CodexLogoMark: View {
+    var size: CGFloat
+
+    var body: some View {
+        Group {
+            if let image = CodexLogoAsset.image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                OpenAILogoMark()
+                    .foregroundStyle(Color(red: 0.48, green: 0.61, blue: 1))
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("Codex")
     }
 }
 
@@ -2005,6 +2574,16 @@ func colorFromHex(_ raw: String?) -> Color? {
     let green = Double((value >> 8) & 0xFF) / 255
     let blue = Double(value & 0xFF) / 255
     return Color(red: red, green: green, blue: blue)
+}
+
+func availabilityColor(for percent: Int) -> Color {
+    if percent > 75 {
+        return .primary
+    }
+    if percent > 42 {
+        return Color(red: 1.0, green: 0.64, blue: 0.18)
+    }
+    return Color(red: 1.0, green: 0.48, blue: 0.50)
 }
 
 func svgPath(_ raw: String, in rect: CGRect, viewBox: CGSize) -> Path {
@@ -2083,39 +2662,111 @@ func relativeDate(_ date: Date) -> String {
 }
 
 func popoverWidth() -> CGFloat {
-    min(390, max(340, (NSScreen.main?.visibleFrame.width ?? 390) - 32))
+    min(350, max(320, (NSScreen.main?.visibleFrame.width ?? 350) - 32))
 }
 
 func popoverHeight() -> CGFloat {
-    min(620, max(360, (NSScreen.main?.visibleFrame.height ?? 620) - 96))
+    min(500, max(340, (NSScreen.main?.visibleFrame.height ?? 500) - 96))
 }
 
 func accountListHeight() -> CGFloat {
-    max(220, popoverHeight() - 118)
+    max(240, popoverHeight() - 78)
 }
 
-func menuBarStatus(provider: Provider, ratio: Double?) -> String {
-    let mark: String
-    switch provider {
-    case .claudeCode, .claude:
-        mark = "✳︎"
-    case .openai, .codex, .chatgpt:
-        mark = "○"
-    case .anthropic:
-        mark = "✳︎"
-    case .manual:
-        mark = "•"
+func sortedByAvailability(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
+    snapshots.enumerated()
+        .sorted { lhs, rhs in
+            let left = lhs.element
+            let right = rhs.element
+
+            if left.isError != right.isError {
+                return !left.isError
+            }
+
+            let leftRemaining = left.remainingRatio
+            let rightRemaining = right.remainingRatio
+            if (leftRemaining == nil) != (rightRemaining == nil) {
+                return leftRemaining != nil
+            }
+
+            if let leftRemaining, let rightRemaining, leftRemaining != rightRemaining {
+                return leftRemaining > rightRemaining
+            }
+
+            return lhs.offset < rhs.offset
+        }
+        .map(\.element)
+}
+
+func menuBarStatus(for snapshots: [AccountSnapshot]) -> String {
+    let entries = menuBarEntries(for: snapshots)
+    guard !entries.isEmpty else { return "Toki --" }
+    return entries.map { "\($0.value)" }.joined(separator: "  ")
+}
+
+struct MenuBarStatusEntry: Identifiable {
+    var id: Provider { provider }
+    var provider: Provider
+    var value: String
+}
+
+func menuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
+    let activeClaude = snapshots.first {
+        $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError
+    }
+    let fallbackClaude = snapshots.first {
+        $0.provider.isClaudeAccount && !$0.isError
+    }
+    let codex = snapshots.first {
+        $0.provider == .codex && !$0.isError
     }
 
-    guard let ratio else {
-        return "\(mark) --"
+    let segments = [activeClaude ?? fallbackClaude, codex].compactMap { $0 }
+
+    return segments.map(menuBarEntry)
+}
+
+func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
+    [
+        MenuBarStatusEntry(provider: .claudeCode, value: "--"),
+        MenuBarStatusEntry(provider: .codex, value: "--")
+    ]
+}
+
+func menuBarEntry(for snapshot: AccountSnapshot) -> MenuBarStatusEntry {
+    let value = snapshot.remainingRatio.map { "\(Int(($0 * 100).rounded()))%" } ?? "--"
+    return MenuBarStatusEntry(provider: snapshot.provider, value: value)
+}
+
+struct MenuBarStatusView: View {
+    var entries: [MenuBarStatusEntry]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(entries) { entry in
+                HStack(spacing: 4) {
+                    ProviderLogo(provider: entry.provider, size: 13)
+                    Text(entry.value)
+                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+        .frame(height: 22)
     }
-    return "\(mark) \(Int((ratio * 100).rounded()))%"
+}
+
+final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
+    private var statusHostingView: PassthroughHostingView<MenuBarStatusView>?
     private let popover = NSPopover()
     private let store = UsageStore()
 
@@ -2123,8 +2774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = menuBarStatus(provider: .claudeCode, ratio: nil)
-        statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        updateStatusItem(entries: menuBarPlaceholderEntries())
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
 
@@ -2134,10 +2784,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.delegate = self
 
         Task { @MainActor in
-            for await text in store.$statusText.values {
-                statusItem.button?.title = text
+            for await snapshots in store.$snapshots.values {
+                let entries = menuBarEntries(for: snapshots)
+                updateStatusItem(entries: entries.isEmpty ? menuBarPlaceholderEntries() : entries)
             }
         }
+    }
+
+    private func updateStatusItem(entries: [MenuBarStatusEntry]) {
+        guard let button = statusItem.button else { return }
+        let content = MenuBarStatusView(entries: entries)
+        let hostingView: PassthroughHostingView<MenuBarStatusView>
+        if let existing = statusHostingView {
+            existing.rootView = content
+            hostingView = existing
+        } else {
+            hostingView = PassthroughHostingView(rootView: content)
+            hostingView.translatesAutoresizingMaskIntoConstraints = false
+            hostingView.appearance = NSApp.effectiveAppearance
+            button.addSubview(hostingView)
+            statusHostingView = hostingView
+        }
+
+        hostingView.layoutSubtreeIfNeeded()
+        let fittingSize = hostingView.fittingSize
+        let width = max(54, ceil(fittingSize.width) + 6)
+        statusItem.length = width
+        statusItem.button?.title = ""
+        statusItem.button?.image = nil
+        hostingView.frame = NSRect(x: 3, y: 0, width: width - 6, height: button.bounds.height)
     }
 
     @objc private func togglePopover() {
@@ -2147,6 +2822,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            store.refresh(keepsExistingSnapshots: true)
         }
     }
 }

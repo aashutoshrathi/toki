@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 680" role="img" aria-label="Toki macOS menu bar popover preview">
+  <defs>
+    <linearGradient id="page" x1="0" y1="0" x2="1120" y2="680" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#030712"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="280" y1="80" x2="840" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#262626" stop-opacity=".92"/>
+      <stop offset="1" stop-color="#111111" stop-opacity=".86"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="381" y1="115" x2="467" y2="205" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b1a7ff"/>
+      <stop offset=".48" stop-color="#7a9dff"/>
+      <stop offset="1" stop-color="#3941ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#000" flood-opacity=".5"/>
+    </filter>
+  </defs>
+  <rect width="1120" height="680" fill="url(#page)"/>
+  <rect x="0" y="0" width="1120" height="56" fill="#17242a"/>
+  <text x="502" y="37" fill="#f3f4f6" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="23">✳ 100%   ◒ 53%</text>
+  <g filter="url(#shadow)">
+    <rect x="280" y="86" width="560" height="536" rx="36" fill="url(#panel)" stroke="#444" stroke-width="2"/>
+    <rect x="306" y="112" width="72" height="72" rx="18" fill="#141414" stroke="#333" stroke-width="2"/>
+    <circle cx="342" cy="148" r="28" fill="url(#brand)"/>
+    <path d="M331 143l11 11-11 11M350 165h17" fill="none" stroke="#111827" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="400" y="154" fill="#f4f4f5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="36" font-weight="700">/toki</text>
+    <rect x="520" y="130" width="54" height="28" rx="14" fill="#3f3f46"/>
+    <text x="532" y="150" fill="#d4d4d8" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="17" font-weight="700">v1.2</text>
+    <rect x="750" y="122" width="42" height="42" rx="12" fill="#2f2f31"/>
+    <text x="762" y="151" fill="#fafafa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="25">↻</text>
+    <g>
+      <rect x="306" y="210" width="244" height="74" rx="14" fill="#1c1c1d" stroke="#333" stroke-width="2"/>
+      <text x="354" y="242" fill="#a1a1aa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">Accounts</text>
+      <text x="354" y="267" fill="#f4f4f5" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="25" font-weight="700">3</text>
+      <text x="326" y="258" fill="#a1a1aa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="27">♙</text>
+      <rect x="570" y="210" width="244" height="74" rx="14" fill="#1c1c1d" stroke="#333" stroke-width="2"/>
+      <text x="618" y="242" fill="#a1a1aa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">Lowest</text>
+      <text x="618" y="267" fill="#f4f4f5" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="25" font-weight="700">53%</text>
+      <text x="590" y="258" fill="#a1a1aa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="24">◷</text>
+    </g>
+    <g>
+      <rect x="306" y="310" width="508" height="112" rx="16" fill="#1a1a1b" stroke="#303033" stroke-width="2"/>
+      <circle cx="370" cy="350" r="22" fill="#1e3a8a" stroke="#60a5fa" stroke-width="2"/>
+      <text x="357" y="359" fill="#fb923c" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="28">✳</text>
+      <text x="414" y="343" fill="#fafafa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="24" font-weight="700">Regie</text>
+      <text x="414" y="369" fill="#a1a1aa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">Claude Code</text>
+      <text x="414" y="391" fill="#71717a" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" font-weight="700">aashutosh@regie.ai</text>
+      <text x="655" y="356" fill="#d4d4d8" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">current</text>
+      <text x="728" y="356" fill="#fafafa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="800">100%</text>
+      <text x="655" y="384" fill="#d4d4d8" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">weekly</text>
+      <text x="728" y="384" fill="#fafafa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="800">100%</text>
+      <rect x="326" y="404" width="468" height="8" rx="4" fill="#303033"/>
+      <rect x="326" y="404" width="14" height="8" rx="4" fill="#4ade80"/>
+      <rect x="306" y="444" width="508" height="112" rx="16" fill="#1a1a1b" stroke="#303033" stroke-width="2"/>
+      <circle cx="370" cy="484" r="22" fill="#6366f1"/>
+      <text x="414" y="477" fill="#fafafa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="24" font-weight="700">Regie</text>
+      <text x="414" y="503" fill="#a1a1aa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">Codex</text>
+      <text x="414" y="525" fill="#71717a" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" font-weight="700">aashutosh@regie.ai</text>
+      <text x="655" y="490" fill="#d4d4d8" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">current</text>
+      <text x="728" y="490" fill="#fafafa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="800">53%</text>
+      <text x="655" y="518" fill="#d4d4d8" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">weekly</text>
+      <text x="728" y="518" fill="#fafafa" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="800">93%</text>
+      <rect x="326" y="538" width="468" height="8" rx="4" fill="#303033"/>
+      <rect x="326" y="538" width="218" height="8" rx="4" fill="#4ade80"/>
+    </g>
+  </g>
+</svg>
