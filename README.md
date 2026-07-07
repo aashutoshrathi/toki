@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/toki-preview.svg" alt="Toki menu bar popover preview" width="760">
+  <img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="420">
 </p>
 
 ## Why Toki
