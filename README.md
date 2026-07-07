@@ -1,81 +1,112 @@
-# TokenBar
+# Toki
 
-TokenBar is a native macOS menu bar app for watching Claude Code usage across the Claude accounts available on your machine.
+<p align="center">
+  <img src="Sources/Toki/Resources/toki-logo.svg" alt="Toki logo" width="112" height="112">
+</p>
 
-It is built for people who use [`claude-swap`](https://github.com/realiti4/claude-swap) to move between Claude Code accounts and want a small, local status view instead of checking each account by hand.
+<p align="center">
+  <strong>A tiny macOS menu bar balance sheet for Claude Code and Codex usage.</strong>
+</p>
+
+<p align="center">
+  <img alt="Version 2.0" src="https://img.shields.io/badge/version-2.0-2f80ed">
+  <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
+  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
+</p>
+
+<p align="center">
+  <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away.
+</p>
+
+<p align="center">
+  <img src="docs/toki-preview.svg" alt="Toki menu bar popover preview" width="760">
+</p>
+
+## Why Toki
+
+Toki is built for people who jump between Claude Code and Codex during the day and want a fast, local answer to: "how much coding fuel do I have left?"
+
+It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
+
+Toki stays local. Credentials are read from your Mac, your configured commands, or provider auth files. The app does not run a cloud service.
 
 ## Features
 
-- Discovers Claude Code accounts from `~/.claude-swap-backup/sequence.json`.
-- Reads the active Claude Code credential from macOS Keychain service `Claude Code-credentials`.
-- Reads saved inactive account credentials from macOS Keychain service `claude-swap`.
-- Shows 5-hour and 7-day Claude Code utilization, reset timing, and spend data when Anthropic returns it.
-- Shows safe account metadata such as email, account slot, organization, and active status.
-- Adds a Switch button for inactive accounts and delegates switching to `claude-swap --switch-to`.
-- Supports optional nicknames, emoji, and colors for easier account scanning.
-- Can also track Codex token activity from local Codex credentials, manual consumer budgets, or organization usage for OpenAI and Anthropic API keys, though Claude Code is the primary workflow.
-
-TokenBar stays local. Credentials are read from your Mac or the commands you configure; the app does not add its own cloud service.
+- Native macOS menu bar app with a compact popover and right-aligned header controls.
+- Claude Code account discovery from `~/.claude-swap-backup/sequence.json`.
+- Active Claude Code credential lookup from macOS Keychain service `Claude Code-credentials`.
+- Inactive Claude account lookup from macOS Keychain service `claude-swap`.
+- Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
+- Codex usage and rate-limit display through the local Codex app-server.
+- Inline account aliases so long emails can become readable names.
+- Switch button for inactive Claude Code accounts via `claude-swap --switch-to`.
+- Optional manual ledgers for consumer plans where exact provider APIs are not available.
+- Bundled `/toki` wallet logo and Codex SVG account mark.
 
 ## Requirements
 
 - macOS 14 or newer.
 - Swift 6 toolchain.
 - Claude Code installed and authenticated.
-- `claude-swap` installed and configured if you want multi-account discovery and switching.
-- Codex installed and authenticated if you want Codex usage in the menu bar.
+- `claude-swap` installed and configured for multi-account Claude workflows.
+- Codex installed and authenticated for Codex usage.
 
-macOS may ask for Keychain access the first time TokenBar reads Claude Code or `claude-swap` credentials. Codex usage reads the local Codex auth file and does not display token material.
+macOS may ask for Keychain access the first time Toki reads Claude Code or `claude-swap` credentials.
 
-## Quick Start
+## Install From Source
 
-Build and run from source:
+Build and run:
 
 ```sh
-swift run TokenBar
+swift run Toki
 ```
 
-The app appears only in the macOS menu bar.
-
-To install it as an app bundle:
+Build and install an app bundle:
 
 ```sh
 scripts/install-app.sh
-open ~/Applications/TokenBar.app
+open ~/Applications/Toki.app
 ```
 
-To rebuild the bundle without installing:
+Build the app bundle without installing:
 
 ```sh
 scripts/build-app.sh
-open .build/TokenBar.app
+open .build/Toki.app
 ```
+
+The generated app bundle is written to `.build/Toki.app`.
 
 ## Configuration
 
-The default config path is:
+Toki reads:
 
-```sh
-~/.tokenbar/config.json
+```text
+~/.toki/config.json
 ```
 
-For Claude Code account discovery, TokenBar only needs one account entry:
+Create a starting config:
+
+```sh
+mkdir -p ~/.toki
+cp examples/config.example.json ~/.toki/config.json
+```
+
+Minimal Claude Code plus Codex config:
 
 ```json
 {
-  "refreshMinutes": 15,
+  "refreshMinutes": 5,
   "accountLabels": [
     {
       "email": "work@example.com",
       "organizationUuid": "00000000-0000-0000-0000-000000000000",
       "nickname": "Work",
-      "emoji": "💼",
       "color": "#4F8EF7"
     },
     {
       "email": "personal@example.com",
       "nickname": "Personal",
-      "emoji": "🏠",
       "color": "#F59E0B"
     }
   ],
@@ -83,48 +114,46 @@ For Claude Code account discovery, TokenBar only needs one account entry:
     {
       "id": "claude-code",
       "name": "Claude",
-      "provider": "claudeCode"
+      "provider": "claudeCode",
+      "claudeSwapCommand": "claude-swap"
     },
     {
       "id": "codex",
       "name": "Codex",
-      "provider": "codex"
+      "provider": "codex",
+      "codexAuthPath": "~/.codex/auth.json"
     }
   ]
 }
 ```
 
-You can start from the example file:
+`accountLabels` are optional presentation overrides. Toki matches discovered Claude accounts by email and, when provided, organization UUID or name. Labels do not alter credentials or switching behavior.
 
-```sh
-mkdir -p ~/.tokenbar
-cp examples/config.example.json ~/.tokenbar/config.json
-```
-
-`accountLabels` are optional UI overrides. TokenBar matches them to discovered accounts by email plus organization UUID/name when provided, falling back to email-only. They do not affect Claude credentials or switching behavior.
+`refreshMinutes` defaults to `5`. API-backed providers refresh stale-while-revalidate style: Toki keeps the last visible usage while refreshing in the background. Automatic refreshes pace Claude Code API calls at 7.5 minutes to reduce early `429` responses, while Codex uses the 5-minute cadence. Opening the popover or pressing reload can refresh sooner, but still keeps a 1-minute minimum between provider API calls. If a provider returns `429`, Toki keeps showing the last good usage snapshot.
 
 ### Environment Overrides
 
-Use these if you want separate configs or state files:
-
 ```sh
-TOKENBAR_CONFIG=/path/to/config.json swift run TokenBar
-TOKENBAR_STATE=/path/to/usage-state.json swift run TokenBar
+TOKI_CONFIG=/path/to/config.json swift run Toki
+TOKI_STATE=/path/to/usage-state.json swift run Toki
 ```
 
-## Switching Accounts
+Legacy TokenBar paths and variables are still recognized during the rename:
 
-Install and configure `claude-swap` first. TokenBar discovers the same account registry and adds a Switch button to inactive accounts.
+- `TOKENBAR_CONFIG`
+- `TOKENBAR_STATE`
+- `~/.tokenbar/config.json`
+- `~/.tokenbar/usage-state.json`
 
-When clicked, TokenBar runs:
+## Account Switching
+
+When an inactive Claude Code account is switched, Toki runs:
 
 ```sh
 claude-swap --switch-to <slot>
 ```
 
-After the command succeeds, TokenBar reloads the account registry and refreshes usage. The actual credential rewrite stays owned by `claude-swap`, which keeps TokenBar small and avoids duplicating swap logic.
-
-If `claude-swap` is not on your `PATH`, set `claudeSwapCommand` in the account config to the full executable path.
+After the command succeeds, Toki reloads account discovery and refreshes usage. If `claude-swap` is not on your `PATH`, set `claudeSwapCommand` to the full executable path.
 
 ## Codex Usage
 
@@ -138,42 +167,46 @@ Add a Codex account when this Mac is signed in to Codex:
 }
 ```
 
-TokenBar reads `~/.codex/auth.json` by default to confirm the local Codex login, then asks the local Codex app-server for account usage and rate limits. You can point at another auth file with `codexAuthPath`.
+Toki reads `~/.codex/auth.json` by default and asks the local Codex app-server for account usage and rate limits. Set `codexAuthPath` to use a different auth file.
 
-Codex usage comes from the same local account path used by the Codex app, including the 5-hour and 7-day Codex rate-limit windows when available.
-
-## Troubleshooting
-
-- `Config needed`: create `~/.tokenbar/config.json` or set `TOKENBAR_CONFIG`.
-- `No credentials found`: confirm Claude Code and `claude-swap` are authenticated and that Keychain access was allowed.
-- `Claude Code usage unavailable`: Anthropic did not return usage data for that account. Try refreshing later or check the account in Claude Code.
-- `Codex usage unavailable`: confirm `codex login` has created `~/.codex/auth.json`, then refresh TokenBar.
-- Switch fails: run `claude-swap --switch-to <slot>` in Terminal to see the underlying error.
+Codex usage is separate from OpenAI organization API usage.
 
 ## Development
 
-Build:
+Common commands:
 
 ```sh
 swift build
-```
-
-Run:
-
-```sh
-swift run TokenBar
-```
-
-Build a release app bundle:
-
-```sh
+swift run Toki
 scripts/build-app.sh
 ```
 
-The release bundle is written to `.build/TokenBar.app`.
+Before shipping a local change, run:
 
-## Notes
+```sh
+swift build
+scripts/build-app.sh
+plutil -p .build/Toki.app/Contents/Info.plist
+```
 
-The Claude Code OAuth usage endpoint reports utilization buckets such as `five_hour` and `seven_day`; it does not expose a simple public "tokens left" consumer API. TokenBar displays the usage and reset data returned by the endpoint for each discovered account.
+`swift-format` is not vendored in this repository. Keep Swift changes compiler-clean, locally scoped, and consistent with existing SwiftUI/AppKit conventions.
 
-Codex usage is based on the local Codex ChatGPT login and reports token activity plus Codex rate limits when the local Codex app-server returns them. It is separate from OpenAI organization API usage.
+## Repository
+
+```text
+aashutoshrathi/toki
+```
+
+Toki keeps backwards-compatible config fallbacks for the old TokenBar name, but new docs, app bundles, examples, and package metadata use Toki.
+
+## Troubleshooting
+
+- `Config needed`: create `~/.toki/config.json` or set `TOKI_CONFIG`.
+- `No credentials found`: confirm Claude Code and `claude-swap` are authenticated and that Keychain access was allowed.
+- `Claude Code usage unavailable`: Anthropic did not return usage data for that account. Try refreshing later or check the account in Claude Code.
+- `Codex usage unavailable`: confirm `codex login` has created `~/.codex/auth.json`, then refresh Toki.
+- Switch fails: run `claude-swap --switch-to <slot>` in Terminal to inspect the underlying error.
+
+## License
+
+No license has been declared yet. Add a license before distributing Toki as an open-source project.
