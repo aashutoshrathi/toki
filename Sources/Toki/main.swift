@@ -8,6 +8,7 @@ private let legacyConfigPath = "~/.tokenbar/config.json"
 private let legacyStatePath = "~/.tokenbar/usage-state.json"
 private let appVersion = "2.0.1"
 private let appUserAgent = "Toki/\(appVersion)"
+private var debugLogHandler: ((String) -> Void)?
 
 private extension Calendar {
     func startOfCurrentMonth() -> Date {
@@ -369,7 +370,10 @@ final class UsageStore: ObservableObject {
     func toggleDebug() {
         debugMode.toggle()
         if debugMode {
+            debugLogHandler = { [weak self] in self?.logDebug($0) }
             logDebug("Debug mode enabled")
+        } else {
+            debugLogHandler = nil
         }
     }
 }
@@ -1727,7 +1731,13 @@ func requestJSON(url: URL, headers: [String: String]) async throws -> Any {
         request.setValue(value, forHTTPHeaderField: key)
     }
 
+    await MainActor.run { debugLogHandler?("GET \(url.path)") }
+
     let (data, response) = try await URLSession.shared.data(for: request)
+    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+    let bodyPreview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+    await MainActor.run { debugLogHandler?("\(statusCode) \(url.path) - \(bodyPreview.prefix(80))") }
+
     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
         let body = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
         throw HTTPStatusError(statusCode: http.statusCode, body: body)
