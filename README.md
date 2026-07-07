@@ -13,7 +13,7 @@ It is built for people who use [`claude-swap`](https://github.com/realiti4/claud
 - Shows safe account metadata such as email, account slot, organization, and active status.
 - Adds a Switch button for inactive accounts and delegates switching to `claude-swap --switch-to`.
 - Supports optional nicknames, emoji, and colors for easier account scanning.
-- Can also track manual consumer budgets or organization usage for OpenAI and Anthropic API keys, though Claude Code is the primary workflow.
+- Can also track Codex token activity from local Codex credentials, manual consumer budgets, or organization usage for OpenAI and Anthropic API keys, though Claude Code is the primary workflow.
 
 TokenBar stays local. Credentials are read from your Mac or the commands you configure; the app does not add its own cloud service.
 
@@ -23,8 +23,9 @@ TokenBar stays local. Credentials are read from your Mac or the commands you con
 - Swift 6 toolchain.
 - Claude Code installed and authenticated.
 - `claude-swap` installed and configured if you want multi-account discovery and switching.
+- Codex installed and authenticated if you want Codex usage in the menu bar.
 
-macOS may ask for Keychain access the first time TokenBar reads Claude Code or `claude-swap` credentials.
+macOS may ask for Keychain access the first time TokenBar reads Claude Code or `claude-swap` credentials. Codex usage reads the local Codex auth file and does not display token material.
 
 ## Quick Start
 
@@ -83,6 +84,11 @@ For Claude Code account discovery, TokenBar only needs one account entry:
       "id": "claude-code",
       "name": "Claude",
       "provider": "claudeCode"
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "provider": "codex"
     }
   ]
 }
@@ -120,11 +126,28 @@ After the command succeeds, TokenBar reloads the account registry and refreshes 
 
 If `claude-swap` is not on your `PATH`, set `claudeSwapCommand` in the account config to the full executable path.
 
+## Codex Usage
+
+Add a Codex account when this Mac is signed in to Codex:
+
+```json
+{
+  "id": "codex",
+  "name": "Codex",
+  "provider": "codex"
+}
+```
+
+TokenBar reads `~/.codex/auth.json` by default to confirm the local Codex login, then asks the local Codex app-server for account usage and rate limits. You can point at another auth file with `codexAuthPath`.
+
+Codex usage comes from the same local account path used by the Codex app, including the 5-hour and 7-day Codex rate-limit windows when available.
+
 ## Troubleshooting
 
 - `Config needed`: create `~/.tokenbar/config.json` or set `TOKENBAR_CONFIG`.
 - `No credentials found`: confirm Claude Code and `claude-swap` are authenticated and that Keychain access was allowed.
 - `Claude Code usage unavailable`: Anthropic did not return usage data for that account. Try refreshing later or check the account in Claude Code.
+- `Codex usage unavailable`: confirm `codex login` has created `~/.codex/auth.json`, then refresh TokenBar.
 - Switch fails: run `claude-swap --switch-to <slot>` in Terminal to see the underlying error.
 
 ## Development
@@ -152,3 +175,5 @@ The release bundle is written to `.build/TokenBar.app`.
 ## Notes
 
 The Claude Code OAuth usage endpoint reports utilization buckets such as `five_hour` and `seven_day`; it does not expose a simple public "tokens left" consumer API. TokenBar displays the usage and reset data returned by the endpoint for each discovered account.
+
+Codex usage is based on the local Codex ChatGPT login and reports token activity plus Codex rate limits when the local Codex app-server returns them. It is separate from OpenAI organization API usage.

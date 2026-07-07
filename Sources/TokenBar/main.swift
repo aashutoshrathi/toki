@@ -4,10 +4,11 @@ import SwiftUI
 
 private let defaultConfigPath = "~/.tokenbar/config.json"
 private let defaultStatePath = "~/.tokenbar/usage-state.json"
-private let appUserAgent = "TokenBar/1.0"
+private let appUserAgent = "TokenBar/1.1"
 
 enum Provider: String, Codable {
     case openai
+    case codex
     case anthropic
     case chatgpt
     case claude
@@ -17,6 +18,7 @@ enum Provider: String, Codable {
     var displayName: String {
         switch self {
         case .openai: return "OpenAI"
+        case .codex: return "Codex"
         case .anthropic: return "Anthropic"
         case .chatgpt: return "ChatGPT"
         case .claude: return "Claude"
@@ -28,7 +30,7 @@ enum Provider: String, Codable {
     var isConsumerTracked: Bool {
         switch self {
         case .chatgpt, .claude, .manual: return true
-        case .openai, .anthropic, .claudeCode: return false
+        case .openai, .codex, .anthropic, .claudeCode: return false
         }
     }
 }
@@ -65,6 +67,7 @@ struct AccountConfig: Decodable, Identifiable {
     var resetEveryHours: Double?
     var resetAnchor: String?
     var claudeSwapCommand: String?
+    var codexAuthPath: String?
     var notes: String?
 }
 
@@ -334,6 +337,8 @@ enum UsageFetcher {
                 return [consumerSnapshot(for: account, state: state)]
             case .openai:
                 return [try await OpenAIUsageClient(account: account).snapshot()]
+            case .codex:
+                return [try await CodexUsageClient(account: account).snapshot()]
             case .anthropic:
                 return [try await AnthropicUsageClient(account: account).snapshot()]
             }
@@ -440,6 +445,43 @@ struct OpenAIUsageClient {
         ]
         let json = try await requestJSON(url: components.url!, headers: ["Authorization": "Bearer \(apiKey)"])
         return sumOpenAICosts(json)
+    }
+}
+
+struct CodexUsageClient {
+    let account: AccountConfig
+
+    func snapshot() async throws -> AccountSnapshot {
+        let credentials = try CodexCredentialReader.readCredentials(account: account)
+        let payload = try CodexAppServerClient.fetch()
+        let usage = CodexUsage(json: payload.usage ?? [:])
+        let rateLimits = CodexRateLimits(json: payload.rateLimits ?? [:])
+        guard usage.hasUsage || rateLimits.hasUsage else {
+            throw LocalizedErrorMessage("Codex usage unavailable")
+        }
+
+        let primary: String
+        if let rateLimitPrimary = rateLimits.primary {
+            primary = rateLimitPrimary
+        } else if let todayTokens = usage.todayTokens {
+            primary = "\(formatCompact(todayTokens)) tokens today"
+        } else if let lifetimeTokens = usage.summaryMetric("lifetime_tokens", "lifetimeTokens") {
+            primary = "\(formatCompact(lifetimeTokens)) lifetime tokens"
+        } else {
+            primary = "Usage available"
+        }
+
+        return AccountSnapshot(
+            id: account.id,
+            name: account.name,
+            provider: .codex,
+            primary: primary,
+            subtitle: rateLimits.subtitle ?? credentials.email ?? "OpenAI Codex usage",
+            remainingRatio: rateLimits.remainingRatio,
+            progressRatio: rateLimits.progressRatio,
+            metrics: rateLimits.metrics + usage.metrics,
+            accountInfo: CodexCredentialReader.accountInfo(from: credentials) + CodexAccountInfo.lines(from: payload.account)
+        )
     }
 }
 
@@ -889,6 +931,164 @@ enum ClaudeCodeCredentialReader {
     }
 }
 
+struct CodexCredentials {
+    var accessToken: String
+    var accountID: String?
+    var authMode: String?
+    var email: String?
+    var source: String
+}
+
+enum CodexCredentialReader {
+    static func readCredentials(account: AccountConfig) throws -> CodexCredentials {
+        if let token = try explicitAccessToken(account: account) {
+            return CodexCredentials(
+                accessToken: token,
+                accountID: nil,
+                authMode: nil,
+                email: nil,
+                source: "Configured token"
+            )
+        }
+
+        let path = expandedPath(account.codexAuthPath ?? "~/.codex/auth.json")
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw LocalizedErrorMessage("Missing Codex auth at \(path)")
+        }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tokens = json["tokens"] as? [String: Any],
+              let accessToken = tokens["access_token"] as? String,
+              !accessToken.isEmpty else {
+            throw LocalizedErrorMessage("No Codex OAuth access token found")
+        }
+
+        let idToken = tokens["id_token"] as? String
+        let claims = idToken.flatMap(jwtPayload)
+        return CodexCredentials(
+            accessToken: accessToken,
+            accountID: tokens["account_id"] as? String,
+            authMode: json["auth_mode"] as? String,
+            email: claims.flatMap { firstString(in: $0, keys: ["email", "preferred_username", "username"]) },
+            source: path
+        )
+    }
+
+    static func accountInfo(from credentials: CodexCredentials) -> [MetricLine] {
+        var lines: [MetricLine] = []
+        if let authMode = credentials.authMode {
+            lines.append(MetricLine(label: "Auth", value: authMode))
+        }
+        if let email = credentials.email {
+            lines.append(MetricLine(label: "Email", value: email))
+        }
+        if let accountID = credentials.accountID {
+            lines.append(MetricLine(label: "Account", value: compactIdentifier(accountID)))
+        }
+        lines.append(MetricLine(label: "Source", value: credentials.source))
+        return lines
+    }
+
+    private static func explicitAccessToken(account: AccountConfig) throws -> String? {
+        if let apiKey = account.apiKey, !apiKey.isEmpty {
+            return apiKey
+        }
+        if let envName = account.apiKeyEnv,
+           let value = ProcessInfo.processInfo.environment[envName],
+           !value.isEmpty {
+            return value
+        }
+        if let command = account.apiKeyCommand, !command.isEmpty {
+            let value = try SecretResolver.runShell(command).trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+}
+
+struct CodexAppServerPayload {
+    var usage: Any?
+    var rateLimits: Any?
+    var account: Any?
+}
+
+enum CodexAppServerClient {
+    static func fetch() throws -> CodexAppServerPayload {
+        let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"TokenBar","version":"1.1"},"capabilities":{"experimentalApi":true}}}"#
+        let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
+        let usage = #"{"jsonrpc":"2.0","id":2,"method":"account/usage/read","params":null}"#
+        let rateLimits = #"{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read","params":null}"#
+        let account = #"{"jsonrpc":"2.0","id":4,"method":"account/read","params":{}}"#
+        let path = "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+        let command = """
+        ( printf '%s\\n' '\(shellEscaped(initialize))'; \
+        sleep 0.2; \
+        printf '%s\\n' '\(shellEscaped(initialized))'; \
+        sleep 0.2; \
+        printf '%s\\n' '\(shellEscaped(usage))' '\(shellEscaped(rateLimits))' '\(shellEscaped(account))'; \
+        sleep 5 ) | PATH="\(path)" codex app-server --stdio
+        """
+
+        let output = try SecretResolver.runShell(command)
+        var payload = CodexAppServerPayload()
+        var errors: [String] = []
+
+        for line in output.split(whereSeparator: \.isNewline) {
+            guard let data = String(line).data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let id = json["id"] as? Int else {
+                continue
+            }
+
+            if let error = json["error"] as? [String: Any] {
+                let message = (error["message"] as? String) ?? "Codex app-server request \(id) failed"
+                errors.append(message)
+                continue
+            }
+
+            guard let result = json["result"] else { continue }
+            switch id {
+            case 2:
+                payload.usage = result
+            case 3:
+                payload.rateLimits = result
+            case 4:
+                payload.account = result
+            default:
+                continue
+            }
+        }
+
+        if payload.usage == nil && payload.rateLimits == nil {
+            throw LocalizedErrorMessage(errors.first ?? "Codex app-server did not return usage")
+        }
+        return payload
+    }
+}
+
+struct CodexAccountInfo {
+    static func lines(from value: Any?) -> [MetricLine] {
+        guard let data = value as? [String: Any],
+              let account = data["account"] as? [String: Any] else {
+            return []
+        }
+
+        var lines: [MetricLine] = []
+        if let type = firstValue(account, keys: ["type"]) as? String {
+            lines.append(MetricLine(label: "Account type", value: type))
+        }
+        if let plan = firstValue(account, keys: ["planType"]) as? String {
+            lines.append(MetricLine(label: "Plan", value: plan))
+        }
+        if let email = firstValue(account, keys: ["email"]) as? String, !email.isEmpty {
+            lines.append(MetricLine(label: "Email", value: email))
+        }
+        return lines
+    }
+}
+
 struct UsageMetric {
     var label: String
     var utilization: Double
@@ -957,6 +1157,171 @@ struct ClaudeCodeUsage {
             value += " - resets \(reset)"
         }
         metrics.append(MetricLine(label: "Spend", value: value))
+    }
+}
+
+struct CodexUsage {
+    var metrics: [MetricLine] = []
+    var todayTokens: Double?
+    private var summary: [String: Any] = [:]
+
+    var hasUsage: Bool {
+        !metrics.isEmpty || todayTokens != nil
+    }
+
+    init(json: Any) {
+        guard let data = json as? [String: Any] else { return }
+        summary = (data["summary"] as? [String: Any]) ?? [:]
+
+        let buckets = dailyBuckets(in: data)
+        if let todayBucket = bucketForToday(buckets) {
+            todayTokens = optionalNumber(firstValue(todayBucket, keys: ["tokens"]))
+        } else if let latestBucket = latestBucket(buckets) {
+            todayTokens = optionalNumber(firstValue(latestBucket, keys: ["tokens"]))
+        }
+
+        if let todayTokens {
+            metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayTokens)) tokens"))
+        }
+        if let lifetime = summaryMetric("lifetime_tokens", "lifetimeTokens") {
+            metrics.append(MetricLine(label: "Lifetime", value: "\(formatCompact(lifetime)) tokens"))
+        }
+        if let peak = summaryMetric("peak_daily_tokens", "peakDailyTokens") {
+            metrics.append(MetricLine(label: "Peak day", value: "\(formatCompact(peak)) tokens"))
+        }
+        if let longestTurn = summaryMetric("longest_running_turn_sec", "longestRunningTurnSec"),
+           longestTurn > 0 {
+            metrics.append(MetricLine(label: "Longest turn", value: formatDuration(seconds: longestTurn)))
+        }
+        if let currentStreak = summaryMetric("current_streak_days", "currentStreakDays") {
+            metrics.append(MetricLine(label: "Current streak", value: "\(Int(currentStreak)) days"))
+        }
+        if let longestStreak = summaryMetric("longest_streak_days", "longestStreakDays") {
+            metrics.append(MetricLine(label: "Longest streak", value: "\(Int(longestStreak)) days"))
+        }
+    }
+
+    func summaryMetric(_ keys: String...) -> Double? {
+        optionalNumber(firstValue(summary, keys: keys))
+    }
+
+    private func dailyBuckets(in data: [String: Any]) -> [[String: Any]] {
+        for key in ["daily_usage_buckets", "dailyUsageBuckets"] {
+            if let buckets = data[key] as? [[String: Any]] {
+                return buckets
+            }
+        }
+        return []
+    }
+
+    private func bucketForToday(_ buckets: [[String: Any]]) -> [String: Any]? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        return buckets.first { bucket in
+            guard let startDate = firstValue(bucket, keys: ["start_date", "startDate"]) as? String else {
+                return false
+            }
+            return startDate.hasPrefix(today)
+        }
+    }
+
+    private func latestBucket(_ buckets: [[String: Any]]) -> [String: Any]? {
+        buckets.max { lhs, rhs in
+            let lhsDate = (firstValue(lhs, keys: ["start_date", "startDate"]) as? String) ?? ""
+            let rhsDate = (firstValue(rhs, keys: ["start_date", "startDate"]) as? String) ?? ""
+            return lhsDate < rhsDate
+        }
+    }
+}
+
+struct CodexRateLimits {
+    var metrics: [MetricLine] = []
+    var primary: String?
+    var subtitle: String?
+    var remainingRatio: Double?
+    var progressRatio: Double?
+
+    var hasUsage: Bool {
+        !metrics.isEmpty || primary != nil
+    }
+
+    init(json: Any) {
+        guard let data = json as? [String: Any] else { return }
+        let limits = preferredLimit(from: data)
+        let plan = firstValue(limits, keys: ["planType"]) as? String
+        subtitle = plan.map { "OpenAI Codex - \($0)" } ?? "OpenAI Codex rate limits"
+
+        if let primaryWindow = limits["primary"] as? [String: Any] {
+            appendWindow(primaryWindow, fallbackLabel: "5h")
+        }
+        if let secondaryWindow = limits["secondary"] as? [String: Any] {
+            appendWindow(secondaryWindow, fallbackLabel: "7d")
+        }
+        if let resetCredits = data["rateLimitResetCredits"] as? [String: Any],
+           let count = optionalNumber(firstValue(resetCredits, keys: ["availableCount"])) {
+            metrics.append(MetricLine(label: "Resets", value: "\(Int(count)) available"))
+        }
+        if let credits = limits["credits"] as? [String: Any] {
+            appendCredits(credits)
+        }
+        if let reached = firstValue(limits, keys: ["rateLimitReachedType"]) as? String, !reached.isEmpty {
+            metrics.append(MetricLine(label: "Limit", value: reached))
+        }
+    }
+
+    private func preferredLimit(from data: [String: Any]) -> [String: Any] {
+        if let byID = data["rateLimitsByLimitId"] as? [String: Any],
+           let codex = byID["codex"] as? [String: Any] {
+            return codex
+        }
+        return (data["rateLimits"] as? [String: Any]) ?? [:]
+    }
+
+    private mutating func appendWindow(_ window: [String: Any], fallbackLabel: String) {
+        guard let usedPercent = optionalNumber(firstValue(window, keys: ["usedPercent"])) else {
+            return
+        }
+
+        let label = windowLabel(window, fallback: fallbackLabel)
+        let clampedUsed = max(0, min(100, usedPercent))
+        if primary == nil {
+            primary = "\(Int((100 - clampedUsed).rounded()))% left"
+            progressRatio = clampedUsed / 100
+            remainingRatio = 1 - (clampedUsed / 100)
+        }
+
+        var value = "\(Int(clampedUsed.rounded()))% used"
+        if let reset = resetDescriptionFromUnix(firstValue(window, keys: ["resetsAt"])) {
+            value += " - resets \(reset)"
+        }
+        metrics.append(MetricLine(label: label, value: value))
+    }
+
+    private func windowLabel(_ window: [String: Any], fallback: String) -> String {
+        guard let minutes = optionalNumber(firstValue(window, keys: ["windowDurationMins"])) else {
+            return fallback
+        }
+        if minutes == 300 { return "5h" }
+        if minutes == 10080 { return "7d" }
+        if minutes >= 1440 { return "\(Int(minutes / 1440))d" }
+        if minutes >= 60 { return "\(Int(minutes / 60))h" }
+        return "\(Int(minutes))m"
+    }
+
+    private mutating func appendCredits(_ credits: [String: Any]) {
+        if let unlimited = credits["unlimited"] as? Bool, unlimited {
+            metrics.append(MetricLine(label: "Credits", value: "Unlimited"))
+            return
+        }
+        if let hasCredits = credits["hasCredits"] as? Bool {
+            metrics.append(MetricLine(label: "Credits", value: hasCredits ? "Available" : "Depleted"))
+        }
+        if let balance = credits["balance"] as? String, !balance.isEmpty {
+            metrics.append(MetricLine(label: "Balance", value: balance))
+        }
     }
 }
 
@@ -1109,11 +1474,29 @@ func optionalNumber(_ value: Any?) -> Double? {
     return nil
 }
 
+func firstValue(_ dict: [String: Any], keys: [String]) -> Any? {
+    for key in keys {
+        if let value = dict[key] {
+            return value
+        }
+    }
+    return nil
+}
+
 func resetDescription(_ value: Any?) -> String? {
     guard let raw = value as? String,
           let resetDate = ISO8601DateFormatter().date(from: raw) else {
         return nil
     }
+    return resetDescription(for: resetDate)
+}
+
+func resetDescriptionFromUnix(_ value: Any?) -> String? {
+    guard let seconds = optionalNumber(value) else { return nil }
+    return resetDescription(for: Date(timeIntervalSince1970: seconds))
+}
+
+func resetDescription(for resetDate: Date) -> String {
     let countdown = relativeDate(resetDate)
     let formatter = DateFormatter()
     formatter.dateFormat = Calendar.current.isDateInToday(resetDate) ? "HH:mm" : "MMM d HH:mm"
@@ -1250,6 +1633,19 @@ func formatUSD(_ value: Double) -> String {
     formatter.currencyCode = "USD"
     formatter.maximumFractionDigits = value >= 10 ? 0 : 2
     return formatter.string(from: NSNumber(value: value)) ?? "$0"
+}
+
+func formatDuration(seconds: Double) -> String {
+    let total = max(Int(seconds.rounded()), 0)
+    let hours = total / 3600
+    let minutes = (total % 3600) / 60
+    if hours > 0 {
+        return "\(hours)h \(minutes)m"
+    }
+    if minutes > 0 {
+        return "\(minutes)m"
+    }
+    return "\(total)s"
 }
 
 struct LocalizedErrorMessage: LocalizedError {
@@ -1526,7 +1922,7 @@ struct ProviderLogo: View {
             case .claude, .claudeCode, .anthropic:
                 ClaudeLogoMark()
                     .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
-            case .openai, .chatgpt:
+            case .openai, .codex, .chatgpt:
                 OpenAILogoMark()
                     .foregroundStyle(Color.primary)
             case .manual:
@@ -1703,7 +2099,7 @@ func menuBarStatus(provider: Provider, ratio: Double?) -> String {
     switch provider {
     case .claudeCode, .claude:
         mark = "✳︎"
-    case .openai, .chatgpt:
+    case .openai, .codex, .chatgpt:
         mark = "○"
     case .anthropic:
         mark = "✳︎"
