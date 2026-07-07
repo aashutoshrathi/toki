@@ -176,7 +176,7 @@ final class UsageStore: ObservableObject {
             configError = nil
             snapshots = config?.accounts.map(AccountSnapshot.loading) ?? []
             scheduleRefresh()
-            refresh(keepsExistingSnapshots: true, force: true)
+            refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
         } catch {
             config = nil
             configError = error.localizedDescription
@@ -197,7 +197,7 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    func refresh(keepsExistingSnapshots: Bool = true, force: Bool = false) {
+    func refresh(keepsExistingSnapshots: Bool = true, minimumRefreshInterval: TimeInterval? = nil) {
         guard let config, !isRefreshing else { return }
         isRefreshing = true
         statusText = "Refreshing"
@@ -213,7 +213,7 @@ final class UsageStore: ObservableObject {
                 config: config,
                 state: currentState,
                 previousSnapshots: previousSnapshots,
-                force: force
+                minimumRefreshInterval: minimumRefreshInterval
             )
             for key in response.apiCallKeys {
                 usageState.apiLastCalledAt[key] = response.fetchedAt
@@ -322,7 +322,7 @@ final class UsageStore: ObservableObject {
     private func scheduleRefresh() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh(keepsExistingSnapshots: true, force: false) }
+            Task { @MainActor in self?.refresh(keepsExistingSnapshots: true) }
         }
     }
 
@@ -464,7 +464,7 @@ enum UsageFetcher {
         config: AppConfig,
         state: UsageState,
         previousSnapshots: [AccountSnapshot],
-        force: Bool
+        minimumRefreshInterval: TimeInterval?
     ) async -> UsageFetchResponse {
         let accounts = config.accounts
         let previousByID = Dictionary(uniqueKeysWithValues: previousSnapshots.map { ($0.id, $0) })
@@ -481,7 +481,7 @@ enum UsageFetcher {
                             previousByID: previousByID,
                             lastCalledAt: state.apiLastCalledAt,
                             now: fetchedAt,
-                            force: force
+                            minimumRefreshInterval: minimumRefreshInterval
                         )
                     )
                 }
@@ -507,13 +507,18 @@ enum UsageFetcher {
         previousByID: [String: AccountSnapshot],
         lastCalledAt: [String: Date],
         now: Date,
-        force: Bool
+        minimumRefreshInterval: TimeInterval?
     ) async -> AccountFetchResult {
         let cacheKey = apiCacheKey(for: account)
         if let cacheKey,
-           !force,
            let previous = previousSnapshots(for: account, previousByID: previousByID),
-           !isDue(account: account, cacheKey: cacheKey, lastCalledAt: lastCalledAt, now: now) {
+           !isDue(
+                account: account,
+                cacheKey: cacheKey,
+                lastCalledAt: lastCalledAt,
+                now: now,
+                minimumRefreshInterval: minimumRefreshInterval
+           ) {
             return AccountFetchResult(snapshots: previous, apiCallKeys: [])
         }
 
@@ -561,9 +566,15 @@ enum UsageFetcher {
         }
     }
 
-    private static func isDue(account: AccountConfig, cacheKey: String, lastCalledAt: [String: Date], now: Date) -> Bool {
+    private static func isDue(
+        account: AccountConfig,
+        cacheKey: String,
+        lastCalledAt: [String: Date],
+        now: Date,
+        minimumRefreshInterval: TimeInterval?
+    ) -> Bool {
         guard let lastCalledAt = lastCalledAt[cacheKey] else { return true }
-        return now.timeIntervalSince(lastCalledAt) >= refreshInterval(for: account.provider)
+        return now.timeIntervalSince(lastCalledAt) >= (minimumRefreshInterval ?? refreshInterval(for: account.provider))
     }
 
     private static func refreshInterval(for provider: Provider) -> TimeInterval {
@@ -2066,7 +2077,7 @@ struct MenuContentView: View {
     private var headerControls: some View {
         HStack(spacing: 5) {
             Button {
-                store.refresh(force: true)
+                store.refresh(minimumRefreshInterval: 60)
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
@@ -2995,7 +3006,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
-            store.refresh(keepsExistingSnapshots: true, force: false)
+            store.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
         }
     }
 }

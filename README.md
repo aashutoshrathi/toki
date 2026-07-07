@@ -129,7 +129,7 @@ Minimal Claude Code plus Codex config:
 
 `accountLabels` are optional presentation overrides. Toki matches discovered Claude accounts by email and, when provided, organization UUID or name. Labels do not alter credentials or switching behavior.
 
-`refreshMinutes` defaults to `5`. API-backed providers refresh stale-while-revalidate style: Toki keeps the last visible usage while refreshing in the background. Claude Code API calls are internally paced at 7.5 minutes to reduce early `429` responses; Codex refreshes on the 5-minute cadence. If a provider returns `429`, Toki keeps showing the last good usage snapshot.
+`refreshMinutes` defaults to `5`. API-backed providers refresh stale-while-revalidate style: Toki keeps the last visible usage while refreshing in the background. Automatic refreshes pace Claude Code API calls at 7.5 minutes to reduce early `429` responses, while Codex uses the 5-minute cadence. Opening the popover or pressing reload can refresh sooner, but still keeps a 1-minute minimum between provider API calls. If a provider returns `429`, Toki keeps showing the last good usage snapshot.
 
 ### Environment Overrides
 
