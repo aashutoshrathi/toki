@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2 - 2026-07-08
+## 2.0 - 2026-07-08
 
 ### Changed
 
@@ -9,7 +9,10 @@
 - Swapped the popover header to a new `/toki` wallet-and-terminal app logo.
 - Reworked README and repository docs for a more professional open-source project surface.
 - Expanded the example config with `claudeSwapCommand`, `codexAuthPath`, and an optional manual ChatGPT ledger entry.
-- Updated README guidance for the 1.2 UI and Codex logo resource.
+- Updated README guidance for the v2.0 UI and Codex logo resource.
+- Moved header controls to the right side of the popover.
+- Added provider-aware refresh throttling: Claude Code API calls paced at 7.5 minutes, Codex at 5-minute cadence, popover/manual reload at 1-minute floor.
+- Handle 429 rate-limit responses by keeping the last good usage snapshot.
 
 ### Added
 

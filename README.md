@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.2" src="https://img.shields.io/badge/version-1.2-2f80ed">
+  <img alt="Version 2.0" src="https://img.shields.io/badge/version-2.0-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
 </p>
@@ -32,7 +32,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 
 ## Features
 
-- Native macOS menu bar app with a compact popover.
+- Native macOS menu bar app with a compact popover and right-aligned header controls.
 - Claude Code account discovery from `~/.claude-swap-backup/sequence.json`.
 - Active Claude Code credential lookup from macOS Keychain service `Claude Code-credentials`.
 - Inactive Claude account lookup from macOS Keychain service `claude-swap`.

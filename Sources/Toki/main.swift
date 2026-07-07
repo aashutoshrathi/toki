@@ -6,7 +6,7 @@ private let defaultConfigPath = "~/.toki/config.json"
 private let defaultStatePath = "~/.toki/usage-state.json"
 private let legacyConfigPath = "~/.tokenbar/config.json"
 private let legacyStatePath = "~/.tokenbar/usage-state.json"
-private let appVersion = "1.2"
+private let appVersion = "2.0"
 private let appUserAgent = "Toki/\(appVersion)"
 
 private extension Calendar {
