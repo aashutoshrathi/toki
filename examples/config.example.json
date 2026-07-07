@@ -21,6 +21,12 @@
       "name": "Claude",
       "provider": "claudeCode",
       "notes": "Reads Claude Code OAuth credentials from macOS Keychain and calls Anthropic OAuth usage."
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "provider": "codex",
+      "notes": "Reads local Codex login from ~/.codex/auth.json and asks Codex app-server for usage."
     }
   ]
 }

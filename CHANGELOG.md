@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Codex usage support through the local Codex app-server and Codex credentials in `~/.codex/auth.json`.
+
 ## 1.0 - 2026-06-22
 
 TokenBar 1.0 is the first stable release.
