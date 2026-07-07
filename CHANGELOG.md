@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.4 - 2026-07-08
+
+### Added
+
+- CI workflow that automatically builds and attaches DMG to GitHub releases.
+
+### Fixed
+
+- Release CI uses `gh release create` instead of `upload` to handle fresh tag-triggered runs.
+
 ## 2.0.3 - 2026-07-08
 
 ### Added
