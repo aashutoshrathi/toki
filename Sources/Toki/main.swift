@@ -2747,7 +2747,7 @@ struct ProviderLogo: View {
 }
 
 enum CodexLogoAsset {
-    static let image: NSImage? = loadImage()
+    @MainActor static let image: NSImage? = loadImage()
 
     private static func loadImage() -> NSImage? {
         let executableResourceURL = Bundle.main.executableURL?
@@ -2771,7 +2771,7 @@ enum CodexLogoAsset {
 }
 
 enum TokiLogoAsset {
-    static let image: NSImage? = loadImage()
+    @MainActor static let image: NSImage? = loadImage()
 
     private static func loadImage() -> NSImage? {
         let executableResourceURL = Bundle.main.executableURL?
