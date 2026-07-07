@@ -22,7 +22,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(grep '^private let appVersion' Sources/Toki/main.swift | sed 's/.*"\(.*\)"/\1/')
+          VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
           gh release create "${GITHUB_REF_NAME}" \
             ".build/Toki_${VERSION}_universal.dmg" \
             --title "${GITHUB_REF_NAME}" \

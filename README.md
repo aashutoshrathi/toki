@@ -209,4 +209,8 @@ Toki keeps backwards-compatible config fallbacks for the old TokenBar name, but 
 
 ## License
 
-No license has been declared yet. Add a license before distributing Toki as an open-source project.
+Toki is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+Toki is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with Toki. If not, see <https://www.gnu.org/licenses/>.

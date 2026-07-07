@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.5 - 2026-07-08
+
+### Changed
+
+- Refactored monolithic 3166-line `main.swift` into ~30 files organized by concern (models, API, credentials, discovery, networking, utilities, views, config, store).
+- Modularized all types into dedicated files for better maintainability and Swift 6 concurrency safety.
+- Added GNU General Public License v3 and updated README license section.
+
 ## 2.0.4 - 2026-07-08
 
 ### Added
