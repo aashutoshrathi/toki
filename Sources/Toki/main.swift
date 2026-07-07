@@ -86,6 +86,23 @@ struct AccountConfig: Codable, Identifiable {
 
 struct UsageState: Codable {
     var accounts: [String: AccountUsageState] = [:]
+    var apiLastCalledAt: [String: Date] = [:]
+
+    enum CodingKeys: String, CodingKey {
+        case accounts
+        case apiLastCalledAt
+    }
+
+    init(accounts: [String: AccountUsageState] = [:], apiLastCalledAt: [String: Date] = [:]) {
+        self.accounts = accounts
+        self.apiLastCalledAt = apiLastCalledAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accounts = try container.decodeIfPresent([String: AccountUsageState].self, forKey: .accounts) ?? [:]
+        apiLastCalledAt = try container.decodeIfPresent([String: Date].self, forKey: .apiLastCalledAt) ?? [:]
+    }
 }
 
 struct AccountUsageState: Codable {
@@ -159,7 +176,7 @@ final class UsageStore: ObservableObject {
             configError = nil
             snapshots = config?.accounts.map(AccountSnapshot.loading) ?? []
             scheduleRefresh()
-            refresh(keepsExistingSnapshots: true)
+            refresh(keepsExistingSnapshots: true, force: true)
         } catch {
             config = nil
             configError = error.localizedDescription
@@ -180,7 +197,7 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    func refresh(keepsExistingSnapshots: Bool = true) {
+    func refresh(keepsExistingSnapshots: Bool = true, force: Bool = false) {
         guard let config, !isRefreshing else { return }
         isRefreshing = true
         statusText = "Refreshing"
@@ -188,11 +205,23 @@ final class UsageStore: ObservableObject {
             snapshots = config.accounts.map(AccountSnapshot.loading)
         }
         let currentState = usageState
+        let previousSnapshots = snapshots
 
         Task {
             defer { isRefreshing = false }
-            let fetched = await UsageFetcher.fetch(config: config, state: currentState)
-            let sorted = sortedByAvailability(fetched)
+            let response = await UsageFetcher.fetch(
+                config: config,
+                state: currentState,
+                previousSnapshots: previousSnapshots,
+                force: force
+            )
+            for key in response.apiCallKeys {
+                usageState.apiLastCalledAt[key] = response.fetchedAt
+            }
+            if !response.apiCallKeys.isEmpty {
+                StateLoader.save(usageState)
+            }
+            let sorted = sortedByAvailability(response.snapshots)
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                 snapshots = sorted
             }
@@ -293,7 +322,7 @@ final class UsageStore: ObservableObject {
     private func scheduleRefresh() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh(keepsExistingSnapshots: true) }
+            Task { @MainActor in self?.refresh(keepsExistingSnapshots: true, force: false) }
         }
     }
 
@@ -416,50 +445,182 @@ extension JSONEncoder {
     }
 }
 
+struct UsageFetchResponse {
+    var snapshots: [AccountSnapshot]
+    var apiCallKeys: Set<String>
+    var fetchedAt: Date
+}
+
+struct AccountFetchResult {
+    var snapshots: [AccountSnapshot]
+    var apiCallKeys: [String]
+}
+
 enum UsageFetcher {
-    static func fetch(config: AppConfig, state: UsageState) async -> [AccountSnapshot] {
+    private static let claudeRefreshInterval: TimeInterval = 7.5 * 60
+    private static let defaultAPIRefreshInterval: TimeInterval = 5 * 60
+
+    static func fetch(
+        config: AppConfig,
+        state: UsageState,
+        previousSnapshots: [AccountSnapshot],
+        force: Bool
+    ) async -> UsageFetchResponse {
         let accounts = config.accounts
-        return await withTaskGroup(of: (Int, [AccountSnapshot]).self) { group in
+        let previousByID = Dictionary(uniqueKeysWithValues: previousSnapshots.map { ($0.id, $0) })
+        let fetchedAt = Date()
+        return await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
             for (index, account) in accounts.enumerated() {
                 group.addTask {
-                    await (index, snapshots(for: account, config: config, state: state))
+                    await (
+                        index,
+                        snapshots(
+                            for: account,
+                            config: config,
+                            state: state,
+                            previousByID: previousByID,
+                            lastCalledAt: state.apiLastCalledAt,
+                            now: fetchedAt,
+                            force: force
+                        )
+                    )
                 }
             }
 
-            var byIndex: [Int: [AccountSnapshot]] = [:]
+            var byIndex: [Int: AccountFetchResult] = [:]
             for await result in group {
                 byIndex[result.0] = result.1
             }
-            return accounts.indices.flatMap { byIndex[$0] ?? [] }
+            let orderedResults = accounts.indices.compactMap { byIndex[$0] }
+            return UsageFetchResponse(
+                snapshots: orderedResults.flatMap(\.snapshots),
+                apiCallKeys: Set(orderedResults.flatMap(\.apiCallKeys)),
+                fetchedAt: fetchedAt
+            )
         }
     }
 
-    private static func snapshots(for account: AccountConfig, config: AppConfig, state: UsageState) async -> [AccountSnapshot] {
+    private static func snapshots(
+        for account: AccountConfig,
+        config: AppConfig,
+        state: UsageState,
+        previousByID: [String: AccountSnapshot],
+        lastCalledAt: [String: Date],
+        now: Date,
+        force: Bool
+    ) async -> AccountFetchResult {
+        let cacheKey = apiCacheKey(for: account)
+        if let cacheKey,
+           !force,
+           let previous = previousSnapshots(for: account, previousByID: previousByID),
+           !isDue(account: account, cacheKey: cacheKey, lastCalledAt: lastCalledAt, now: now) {
+            return AccountFetchResult(snapshots: previous, apiCallKeys: [])
+        }
+
+        let attemptedKeys = cacheKey.map { [$0] } ?? []
         do {
+            let snapshots: [AccountSnapshot]
             switch account.provider {
             case .claudeCode:
-                return try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
+                snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
-                return [consumerSnapshot(for: account, state: state)]
+                snapshots = [consumerSnapshot(for: account, state: state)]
             case .openai:
-                return [try await OpenAIUsageClient(account: account).snapshot()]
+                snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
             case .codex:
-                return [try await CodexUsageClient(account: account).snapshot()]
+                snapshots = [try await CodexUsageClient(account: account).snapshot()]
             case .anthropic:
-                return [try await AnthropicUsageClient(account: account).snapshot()]
+                snapshots = [try await AnthropicUsageClient(account: account).snapshot()]
             }
+            if containsRateLimit(snapshots),
+               let previous = previousSnapshots(for: account, previousByID: previousByID) {
+                return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
+            }
+            return AccountFetchResult(snapshots: snapshots, apiCallKeys: attemptedKeys)
+        } catch let error as HTTPStatusError where error.statusCode == 429 {
+            if let previous = previousSnapshots(for: account, previousByID: previousByID) {
+                return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
+            }
+            return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
+        } catch where isRateLimit(error) {
+            if let previous = previousSnapshots(for: account, previousByID: previousByID) {
+                return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
+            }
+            return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         } catch {
-            return [AccountSnapshot(
-                id: account.id,
-                name: account.name,
-                provider: account.provider,
-                primary: "Unavailable",
-                subtitle: error.localizedDescription,
-                remainingRatio: nil,
-                metrics: account.notes.map { [MetricLine(label: "Note", value: $0)] } ?? [],
-                isError: true
-            )]
+            return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         }
+    }
+
+    private static func apiCacheKey(for account: AccountConfig) -> String? {
+        switch account.provider {
+        case .chatgpt, .claude, .manual:
+            return nil
+        case .claudeCode, .codex, .openai, .anthropic:
+            return "\(account.provider.rawValue):\(account.id)"
+        }
+    }
+
+    private static func isDue(account: AccountConfig, cacheKey: String, lastCalledAt: [String: Date], now: Date) -> Bool {
+        guard let lastCalledAt = lastCalledAt[cacheKey] else { return true }
+        return now.timeIntervalSince(lastCalledAt) >= refreshInterval(for: account.provider)
+    }
+
+    private static func refreshInterval(for provider: Provider) -> TimeInterval {
+        switch provider {
+        case .claudeCode:
+            return claudeRefreshInterval
+        case .codex, .openai, .anthropic:
+            return defaultAPIRefreshInterval
+        case .chatgpt, .claude, .manual:
+            return 0
+        }
+    }
+
+    private static func previousSnapshots(for account: AccountConfig, previousByID: [String: AccountSnapshot]) -> [AccountSnapshot]? {
+        switch account.provider {
+        case .claudeCode:
+            let snapshots = previousByID.values
+                .filter { $0.provider == .claudeCode && ($0.id == account.id || $0.id.hasPrefix("claude-")) }
+                .sorted { $0.id < $1.id }
+            return snapshots.isEmpty ? nil : snapshots
+        default:
+            return previousByID[account.id].map { [$0] }
+        }
+    }
+
+    private static func containsRateLimit(_ snapshots: [AccountSnapshot]) -> Bool {
+        snapshots.contains { snapshot in
+            isRateLimitDescription(snapshot.subtitle)
+                || snapshot.metrics.contains { isRateLimitDescription($0.value) }
+        }
+    }
+
+    private static func isRateLimit(_ error: Error) -> Bool {
+        if let httpError = error as? HTTPStatusError {
+            return httpError.statusCode == 429
+        }
+        return isRateLimitDescription(error.localizedDescription)
+    }
+
+    private static func isRateLimitDescription(_ value: String) -> Bool {
+        let normalized = value.lowercased()
+        return normalized.contains("http 429")
+            || normalized.contains("status 429")
+            || normalized.contains("429")
+    }
+
+    private static func errorSnapshot(for account: AccountConfig, error: Error) -> AccountSnapshot {
+        AccountSnapshot(
+            id: account.id,
+            name: account.name,
+            provider: account.provider,
+            primary: "Unavailable",
+            subtitle: error.localizedDescription,
+            remainingRatio: nil,
+            metrics: account.notes.map { [MetricLine(label: "Note", value: $0)] } ?? [],
+            isError: true
+        )
     }
 
     private static func consumerSnapshot(for account: AccountConfig, state: UsageState) -> AccountSnapshot {
@@ -1526,7 +1687,7 @@ func requestJSON(url: URL, headers: [String: String]) async throws -> Any {
     let (data, response) = try await URLSession.shared.data(for: request)
     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
         let body = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-        throw LocalizedErrorMessage("HTTP \(http.statusCode): \(body.prefix(140))")
+        throw HTTPStatusError(statusCode: http.statusCode, body: body)
     }
     return try JSONSerialization.jsonObject(with: data)
 }
@@ -1811,6 +1972,15 @@ struct LocalizedErrorMessage: LocalizedError {
     var errorDescription: String? { message }
 }
 
+struct HTTPStatusError: LocalizedError {
+    var statusCode: Int
+    var body: String
+
+    var errorDescription: String? {
+        "HTTP \(statusCode): \(body.prefix(140))"
+    }
+}
+
 struct PointerOnHoverModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.onHover { hovering in
@@ -1896,7 +2066,7 @@ struct MenuContentView: View {
     private var headerControls: some View {
         HStack(spacing: 5) {
             Button {
-                store.refresh()
+                store.refresh(force: true)
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
@@ -2825,7 +2995,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
-            store.refresh(keepsExistingSnapshots: true)
+            store.refresh(keepsExistingSnapshots: true, force: false)
         }
     }
 }

@@ -1,5 +1,5 @@
 {
-  "refreshMinutes": 15,
+  "refreshMinutes": 5,
   "accountLabels": [
     {
       "email": "work@example.com",
