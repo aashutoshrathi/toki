@@ -154,6 +154,8 @@ final class UsageStore: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var statusText = "Loading"
     @Published var configError: String?
+    @Published var debugMode = false
+    @Published var debugLog: [DebugLogEntry] = []
 
     private var config: AppConfig?
     private var usageState = UsageState()
@@ -198,9 +200,13 @@ final class UsageStore: ObservableObject {
     }
 
     func refresh(keepsExistingSnapshots: Bool = true, minimumRefreshInterval: TimeInterval? = nil) {
-        guard let config, !isRefreshing else { return }
+        guard let config, !isRefreshing else {
+            if isRefreshing { logDebug("Refresh skipped - already in progress") }
+            return
+        }
         isRefreshing = true
         statusText = "Refreshing"
+        logDebug("Refresh started")
         if !keepsExistingSnapshots || snapshots.isEmpty {
             snapshots = config.accounts.map(AccountSnapshot.loading)
         }
@@ -222,6 +228,11 @@ final class UsageStore: ObservableObject {
                 StateLoader.save(usageState)
             }
             let sorted = sortedByAvailability(response.snapshots)
+            let errorCount = sorted.filter(\.isError).count
+            logDebug("Refresh complete: \(sorted.count) accounts (\(errorCount) errors)")
+            for snapshot in sorted where snapshot.isError {
+                logDebug("  [\(snapshot.id)] \(snapshot.name): \(snapshot.subtitle)")
+            }
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                 snapshots = sorted
             }
@@ -346,6 +357,27 @@ final class UsageStore: ObservableObject {
             StateLoader.save(usageState)
         }
     }
+
+    func logDebug(_ message: String) {
+        guard debugMode else { return }
+        debugLog.append(DebugLogEntry(timestamp: Date(), message: message))
+        if debugLog.count > 100 {
+            debugLog.removeFirst(debugLog.count - 100)
+        }
+    }
+
+    func toggleDebug() {
+        debugMode.toggle()
+        if debugMode {
+            logDebug("Debug mode enabled")
+        }
+    }
+}
+
+struct DebugLogEntry: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let message: String
 }
 
 enum ConfigLoader {
@@ -2040,6 +2072,10 @@ struct MenuContentView: View {
                 }
                 .frame(maxHeight: accountListHeight())
             }
+
+            if store.debugMode {
+                debugPanel
+            }
         }
         .padding(12)
         .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
@@ -2066,6 +2102,9 @@ struct MenuContentView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.primary.opacity(0.07), in: Capsule())
+                        .onTapGesture(count: 5) {
+                            store.toggleDebug()
+                        }
                 }
             }
             Spacer()
@@ -2129,6 +2168,53 @@ struct MenuContentView: View {
         guard let ratio = store.snapshots.compactMap(\.remainingRatio).min() else { return "--" }
         return "\(Int((ratio * 100).rounded()))%"
     }
+
+    private var debugPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "ant.fill")
+                    .foregroundStyle(.orange)
+                Text("Debug")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button("Clear") {
+                    store.debugLog.removeAll()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .pointerOnHover()
+            }
+            if store.debugLog.isEmpty {
+                Text("No log entries")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(store.debugLog) { entry in
+                            HStack(spacing: 6) {
+                                Text(entry.timestamp, format: .dateTime.hour().minute().second())
+                                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                Text(entry.message)
+                                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 120)
+            }
+        }
+        .padding(8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+    }
 }
 
 struct AccountCard: View {
@@ -2163,9 +2249,16 @@ struct AccountCard: View {
                     aliasEditor
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(snapshot.provider.displayName)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Text(snapshot.provider.displayName)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            if store.debugMode && snapshot.isError {
+                                Image(systemName: "exclamationmark.bubble.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
                         if let secondaryIdentifier {
                             Text(secondaryIdentifier)
                                 .font(.system(size: 9, weight: .regular))
@@ -2236,6 +2329,26 @@ struct AccountCard: View {
                         }
                     }
                     .font(.system(size: 11, weight: .medium))
+                }
+
+                if store.debugMode && snapshot.isError {
+                    Divider()
+                        .padding(.vertical, 1)
+                    VStack(spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Debug")
+                                .foregroundStyle(.orange)
+                                .frame(width: 42, alignment: .leading)
+                            Text(snapshot.subtitle)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        ForEach(snapshot.metrics) { metric in
+                            MetricRow(metric: metric)
+                                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        }
+                    }
+                    .foregroundStyle(.secondary)
                 }
 
                 if snapshot.canAdjust {

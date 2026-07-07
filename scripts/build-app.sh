@@ -26,6 +26,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <string>Toki</string>
   <key>CFBundleIdentifier</key>
   <string>local.toki</string>
+  <key>CFBundleIconFile</key>
+  <string>toki-logo.icns</string>
   <key>CFBundleName</key>
   <string>Toki</string>
   <key>CFBundlePackageType</key>
