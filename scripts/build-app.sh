@@ -14,7 +14,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 cp "$ROOT_DIR/.build/release/Toki" "$MACOS_DIR/Toki"
-cp "$ROOT_DIR/Sources/Toki/Resources/"*.svg "$RESOURCES_DIR/"
+cp "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
 
 cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
