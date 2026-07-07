@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.2 - 2026-07-08
+
+### Added
+
+- Debug mode accessible by tapping the version badge 5 times, showing live network request logs and error details.
+- Universal binary build with DMG packaging in `scripts/package-release.sh`.
+
+### Fixed
+
+- Refresh guard now logs when skipped due to an in-progress refresh.
+
 ## 2.0 - 2026-07-08
 
 ### Changed
