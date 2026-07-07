@@ -2044,14 +2044,13 @@ struct MenuContentView: View {
         .padding(12)
         .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
         .background(.regularMaterial)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.22))
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 9) {
             TokiLogoMark(size: 34)
                 .padding(5)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -2272,7 +2271,7 @@ struct AccountCard: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.78), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(borderColor, lineWidth: 1)
@@ -2523,7 +2522,7 @@ struct StatBlock: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.64), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
