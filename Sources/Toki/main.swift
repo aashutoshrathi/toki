@@ -1868,49 +1868,6 @@ struct MenuContentView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 9) {
-            HStack(spacing: 5) {
-                Button {
-                    store.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 25, height: 25)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .help("Refresh")
-                .pointerOnHover()
-
-                Button {
-                    ConfigLoader.openInDefaultEditor()
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 25, height: 25)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .help("Open config")
-                .pointerOnHover()
-
-                Button {
-                    NSApp.terminate(nil)
-                } label: {
-                    Image(systemName: "power")
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 25, height: 25)
-                .foregroundStyle(.red)
-                .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(Color.red.opacity(0.42), lineWidth: 1)
-                )
-                .help("Quit")
-                .pointerOnHover()
-            }
-
             TokiLogoMark(size: 34)
                 .padding(5)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -1932,6 +1889,52 @@ struct MenuContentView: View {
                 }
             }
             Spacer()
+            headerControls
+        }
+    }
+
+    private var headerControls: some View {
+        HStack(spacing: 5) {
+            Button {
+                store.refresh()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 25, height: 25)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .help("Refresh")
+            .pointerOnHover()
+
+            Button {
+                ConfigLoader.openInDefaultEditor()
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 25, height: 25)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .help("Open config")
+            .pointerOnHover()
+
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 25, height: 25)
+            .foregroundStyle(.red)
+            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Color.red.opacity(0.42), lineWidth: 1)
+            )
+            .help("Quit")
+            .pointerOnHover()
         }
     }
 
