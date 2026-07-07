@@ -8,6 +8,7 @@ MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 
 cd "$ROOT_DIR"
+VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
 swift build -c release
 
 rm -rf "$APP_DIR"
@@ -16,7 +17,7 @@ mkdir -p "$RESOURCES_DIR"
 cp "$ROOT_DIR/.build/release/Toki" "$MACOS_DIR/Toki"
 cp "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
 
-cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
+cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -33,7 +34,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.0.4</string>
+  <string>$VERSION</string>
   <key>CFBundleVersion</key>
   <string>5</string>
   <key>LSMinimumSystemVersion</key>

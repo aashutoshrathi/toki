@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 APP_NAME="Toki"
-VERSION=$(grep '^private let appVersion' Sources/Toki/main.swift | sed 's/.*"\(.*\)"/\1/')
+VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
 
 BUILD_DIR="$ROOT_DIR/.build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
