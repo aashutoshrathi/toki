@@ -6,7 +6,7 @@ private let defaultConfigPath = "~/.toki/config.json"
 private let defaultStatePath = "~/.toki/usage-state.json"
 private let legacyConfigPath = "~/.tokenbar/config.json"
 private let legacyStatePath = "~/.tokenbar/usage-state.json"
-private let appVersion = "2.0"
+private let appVersion = "2.0.1"
 private let appUserAgent = "Toki/\(appVersion)"
 
 private extension Calendar {
@@ -2351,8 +2351,8 @@ struct AccountCard: View {
                 .minimumScaleFactor(0.8)
         } else {
             VStack(alignment: .trailing, spacing: 2) {
-                QuotaSummaryLine(label: "current", value: currentSessionAvailability)
-                QuotaSummaryLine(label: "weekly", value: weeklyAvailability)
+                QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
+                QuotaSummaryLine(label: "weekly", value: weeklyAvailability, resetHint: weeklyResetTime)
             }
         }
     }
@@ -2370,6 +2370,25 @@ struct AccountCard: View {
             return nil
         }
         return remainingText(from: metric.value)
+    }
+
+    private var currentResetTime: String? {
+        if let resetMetric = snapshot.metrics.first(where: { $0.label == "Reset" }) {
+            return resetMetric.value
+        }
+        if let metric = snapshot.metrics.first(where: { ["Daily", "5h", "Today"].contains($0.label) }),
+           let range = metric.value.range(of: "resets ") {
+            return String(metric.value[range.upperBound...])
+        }
+        return nil
+    }
+
+    private var weeklyResetTime: String? {
+        if let metric = snapshot.metrics.first(where: { ["7d", "Weekly", "Week"].contains($0.label) }),
+           let range = metric.value.range(of: "resets ") {
+            return String(metric.value[range.upperBound...])
+        }
+        return nil
     }
 
     private var progressRatio: Double? {
@@ -2430,15 +2449,23 @@ struct StatusBadge: View {
 struct QuotaSummaryLine: View {
     var label: String
     var value: String
+    var resetHint: String?
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-            valueView
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+        VStack(alignment: .trailing, spacing: 0) {
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                valueView
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            if let resetHint {
+                Text(resetHint)
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
