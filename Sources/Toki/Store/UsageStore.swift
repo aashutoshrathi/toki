@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+@preconcurrency import UserNotifications
 
 @MainActor
 final class UsageStore: ObservableObject {
@@ -10,6 +11,19 @@ final class UsageStore: ObservableObject {
     @Published var configError: String?
     @Published var debugMode = false
     @Published var debugLog: [DebugLogEntry] = []
+    @Published var preferences = AppPreferences()
+    @Published var events: [TokiEvent] = []
+    @Published var history: [UsageHistoryEntry] = []
+    @Published var session: SessionState?
+    @Published var recommendation = SmartRecommendation(
+        title: "Loading",
+        detail: "Checking account quota.",
+        accountID: nil,
+        switchTarget: nil,
+        switchCommand: nil,
+        severity: .neutral
+    )
+    @Published var statusEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
 
     private var config: AppConfig?
     private var usageState = UsageState()
@@ -28,9 +42,11 @@ final class UsageStore: ObservableObject {
         do {
             config = try ConfigLoader.load()
             usageState = StateLoader.load()
+            syncPublishedState()
             applyScheduledResets()
             configError = nil
             snapshots = config?.accounts.map(AccountSnapshot.loading) ?? []
+            updateDerivedState(for: snapshots)
             scheduleRefresh()
             refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
         } catch {
@@ -50,6 +66,7 @@ final class UsageStore: ObservableObject {
                     isError: true
                 )
             ]
+            updateDerivedState(for: snapshots)
         }
     }
 
@@ -87,11 +104,15 @@ final class UsageStore: ObservableObject {
             for snapshot in sorted where snapshot.isError {
                 logDebug("  [\(snapshot.id)] \(snapshot.name): \(snapshot.subtitle)")
             }
+            recordHistory(for: sorted, at: response.fetchedAt)
+            evaluateEventsAndNotifications(for: sorted, previous: previousSnapshots, at: response.fetchedAt)
+            pruneState(now: response.fetchedAt)
+            StateLoader.save(usageState)
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                 snapshots = sorted
             }
             lastUpdated = Date()
-            statusText = menuBarStatus(for: sorted)
+            updateDerivedState(for: sorted)
         }
     }
 
@@ -158,6 +179,64 @@ final class UsageStore: ObservableObject {
         }
     }
 
+    func updatePreferences(_ next: AppPreferences) {
+        preferences = next
+        usageState.preferences = next
+        StateLoader.save(usageState)
+        updateDerivedState(for: snapshots)
+    }
+
+    func setDND(_ isEnabled: Bool) {
+        var next = preferences
+        next.dndEnabled = isEnabled
+        updatePreferences(next)
+        appendEvent(
+            kind: .notification,
+            title: isEnabled ? "DND enabled" : "DND disabled",
+            detail: isEnabled ? "Notifications will be recorded but not delivered." : "Notifications can be delivered again.",
+            deliveredNotification: false
+        )
+    }
+
+    func startSession() {
+        let ratios = Dictionary(uniqueKeysWithValues: snapshots.compactMap { snapshot in
+            snapshot.remainingRatio.map { (snapshot.id, $0) }
+        })
+        let primaries = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.primary) })
+        let next = SessionState(startedAt: Date(), startingRemainingRatios: ratios, startingPrimaries: primaries)
+        session = next
+        usageState.session = next
+        StateLoader.save(usageState)
+        appendEvent(kind: .session, title: "Session started", detail: "Toki is tracking quota burn for this coding session.", deliveredNotification: false)
+    }
+
+    func endSession() {
+        guard let session else { return }
+        let summary = sessionSummary(for: session)
+        self.session = nil
+        usageState.session = nil
+        StateLoader.save(usageState)
+        appendEvent(kind: .session, title: "Session ended", detail: summary, deliveredNotification: false)
+    }
+
+    func clearEvents() {
+        events = []
+        usageState.events = []
+        StateLoader.save(usageState)
+    }
+
+    func switchBestAccount() {
+        let current = smartRecommendation(for: snapshots)
+        guard let target = current.switchTarget else { return }
+        appendEvent(
+            kind: .switchAccount,
+            title: "Smart switch",
+            detail: "Switching to \(current.title.replacingOccurrences(of: "Switch to ", with: "")).",
+            deliveredNotification: false
+        )
+        switchClaudeAccount(target: target, command: current.switchCommand)
+    }
+
     func switchClaudeAccount(target: String, command: String?) {
         statusText = "Switching"
         let currentSnapshots = snapshots
@@ -170,9 +249,11 @@ final class UsageStore: ObservableObject {
 
             switch result {
             case .success:
+                appendEvent(kind: .switchAccount, title: "Account switched", detail: "Claude Code switched to \(target).", deliveredNotification: false)
                 reloadConfig()
             case .failure(let error):
                 statusText = "Switch failed"
+                appendEvent(kind: .switchAccount, title: "Switch failed", detail: error.localizedDescription, deliveredNotification: false)
                 snapshots = currentSnapshots.map { snapshot in
                     guard snapshot.switchTarget == target else { return snapshot }
                     var failed = snapshot
@@ -182,6 +263,17 @@ final class UsageStore: ObservableObject {
                 }
             }
         }
+    }
+
+    func sessionBurnLines() -> [MetricLine] {
+        guard let session else { return [] }
+        let byID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+        return session.startingRemainingRatios.compactMap { accountID, startingRatio in
+            guard let snapshot = byID[accountID], let current = snapshot.remainingRatio else { return nil }
+            let burned = max(0, startingRatio - current)
+            return MetricLine(label: snapshot.name, value: "\(percentText(burned)) burned")
+        }
+        .sorted { $0.label < $1.label }
     }
 
     private func scheduleRefresh() {
@@ -228,5 +320,156 @@ final class UsageStore: ObservableObject {
         } else {
             debugLogHandler = nil
         }
+    }
+
+    private func syncPublishedState() {
+        preferences = usageState.preferences
+        events = usageState.events.sorted { $0.timestamp > $1.timestamp }
+        history = usageState.history.sorted { $0.timestamp > $1.timestamp }
+        session = usageState.session
+    }
+
+    private func updateDerivedState(for snapshots: [AccountSnapshot]) {
+        recommendation = smartRecommendation(for: snapshots)
+        statusEntries = menuBarEntries(for: snapshots, mode: preferences.menuBarMode)
+        if statusEntries.isEmpty {
+            statusEntries = menuBarPlaceholderEntries()
+        }
+        statusText = menuBarStatus(for: snapshots, mode: preferences.menuBarMode)
+        syncPublishedState()
+    }
+
+    private func recordHistory(for snapshots: [AccountSnapshot], at date: Date) {
+        let candidates = snapshots.filter { !$0.isError && $0.remainingRatio != nil }
+        for snapshot in candidates {
+            let last = usageState.history
+                .filter { $0.accountID == snapshot.id }
+                .max { $0.timestamp < $1.timestamp }
+            let shouldAppend = last == nil
+                || date.timeIntervalSince(last?.timestamp ?? .distantPast) >= 15 * 60
+                || abs((last?.remainingRatio ?? 0) - (snapshot.remainingRatio ?? 0)) >= 0.02
+            guard shouldAppend else { continue }
+            usageState.history.append(UsageHistoryEntry(
+                timestamp: date,
+                accountID: snapshot.id,
+                accountName: snapshot.name,
+                provider: snapshot.provider,
+                remainingRatio: snapshot.remainingRatio,
+                primary: snapshot.primary
+            ))
+        }
+    }
+
+    private func evaluateEventsAndNotifications(for snapshots: [AccountSnapshot], previous: [AccountSnapshot], at date: Date) {
+        let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+        for snapshot in snapshots where !snapshot.isError {
+            guard let ratio = snapshot.remainingRatio else { continue }
+            let previousRatio = previousByID[snapshot.id]?.remainingRatio
+            if ratio <= preferences.lowQuotaThreshold,
+               previousRatio == nil || (previousRatio ?? 1) > preferences.lowQuotaThreshold {
+                notifyOrRecord(
+                    key: "lowQuota:\(snapshot.id)",
+                    kind: .lowQuota,
+                    title: "\(snapshot.name) is low",
+                    detail: "\(snapshot.name) has \(percentText(ratio)) quota remaining.",
+                    at: date
+                )
+            } else if ratio >= preferences.lowQuotaThreshold + 0.20,
+                      let previousRatio,
+                      previousRatio <= preferences.lowQuotaThreshold {
+                notifyOrRecord(
+                    key: "recovered:\(snapshot.id)",
+                    kind: .recovered,
+                    title: "\(snapshot.name) recovered",
+                    detail: "\(snapshot.name) is back to \(percentText(ratio)) remaining.",
+                    at: date
+                )
+            }
+        }
+
+        guard let session else { return }
+        for snapshot in snapshots where !snapshot.isError {
+            guard let current = snapshot.remainingRatio,
+                  let starting = session.startingRemainingRatios[snapshot.id] else { continue }
+            let burned = starting - current
+            if current <= preferences.sessionWarningThreshold || burned >= 0.30 {
+                notifyOrRecord(
+                    key: "session:\(snapshot.id)",
+                    kind: .session,
+                    title: "Session quota warning",
+                    detail: "\(snapshot.name) has \(percentText(current)) left after burning \(percentText(max(0, burned))).",
+                    at: date
+                )
+            }
+        }
+    }
+
+    private func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
+        let cooldown = TimeInterval(max(preferences.notificationCooldownMinutes, 5) * 60)
+        if let last = usageState.notificationLastSentAt[key],
+           date.timeIntervalSince(last) < cooldown {
+            appendEvent(kind: kind, title: title, detail: "Cooldown: \(detail)", deliveredNotification: false, at: date)
+            return
+        }
+
+        usageState.notificationLastSentAt[key] = date
+        let canDeliver = preferences.notificationsEnabled && !preferences.dndEnabled
+        appendEvent(
+            kind: kind,
+            title: title,
+            detail: canDeliver ? detail : "DND: \(detail)",
+            deliveredNotification: canDeliver,
+            at: date
+        )
+        guard canDeliver else { return }
+        deliverNotification(title: title, detail: detail)
+    }
+
+    private func deliverNotification(title: String, detail: String) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = detail
+            content.sound = .default
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            center.add(request)
+        }
+    }
+
+    private func appendEvent(
+        kind: TokiEventKind,
+        title: String,
+        detail: String,
+        deliveredNotification: Bool,
+        at date: Date = Date()
+    ) {
+        usageState.events.append(TokiEvent(
+            timestamp: date,
+            kind: kind,
+            title: title,
+            detail: detail,
+            deliveredNotification: deliveredNotification
+        ))
+        pruneState(now: date)
+        StateLoader.save(usageState)
+        syncPublishedState()
+    }
+
+    private func pruneState(now: Date) {
+        let retention = TimeInterval(max(preferences.historyRetentionDays, 1) * 24 * 60 * 60)
+        usageState.history = usageState.history
+            .filter { now.timeIntervalSince($0.timestamp) <= retention }
+            .suffix(720)
+        usageState.events = Array(usageState.events.suffix(160))
+    }
+
+    private func sessionSummary(for session: SessionState) -> String {
+        let elapsed = formatDuration(seconds: Date().timeIntervalSince(session.startedAt))
+        let lines = sessionBurnLines()
+        guard !lines.isEmpty else { return "Tracked for \(elapsed)." }
+        let top = lines.prefix(2).map { "\($0.label): \($0.value)" }.joined(separator: ", ")
+        return "Tracked for \(elapsed). \(top)."
     }
 }
