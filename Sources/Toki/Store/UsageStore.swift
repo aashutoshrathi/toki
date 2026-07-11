@@ -406,14 +406,16 @@ final class UsageStore: ObservableObject {
 
     private func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
         let cooldown = TimeInterval(max(preferences.notificationCooldownMinutes, 5) * 60)
-        if let last = usageState.notificationLastSentAt[key],
+        if let last = usageState.eventLastRecordedAt[key],
            date.timeIntervalSince(last) < cooldown {
-            appendEvent(kind: kind, title: title, detail: "Cooldown: \(detail)", deliveredNotification: false, at: date)
             return
         }
 
-        usageState.notificationLastSentAt[key] = date
         let canDeliver = preferences.notificationsEnabled && !preferences.dndEnabled
+        usageState.eventLastRecordedAt[key] = date
+        if canDeliver {
+            usageState.notificationLastSentAt[key] = date
+        }
         appendEvent(
             kind: kind,
             title: title,
