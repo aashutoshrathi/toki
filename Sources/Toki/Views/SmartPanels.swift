@@ -156,6 +156,7 @@ struct EventPanel: View {
 
 struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
+    @ObservedObject var updateChecker: UpdateChecker
 
     var body: some View {
         ScrollView {
@@ -189,6 +190,49 @@ struct SettingsPanel: View {
                     ForEach(MenuBarDisplayMode.allCases) { mode in
                         Text(mode.label).tag(mode)
                     }
+                }
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("App updates")
+                            .font(.system(size: 11, weight: .semibold))
+                        if updateChecker.isChecking {
+                            Text("Checking GitHub…")
+                                .foregroundStyle(.secondary)
+                        } else if let message = updateChecker.checkMessage {
+                            Text(message)
+                                .foregroundStyle(.secondary)
+                        } else if let date = updateChecker.lastCheckedAt {
+                            HStack(spacing: 3) {
+                                Text("Checked")
+                                Text(date, style: .relative)
+                            }
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text("Checks automatically every 6 hours")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.system(size: 10))
+
+                    Spacer()
+
+                    Button {
+                        updateChecker.checkNow()
+                    } label: {
+                        if updateChecker.isChecking {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Check now")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(updateChecker.isChecking)
+                    .pointerOnHover()
                 }
 
                 Divider()

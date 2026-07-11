@@ -8,6 +8,7 @@
 - Active-agent discovery for Codex, Claude Code, Copilot CLI, and OpenCode with runtime and terminal metadata.
 - Best-effort navigation to matching iTerm2 or Terminal tabs, with host-app activation fallback.
 - Automatic GitHub release checks and verified one-click DMG installation.
+- Six-hour update polling with a manual “Check now” action in Settings.
 - Privacy-safe rotating local diagnostics and an attached debug-report share action.
 
 ### Changed

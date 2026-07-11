@@ -174,7 +174,7 @@ The Agents tab inspects the local process table without persisting command lines
 
 ### Updates and Diagnostics
 
-On launch, Toki checks the latest public GitHub release. A newer release shows an Update button that downloads its DMG, verifies the `local.toki` bundle identity, version, and code signature, stages the app, replaces the installed bundle after Toki exits, and relaunches it. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` when developing to preview the banner without publishing a release.
+Toki checks the latest public GitHub release at most once every six hours, including while the app remains open. Settings also provides a manual “Check now” action that bypasses the schedule. A newer release shows an Update button that downloads its DMG, verifies the `local.toki` bundle identity, version, and code signature, stages the app, replaces the installed bundle after Toki exits, and relaunches it. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` when developing to preview the banner without publishing a release.
 
 Toki writes rotating diagnostics to `~/.toki/logs/toki.log`. These logs contain app-level error categories and status codes only; they exclude credentials, account configuration, prompts, session titles, workspace names, and full file paths. “Send debug report” in Settings creates a local text attachment and opens the macOS share picker. Toki never sends the report automatically.
 

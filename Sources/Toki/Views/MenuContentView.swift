@@ -292,7 +292,7 @@ struct MenuContentView: View {
         case .agents:
             ActiveAgentsPanel(store: store)
         case .settings:
-            SettingsPanel(store: store)
+            SettingsPanel(store: store, updateChecker: updateChecker)
         }
     }
 

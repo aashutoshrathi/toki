@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         popover.delegate = self
 
-        updateChecker.checkIfNeeded()
+        updateChecker.startAutomaticChecks()
 
         Task { @MainActor in
             for await entries in store.$statusEntries.values {
