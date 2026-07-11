@@ -210,13 +210,13 @@ struct MenuContentView: View {
                     selectedTab = tab
                 } label: {
                     Image(systemName: tab.systemImage)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .background(selectedTab == tab ? Color.primary.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .semibold))
-                .frame(height: 28)
                 .foregroundStyle(selectedTab == tab ? .primary : .secondary)
-                .background(selectedTab == tab ? Color.primary.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .help(tab.rawValue)
                 .pointerOnHover()
             }
