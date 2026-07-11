@@ -13,7 +13,12 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
         terminalTTY == nil ? "Editor or background process" : "Terminal \(terminalTTY!)"
     }
 
-    var canNavigate: Bool { terminalTTY != nil }
+    // Every agent can be surfaced: TTY-backed ones focus the exact terminal tab,
+    // the rest fall back to activating the likely host app.
+    var canNavigate: Bool { true }
+
+    // Whether navigation lands on an exact terminal tab (vs. a best-effort host-app focus).
+    var hasTerminalTarget: Bool { terminalTTY != nil }
 }
 
 enum ActiveAgentScanner {
@@ -79,11 +84,17 @@ enum ActiveAgentScanner {
         }
 
         let tty = ttyValue == "??" || ttyValue == "-" ? nil : ttyValue
+        let title: String
+        if let project = AgentSessionResolver.projectName(pid: pid, command: command) {
+            title = "\(project) (\(provider.displayName))"
+        } else {
+            title = "\(provider.displayName) agent"
+        }
         return Candidate(
             agent: ActiveAgent(
                 id: pid,
                 provider: provider,
-                title: "\(provider.displayName) agent",
+                title: title,
                 processID: pid,
                 runtime: runtime,
                 terminalTTY: tty

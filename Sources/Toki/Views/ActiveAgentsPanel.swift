@@ -43,8 +43,8 @@ struct ActiveAgentsPanel: View {
                                             .lineLimit(1)
                                     }
                                     Spacer()
-                                    Image(systemName: agent.canNavigate ? "arrow.up.forward.app" : "app.dashed")
-                                        .foregroundStyle(agent.canNavigate ? Color.blue : Color.secondary)
+                                    Image(systemName: agent.hasTerminalTarget ? "arrow.up.forward.app" : "macwindow.on.rectangle")
+                                        .foregroundStyle(Color.blue)
                                 }
                                 .padding(8)
                                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -54,7 +54,7 @@ struct ActiveAgentsPanel: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .help(agent.canNavigate ? "Go to this terminal session" : "Activate the likely host app")
+                            .help(agent.hasTerminalTarget ? "Go to this terminal session" : "Open the likely host app")
                         }
                     }
                 }
