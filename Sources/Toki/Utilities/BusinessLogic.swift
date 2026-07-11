@@ -51,6 +51,11 @@ func menuBarStatus(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = 
 }
 
 func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> [MenuBarStatusEntry] {
+    if allTrackedQuotaExhausted(snapshots) {
+        let suggestion = currentBreakSuggestion()
+        return [MenuBarStatusEntry(provider: .manual, value: suggestion.menuBarText, leadingText: suggestion.emoji)]
+    }
+
     switch mode {
     case .smart:
         return smartMenuBarEntries(for: snapshots)
@@ -117,6 +122,18 @@ func smartRecommendation(for snapshots: [AccountSnapshot]) -> SmartRecommendatio
         )
     }
 
+    if allTrackedQuotaExhausted(snapshots) {
+        let suggestion = currentBreakSuggestion()
+        return SmartRecommendation(
+            title: suggestion.title,
+            detail: "All tracked coding quota is empty. \(suggestion.detail)",
+            accountID: nil,
+            switchTarget: nil,
+            switchCommand: nil,
+            severity: .critical
+        )
+    }
+
     let ratio = best.remainingRatio ?? 0
     if ratio <= 0.15 {
         return SmartRecommendation(
@@ -157,6 +174,42 @@ func smartRecommendation(for snapshots: [AccountSnapshot]) -> SmartRecommendatio
 func percentText(_ ratio: Double) -> String {
     "\(Int((max(0, min(1, ratio)) * 100).rounded()))%"
 }
+
+func allTrackedQuotaExhausted(_ snapshots: [AccountSnapshot]) -> Bool {
+    let tracked = snapshots.filter { !$0.isError && $0.remainingRatio != nil }
+    guard !tracked.isEmpty else { return false }
+    return tracked.allSatisfy { ($0.remainingRatio ?? 1) <= 0.01 }
+}
+
+struct BreakSuggestion {
+    var title: String
+    var detail: String
+    var menuBarText: String
+    var emoji: String
+}
+
+func currentBreakSuggestion(now: Date = Date()) -> BreakSuggestion {
+    breakSuggestions[breakSuggestionIndex(for: now)]
+}
+
+private func breakSuggestionIndex(for date: Date) -> Int {
+    let hour = Calendar.current.component(.hour, from: date)
+    let day = Calendar.current.ordinality(of: .day, in: .year, for: date) ?? 0
+    return abs(day + hour) % breakSuggestions.count
+}
+
+private let breakSuggestions = [
+    BreakSuggestion(title: "Take a walk", detail: "Take a walk, mate. Ten minutes away from the screen is a valid productivity tool.", menuBarText: "Take a walk, mate", emoji: "🚶"),
+    BreakSuggestion(title: "Drink water", detail: "Drink some water and let the next idea arrive without a loading spinner.", menuBarText: "Drink water", emoji: "💧"),
+    BreakSuggestion(title: "Stretch a bit", detail: "Stand up, stretch your shoulders, and give your neck a tiny ceasefire.", menuBarText: "Stretch a bit", emoji: "🙆"),
+    BreakSuggestion(title: "Make tea", detail: "Make tea or coffee and come back when the quota gods are less dramatic.", menuBarText: "Make tea", emoji: "☕️"),
+    BreakSuggestion(title: "Look outside", detail: "Look out a window for a minute. The pixels will still be here.", menuBarText: "Look outside", emoji: "🌤️"),
+    BreakSuggestion(title: "Tidy desk", detail: "Clear one small thing from your desk. Future you gets a cleaner runway.", menuBarText: "Tidy desk", emoji: "🧹"),
+    BreakSuggestion(title: "Breathe slowly", detail: "Take five slow breaths. Debugging is better when your nervous system is not on fire.", menuBarText: "Breathe slowly", emoji: "🫁"),
+    BreakSuggestion(title: "Rest your eyes", detail: "Rest your eyes for 60 seconds and let the afterimage of the code fade.", menuBarText: "Rest eyes", emoji: "😌"),
+    BreakSuggestion(title: "Write a note", detail: "Write down the next thing you wanted to ask. Save the thought before the quota resets.", menuBarText: "Write a note", emoji: "📝"),
+    BreakSuggestion(title: "Check posture", detail: "Reset your posture, unclench your jaw, and pretend ergonomics is a feature.", menuBarText: "Check posture", emoji: "🪑")
+]
 
 func svgPath(_ raw: String, in rect: CGRect, viewBox: CGSize) -> Path {
     let tokens = raw.replacingOccurrences(of: "Z", with: " Z ")
@@ -226,4 +279,3 @@ func svgPath(_ raw: String, in rect: CGRect, viewBox: CGSize) -> Path {
 
     return path
 }
-
