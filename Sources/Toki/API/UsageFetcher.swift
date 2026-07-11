@@ -83,8 +83,10 @@ enum UsageFetcher {
             switch account.provider {
             case .claudeCode:
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
-            case .chatgpt, .claude, .copilot, .openCode, .manual:
+            case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
+            case .copilot, .openCode:
+                snapshots = [agentOnlySnapshot(for: account)]
             case .openai:
                 snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
             case .codex:
@@ -229,6 +231,19 @@ enum UsageFetcher {
             remainingRatio: ratio,
             metrics: metrics,
             canAdjust: true
+        )
+    }
+
+    private static func agentOnlySnapshot(for account: AccountConfig) -> AccountSnapshot {
+        AccountSnapshot(
+            id: account.id,
+            name: account.name,
+            provider: account.provider,
+            primary: "Agent detection only",
+            subtitle: "Use the Agents tab for active sessions.",
+            remainingRatio: nil,
+            metrics: [],
+            isError: false
         )
     }
 }

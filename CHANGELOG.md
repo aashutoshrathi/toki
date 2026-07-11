@@ -4,7 +4,6 @@
 
 ### Added
 
-- Copilot and OpenCode provider entries for optional local usage ledgers.
 - Active-agent discovery for Codex, Claude Code, Copilot CLI, and OpenCode with runtime and terminal metadata.
 - Best-effort navigation to matching iTerm2 or Terminal tabs, with host-app activation fallback.
 - Automatic GitHub release checks and verified one-click DMG installation.

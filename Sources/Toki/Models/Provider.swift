@@ -27,8 +27,8 @@ enum Provider: String, Codable {
 
     var isConsumerTracked: Bool {
         switch self {
-        case .chatgpt, .claude, .copilot, .openCode, .manual: return true
-        case .openai, .codex, .anthropic, .claudeCode: return false
+        case .chatgpt, .claude, .manual: return true
+        case .openai, .codex, .anthropic, .claudeCode, .copilot, .openCode: return false
         }
     }
 
