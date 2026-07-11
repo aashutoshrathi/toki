@@ -411,32 +411,57 @@ final class UsageStore: ObservableObject {
             return
         }
 
-        let canDeliver = preferences.notificationsEnabled && !preferences.dndEnabled
+        let canAttemptDelivery = preferences.notificationsEnabled && !preferences.dndEnabled
         usageState.eventLastRecordedAt[key] = date
-        if canDeliver {
-            usageState.notificationLastSentAt[key] = date
+        guard canAttemptDelivery else {
+            appendEvent(
+                kind: kind,
+                title: title,
+                detail: preferences.dndEnabled ? "DND: \(detail)" : "Notifications disabled: \(detail)",
+                deliveredNotification: false,
+                at: date
+            )
+            return
         }
-        appendEvent(
-            kind: kind,
-            title: title,
-            detail: canDeliver ? detail : "DND: \(detail)",
-            deliveredNotification: canDeliver,
-            at: date
-        )
-        guard canDeliver else { return }
-        deliverNotification(title: title, detail: detail)
+
+        deliverNotification(title: title, detail: detail) { delivered, failureDetail in
+            if delivered {
+                self.usageState.notificationLastSentAt[key] = date
+            }
+            self.appendEvent(
+                kind: kind,
+                title: title,
+                detail: delivered ? detail : "Not delivered: \(failureDetail ?? detail)",
+                deliveredNotification: delivered,
+                at: date
+            )
+        }
     }
 
-    private func deliverNotification(title: String, detail: String) {
+    private func deliverNotification(
+        title: String,
+        detail: String,
+        completion: @escaping @MainActor (Bool, String?) -> Void
+    ) {
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error {
+                Task { @MainActor in completion(false, error.localizedDescription) }
+                return
+            }
+            guard granted else {
+                Task { @MainActor in completion(false, "notification permission denied") }
+                return
+            }
+
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = detail
             content.sound = .default
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request)
+            center.add(request) { error in
+                Task { @MainActor in completion(error == nil, error?.localizedDescription) }
+            }
         }
     }
 
