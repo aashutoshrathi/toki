@@ -44,13 +44,31 @@ func sortedByAvailability(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
         .map(\.element)
 }
 
-func menuBarStatus(for snapshots: [AccountSnapshot]) -> String {
-    let entries = menuBarEntries(for: snapshots)
-    guard !entries.isEmpty else { return "Toki --" }
-    return entries.map { "\($0.value)" }.joined(separator: "  ")
+func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> [MenuBarStatusEntry] {
+    if allTrackedQuotaExhausted(snapshots) {
+        let suggestion = currentBreakSuggestion()
+        return [MenuBarStatusEntry(provider: .manual, value: suggestion.menuBarText, leadingText: suggestion.emoji)]
+    }
+
+    switch mode {
+    case .smart:
+        return smartMenuBarEntries(for: snapshots)
+    case .lowest:
+        return lowestMenuBarEntries(for: snapshots)
+    case .activeClaude:
+        return snapshots.first { $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError }
+            .map { [menuBarEntry(for: $0)] } ?? []
+    case .codex:
+        return snapshots.first { $0.provider == .codex && !$0.isError }
+            .map { [menuBarEntry(for: $0)] } ?? []
+    case .combined:
+        return smartMenuBarEntries(for: snapshots)
+    case .accounts:
+        return [MenuBarStatusEntry(provider: .manual, value: "\(snapshots.filter { !$0.isError }.count)")]
+    }
 }
 
-func menuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
+private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
     let activeClaude = snapshots.first {
         $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError
     }
@@ -66,6 +84,13 @@ func menuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
     return segments.map(menuBarEntry)
 }
 
+private func lowestMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
+    snapshots
+        .filter { !$0.isError && $0.remainingRatio != nil }
+        .min { ($0.remainingRatio ?? 1) < ($1.remainingRatio ?? 1) }
+        .map { [menuBarEntry(for: $0)] } ?? []
+}
+
 func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
     [
         MenuBarStatusEntry(provider: .claudeCode, value: "--"),
@@ -74,9 +99,111 @@ func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
 }
 
 func menuBarEntry(for snapshot: AccountSnapshot) -> MenuBarStatusEntry {
-    let value = snapshot.remainingRatio.map { "\(Int(($0 * 100).rounded()))%" } ?? "--"
+    let value = snapshot.remainingRatio.map(percentText) ?? "--"
     return MenuBarStatusEntry(provider: snapshot.provider, value: value)
 }
+
+func smartRecommendation(for snapshots: [AccountSnapshot]) -> SmartRecommendation {
+    let usable = snapshots.filter { !$0.isError && $0.remainingRatio != nil }
+    guard let best = usable.max(by: { ($0.remainingRatio ?? 0) < ($1.remainingRatio ?? 0) }) else {
+        return SmartRecommendation(
+            title: "Connect an account",
+            detail: "Toki needs at least one live usage source before it can recommend where to work.",
+            accountID: nil,
+            switchTarget: nil,
+            switchCommand: nil,
+            severity: .neutral
+        )
+    }
+
+    if allTrackedQuotaExhausted(snapshots) {
+        let suggestion = currentBreakSuggestion()
+        return SmartRecommendation(
+            title: suggestion.title,
+            detail: "All tracked coding quota is empty. \(suggestion.detail)",
+            accountID: nil,
+            switchTarget: nil,
+            switchCommand: nil,
+            severity: .critical
+        )
+    }
+
+    let ratio = best.remainingRatio ?? 0
+    if ratio <= 0.15 {
+        return SmartRecommendation(
+            title: "All coding fuel is low",
+            detail: "Best available is \(best.name) at \(percentText(ratio)). Consider waiting for the next reset.",
+            accountID: best.id,
+            switchTarget: best.switchTarget,
+            switchCommand: best.switchCommand,
+            severity: .critical
+        )
+    }
+
+    if let activeClaude = usable.first(where: { $0.provider == .claudeCode && $0.switchTarget == nil }),
+       let bestClaude = usable.filter({ $0.provider == .claudeCode }).max(by: { ($0.remainingRatio ?? 0) < ($1.remainingRatio ?? 0) }),
+       bestClaude.id != activeClaude.id,
+       (bestClaude.remainingRatio ?? 0) - (activeClaude.remainingRatio ?? 0) >= 0.20 {
+        return SmartRecommendation(
+            title: "Switch to \(bestClaude.name)",
+            detail: "\(bestClaude.name) has \(percentText(bestClaude.remainingRatio ?? 0)) left versus \(percentText(activeClaude.remainingRatio ?? 0)) on the active Claude Code account.",
+            accountID: bestClaude.id,
+            switchTarget: bestClaude.switchTarget,
+            switchCommand: bestClaude.switchCommand,
+            severity: .warning
+        )
+    }
+
+    let severity: RecommendationSeverity = ratio <= 0.35 ? .warning : .good
+    return SmartRecommendation(
+        title: "Use \(best.name) now",
+        detail: "\(best.name) has the healthiest available quota at \(percentText(ratio)) remaining.",
+        accountID: best.id,
+        switchTarget: best.switchTarget,
+        switchCommand: best.switchCommand,
+        severity: severity
+    )
+}
+
+func percentText(_ ratio: Double) -> String {
+    "\(Int((max(0, min(1, ratio)) * 100).rounded()))%"
+}
+
+func allTrackedQuotaExhausted(_ snapshots: [AccountSnapshot]) -> Bool {
+    let tracked = snapshots.filter { !$0.isError && $0.remainingRatio != nil }
+    guard !tracked.isEmpty else { return false }
+    return tracked.allSatisfy { ($0.remainingRatio ?? 1) <= 0.01 }
+}
+
+struct BreakSuggestion {
+    var title: String
+    var detail: String
+    var menuBarText: String
+    var emoji: String
+}
+
+func currentBreakSuggestion(now: Date = Date()) -> BreakSuggestion {
+    breakSuggestions[breakSuggestionIndex(for: now)]
+}
+
+private func breakSuggestionIndex(for date: Date) -> Int {
+    let hour = Calendar.current.component(.hour, from: date)
+    let day = Calendar.current.ordinality(of: .day, in: .year, for: date) ?? 0
+    return abs(day + hour) % breakSuggestions.count
+}
+
+private let breakSuggestions = [
+    BreakSuggestion(title: "Take a walk", detail: "Take a walk, mate. Ten minutes away from the screen is a valid productivity tool.", menuBarText: "Take a walk, mate", emoji: "🚶"),
+    BreakSuggestion(title: "Drink water", detail: "Drink some water and let the next idea arrive without a loading spinner.", menuBarText: "Drink water", emoji: "💧"),
+    BreakSuggestion(title: "Stretch a bit", detail: "Stand up, stretch your shoulders, and give your neck a tiny ceasefire.", menuBarText: "Stretch a bit", emoji: "🙆"),
+    BreakSuggestion(title: "Make tea", detail: "Make tea or coffee and come back when the quota gods are less dramatic.", menuBarText: "Make tea", emoji: "☕️"),
+    BreakSuggestion(title: "Look outside", detail: "Look out a window for a minute. The pixels will still be here.", menuBarText: "Look outside", emoji: "🌤️"),
+    BreakSuggestion(title: "Tidy desk", detail: "Clear one small thing from your desk. Future you gets a cleaner runway.", menuBarText: "Tidy desk", emoji: "🧹"),
+    BreakSuggestion(title: "Breathe slowly", detail: "Take five slow breaths. Debugging is better when your nervous system is not on fire.", menuBarText: "Breathe slowly", emoji: "🫁"),
+    BreakSuggestion(title: "Rest your eyes", detail: "Rest your eyes for 60 seconds and let the afterimage of the code fade.", menuBarText: "Rest eyes", emoji: "😌"),
+    BreakSuggestion(title: "Write a note", detail: "Write down the next thing you wanted to ask. Save the thought before the quota resets.", menuBarText: "Write a note", emoji: "📝"),
+    BreakSuggestion(title: "Check posture", detail: "Reset your posture, unclench your jaw, and pretend ergonomics is a feature.", menuBarText: "Check posture", emoji: "🪑")
+]
 
 func svgPath(_ raw: String, in rect: CGRect, viewBox: CGSize) -> Path {
     let tokens = raw.replacingOccurrences(of: "Z", with: " Z ")
@@ -146,5 +273,3 @@ func svgPath(_ raw: String, in rect: CGRect, viewBox: CGSize) -> Path {
 
     return path
 }
-
-

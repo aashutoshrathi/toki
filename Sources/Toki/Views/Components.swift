@@ -2,10 +2,17 @@ import SwiftUI
 
 // MARK: - StatBlock
 
+struct StatBlockAction {
+    var systemImage: String
+    var help: String
+    var perform: () -> Void
+}
+
 struct StatBlock: View {
     var title: String
     var value: String
     var systemImage: String
+    var action: StatBlockAction?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -17,6 +24,8 @@ struct StatBlock: View {
                 Text(title)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(value)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -24,6 +33,18 @@ struct StatBlock: View {
                     .minimumScaleFactor(0.75)
             }
             Spacer(minLength: 0)
+            if let action {
+                Button(action: action.perform) {
+                    Image(systemName: action.systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 22, height: 22)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .help(action.help)
+                .accessibilityLabel(action.help)
+                .pointerOnHover()
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)

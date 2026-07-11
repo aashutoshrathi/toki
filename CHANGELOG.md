@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0 - 2026-07-11
+
+### Added
+
+- Smart recommendation panel that suggests the healthiest AI coding account to use next.
+- One-click switch to the recommended Claude Code account from the overview (Claude Code accounts only, via `claude-swap`).
+- Native low-quota and session-warning notifications with DND mode, cooldowns, and local event history.
+- Local usage history retained in `~/.toki/usage-state.json`.
+- Session mode for tracking quota burn during focused coding work.
+- Settings tab for notifications, DND, thresholds, history retention, and menu bar display mode.
+- Menu bar display modes for smart, lowest, Claude, Codex, combined, or account-count status.
+
 ## 2.0.5 - 2026-07-08
 
 ### Changed

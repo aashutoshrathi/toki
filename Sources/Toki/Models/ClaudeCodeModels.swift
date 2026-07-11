@@ -58,9 +58,8 @@ struct ClaudeCodeUsage {
         if let sevenDay = data["seven_day"] as? [String: Any] {
             appendWindow("7d", sevenDay)
         }
-        if let extraUsage = data["extra_usage"] as? [String: Any],
-           (extraUsage["is_enabled"] as? Bool) == true {
-            appendSpend(extraUsage)
+        if let extraUsage = data["extra_usage"] as? [String: Any] {
+            appendExtraUsage(extraUsage)
         }
     }
 
@@ -89,19 +88,24 @@ struct ClaudeCodeUsage {
         metrics.append(MetricLine(label: label, value: value))
     }
 
-    private mutating func appendSpend(_ extraUsage: [String: Any]) {
-        guard let usedCents = optionalNumber(extraUsage["used_credits"]),
-              let limitCents = optionalNumber(extraUsage["monthly_limit"]),
-              let utilization = optionalNumber(extraUsage["utilization"]) else {
+    private mutating func appendExtraUsage(_ extraUsage: [String: Any]) {
+        guard (extraUsage["is_enabled"] as? Bool) == true else {
+            metrics.append(MetricLine(label: "Extra", value: "Disabled"))
             return
         }
 
+        guard let usedCents = optionalNumber(extraUsage["used_credits"]),
+              let limitCents = optionalNumber(extraUsage["monthly_limit"]),
+              let utilization = optionalNumber(extraUsage["utilization"]) else {
+            metrics.append(MetricLine(label: "Extra", value: "Enabled"))
+            return
+        }
         var value = "\(formatUSD(usedCents / 100)) / \(formatUSD(limitCents / 100))"
         value += " - \(Int(utilization.rounded()))%"
         if let reset = resetDescription(extraUsage["resets_at"]) {
             value += " - resets \(reset)"
         }
-        metrics.append(MetricLine(label: "Spend", value: value))
+        metrics.append(MetricLine(label: "Extra", value: value))
     }
 }
 
@@ -115,4 +119,5 @@ struct MenuBarStatusEntry: Identifiable {
     var id: Provider { provider }
     var provider: Provider
     var value: String
+    var leadingText: String? = nil
 }

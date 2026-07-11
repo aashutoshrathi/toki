@@ -148,10 +148,14 @@ enum UsageFetcher {
         case .claudeCode:
             let snapshots = previousByID.values
                 .filter { $0.provider == .claudeCode && ($0.id == account.id || $0.id.hasPrefix("claude-")) }
+                .filter { !$0.isLoadingPlaceholder }
                 .sorted { $0.id < $1.id }
             return snapshots.isEmpty ? nil : snapshots
         default:
-            return previousByID[account.id].map { [$0] }
+            guard let snapshot = previousByID[account.id], !snapshot.isLoadingPlaceholder else {
+                return nil
+            }
+            return [snapshot]
         }
     }
 

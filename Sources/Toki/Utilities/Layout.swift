@@ -9,5 +9,5 @@ func popoverHeight() -> CGFloat {
 }
 
 func accountListHeight() -> CGFloat {
-    max(240, popoverHeight() - 78)
+    max(170, popoverHeight() - 202)
 }

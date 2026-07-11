@@ -9,9 +9,10 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.0.1" src="https://img.shields.io/badge/version-2.0.1-2f80ed">
+  <img alt="Version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
+  <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
 </p>
 
 <p align="center">
@@ -38,6 +39,12 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Inactive Claude account lookup from macOS Keychain service `claude-swap`.
 - Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
 - Codex usage and rate-limit display through the local Codex app-server.
+- Smart recommendation panel for which coding account to use next.
+- One-click switch to the recommended Claude Code account, straight from the overview (Claude Code accounts only, via `claude-swap`).
+- Native low-quota notifications with cooldowns, DND mode, and local event history.
+- Local usage history so recent quota movement is visible without opening provider tools.
+- Session mode for tracking quota burn during a focused coding run.
+- Menu bar display modes for smart, lowest, Claude, Codex, combined, or account-count status.
 - Inline account aliases so long emails can become readable names.
 - Switch button for inactive Claude Code accounts via `claude-swap --switch-to`.
 - Optional manual ledgers for consumer plans where exact provider APIs are not available.
@@ -131,6 +138,20 @@ Minimal Claude Code plus Codex config:
 
 `refreshMinutes` defaults to `5`. API-backed providers refresh stale-while-revalidate style: Toki keeps the last visible usage while refreshing in the background. Automatic refreshes pace Claude Code API calls at 7.5 minutes to reduce early `429` responses, while Codex uses the 5-minute cadence. Opening the popover or pressing reload can refresh sooner, but still keeps a 1-minute minimum between provider API calls. If a provider returns `429`, Toki keeps showing the last good usage snapshot.
 
+### Smart Recommendations, Notifications, and History
+
+Toki keeps v2.1 preferences, notification cooldowns, event history, usage history, and session state in:
+
+```text
+~/.toki/usage-state.json
+```
+
+The Settings tab controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
+
+The recommendation panel picks the healthiest available account from live snapshots. For Claude Code multi-account setups, it can switch to the recommended inactive account through the same configured `claude-swap --switch-to` path used by account rows.
+
+Session mode records starting quota for visible accounts, then shows burn during the current coding session and logs session warning events when quota drops sharply or crosses the configured warning threshold.
+
 ### Environment Overrides
 
 ```sh
@@ -206,6 +227,7 @@ Toki keeps backwards-compatible config fallbacks for the old TokenBar name, but 
 - `Claude Code usage unavailable`: Anthropic did not return usage data for that account. Try refreshing later or check the account in Claude Code.
 - `Codex usage unavailable`: confirm `codex login` has created `~/.codex/auth.json`, then refresh Toki.
 - Switch fails: run `claude-swap --switch-to <slot>` in Terminal to inspect the underlying error.
+- Notifications do not appear: open the Events tab to check whether DND or cooldowns suppressed delivery, then confirm macOS notification permission for Toki.
 
 ## License
 
