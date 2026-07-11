@@ -100,11 +100,14 @@ enum ActiveAgentScanner {
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         try process.run()
+        // Drain the pipe before waiting: ps output exceeds the ~64KB pipe buffer,
+        // so waiting first would deadlock ps against a full, unread pipe.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             throw LocalizedErrorMessage("Process inspection failed")
         }
-        return String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 
