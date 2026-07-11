@@ -7,9 +7,9 @@ struct MenuContentView: View {
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
+        case agents = "Agents"
         case history = "History"
         case events = "Events"
-        case agents = "Agents"
         case settings = "Settings"
 
         var id: String { rawValue }
@@ -32,7 +32,6 @@ struct MenuContentView: View {
                 updateBanner(update)
             }
             overview
-            sessionPanel
             tabBar
             if let configError = store.configError {
                 ErrorBanner(message: configError)
@@ -185,8 +184,23 @@ struct MenuContentView: View {
         HStack(spacing: 8) {
             StatBlock(title: "Use", value: recommendedAgentText, systemImage: "sparkles", action: smartSwitchAction)
                 .help("Recommended account")
-            StatBlock(title: "Lowest", value: lowestRemainingText, systemImage: "gauge.with.dots.needle.bottom.50percent")
             StatBlock(title: "Status", value: store.preferences.dndEnabled ? "DND" : "Ready", systemImage: store.preferences.dndEnabled ? "moon.zzz" : "bell")
+            StatBlock(
+                title: store.session == nil ? "Session" : "Active",
+                value: store.session == nil ? "Off" : sessionDetail,
+                systemImage: store.session == nil ? "timer" : "timer.circle.fill",
+                action: sessionAction
+            )
+            .help(store.session == nil ? "Start session tracking" : sessionDetail)
+        }
+    }
+
+    private var sessionAction: StatBlockAction? {
+        StatBlockAction(
+            systemImage: store.session == nil ? "play.fill" : "stop.fill",
+            help: store.session == nil ? "Start session tracking" : "End session tracking"
+        ) {
+            store.session == nil ? store.startSession() : store.endSession()
         }
     }
 
@@ -198,11 +212,6 @@ struct MenuContentView: View {
         ) {
             store.switchBestAccount()
         }
-    }
-
-    private var lowestRemainingText: String {
-        guard let ratio = store.snapshots.compactMap(\.remainingRatio).min() else { return "--" }
-        return percentText(ratio)
     }
 
     private var recommendedAgentText: String {
@@ -219,42 +228,6 @@ struct MenuContentView: View {
             .replacingOccurrences(of: "Use ", with: "")
             .replacingOccurrences(of: "Switch to ", with: "")
             .replacingOccurrences(of: " now", with: "")
-    }
-
-    private var sessionPanel: some View {
-        HStack(spacing: 8) {
-            Image(systemName: store.session == nil ? "timer" : "timer.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(store.session == nil ? Color.secondary : Color.blue)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(store.session == nil ? "Session mode" : "Session active")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(sessionDetail)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Button {
-                store.session == nil ? store.startSession() : store.endSession()
-            } label: {
-                Image(systemName: store.session == nil ? "play.fill" : "stop.fill")
-            }
-            .buttonStyle(.plain)
-            .frame(width: 25, height: 25)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .help(store.session == nil ? "Start session tracking" : "End session tracking")
-            .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
-            .pointerOnHover()
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
     }
 
     private var tabBar: some View {
