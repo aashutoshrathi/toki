@@ -71,10 +71,11 @@ struct ClaudeCodeUsage {
             utilization: utilization,
             resetDescription: resetDescription(window["resets_at"])
         )
-        metrics.append(MetricLine(label: label, value: "\(Int(utilization.rounded()))% used"))
+        var value = "\(Int(utilization.rounded()))% used"
         if let reset = primaryMetric?.resetDescription {
-            metrics.append(MetricLine(label: "Reset", value: reset))
+            value += " - resets \(reset)"
         }
+        metrics.append(MetricLine(label: label, value: value))
     }
 
     private mutating func appendWindow(_ label: String, _ window: [String: Any]) {
