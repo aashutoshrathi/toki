@@ -44,13 +44,32 @@ func sortedByAvailability(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
         .map(\.element)
 }
 
-func menuBarStatus(for snapshots: [AccountSnapshot]) -> String {
-    let entries = menuBarEntries(for: snapshots)
+func menuBarStatus(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> String {
+    let entries = menuBarEntries(for: snapshots, mode: mode)
     guard !entries.isEmpty else { return "Toki --" }
     return entries.map { "\($0.value)" }.joined(separator: "  ")
 }
 
-func menuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
+func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> [MenuBarStatusEntry] {
+    switch mode {
+    case .smart:
+        return smartMenuBarEntries(for: snapshots)
+    case .lowest:
+        return lowestMenuBarEntries(for: snapshots)
+    case .activeClaude:
+        return snapshots.first { $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError }
+            .map { [menuBarEntry(for: $0)] } ?? []
+    case .codex:
+        return snapshots.first { $0.provider == .codex && !$0.isError }
+            .map { [menuBarEntry(for: $0)] } ?? []
+    case .combined:
+        return smartMenuBarEntries(for: snapshots)
+    case .accounts:
+        return [MenuBarStatusEntry(provider: .manual, value: "\(snapshots.filter { !$0.isError }.count)")]
+    }
+}
+
+private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
     let activeClaude = snapshots.first {
         $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError
     }
@@ -66,6 +85,13 @@ func menuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
     return segments.map(menuBarEntry)
 }
 
+private func lowestMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
+    snapshots
+        .filter { !$0.isError && $0.remainingRatio != nil }
+        .min { ($0.remainingRatio ?? 1) < ($1.remainingRatio ?? 1) }
+        .map { [menuBarEntry(for: $0)] } ?? []
+}
+
 func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
     [
         MenuBarStatusEntry(provider: .claudeCode, value: "--"),
@@ -76,6 +102,60 @@ func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
 func menuBarEntry(for snapshot: AccountSnapshot) -> MenuBarStatusEntry {
     let value = snapshot.remainingRatio.map { "\(Int(($0 * 100).rounded()))%" } ?? "--"
     return MenuBarStatusEntry(provider: snapshot.provider, value: value)
+}
+
+func smartRecommendation(for snapshots: [AccountSnapshot]) -> SmartRecommendation {
+    let usable = snapshots.filter { !$0.isError && $0.remainingRatio != nil }
+    guard let best = usable.max(by: { ($0.remainingRatio ?? 0) < ($1.remainingRatio ?? 0) }) else {
+        return SmartRecommendation(
+            title: "Connect an account",
+            detail: "Toki needs at least one live usage source before it can recommend where to work.",
+            accountID: nil,
+            switchTarget: nil,
+            switchCommand: nil,
+            severity: .neutral
+        )
+    }
+
+    let ratio = best.remainingRatio ?? 0
+    if ratio <= 0.15 {
+        return SmartRecommendation(
+            title: "All coding fuel is low",
+            detail: "Best available is \(best.name) at \(percentText(ratio)). Consider waiting for the next reset.",
+            accountID: best.id,
+            switchTarget: best.switchTarget,
+            switchCommand: best.switchCommand,
+            severity: .critical
+        )
+    }
+
+    if let activeClaude = usable.first(where: { $0.provider.isClaudeAccount && $0.switchTarget == nil }),
+       let bestClaude = usable.filter({ $0.provider.isClaudeAccount }).max(by: { ($0.remainingRatio ?? 0) < ($1.remainingRatio ?? 0) }),
+       bestClaude.id != activeClaude.id,
+       (bestClaude.remainingRatio ?? 0) - (activeClaude.remainingRatio ?? 0) >= 0.20 {
+        return SmartRecommendation(
+            title: "Switch to \(bestClaude.name)",
+            detail: "\(bestClaude.name) has \(percentText(bestClaude.remainingRatio ?? 0)) left versus \(percentText(activeClaude.remainingRatio ?? 0)) on the active Claude account.",
+            accountID: bestClaude.id,
+            switchTarget: bestClaude.switchTarget,
+            switchCommand: bestClaude.switchCommand,
+            severity: .warning
+        )
+    }
+
+    let severity: RecommendationSeverity = ratio <= 0.35 ? .warning : .good
+    return SmartRecommendation(
+        title: "Use \(best.name) now",
+        detail: "\(best.name) has the healthiest available quota at \(percentText(ratio)) remaining.",
+        accountID: best.id,
+        switchTarget: best.switchTarget,
+        switchCommand: best.switchCommand,
+        severity: severity
+    )
+}
+
+func percentText(_ ratio: Double) -> String {
+    "\(Int((max(0, min(1, ratio)) * 100).rounded()))%"
 }
 
 func svgPath(_ raw: String, in rect: CGRect, viewBox: CGSize) -> Path {
@@ -146,5 +226,4 @@ func svgPath(_ raw: String, in rect: CGRect, viewBox: CGSize) -> Path {
 
     return path
 }
-
 
