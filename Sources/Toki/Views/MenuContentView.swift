@@ -119,7 +119,8 @@ struct MenuContentView: View {
 
     private var overview: some View {
         HStack(spacing: 8) {
-            StatBlock(title: "Recommended", value: recommendedAgentText, systemImage: "sparkles")
+            StatBlock(title: "Use", value: recommendedAgentText, systemImage: "sparkles")
+                .help("Recommended account")
             StatBlock(title: "Lowest", value: lowestRemainingText, systemImage: "gauge.with.dots.needle.bottom.50percent")
             StatBlock(title: "Status", value: store.preferences.dndEnabled ? "DND" : "Ready", systemImage: store.preferences.dndEnabled ? "moon.zzz" : "bell")
         }

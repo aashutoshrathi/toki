@@ -17,6 +17,8 @@ struct StatBlock: View {
                 Text(title)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(value)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
