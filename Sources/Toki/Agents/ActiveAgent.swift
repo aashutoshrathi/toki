@@ -5,13 +5,11 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let id: Int32
     let provider: Provider
     let title: String
+    let chatTitle: String?
+    let hostApp: String?
     let processID: Int32
     let runtime: String
     let terminalTTY: String?
-
-    var surface: String {
-        terminalTTY == nil ? "Editor or background process" : "Terminal \(terminalTTY!)"
-    }
 
     // Every agent can be surfaced: TTY-backed ones focus the exact terminal tab,
     // the rest fall back to activating the likely host app.
@@ -84,17 +82,17 @@ enum ActiveAgentScanner {
         }
 
         let tty = ttyValue == "??" || ttyValue == "-" ? nil : ttyValue
-        let title: String
-        if let project = AgentSessionResolver.projectName(pid: pid, command: command) {
-            title = "\(project) (\(provider.displayName))"
-        } else {
-            title = "\(provider.displayName) agent"
-        }
+        let cwd = AgentSessionResolver.workingDirectory(fromCommand: command)
+            ?? AgentSessionResolver.workingDirectory(ofPID: pid)
+        let title = cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
+            ?? "\(provider.displayName) agent"
         return Candidate(
             agent: ActiveAgent(
                 id: pid,
                 provider: provider,
                 title: title,
+                chatTitle: AgentSessionResolver.chatTitle(provider: provider, command: command, cwd: cwd),
+                hostApp: AgentSessionResolver.hostApp(ofPID: pid),
                 processID: pid,
                 runtime: runtime,
                 terminalTTY: tty

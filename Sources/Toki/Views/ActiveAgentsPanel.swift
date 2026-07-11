@@ -37,9 +37,16 @@ struct ActiveAgentsPanel: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(agent.title)
                                             .font(.system(size: 12, weight: .semibold))
-                                        Text("PID \(agent.processID) • \(agent.runtime) • \(agent.surface)")
-                                            .font(.system(size: 9, design: .monospaced))
-                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                        if let chat = agent.chatTitle {
+                                            Text(chat)
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        Text(agentDetail(agent))
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(.tertiary)
                                             .lineLimit(1)
                                     }
                                     Spacer()
@@ -62,5 +69,10 @@ struct ActiveAgentsPanel: View {
             }
         }
         .frame(maxHeight: accountListHeight())
+    }
+
+    private func agentDetail(_ agent: ActiveAgent) -> String {
+        let host = agent.hostApp ?? (agent.hasTerminalTarget ? "Terminal" : "Editor or background")
+        return "\(host) • Click to open"
     }
 }

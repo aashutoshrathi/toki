@@ -5,15 +5,105 @@ import Foundation
 // cwd) is the reliable distinguishing signal across Claude Code sessions - session
 // files carry no dependable conversation title.
 enum AgentSessionResolver {
-    // Returns the last path component of the agent's working directory, or nil when it
-    // can't be recovered. Tries the (free) command string first, then falls back to
-    // asking the kernel for the process's actual cwd via lsof - most agents (bare
-    // `claude`, editor-hosted) carry no directory hint in their args.
-    static func projectName(pid: Int32, command: String) -> String? {
-        let cwd = workingDirectory(fromCommand: command) ?? workingDirectory(ofPID: pid)
+    // The human/AI-assigned conversation title, if the provider records one.
+    static func chatTitle(provider: Provider, command: String, cwd: String?) -> String? {
+        switch provider {
+        case .claudeCode, .claude, .anthropic:
+            return claudeChatTitle(command: command, cwd: cwd)
+        case .openCode:
+            return openCodeChatTitle(cwd: cwd)
+        default:
+            return nil
+        }
+    }
+
+    private static func claudeChatTitle(command: String, cwd: String?) -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        // Prefer the explicit session id from args; else the newest session in the project dir.
+        let sessionFile: String?
+        if let sid = firstMatch(in: command, pattern: #"--session-id\s+([a-f0-9-]+)"#) {
+            sessionFile = firstMatch(in: command, pattern: #"(/[^\s]*\#(sid)\.jsonl)"#)
+                ?? findSessionFile(sid: sid, home: home, cwd: cwd)
+        } else if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
+            sessionFile = resume
+        } else {
+            sessionFile = newestSessionFile(home: home, cwd: cwd)
+        }
+        guard let file = sessionFile, let contents = try? String(contentsOfFile: file, encoding: .utf8) else { return nil }
+        // aiTitle is rewritten as the conversation evolves; the last one is current.
+        var latest: String?
+        for line in contents.split(separator: "\n") {
+            if let title = firstMatch(in: String(line), pattern: #""aiTitle"\s*:\s*"([^"]+)""#) {
+                latest = title
+            }
+        }
+        return latest
+    }
+
+    private static func findSessionFile(sid: String, home: String, cwd: String?) -> String? {
         guard let cwd else { return nil }
-        let name = URL(fileURLWithPath: cwd).lastPathComponent
-        return name.isEmpty ? nil : name
+        let encoded = "-" + cwd.split(separator: "/").joined(separator: "-")
+        let path = "\(home)/.claude/projects/\(encoded)/\(sid).jsonl"
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
+    private static func newestSessionFile(home: String, cwd: String?) -> String? {
+        guard let cwd else { return nil }
+        let encoded = "-" + cwd.split(separator: "/").joined(separator: "-")
+        let dir = "\(home)/.claude/projects/\(encoded)"
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(atPath: dir) else { return nil }
+        let jsonls = files.filter { $0.hasSuffix(".jsonl") }.map { "\(dir)/\($0)" }
+        return jsonls.max { lhs, rhs in
+            let l = (try? fm.attributesOfItem(atPath: lhs)[.modificationDate] as? Date) ?? nil
+            let r = (try? fm.attributesOfItem(atPath: rhs)[.modificationDate] as? Date) ?? nil
+            return (l ?? .distantPast) < (r ?? .distantPast)
+        }
+    }
+
+    private static func openCodeChatTitle(cwd: String?) -> String? {
+        guard let cwd else { return nil }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let db = "\(home)/.local/share/opencode/opencode.db"
+        guard FileManager.default.fileExists(atPath: db) else { return nil }
+        let escaped = cwd.replacingOccurrences(of: "'", with: "''")
+        let query = "SELECT title FROM session WHERE directory='\(escaped)' AND title != '' ORDER BY time_updated DESC LIMIT 1;"
+        guard let output = try? shellOutput(executable: "/usr/bin/sqlite3", arguments: ["-readonly", db, query]) else { return nil }
+        let title = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : title
+    }
+
+    // Walks the process's ancestry to name the app hosting it (editor or terminal).
+    // Returns a friendly name ("VS Code", "iTerm", "Terminal") or nil if unrecognised.
+    static func hostApp(ofPID pid: Int32) -> String? {
+        var current = pid
+        for _ in 0..<8 {
+            guard let output = try? shellOutput(
+                executable: "/bin/ps",
+                arguments: ["-o", "ppid=,comm=", "-p", "\(current)"]
+            ) else { return nil }
+            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = trimmed.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
+            guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
+            let comm = String(parts[1]).lowercased()
+            if let app = friendlyHostName(comm) { return app }
+            if ppid <= 1 { return nil }
+            current = ppid
+        }
+        return nil
+    }
+
+    private static func friendlyHostName(_ comm: String) -> String? {
+        if comm.contains("code - insiders") { return "VS Code Insiders" }
+        if comm.contains("code helper") || comm.contains("visual studio code") || comm == "code" || comm.contains("electron") && comm.contains("code") { return "VS Code" }
+        if comm.contains("cursor") { return "Cursor" }
+        if comm.contains("iterm") { return "iTerm" }
+        if comm.contains("wezterm") { return "WezTerm" }
+        if comm.contains("alacritty") { return "Alacritty" }
+        if comm.contains("kitty") { return "kitty" }
+        if comm.contains("ghostty") { return "Ghostty" }
+        if comm.contains("terminal") { return "Terminal" }
+        return nil
     }
 
     static func workingDirectory(ofPID pid: Int32) -> String? {
