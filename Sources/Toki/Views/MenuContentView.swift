@@ -2,12 +2,14 @@ import SwiftUI
 
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
+    @ObservedObject var updateChecker: UpdateChecker
     @State private var selectedTab: TokiTab = .accounts
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
         case history = "History"
         case events = "Events"
+        case agents = "Agents"
         case settings = "Settings"
 
         var id: String { rawValue }
@@ -17,6 +19,7 @@ struct MenuContentView: View {
             case .accounts: return "person.2"
             case .history: return "chart.line.uptrend.xyaxis"
             case .events: return "bell.badge"
+            case .agents: return "terminal"
             case .settings: return "slider.horizontal.3"
             }
         }
@@ -25,6 +28,9 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if let update = updateChecker.availableUpdate {
+                updateBanner(update)
+            }
             overview
             sessionPanel
             tabBar
@@ -40,6 +46,64 @@ struct MenuContentView: View {
         .padding(12)
         .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
         .background(.regularMaterial)
+    }
+
+    private func updateBanner(_ update: AvailableUpdate) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Toki \(update.version) is available")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(updateChecker.isInstalling ? "Downloading and verifying update…" : "Install the latest GitHub release.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    updateChecker.installUpdate()
+                } label: {
+                    if updateChecker.isInstalling {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Update")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(updateChecker.isInstalling)
+
+                Button {
+                    updateChecker.dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Dismiss this version")
+                .accessibilityLabel("Dismiss update notification")
+            }
+
+            if let error = updateChecker.installError {
+                Text(error)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.blue.opacity(0.28), lineWidth: 1)
+        )
     }
 
     private var header: some View {
@@ -225,6 +289,8 @@ struct MenuContentView: View {
             HistoryPanel(store: store)
         case .events:
             EventPanel(store: store)
+        case .agents:
+            ActiveAgentsPanel(store: store)
         case .settings:
             SettingsPanel(store: store)
         }

@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <strong>A tiny macOS menu bar balance sheet for Claude Code and Codex usage.</strong>
+  <strong>A tiny macOS menu bar companion for AI coding agents and usage.</strong>
 </p>
 
 <p align="center">
-  <img alt="Version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-2f80ed">
+  <img alt="Version 2.1.1" src="https://img.shields.io/badge/version-2.1.1-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
@@ -25,7 +25,7 @@
 
 ## Why Toki
 
-Toki is built for people who jump between Claude Code and Codex during the day and want a fast, local answer to: "how much coding fuel do I have left?"
+Toki is built for people who jump between Claude Code, Codex, Copilot, and OpenCode during the day and want a fast, local view of usage and active agents.
 
 It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
 
@@ -39,6 +39,10 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Inactive Claude account lookup from macOS Keychain service `claude-swap`.
 - Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
 - Codex usage and rate-limit display through the local Codex app-server.
+- Copilot and OpenCode manual usage ledgers when exact personal quota APIs are unavailable.
+- Active-agent discovery for Codex, Claude Code, Copilot CLI, and OpenCode, including PID, runtime, terminal metadata, and best-effort navigation back to the running terminal tab.
+- GitHub release checks with one-click, verified DMG installation and relaunch.
+- Privacy-safe rotating diagnostics in `~/.toki/logs/` with an attached debug-report share action.
 - Smart recommendation panel for which coding account to use next.
 - One-click switch to the recommended Claude Code account, straight from the overview (Claude Code accounts only, via `claude-swap`).
 - Native low-quota notifications with cooldowns, DND mode, and local event history.
@@ -57,6 +61,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Claude Code installed and authenticated.
 - `claude-swap` installed and configured for multi-account Claude workflows.
 - Codex installed and authenticated for Codex usage.
+- Copilot CLI or OpenCode installed when using active-agent discovery for those tools.
 
 macOS may ask for Keychain access the first time Toki reads Claude Code or `claude-swap` credentials.
 
@@ -129,6 +134,23 @@ Minimal Claude Code plus Codex config:
       "name": "Codex",
       "provider": "codex",
       "codexAuthPath": "~/.codex/auth.json"
+    },
+    {
+      "id": "copilot",
+      "name": "Copilot",
+      "provider": "copilot",
+      "limitLabel": "premium requests",
+      "used": 0,
+      "limit": 300,
+      "resetEveryHours": 744
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "provider": "openCode",
+      "limitLabel": "budget units",
+      "used": 0,
+      "limit": 100
     }
   ]
 }
@@ -147,6 +169,14 @@ Toki keeps v2.1 preferences, notification cooldowns, event history, usage histor
 ```
 
 The Settings tab controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
+
+The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. When an agent has a terminal TTY, clicking it attempts to select the matching iTerm2 or Terminal tab. For editor-hosted and background processes, Toki can only activate a likely host application because VS Code does not expose a stable process-to-window mapping.
+
+### Updates and Diagnostics
+
+On launch, Toki checks the latest public GitHub release. A newer release shows an Update button that downloads its DMG, verifies the `local.toki` bundle identity, version, and code signature, stages the app, replaces the installed bundle after Toki exits, and relaunches it. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` when developing to preview the banner without publishing a release.
+
+Toki writes rotating diagnostics to `~/.toki/logs/toki.log`. These logs contain app-level error categories and status codes only; they exclude credentials, account configuration, prompts, session titles, workspace names, and full file paths. “Send debug report” in Settings creates a local text attachment and opens the macOS share picker. Toki never sends the report automatically.
 
 The recommendation panel picks the healthiest available account from live snapshots. For Claude Code multi-account setups, it can switch to the recommended inactive account through the same configured `claude-swap --switch-to` path used by account rows.
 

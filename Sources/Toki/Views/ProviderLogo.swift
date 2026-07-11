@@ -18,6 +18,14 @@ struct ProviderLogo: View {
             case .openai, .chatgpt:
                 OpenAILogoMark()
                     .foregroundStyle(Color.primary)
+            case .copilot:
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    .font(.system(size: size * 0.72, weight: .bold))
+                    .foregroundStyle(Color(red: 0.55, green: 0.45, blue: 0.95))
+            case .openCode:
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: size * 0.72, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.72, blue: 0.48))
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)

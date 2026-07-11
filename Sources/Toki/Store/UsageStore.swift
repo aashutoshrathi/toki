@@ -14,6 +14,7 @@ final class UsageStore: ObservableObject {
     @Published var events: [TokiEvent] = []
     @Published var history: [UsageHistoryEntry] = []
     @Published var session: SessionState?
+    @Published var activeAgents: [ActiveAgent] = []
     @Published var recommendation = SmartRecommendation(
         title: "Loading",
         detail: "Checking account quota.",
@@ -30,9 +31,20 @@ final class UsageStore: ObservableObject {
     private var isRefreshing = false
     private var eventGeneration = 0
     private var notificationAuthorization: Bool?
+    private var agentTimer: Timer?
 
     init() {
         reloadConfig()
+        refreshActiveAgents()
+        agentTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshActiveAgents() }
+        }
+    }
+
+    func refreshActiveAgents() {
+        Task {
+            activeAgents = await ActiveAgentScanner.scan()
+        }
     }
 
     var refreshInterval: TimeInterval {
@@ -51,6 +63,7 @@ final class UsageStore: ObservableObject {
             scheduleRefresh()
             refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
         } catch {
+            DiagnosticLogger.shared.record(.error, component: "config", code: "load_failed", detail: diagnosticErrorDetail(error))
             config = nil
             configError = error.localizedDescription
             snapshots = [
@@ -101,7 +114,7 @@ final class UsageStore: ObservableObject {
             let errorCount = sorted.filter(\.isError).count
             logDebug("Refresh complete: \(sorted.count) accounts (\(errorCount) errors)")
             for snapshot in sorted where snapshot.isError {
-                logDebug("  [\(snapshot.id)] \(snapshot.name): \(snapshot.subtitle)")
+                logDebug("  \(snapshot.provider.displayName): unavailable")
             }
             recordHistory(for: sorted, at: response.fetchedAt)
             evaluateEventsAndNotifications(for: sorted, previous: previousSnapshots, at: response.fetchedAt)
@@ -174,6 +187,7 @@ final class UsageStore: ObservableObject {
                 return updated
             }
         } catch {
+            DiagnosticLogger.shared.record(.error, component: "config", code: "alias_save_failed", detail: diagnosticErrorDetail(error))
             configError = "Could not save alias: \(error.localizedDescription)"
         }
     }
@@ -263,6 +277,7 @@ final class UsageStore: ObservableObject {
                 appendEvent(kind: .switchAccount, title: "Account switched", detail: "Claude Code switched to \(target).", deliveredNotification: false)
                 reloadConfig()
             case .failure(let error):
+                DiagnosticLogger.shared.record(.error, component: "account_switch", code: "switch_failed", detail: diagnosticErrorDetail(error))
                 appendEvent(kind: .switchAccount, title: "Switch failed", detail: error.localizedDescription, deliveredNotification: false)
                 snapshots = currentSnapshots.map { snapshot in
                     guard snapshot.switchTarget == target else { return snapshot }

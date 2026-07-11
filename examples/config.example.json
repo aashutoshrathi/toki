@@ -37,6 +37,25 @@
       "limit": 80,
       "resetEveryHours": 3,
       "notes": "Optional local ledger for consumer plans when an official usage API is unavailable."
+    },
+    {
+      "id": "copilot-manual",
+      "name": "Copilot",
+      "provider": "copilot",
+      "limitLabel": "premium requests",
+      "used": 0,
+      "limit": 300,
+      "resetEveryHours": 744,
+      "notes": "Optional local ledger; GitHub does not expose personal premium-request quota through the public Copilot metrics API."
+    },
+    {
+      "id": "opencode-manual",
+      "name": "OpenCode",
+      "provider": "openCode",
+      "limitLabel": "budget units",
+      "used": 0,
+      "limit": 100,
+      "notes": "Optional local ledger; OpenCode can use multiple providers with different billing models."
     }
   ]
 }

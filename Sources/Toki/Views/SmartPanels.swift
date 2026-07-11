@@ -201,6 +201,26 @@ struct SettingsPanel: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .pointerOnHover()
+
+                HStack(spacing: 8) {
+                    Button {
+                        DiagnosticsReporter.presentSharePicker()
+                    } label: {
+                        Label("Send debug report", systemImage: "paperclip")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .pointerOnHover()
+
+                    Button {
+                        DiagnosticsReporter.openLogFolder()
+                    } label: {
+                        Label("Logs", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .pointerOnHover()
+                }
             }
             .font(.system(size: 12))
             .padding(8)

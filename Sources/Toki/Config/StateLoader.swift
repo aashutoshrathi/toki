@@ -20,20 +20,27 @@ enum StateLoader {
 
     static func load() -> UsageState {
         let path = Self.path
-        guard FileManager.default.fileExists(atPath: path),
-              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-              let state = try? JSONDecoder.toki.decode(UsageState.self, from: data) else {
+        guard FileManager.default.fileExists(atPath: path) else {
             return UsageState()
         }
-        return state
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            return try JSONDecoder.toki.decode(UsageState.self, from: data)
+        } catch {
+            DiagnosticLogger.shared.record(.error, component: "state", code: "load_failed", detail: diagnosticErrorDetail(error))
+            return UsageState()
+        }
     }
 
     static func save(_ state: UsageState) {
         let path = Self.path
         let url = URL(fileURLWithPath: path)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = try? JSONEncoder.toki.encode(state) {
-            try? data.write(to: url, options: .atomic)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONEncoder.toki.encode(state)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            DiagnosticLogger.shared.record(.error, component: "state", code: "save_failed", detail: diagnosticErrorDetail(error))
         }
     }
 }

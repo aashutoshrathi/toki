@@ -7,6 +7,8 @@ enum Provider: String, Codable {
     case chatgpt
     case claude
     case claudeCode
+    case copilot
+    case openCode
     case manual
 
     var displayName: String {
@@ -17,13 +19,15 @@ enum Provider: String, Codable {
         case .chatgpt: return "ChatGPT"
         case .claude: return "Claude"
         case .claudeCode: return "Claude Code"
+        case .copilot: return "Copilot"
+        case .openCode: return "OpenCode"
         case .manual: return "Manual"
         }
     }
 
     var isConsumerTracked: Bool {
         switch self {
-        case .chatgpt, .claude, .manual: return true
+        case .chatgpt, .claude, .copilot, .openCode, .manual: return true
         case .openai, .codex, .anthropic, .claudeCode: return false
         }
     }

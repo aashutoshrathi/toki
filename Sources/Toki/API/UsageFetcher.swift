@@ -83,7 +83,7 @@ enum UsageFetcher {
             switch account.provider {
             case .claudeCode:
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
-            case .chatgpt, .claude, .manual:
+            case .chatgpt, .claude, .copilot, .openCode, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
             case .openai:
                 snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
@@ -108,13 +108,19 @@ enum UsageFetcher {
             }
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         } catch {
+            DiagnosticLogger.shared.record(
+                .error,
+                component: "usage",
+                code: "provider_fetch_failed",
+                detail: "provider=\(account.provider.rawValue) \(diagnosticErrorDetail(error))"
+            )
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         }
     }
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic:
             return "\(account.provider.rawValue):\(account.id)"
@@ -138,7 +144,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .manual:
             return 0
         }
     }
