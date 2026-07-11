@@ -11,10 +11,22 @@ struct ProviderLogo: View {
         Group {
             switch provider {
             case .claude, .claudeCode, .anthropic:
-                ClaudeLogoMark()
-                    .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                SVGLogoMark(asset: "claude-logo", size: size) {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: size * 0.72, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                }
             case .codex:
-                CodexLogoMark(size: size)
+                SVGLogoMark(asset: "codex-logo", size: size) {
+                    OpenAILogoMark()
+                        .foregroundStyle(Color(red: 0.48, green: 0.61, blue: 1))
+                }
+            case .openCode:
+                SVGLogoMark(asset: "opencode-logo", size: size) {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: size * 0.72, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.20, green: 0.72, blue: 0.48))
+                }
             case .openai, .chatgpt:
                 OpenAILogoMark()
                     .foregroundStyle(Color.primary)
@@ -22,10 +34,6 @@ struct ProviderLogo: View {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: size * 0.72, weight: .bold))
                     .foregroundStyle(Color(red: 0.55, green: 0.45, blue: 0.95))
-            case .openCode:
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: size * 0.72, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.20, green: 0.72, blue: 0.48))
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)
@@ -36,18 +44,51 @@ struct ProviderLogo: View {
     }
 }
 
-// MARK: - Claude Logo
+// MARK: - SVG asset loading
 
-struct ClaudeLogoMark: View {
-    var body: some View {
-        ClaudeLogoShape().fill()
+// Loads named SVGs from the app's Resources folder, cached per name. Drop a
+// `<name>.svg` into Sources/Toki/Resources to add or replace a provider logo.
+enum SVGLogoAsset {
+    @MainActor private static var cache: [String: NSImage] = [:]
+
+    @MainActor static func image(named name: String) -> NSImage? {
+        if let cached = cache[name] { return cached }
+        let executableResourceURL = Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/\(name).svg")
+        let urls = [
+            Bundle.module.url(forResource: name, withExtension: "svg"),
+            Bundle.main.url(forResource: name, withExtension: "svg"),
+            Bundle.main.resourceURL?.appendingPathComponent("\(name).svg"),
+            executableResourceURL
+        ]
+        for url in urls.compactMap({ $0 }) {
+            if let image = NSImage(contentsOf: url) {
+                cache[name] = image
+                return image
+            }
+        }
+        return nil
     }
 }
 
-struct ClaudeLogoShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let rawPath = "M52.4285 162.873L98.7844 136.879L99.5485 134.602L98.7844 133.334H96.4921L88.7237 132.862L62.2346 132.153L39.3113 131.207L17.0249 130.026L11.4214 128.844L6.2 121.873L6.7094 118.447L11.4214 115.257L18.171 115.847L33.0711 116.911L55.485 118.447L71.6586 119.392L95.728 121.873H99.5485L100.058 120.337L98.7844 119.392L97.7656 118.447L74.5877 102.732L49.4995 86.1905L36.3823 76.62L29.3779 71.7757L25.8121 67.2858L24.2839 57.3608L30.6515 50.2716L39.3113 50.8623L41.4763 51.4531L50.2636 58.1879L68.9842 72.7209L93.4357 90.6804L97.0015 93.6343L98.4374 92.6652L98.6571 91.9801L97.0015 89.2625L83.757 65.2772L69.621 40.8192L63.2534 30.6579L61.5978 24.632C60.9565 22.1032 60.579 20.0111 60.579 17.4246L67.8381 7.49965L71.9133 6.19995L81.7193 7.49965L85.7946 11.0443L91.9074 24.9865L101.714 46.8451L116.996 76.62L121.453 85.4816L123.873 93.6343L124.764 96.1155H126.292V94.6976L127.566 77.9197L129.858 57.3608L132.15 30.8942L132.915 23.4505L136.608 14.4708L143.994 9.62643L149.725 12.344L154.437 19.0788L153.8 23.4505L150.998 41.6463L145.522 70.1215L141.957 89.2625H143.994L146.414 86.7813L156.093 74.0206L172.266 53.698L179.398 45.6635L187.803 36.802L193.152 32.5484H203.34L210.726 43.6549L207.415 55.1159L196.972 68.3492L188.312 79.5739L175.896 96.2095L168.191 109.585L168.882 110.689L170.738 110.53L198.755 104.504L213.91 101.787L231.994 98.7149L240.144 102.496L241.036 106.395L237.852 114.311L218.495 119.037L195.826 123.645L162.07 131.592L161.696 131.893L162.137 132.547L177.36 133.925L183.855 134.279H199.774L229.447 136.524L237.215 141.605L241.8 147.867L241.036 152.711L229.065 158.737L213.019 154.956L175.45 145.977L162.587 142.787H160.805V143.85L171.502 154.366L191.242 172.089L215.82 195.011L217.094 200.682L213.91 205.172L210.599 204.699L188.949 188.394L180.544 181.069L161.696 165.118H160.422V166.772L164.752 173.152L187.803 207.771L188.949 218.405L187.294 221.832L181.308 223.959L174.813 222.777L161.187 203.754L147.305 182.486L136.098 163.345L134.745 164.2L128.075 235.42L125.6..."
-        return svgPath(rawPath, in: rect, viewBox: CGSize(width: 248, height: 248))
+struct SVGLogoMark<Fallback: View>: View {
+    var asset: String
+    var size: CGFloat
+    @ViewBuilder var fallback: () -> Fallback
+
+    var body: some View {
+        Group {
+            if let image = SVGLogoAsset.image(named: asset) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                fallback()
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 
@@ -67,97 +108,21 @@ struct OpenAILogoMark: View {
     }
 }
 
-// MARK: - Codex Logo
-
-enum CodexLogoAsset {
-    @MainActor static let image: NSImage? = loadImage()
-
-    private static func loadImage() -> NSImage? {
-        let executableResourceURL = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Resources/codex-logo.svg")
-        let urls = [
-            Bundle.module.url(forResource: "codex-logo", withExtension: "svg"),
-            Bundle.main.url(forResource: "codex-logo", withExtension: "svg"),
-            Bundle.main.resourceURL?.appendingPathComponent("codex-logo.svg"),
-            executableResourceURL
-        ]
-
-        for url in urls.compactMap({ $0 }) {
-            if let image = NSImage(contentsOf: url) {
-                return image
-            }
-        }
-        return nil
-    }
-}
-
-struct CodexLogoMark: View {
-    var size: CGFloat
-
-    var body: some View {
-        Group {
-            if let image = CodexLogoAsset.image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                OpenAILogoMark()
-                    .foregroundStyle(Color(red: 0.48, green: 0.61, blue: 1))
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityLabel("Codex")
-    }
-}
-
 // MARK: - Toki Logo
-
-enum TokiLogoAsset {
-    @MainActor static let image: NSImage? = loadImage()
-
-    private static func loadImage() -> NSImage? {
-        let executableResourceURL = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Resources/toki-logo.svg")
-        let urls = [
-            Bundle.module.url(forResource: "toki-logo", withExtension: "svg"),
-            Bundle.main.url(forResource: "toki-logo", withExtension: "svg"),
-            Bundle.main.resourceURL?.appendingPathComponent("toki-logo.svg"),
-            executableResourceURL
-        ]
-
-        for url in urls.compactMap({ $0 }) {
-            if let image = NSImage(contentsOf: url) {
-                return image
-            }
-        }
-        return nil
-    }
-}
 
 struct TokiLogoMark: View {
     var size: CGFloat
 
     var body: some View {
-        Group {
-            if let image = TokiLogoAsset.image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                ZStack {
-                    RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
-                        .fill(Color.primary.opacity(0.08))
-                    Image(systemName: "wallet.pass")
-                        .font(.system(size: size * 0.48, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
+        SVGLogoMark(asset: "toki-logo", size: size) {
+            ZStack {
+                RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                    .fill(Color.primary.opacity(0.08))
+                Image(systemName: "wallet.pass")
+                    .font(.system(size: size * 0.48, weight: .semibold))
+                    .foregroundStyle(.primary)
             }
         }
-        .frame(width: size, height: size)
         .accessibilityLabel("/toki")
     }
 }
