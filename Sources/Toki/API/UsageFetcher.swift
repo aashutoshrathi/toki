@@ -148,11 +148,19 @@ enum UsageFetcher {
         case .claudeCode:
             let snapshots = previousByID.values
                 .filter { $0.provider == .claudeCode && ($0.id == account.id || $0.id.hasPrefix("claude-")) }
+                .filter { !isLoadingSnapshot($0) }
                 .sorted { $0.id < $1.id }
             return snapshots.isEmpty ? nil : snapshots
         default:
-            return previousByID[account.id].map { [$0] }
+            guard let snapshot = previousByID[account.id], !isLoadingSnapshot(snapshot) else {
+                return nil
+            }
+            return [snapshot]
         }
+    }
+
+    private static func isLoadingSnapshot(_ snapshot: AccountSnapshot) -> Bool {
+        snapshot.primary == "Refreshing" && snapshot.metrics.isEmpty && snapshot.remainingRatio == nil
     }
 
     private static func containsRateLimit(_ snapshots: [AccountSnapshot]) -> Bool {
