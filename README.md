@@ -12,6 +12,7 @@
   <img alt="Version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
+  <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
 </p>
 
 <p align="center">
@@ -39,7 +40,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
 - Codex usage and rate-limit display through the local Codex app-server.
 - Smart recommendation panel for which coding account to use next.
-- One-click best-account switching for Claude Code accounts discovered through `claude-swap`.
+- One-click switch to the recommended Claude Code account, straight from the overview (Claude Code accounts only, via `claude-swap`).
 - Native low-quota notifications with cooldowns, DND mode, and local event history.
 - Local usage history so recent quota movement is visible without opening provider tools.
 - Session mode for tracking quota burn during a focused coding run.

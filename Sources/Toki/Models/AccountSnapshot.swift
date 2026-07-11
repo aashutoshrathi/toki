@@ -23,12 +23,18 @@ struct AccountSnapshot: Identifiable, Hashable {
     var emoji: String?
     var colorHex: String?
 
+    static let loadingPrimary = "Refreshing"
+
+    var isLoadingPlaceholder: Bool {
+        primary == AccountSnapshot.loadingPrimary && metrics.isEmpty && remainingRatio == nil
+    }
+
     static func loading(for account: AccountConfig) -> AccountSnapshot {
         AccountSnapshot(
             id: account.id,
             name: account.name,
             provider: account.provider,
-            primary: "Refreshing",
+            primary: loadingPrimary,
             subtitle: account.provider.displayName,
             remainingRatio: nil,
             progressRatio: nil,

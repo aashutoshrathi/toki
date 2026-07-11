@@ -44,12 +44,6 @@ func sortedByAvailability(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
         .map(\.element)
 }
 
-func menuBarStatus(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> String {
-    let entries = menuBarEntries(for: snapshots, mode: mode)
-    guard !entries.isEmpty else { return "Toki --" }
-    return entries.map { "\($0.value)" }.joined(separator: "  ")
-}
-
 func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> [MenuBarStatusEntry] {
     if allTrackedQuotaExhausted(snapshots) {
         let suggestion = currentBreakSuggestion()
@@ -105,7 +99,7 @@ func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
 }
 
 func menuBarEntry(for snapshot: AccountSnapshot) -> MenuBarStatusEntry {
-    let value = snapshot.remainingRatio.map { "\(Int(($0 * 100).rounded()))%" } ?? "--"
+    let value = snapshot.remainingRatio.map(percentText) ?? "--"
     return MenuBarStatusEntry(provider: snapshot.provider, value: value)
 }
 
@@ -146,13 +140,13 @@ func smartRecommendation(for snapshots: [AccountSnapshot]) -> SmartRecommendatio
         )
     }
 
-    if let activeClaude = usable.first(where: { $0.provider.isClaudeAccount && $0.switchTarget == nil }),
-       let bestClaude = usable.filter({ $0.provider.isClaudeAccount }).max(by: { ($0.remainingRatio ?? 0) < ($1.remainingRatio ?? 0) }),
+    if let activeClaude = usable.first(where: { $0.provider == .claudeCode && $0.switchTarget == nil }),
+       let bestClaude = usable.filter({ $0.provider == .claudeCode }).max(by: { ($0.remainingRatio ?? 0) < ($1.remainingRatio ?? 0) }),
        bestClaude.id != activeClaude.id,
        (bestClaude.remainingRatio ?? 0) - (activeClaude.remainingRatio ?? 0) >= 0.20 {
         return SmartRecommendation(
             title: "Switch to \(bestClaude.name)",
-            detail: "\(bestClaude.name) has \(percentText(bestClaude.remainingRatio ?? 0)) left versus \(percentText(activeClaude.remainingRatio ?? 0)) on the active Claude account.",
+            detail: "\(bestClaude.name) has \(percentText(bestClaude.remainingRatio ?? 0)) left versus \(percentText(activeClaude.remainingRatio ?? 0)) on the active Claude Code account.",
             accountID: bestClaude.id,
             switchTarget: bestClaude.switchTarget,
             switchCommand: bestClaude.switchCommand,

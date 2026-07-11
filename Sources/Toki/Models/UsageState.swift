@@ -3,7 +3,6 @@ import Foundation
 struct UsageState: Codable {
     var accounts: [String: AccountUsageState] = [:]
     var apiLastCalledAt: [String: Date] = [:]
-    var notificationLastSentAt: [String: Date] = [:]
     var eventLastRecordedAt: [String: Date] = [:]
     var preferences = AppPreferences()
     var events: [TokiEvent] = []
@@ -13,7 +12,6 @@ struct UsageState: Codable {
     enum CodingKeys: String, CodingKey {
         case accounts
         case apiLastCalledAt
-        case notificationLastSentAt
         case eventLastRecordedAt
         case preferences
         case events
@@ -24,7 +22,6 @@ struct UsageState: Codable {
     init(
         accounts: [String: AccountUsageState] = [:],
         apiLastCalledAt: [String: Date] = [:],
-        notificationLastSentAt: [String: Date] = [:],
         eventLastRecordedAt: [String: Date] = [:],
         preferences: AppPreferences = AppPreferences(),
         events: [TokiEvent] = [],
@@ -33,7 +30,6 @@ struct UsageState: Codable {
     ) {
         self.accounts = accounts
         self.apiLastCalledAt = apiLastCalledAt
-        self.notificationLastSentAt = notificationLastSentAt
         self.eventLastRecordedAt = eventLastRecordedAt
         self.preferences = preferences
         self.events = events
@@ -45,7 +41,6 @@ struct UsageState: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         accounts = try container.decodeIfPresent([String: AccountUsageState].self, forKey: .accounts) ?? [:]
         apiLastCalledAt = try container.decodeIfPresent([String: Date].self, forKey: .apiLastCalledAt) ?? [:]
-        notificationLastSentAt = try container.decodeIfPresent([String: Date].self, forKey: .notificationLastSentAt) ?? [:]
         eventLastRecordedAt = try container.decodeIfPresent([String: Date].self, forKey: .eventLastRecordedAt) ?? [:]
         preferences = try container.decodeIfPresent(AppPreferences.self, forKey: .preferences) ?? AppPreferences()
         events = try container.decodeIfPresent([TokiEvent].self, forKey: .events) ?? []

@@ -79,6 +79,7 @@ struct EventPanel: View {
                 .frame(width: 25, height: 25)
                 .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .help("Clear event history")
+                .accessibilityLabel("Clear event history")
                 .pointerOnHover()
             }
 
@@ -102,6 +103,7 @@ struct EventPanel: View {
                                             Image(systemName: "bell.fill")
                                                 .font(.system(size: 9))
                                                 .foregroundStyle(.blue)
+                                                .accessibilityHidden(true)
                                         }
                                     }
                                     Text(event.detail)
@@ -161,17 +163,20 @@ struct SettingsPanel: View {
                 Toggle("Notifications", isOn: binding(\.notificationsEnabled))
                     .toggleStyle(.switch)
 
-                Toggle("Do not disturb", isOn: binding(\.dndEnabled))
-                    .toggleStyle(.switch)
+                Toggle("Do not disturb", isOn: Binding(
+                    get: { store.preferences.dndEnabled },
+                    set: { store.setDND($0) }
+                ))
+                .toggleStyle(.switch)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Low quota threshold \(Int(store.preferences.lowQuotaThreshold * 100))%")
+                    Text("Low quota threshold \(percentText(store.preferences.lowQuotaThreshold))")
                         .font(.system(size: 11, weight: .semibold))
                     Slider(value: binding(\.lowQuotaThreshold), in: 0.05...0.50, step: 0.05)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Session warning \(Int(store.preferences.sessionWarningThreshold * 100))%")
+                    Text("Session warning \(percentText(store.preferences.sessionWarningThreshold))")
                         .font(.system(size: 11, weight: .semibold))
                     Slider(value: binding(\.sessionWarningThreshold), in: 0.05...0.40, step: 0.05)
                 }

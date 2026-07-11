@@ -5,7 +5,7 @@
 ### Added
 
 - Smart recommendation panel that suggests the healthiest AI coding account to use next.
-- One-click best-account switching for Claude Code accounts discovered through `claude-swap`.
+- One-click switch to the recommended Claude Code account from the overview (Claude Code accounts only, via `claude-swap`).
 - Native low-quota and session-warning notifications with DND mode, cooldowns, and local event history.
 - Local usage history retained in `~/.toki/usage-state.json`.
 - Session mode for tracking quota burn during focused coding work.

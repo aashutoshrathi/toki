@@ -119,16 +119,26 @@ struct MenuContentView: View {
 
     private var overview: some View {
         HStack(spacing: 8) {
-            StatBlock(title: "Use", value: recommendedAgentText, systemImage: "sparkles")
+            StatBlock(title: "Use", value: recommendedAgentText, systemImage: "sparkles", action: smartSwitchAction)
                 .help("Recommended account")
             StatBlock(title: "Lowest", value: lowestRemainingText, systemImage: "gauge.with.dots.needle.bottom.50percent")
             StatBlock(title: "Status", value: store.preferences.dndEnabled ? "DND" : "Ready", systemImage: store.preferences.dndEnabled ? "moon.zzz" : "bell")
         }
     }
 
+    private var smartSwitchAction: StatBlockAction? {
+        guard store.recommendation.switchTarget != nil else { return nil }
+        return StatBlockAction(
+            systemImage: "arrow.triangle.2.circlepath",
+            help: "Switch Claude Code to \(recommendedAgentText)"
+        ) {
+            store.switchBestAccount()
+        }
+    }
+
     private var lowestRemainingText: String {
         guard let ratio = store.snapshots.compactMap(\.remainingRatio).min() else { return "--" }
-        return "\(Int((ratio * 100).rounded()))%"
+        return percentText(ratio)
     }
 
     private var recommendedAgentText: String {
@@ -171,6 +181,7 @@ struct MenuContentView: View {
             .frame(width: 25, height: 25)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help(store.session == nil ? "Start session tracking" : "End session tracking")
+            .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
             .pointerOnHover()
         }
         .padding(.horizontal, 8)
@@ -197,6 +208,7 @@ struct MenuContentView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(selectedTab == tab ? .primary : .secondary)
                 .help(tab.rawValue)
+                .accessibilityLabel(tab.rawValue)
                 .pointerOnHover()
             }
         }

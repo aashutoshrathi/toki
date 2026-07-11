@@ -7,7 +7,6 @@ import SwiftUI
 final class UsageStore: ObservableObject {
     @Published var snapshots: [AccountSnapshot] = []
     @Published var lastUpdated: Date?
-    @Published var statusText = "Loading"
     @Published var configError: String?
     @Published var debugMode = false
     @Published var debugLog: [DebugLogEntry] = []
@@ -29,6 +28,8 @@ final class UsageStore: ObservableObject {
     private var usageState = UsageState()
     private var timer: Timer?
     private var isRefreshing = false
+    private var eventGeneration = 0
+    private var notificationAuthorization: Bool?
 
     init() {
         reloadConfig()
@@ -52,7 +53,6 @@ final class UsageStore: ObservableObject {
         } catch {
             config = nil
             configError = error.localizedDescription
-            statusText = "Config needed"
             snapshots = [
                 AccountSnapshot(
                     id: "config-error",
@@ -76,7 +76,6 @@ final class UsageStore: ObservableObject {
             return
         }
         isRefreshing = true
-        statusText = "Refreshing"
         logDebug("Refresh started")
         if !keepsExistingSnapshots || snapshots.isEmpty {
             snapshots = config.accounts.map(AccountSnapshot.loading)
@@ -220,25 +219,37 @@ final class UsageStore: ObservableObject {
     }
 
     func clearEvents() {
+        eventGeneration += 1
         events = []
         usageState.events = []
+        usageState.eventLastRecordedAt = [:]
         StateLoader.save(usageState)
     }
 
     func switchBestAccount() {
-        let current = smartRecommendation(for: snapshots)
+        let current = recommendation
         guard let target = current.switchTarget else { return }
         appendEvent(
             kind: .switchAccount,
             title: "Smart switch",
-            detail: "Switching to \(current.title.replacingOccurrences(of: "Switch to ", with: "")).",
+            detail: "Switching to \(recommendedAccountName(from: current)).",
             deliveredNotification: false
         )
         switchClaudeAccount(target: target, command: current.switchCommand)
     }
 
+    private func recommendedAccountName(from recommendation: SmartRecommendation) -> String {
+        if let accountID = recommendation.accountID,
+           let snapshot = snapshots.first(where: { $0.id == accountID }) {
+            return snapshot.name
+        }
+        return recommendation.title
+            .replacingOccurrences(of: "Switch to ", with: "")
+            .replacingOccurrences(of: "Use ", with: "")
+            .replacingOccurrences(of: " now", with: "")
+    }
+
     func switchClaudeAccount(target: String, command: String?) {
-        statusText = "Switching"
         let currentSnapshots = snapshots
         Task {
             let result = await Task.detached {
@@ -252,7 +263,6 @@ final class UsageStore: ObservableObject {
                 appendEvent(kind: .switchAccount, title: "Account switched", detail: "Claude Code switched to \(target).", deliveredNotification: false)
                 reloadConfig()
             case .failure(let error):
-                statusText = "Switch failed"
                 appendEvent(kind: .switchAccount, title: "Switch failed", detail: error.localizedDescription, deliveredNotification: false)
                 snapshots = currentSnapshots.map { snapshot in
                     guard snapshot.switchTarget == target else { return snapshot }
@@ -335,7 +345,6 @@ final class UsageStore: ObservableObject {
         if statusEntries.isEmpty {
             statusEntries = menuBarPlaceholderEntries()
         }
-        statusText = menuBarStatus(for: snapshots, mode: preferences.menuBarMode)
         syncPublishedState()
     }
 
@@ -424,10 +433,9 @@ final class UsageStore: ObservableObject {
             return
         }
 
+        let generation = eventGeneration
         deliverNotification(title: title, detail: detail) { delivered, failureDetail in
-            if delivered {
-                self.usageState.notificationLastSentAt[key] = date
-            }
+            guard generation == self.eventGeneration else { return }
             self.appendEvent(
                 kind: kind,
                 title: title,
@@ -443,10 +451,9 @@ final class UsageStore: ObservableObject {
         detail: String,
         completion: @escaping @MainActor (Bool, String?) -> Void
     ) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+        resolveNotificationAuthorization { granted, error in
             if let error {
-                Task { @MainActor in completion(false, error.localizedDescription) }
+                Task { @MainActor in completion(false, error) }
                 return
             }
             guard granted else {
@@ -459,9 +466,24 @@ final class UsageStore: ObservableObject {
             content.body = detail
             content.sound = .default
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request) { error in
+            UNUserNotificationCenter.current().add(request) { error in
                 Task { @MainActor in completion(error == nil, error?.localizedDescription) }
             }
+        }
+    }
+
+    private func resolveNotificationAuthorization(completion: @escaping @Sendable (Bool, String?) -> Void) {
+        if notificationAuthorization == true {
+            completion(true, nil)
+            return
+        }
+        // Only cache a granted result. A denied/undetermined state is re-checked so
+        // enabling notifications in System Settings takes effect without a restart.
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
+            if error == nil && granted {
+                Task { @MainActor in self?.notificationAuthorization = true }
+            }
+            completion(error == nil && granted, error?.localizedDescription)
         }
     }
 
@@ -486,9 +508,9 @@ final class UsageStore: ObservableObject {
 
     private func pruneState(now: Date) {
         let retention = TimeInterval(max(preferences.historyRetentionDays, 1) * 24 * 60 * 60)
-        usageState.history = usageState.history
+        usageState.history = Array(usageState.history
             .filter { now.timeIntervalSince($0.timestamp) <= retention }
-            .suffix(720)
+            .suffix(720))
         usageState.events = Array(usageState.events.suffix(160))
     }
 
