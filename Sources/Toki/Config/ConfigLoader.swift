@@ -29,8 +29,8 @@ enum ConfigLoader {
         guard !config.accounts.isEmpty else {
             throw LocalizedErrorMessage("Config has no accounts")
         }
-        guard !config.accounts.contains(where: { $0.provider == .copilot || $0.provider == .openCode }) else {
-            throw LocalizedErrorMessage("Copilot and OpenCode are detected automatically in the Agents tab and are not usage-ledger accounts")
+        guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
+            throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
         }
         return config
     }

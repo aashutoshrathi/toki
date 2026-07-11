@@ -21,7 +21,7 @@ enum UsageFetcher {
         previousSnapshots: [AccountSnapshot],
         minimumRefreshInterval: TimeInterval?
     ) async -> UsageFetchResponse {
-        let accounts = config.accounts
+        let accounts = accountsIncludingAutoDetected(config.accounts)
         let previousByID = Dictionary(uniqueKeysWithValues: previousSnapshots.map { ($0.id, $0) })
         let fetchedAt = Date()
         return await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
@@ -55,6 +55,16 @@ enum UsageFetcher {
         }
     }
 
+    // Appends a synthetic OpenCode account when its local database exists and the user
+    // hasn't configured one explicitly. Never persisted - detected fresh each fetch.
+    private static func accountsIncludingAutoDetected(_ configured: [AccountConfig]) -> [AccountConfig] {
+        guard !configured.contains(where: { $0.provider == .openCode }),
+              let detected = OpenCodeUsageClient.autoDetectedAccount() else {
+            return configured
+        }
+        return configured + [detected]
+    }
+
     private static func snapshots(
         for account: AccountConfig,
         config: AppConfig,
@@ -85,8 +95,10 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .openCode:
+            case .copilot:
                 snapshots = [agentOnlySnapshot(for: account)]
+            case .openCode:
+                snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
             case .openai:
                 snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
             case .codex:
