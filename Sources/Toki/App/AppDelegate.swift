@@ -28,8 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.delegate = self
 
         Task { @MainActor in
-            for await snapshots in store.$snapshots.values {
-                let entries = menuBarEntries(for: snapshots)
+            for await entries in store.$statusEntries.values {
                 updateStatusItem(entries: entries.isEmpty ? menuBarPlaceholderEntries() : entries)
             }
         }
