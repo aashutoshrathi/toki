@@ -26,7 +26,6 @@ struct MenuContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             overview
-            recommendationPanel
             sessionPanel
             tabBar
             if let configError = store.configError {
@@ -120,9 +119,9 @@ struct MenuContentView: View {
 
     private var overview: some View {
         HStack(spacing: 8) {
-            StatBlock(title: "Accounts", value: "\(store.snapshots.count)", systemImage: "person.2")
+            StatBlock(title: "Recommended", value: recommendedAgentText, systemImage: "sparkles")
             StatBlock(title: "Lowest", value: lowestRemainingText, systemImage: "gauge.with.dots.needle.bottom.50percent")
-            StatBlock(title: store.preferences.dndEnabled ? "DND" : "Alerts", value: store.preferences.dndEnabled ? "On" : "Ready", systemImage: store.preferences.dndEnabled ? "moon.zzz" : "bell")
+            StatBlock(title: "Status", value: store.preferences.dndEnabled ? "DND" : "Ready", systemImage: store.preferences.dndEnabled ? "moon.zzz" : "bell")
         }
     }
 
@@ -131,41 +130,20 @@ struct MenuContentView: View {
         return "\(Int((ratio * 100).rounded()))%"
     }
 
-    private var recommendationPanel: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Image(systemName: recommendationIcon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(recommendationColor)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(store.recommendation.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                Text(store.recommendation.detail)
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 8)
-            if store.recommendation.switchTarget != nil {
-                Button {
-                    store.switchBestAccount()
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                }
-                .buttonStyle(.plain)
-                .frame(width: 25, height: 25)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .help("Switch to recommended Claude account")
-                .pointerOnHover()
-            }
+    private var recommendedAgentText: String {
+        if let accountID = store.recommendation.accountID,
+           let snapshot = store.snapshots.first(where: { $0.id == accountID }) {
+            return snapshot.name
         }
-        .padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(recommendationColor.opacity(0.25), lineWidth: 1)
-        )
+
+        if store.recommendation.title == "Connect an account" {
+            return "Connect"
+        }
+
+        return store.recommendation.title
+            .replacingOccurrences(of: "Use ", with: "")
+            .replacingOccurrences(of: "Switch to ", with: "")
+            .replacingOccurrences(of: " now", with: "")
     }
 
     private var sessionPanel: some View {
@@ -272,24 +250,6 @@ struct MenuContentView: View {
             return "Running for \(elapsed)."
         }
         return "\(elapsed), \(first.value)"
-    }
-
-    private var recommendationIcon: String {
-        switch store.recommendation.severity {
-        case .good: return "checkmark.circle.fill"
-        case .warning: return "exclamationmark.triangle.fill"
-        case .critical: return "xmark.octagon.fill"
-        case .neutral: return "sparkles"
-        }
-    }
-
-    private var recommendationColor: Color {
-        switch store.recommendation.severity {
-        case .good: return .green
-        case .warning: return .orange
-        case .critical: return .red
-        case .neutral: return .blue
-        }
     }
 
     private var debugPanel: some View {
