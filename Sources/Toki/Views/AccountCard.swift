@@ -305,7 +305,7 @@ struct AccountCard: View {
                             }
                             Spacer()
                             if let host = agent.hostApp {
-                                Text(host)
+                                Text(host.displayName)
                                     .font(.system(size: 9))
                                     .foregroundStyle(.tertiary)
                             }
@@ -329,14 +329,11 @@ struct AccountCard: View {
     }
 
     private var currentResetTime: String? {
-        if let resetMetric = snapshot.metrics.first(where: { $0.label == "Reset" }) {
-            return resetMetric.value
+        guard let metric = snapshot.metrics.first(where: { ["Daily", "5h", "Today"].contains($0.label) }),
+              let range = metric.value.range(of: "resets in ") else {
+            return nil
         }
-        if let metric = snapshot.metrics.first(where: { ["Daily", "5h", "Today"].contains($0.label) }),
-           let range = metric.value.range(of: "resets in ") {
-            return "resets in " + metric.value[range.upperBound...]
-        }
-        return nil
+        return String(metric.value[range.lowerBound...])
     }
 
 

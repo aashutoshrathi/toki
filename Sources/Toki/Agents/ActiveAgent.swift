@@ -6,7 +6,7 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let provider: Provider
     let directory: String?
     let chatTitle: String?
-    let hostApp: String?
+    let hostApp: HostApp?
     let lastActivity: Date?
     let processID: Int32
     let runtime: String
@@ -42,63 +42,62 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
 
 enum ActiveAgentScanner {
     private struct Candidate {
-        let agent: ActiveAgent
+        let pid: Int32
         let parentPID: Int32
+        let provider: Provider
+        let command: String
+        let runtime: String
+        let tty: String?
     }
+
+    // Per-PID enrichment cache so a live agent's cwd/host/title are resolved once, not on
+    // every 8s scan. Written only from the serialized detached scan task.
+    private nonisolated(unsafe) static var cache: [Int32: ActiveAgent] = [:]
 
     static func scan() async -> [ActiveAgent] {
         await Task.detached(priority: .utility) {
-            do {
-                let output = try processOutput(
-                    executable: "/bin/ps",
-                    arguments: ["-axo", "pid=,ppid=,tty=,etime=,command="]
-                )
-                let candidates = output.split(separator: "\n").compactMap(parse(line:))
-                let roots = candidates.filter { candidate in
-                    !candidates.contains { possibleParent in
-                        possibleParent.agent.processID == candidate.parentPID
-                            && possibleParent.agent.provider == candidate.agent.provider
-                    }
-                }.map(\.agent)
-                // Most recently active session first; agents without a known
-                // activity time fall to the bottom, tie-broken by provider and PID.
-                return roots.sorted { lhs, rhs in
-                    let l = lhs.lastActivity ?? .distantPast
-                    let r = rhs.lastActivity ?? .distantPast
-                    if l != r { return l > r }
-                    if lhs.provider.displayName != rhs.provider.displayName {
-                        return lhs.provider.displayName < rhs.provider.displayName
-                    }
-                    return lhs.processID < rhs.processID
-                }
-            } catch {
-                DiagnosticLogger.shared.record(.warning, component: "agents", code: "scan_failed", detail: diagnosticErrorDetail(error))
+            guard let output = Shell.output("/bin/ps", ["-axo", "pid=,ppid=,tty=,etime=,command="]) else {
+                DiagnosticLogger.shared.record(.warning, component: "agents", code: "scan_failed")
                 return []
+            }
+            let candidates = output.split(separator: "\n").compactMap(parse(line:))
+            let roots = candidates.filter { candidate in
+                !candidates.contains { possibleParent in
+                    possibleParent.pid == candidate.parentPID && possibleParent.provider == candidate.provider
+                }
+            }
+            let agents = roots.map(enrich)
+            // Drop cache entries for PIDs that are no longer running.
+            let alive = Set(candidates.map(\.pid))
+            cache = cache.filter { alive.contains($0.key) }
+            // Most recently active session first; agents without a known
+            // activity time fall to the bottom, tie-broken by provider and PID.
+            return agents.sorted { lhs, rhs in
+                let l = lhs.lastActivity ?? .distantPast
+                let r = rhs.lastActivity ?? .distantPast
+                if l != r { return l > r }
+                if lhs.provider.displayName != rhs.provider.displayName {
+                    return lhs.provider.displayName < rhs.provider.displayName
+                }
+                return lhs.processID < rhs.processID
             }
         }.value
     }
 
+    // Cheap, I/O-free parse: identify the provider, tty, and lineage from the ps row.
+    // Enrichment (cwd, host, title, activity) happens later, only for root agents.
     private static func parse(line: Substring) -> Candidate? {
         let parts = line.split(maxSplits: 4, whereSeparator: { $0.isWhitespace })
         guard parts.count == 5, let pid = Int32(parts[0]), let parentPID = Int32(parts[1]) else { return nil }
-        let ttyValue = String(parts[2])
-        let runtime = String(parts[3])
         let command = String(parts[4])
         let commandParts = command.split(whereSeparator: { $0.isWhitespace })
         guard let executablePath = commandParts.first else { return nil }
         let executable = URL(fileURLWithPath: String(executablePath)).lastPathComponent.lowercased()
         let entrypoint = commandParts.dropFirst().first.map { String($0).lowercased() }
-        let normalizedCommand = command.lowercased()
-        // The ChatGPT desktop app hosts a real Codex agent at
-        // .../Contents/Resources/codex ... app-server - allow it through the noise
-        // filters below, which otherwise reject everything under an .app bundle.
-        let isChatGPTCodex = executable == "codex"
-            && normalizedCommand.contains("chatgpt.app/contents/resources/codex")
-            && normalizedCommand.contains("app-server")
-        if !isChatGPTCodex {
-            guard !normalizedCommand.contains("app-server"), !normalizedCommand.contains(".app/contents/") else { return nil }
-        }
 
+        // Classify by executable first. A recognized agent binary is a real agent no matter
+        // where it lives (e.g. Codex inside ChatGPT.app); the bundle-helper noise filter
+        // only decides whether an UNRECOGNIZED process is worth ignoring.
         let provider: Provider
         if executable == "opencode" {
             provider = .openCode
@@ -115,41 +114,42 @@ enum ActiveAgentScanner {
             return nil
         }
 
+        // Reject GUI-app helper processes (renderers, GPU, framework helpers) that live
+        // inside an .app bundle. The genuine in-bundle agent identifies itself with
+        // "app-server" (e.g. ChatGPT.app's Codex); everything else under Contents/ is noise.
+        let normalized = command.lowercased()
+        if normalized.contains(".app/contents/"), !normalized.contains("app-server") {
+            return nil
+        }
+
+        let ttyValue = String(parts[2])
         let tty = ttyValue == "??" || ttyValue == "-" ? nil : ttyValue
-        let cwd = AgentSessionResolver.workingDirectory(fromCommand: command)
-            ?? AgentSessionResolver.workingDirectory(ofPID: pid)
-        return Candidate(
-            agent: ActiveAgent(
-                id: pid,
-                provider: provider,
-                directory: cwd,
-                chatTitle: AgentSessionResolver.chatTitle(provider: provider, command: command, cwd: cwd),
-                hostApp: AgentSessionResolver.hostApp(ofPID: pid),
-                lastActivity: AgentSessionResolver.lastActivity(provider: provider, command: command, cwd: cwd),
-                processID: pid,
-                runtime: runtime,
-                terminalTTY: tty
-            ),
-            parentPID: parentPID
-        )
+        return Candidate(pid: pid, parentPID: parentPID, provider: provider, command: command, runtime: String(parts[3]), tty: tty)
     }
 
-    private static func processOutput(executable: String, arguments: [String]) throws -> String {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        // Drain the pipe before waiting: ps output exceeds the ~64KB pipe buffer,
-        // so waiting first would deadlock ps against a full, unread pipe.
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw LocalizedErrorMessage("Process inspection failed")
-        }
-        return String(data: data, encoding: .utf8) ?? ""
+    // Resolves the expensive, mostly-static fields (cwd, host app, chat title). Cached by
+    // PID across scans since a live process's identity doesn't change; lastActivity is
+    // refreshed every scan because it moves.
+    private static func enrich(_ c: Candidate) -> ActiveAgent {
+        let cached = cache[c.pid]
+        let cwd = cached?.directory
+            ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
+            ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
+        let chatTitle = cached?.chatTitle ?? AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
+        let hostApp = cached?.hostApp ?? AgentSessionResolver.hostApp(ofPID: c.pid)
+        let agent = ActiveAgent(
+            id: c.pid,
+            provider: c.provider,
+            directory: cwd,
+            chatTitle: chatTitle,
+            hostApp: hostApp,
+            lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd),
+            processID: c.pid,
+            runtime: c.runtime,
+            terminalTTY: c.tty
+        )
+        cache[c.pid] = agent
+        return agent
     }
 }
 
@@ -165,8 +165,8 @@ enum ActiveAgentNavigator {
 
         // Prefer the agent's actual resolved host app; fall back to common host apps.
         var bundleIDs: [String] = []
-        if let host = agent.hostApp, let id = AgentSessionResolver.bundleID(forHostApp: host) {
-            bundleIDs.append(id)
+        if let host = agent.hostApp {
+            bundleIDs.append(host.bundleID)
         }
         bundleIDs.append(contentsOf: ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"])
         if let application = NSWorkspace.shared.runningApplications.first(where: { app in

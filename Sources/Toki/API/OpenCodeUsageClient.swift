@@ -13,20 +13,24 @@ struct OpenCodeUsageClient {
             throw LocalizedErrorMessage("OpenCode database not found at \(dbPath)")
         }
 
-        let today = try query(
+        // One DB open: today's figures via conditional SUMs alongside all-time totals.
+        let startOfDay = "time_updated/1000 >= strftime('%s','now','start of day')"
+        let row = try query(
             db: dbPath,
-            sql: "SELECT IFNULL(SUM(cost),0), IFNULL(SUM(tokens_input),0), IFNULL(SUM(tokens_output),0) FROM session WHERE time_updated/1000 >= strftime('%s','now','start of day');"
-        )
-        let total = try query(
-            db: dbPath,
-            sql: "SELECT IFNULL(SUM(cost),0), IFNULL(SUM(tokens_input),0), IFNULL(SUM(tokens_output),0), COUNT(*) FROM session;"
+            sql: """
+            SELECT \
+            IFNULL(SUM(CASE WHEN \(startOfDay) THEN cost END),0), \
+            IFNULL(SUM(CASE WHEN \(startOfDay) THEN tokens_input END),0), \
+            IFNULL(SUM(CASE WHEN \(startOfDay) THEN tokens_output END),0), \
+            IFNULL(SUM(cost),0), COUNT(*) FROM session;
+            """
         )
 
-        let todayCost = today.value(0)
-        let todayIn = today.value(1)
-        let todayOut = today.value(2)
-        let totalCost = total.value(0)
-        let sessionCount = Int(total.value(3))
+        let todayCost = row.value(0)
+        let todayIn = row.value(1)
+        let todayOut = row.value(2)
+        let totalCost = row.value(3)
+        let sessionCount = Int(row.value(4))
 
         var metrics: [MetricLine] = []
         metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayIn)) in / \(formatCompact(todayOut)) out"))
@@ -55,7 +59,7 @@ struct OpenCodeUsageClient {
         let columns = output
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .split(separator: "|", omittingEmptySubsequences: false)
-            .map { Double($0.trimmingCharacters(in: .whitespaces)) ?? 0 }
+            .map { optionalNumber(String($0).trimmingCharacters(in: .whitespaces)) ?? 0 }
         return Row(columns: columns)
     }
 
@@ -78,19 +82,17 @@ struct OpenCodeUsageClient {
     }
 
     private static func sqliteOutput(db: String, sql: String) throws -> String {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = ["-readonly", db, sql]
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        // Drain before waiting to avoid a pipe-buffer deadlock (see ActiveAgentScanner).
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw LocalizedErrorMessage("Failed to read OpenCode usage database")
-        }
-        return String(data: data, encoding: .utf8) ?? ""
+        try Shell.require("/usr/bin/sqlite3", ["-readonly", db, sql], failureMessage: "Failed to read OpenCode usage database")
+    }
+
+    // Read-only query against the OpenCode DB, or nil when the DB is missing/unreadable.
+    // Callers outside usage fetching (e.g. agent session lookups) reuse this so the DB
+    // path and OPENCODE_DATA_DIR override live in one place.
+    static func queryValue(_ sql: String) -> String? {
+        let db = databasePath()
+        guard FileManager.default.fileExists(atPath: db) else { return nil }
+        let out = Shell.output("/usr/bin/sqlite3", ["-readonly", db, sql])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (out?.isEmpty ?? true) ? nil : out
     }
 }

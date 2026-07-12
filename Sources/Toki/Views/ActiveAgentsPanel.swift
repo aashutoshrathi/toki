@@ -73,7 +73,7 @@ struct ActiveAgentsPanel: View {
     }
 
     private func agentDetail(_ agent: ActiveAgent) -> String {
-        let host = agent.hostApp ?? (agent.hasTerminalTarget ? "Terminal" : "Editor or background")
+        let host = agent.hostApp?.displayName ?? (agent.hasTerminalTarget ? "Terminal" : "Editor or background")
         return "\(host) • Click to open"
     }
 }

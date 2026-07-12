@@ -24,9 +24,10 @@ enum SecretResolver {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         try process.run()
-        process.waitUntilExit()
+        // Drain both pipes before waiting to avoid a full-buffer deadlock.
         let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         let error = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let message = error.trimmingCharacters(in: .whitespacesAndNewlines)
             throw LocalizedErrorMessage(message.isEmpty ? "Command failed: \(command)" : message)

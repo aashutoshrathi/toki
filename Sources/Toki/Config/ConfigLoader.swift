@@ -26,14 +26,19 @@ enum ConfigLoader {
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let config = try JSONDecoder().decode(AppConfig.self, from: data)
+        try validate(config)
+        migrateToFlatShapeIfNeeded(rawData: data, config: config, path: path)
+        return config
+    }
+
+    // The invariants a config must satisfy, shared by load() and the in-app editor.
+    static func validate(_ config: AppConfig) throws {
         guard !config.accounts.isEmpty else {
             throw LocalizedErrorMessage("Config has no accounts")
         }
         guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
             throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
         }
-        migrateToFlatShapeIfNeeded(rawData: data, config: config, path: path)
-        return config
     }
 
     // One-time rewrite of legacy configs (name/provider keys) into the flat label/type
@@ -74,12 +79,7 @@ enum ConfigLoader {
             throw LocalizedErrorMessage("Config is not valid UTF-8")
         }
         let config = try JSONDecoder().decode(AppConfig.self, from: data)
-        guard !config.accounts.isEmpty else {
-            throw LocalizedErrorMessage("Config has no accounts")
-        }
-        guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
-            throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
-        }
+        try validate(config)
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }

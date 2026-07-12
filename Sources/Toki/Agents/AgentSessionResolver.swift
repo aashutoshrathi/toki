@@ -21,9 +21,7 @@ enum AgentSessionResolver {
     static func lastActivity(provider: Provider, command: String, cwd: String?) -> Date? {
         switch provider {
         case .claudeCode, .claude, .anthropic:
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            guard let file = newestSessionFile(home: home, cwd: cwd) else { return nil }
-            return (try? FileManager.default.attributesOfItem(atPath: file)[.modificationDate]) as? Date
+            return newestClaudeSession(command: command, cwd: cwd)?.modified
         case .openCode:
             return openCodeLastActivity(cwd: cwd)
         default:
@@ -33,31 +31,16 @@ enum AgentSessionResolver {
 
     private static func openCodeLastActivity(cwd: String?) -> Date? {
         guard let cwd else { return nil }
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let db = "\(home)/.local/share/opencode/opencode.db"
-        guard FileManager.default.fileExists(atPath: db) else { return nil }
-        let escaped = cwd.replacingOccurrences(of: "'", with: "''")
-        let query = "SELECT MAX(time_updated) FROM session WHERE directory='\(escaped)';"
-        guard let output = try? shellOutput(executable: "/usr/bin/sqlite3", arguments: ["-readonly", db, query]),
-              let ms = Double(output.trimmingCharacters(in: .whitespacesAndNewlines)), ms > 0 else {
-            return nil
-        }
+        let query = "SELECT MAX(time_updated) FROM session WHERE directory='\(sqlEscaped(cwd))';"
+        guard let raw = OpenCodeUsageClient.queryValue(query), let ms = Double(raw), ms > 0 else { return nil }
         return Date(timeIntervalSince1970: ms / 1000)
     }
 
     private static func claudeChatTitle(command: String, cwd: String?) -> String? {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        // Prefer the explicit session id from args; else the newest session in the project dir.
-        let sessionFile: String?
-        if let sid = firstMatch(in: command, pattern: #"--session-id\s+([a-f0-9-]+)"#) {
-            sessionFile = firstMatch(in: command, pattern: #"(/[^\s]*\#(sid)\.jsonl)"#)
-                ?? findSessionFile(sid: sid, home: home, cwd: cwd)
-        } else if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
-            sessionFile = resume
-        } else {
-            sessionFile = newestSessionFile(home: home, cwd: cwd)
+        guard let file = newestClaudeSession(command: command, cwd: cwd)?.path,
+              let contents = try? String(contentsOfFile: file, encoding: .utf8) else {
+            return nil
         }
-        guard let file = sessionFile, let contents = try? String(contentsOfFile: file, encoding: .utf8) else { return nil }
         // aiTitle is rewritten as the conversation evolves; the last one is current.
         var latest: String?
         for line in contents.split(separator: "\n") {
@@ -68,95 +51,49 @@ enum AgentSessionResolver {
         return latest
     }
 
-    private static func findSessionFile(sid: String, home: String, cwd: String?) -> String? {
-        guard let cwd else { return nil }
-        let encoded = "-" + cwd.split(separator: "/").joined(separator: "-")
-        let path = "\(home)/.claude/projects/\(encoded)/\(sid).jsonl"
-        return FileManager.default.fileExists(atPath: path) ? path : nil
-    }
-
-    private static func newestSessionFile(home: String, cwd: String?) -> String? {
-        guard let cwd else { return nil }
-        let encoded = "-" + cwd.split(separator: "/").joined(separator: "-")
-        let dir = "\(home)/.claude/projects/\(encoded)"
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(atPath: dir) else { return nil }
-        let jsonls = files.filter { $0.hasSuffix(".jsonl") }.map { "\(dir)/\($0)" }
-        return jsonls.max { lhs, rhs in
-            let l = (try? fm.attributesOfItem(atPath: lhs)[.modificationDate] as? Date) ?? nil
-            let r = (try? fm.attributesOfItem(atPath: rhs)[.modificationDate] as? Date) ?? nil
-            return (l ?? .distantPast) < (r ?? .distantPast)
+    // Resolves the session file once (path + mtime) so chatTitle and lastActivity share it.
+    private static func newestClaudeSession(command: String, cwd: String?) -> (path: String, modified: Date?)? {
+        // An explicit --resume path wins; otherwise pick the newest file in the project dir.
+        if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
+            return (resume, modifiedDate(resume))
         }
+        if let sid = firstMatch(in: command, pattern: #"--session-id\s+([a-f0-9-]+)"#),
+           let cwd, case let path = "\(projectDir(cwd))/\(sid).jsonl",
+           FileManager.default.fileExists(atPath: path) {
+            return (path, modifiedDate(path))
+        }
+        guard let cwd else { return nil }
+        let dir = projectDir(cwd)
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
+        let newest = files.filter { $0.hasSuffix(".jsonl") }
+            .map { (path: "\(dir)/\($0)", modified: modifiedDate("\(dir)/\($0)")) }
+            .max { ($0.modified ?? .distantPast) < ($1.modified ?? .distantPast) }
+        return newest
     }
 
     private static func openCodeChatTitle(cwd: String?) -> String? {
         guard let cwd else { return nil }
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let db = "\(home)/.local/share/opencode/opencode.db"
-        guard FileManager.default.fileExists(atPath: db) else { return nil }
-        let escaped = cwd.replacingOccurrences(of: "'", with: "''")
-        let query = "SELECT title FROM session WHERE directory='\(escaped)' AND title != '' ORDER BY time_updated DESC LIMIT 1;"
-        guard let output = try? shellOutput(executable: "/usr/bin/sqlite3", arguments: ["-readonly", db, query]) else { return nil }
-        let title = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? nil : title
+        let query = "SELECT title FROM session WHERE directory='\(sqlEscaped(cwd))' AND title != '' ORDER BY time_updated DESC LIMIT 1;"
+        return OpenCodeUsageClient.queryValue(query)
     }
 
-    // Walks the process's ancestry to name the app hosting it (editor or terminal).
-    // Returns a friendly name ("VS Code", "iTerm", "Terminal") or nil if unrecognised.
-    static func hostApp(ofPID pid: Int32) -> String? {
+    // Walks the process's ancestry to find the app hosting it (editor or terminal).
+    static func hostApp(ofPID pid: Int32) -> HostApp? {
         var current = pid
         for _ in 0..<8 {
-            guard let output = try? shellOutput(
-                executable: "/bin/ps",
-                arguments: ["-o", "ppid=,comm=", "-p", "\(current)"]
-            ) else { return nil }
-            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            let parts = trimmed.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
+            guard let output = Shell.output("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
+            let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
-            let comm = String(parts[1]).lowercased()
-            if let app = friendlyHostName(comm) { return app }
+            if let app = HostApp.match(comm: String(parts[1]).lowercased()) { return app }
             if ppid <= 1 { return nil }
             current = ppid
         }
         return nil
     }
 
-    private static func friendlyHostName(_ comm: String) -> String? {
-        if comm.contains("code - insiders") { return "VS Code Insiders" }
-        if comm.contains("code helper") || comm.contains("visual studio code") || comm == "code" || comm.contains("electron") && comm.contains("code") { return "VS Code" }
-        if comm.contains("cursor") { return "Cursor" }
-        if comm.contains("chatgpt") { return "ChatGPT" }
-        if comm.contains("iterm") { return "iTerm" }
-        if comm.contains("wezterm") { return "WezTerm" }
-        if comm.contains("alacritty") { return "Alacritty" }
-        if comm.contains("kitty") { return "kitty" }
-        if comm.contains("ghostty") { return "Ghostty" }
-        if comm.contains("terminal") { return "Terminal" }
-        return nil
-    }
-
-    // Bundle identifier for a resolved host app, so navigation can activate the exact app.
-    static func bundleID(forHostApp host: String) -> String? {
-        switch host {
-        case "VS Code Insiders": return "com.microsoft.VSCodeInsiders"
-        case "VS Code": return "com.microsoft.VSCode"
-        case "Cursor": return "com.todesktop.230313mzl4w4u92"
-        case "ChatGPT": return "com.openai.codex"
-        case "iTerm": return "com.googlecode.iterm2"
-        case "WezTerm": return "com.github.wez.wezterm"
-        case "Alacritty": return "org.alacritty"
-        case "kitty": return "net.kovidgoyal.kitty"
-        case "Ghostty": return "com.mitchellh.ghostty"
-        case "Terminal": return "com.apple.Terminal"
-        default: return nil
-        }
-    }
-
     static func workingDirectory(ofPID pid: Int32) -> String? {
-        guard let output = try? shellOutput(
-            executable: "/usr/sbin/lsof",
-            arguments: ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"]
-        ) else { return nil }
+        guard let output = Shell.output("/usr/sbin/lsof", ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"]) else { return nil }
         // -Fn output lists fields prefixed by a type char; the cwd path is on an "n" line.
         for line in output.split(separator: "\n") where line.hasPrefix("n") {
             let path = String(line.dropFirst())
@@ -170,44 +107,69 @@ enum AgentSessionResolver {
         if let cwd = firstMatch(in: command, pattern: #""cwd"\s*:\s*"([^"]+)""#) {
             return cwd
         }
-
         // 2. A --resume / session-file path lives under ~/.claude/projects/<encoded-cwd>/,
         //    where the dir name encodes the cwd with path separators turned into dashes.
-        if let projectDir = firstMatch(in: command, pattern: #"/\.claude/projects/([^/\s]+)/"#) {
-            return decodeProjectDir(projectDir)
+        if let encoded = firstMatch(in: command, pattern: #"/\.claude/projects/([^/\s]+)/"#) {
+            return "/" + encoded.drop(while: { $0 == "-" }).split(separator: "-").joined(separator: "/")
         }
-
         return nil
     }
 
-    // "-Users-aashutosh-Code-tokenbar" -> "/Users/aashutosh/Code/tokenbar".
-    // Claude encodes the absolute cwd by replacing "/" with "-", so the leading dash
-    // is the root slash. Segments that legitimately contain dashes are not recoverable,
-    // but the last component (the project name) is what we surface and it round-trips.
-    private static func decodeProjectDir(_ encoded: String) -> String {
-        "/" + encoded.drop(while: { $0 == "-" }).split(separator: "-").joined(separator: "/")
+    // ~/.claude/projects/<encoded-cwd>, where cwd path separators become dashes.
+    private static func projectDir(_ cwd: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let encoded = "-" + cwd.split(separator: "/").joined(separator: "-")
+        return "\(home)/.claude/projects/\(encoded)"
     }
 
-    private static func shellOutput(executable: String, arguments: [String]) throws -> String {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        // Drain before waiting to avoid a pipe-buffer deadlock (see ActiveAgentScanner).
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(data: data, encoding: .utf8) ?? ""
+    private static func modifiedDate(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
     }
+
+    private static func sqlEscaped(_ value: String) -> String {
+        value.replacingOccurrences(of: "'", with: "''")
+    }
+
+    private nonisolated(unsafe) static var regexCache: [String: NSRegularExpression] = [:]
 
     private static func firstMatch(in text: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let regex: NSRegularExpression
+        if let cached = regexCache[pattern] {
+            regex = cached
+        } else {
+            guard let compiled = try? NSRegularExpression(pattern: pattern) else { return nil }
+            regexCache[pattern] = compiled
+            regex = compiled
+        }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = regex.firstMatch(in: text, range: range),
               match.numberOfRanges > 1,
               let captured = Range(match.range(at: 1), in: text) else { return nil }
         return String(text[captured])
+    }
+}
+
+// A host application Toki can name and activate. Single source of truth so the display
+// name and bundle id can't drift apart (they were two switches keyed on a magic string).
+struct HostApp: Hashable {
+    let displayName: String
+    let bundleID: String
+    let matchers: [String]
+
+    private static let all: [HostApp] = [
+        HostApp(displayName: "VS Code Insiders", bundleID: "com.microsoft.VSCodeInsiders", matchers: ["code - insiders"]),
+        HostApp(displayName: "VS Code", bundleID: "com.microsoft.VSCode", matchers: ["code helper", "visual studio code"]),
+        HostApp(displayName: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92", matchers: ["cursor"]),
+        HostApp(displayName: "ChatGPT", bundleID: "com.openai.codex", matchers: ["chatgpt"]),
+        HostApp(displayName: "iTerm", bundleID: "com.googlecode.iterm2", matchers: ["iterm"]),
+        HostApp(displayName: "WezTerm", bundleID: "com.github.wez.wezterm", matchers: ["wezterm"]),
+        HostApp(displayName: "Alacritty", bundleID: "org.alacritty", matchers: ["alacritty"]),
+        HostApp(displayName: "kitty", bundleID: "net.kovidgoyal.kitty", matchers: ["kitty"]),
+        HostApp(displayName: "Ghostty", bundleID: "com.mitchellh.ghostty", matchers: ["ghostty"]),
+        HostApp(displayName: "Terminal", bundleID: "com.apple.Terminal", matchers: ["terminal"]),
+    ]
+
+    static func match(comm: String) -> HostApp? {
+        all.first { $0.matchers.contains { comm.contains($0) } }
     }
 }
