@@ -123,20 +123,20 @@ Minimal Claude Code plus Codex config:
   ],
   "accounts": [
     {
-      "id": "claude-code",
-      "name": "Claude",
-      "provider": "claudeCode",
+      "label": "Claude",
+      "type": "claudeCode",
       "claudeSwapCommand": "claude-swap"
     },
     {
-      "id": "codex",
-      "name": "Codex",
-      "provider": "codex",
+      "label": "Codex",
+      "type": "codex",
       "codexAuthPath": "~/.codex/auth.json"
     }
   ]
 }
 ```
+
+Each account needs a `label` (display name) and a `type` (provider). An `id` is optional and derived from the label when omitted. Older configs using `name`/`provider`/`id` are migrated automatically on launch, keeping a `.bak` of the original.
 
 `accountLabels` are optional presentation overrides. Toki matches discovered Claude accounts by email and, when provided, organization UUID or name. Labels do not alter credentials or switching behavior.
 

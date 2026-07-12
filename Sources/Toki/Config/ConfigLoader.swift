@@ -32,7 +32,25 @@ enum ConfigLoader {
         guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
             throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
         }
+        migrateToFlatShapeIfNeeded(rawData: data, config: config, path: path)
         return config
+    }
+
+    // One-time rewrite of legacy configs (name/provider keys) into the flat label/type
+    // shape. A .bak copy is kept before overwriting so the original is recoverable.
+    private static func migrateToFlatShapeIfNeeded(rawData: Data, config: AppConfig, path: String) {
+        guard let text = String(data: rawData, encoding: .utf8),
+              text.contains("\"provider\"") || text.contains("\"name\"") else {
+            return
+        }
+        do {
+            try rawData.write(to: URL(fileURLWithPath: path + ".bak"), options: .atomic)
+            let migrated = try JSONEncoder.toki.encode(config)
+            try migrated.write(to: URL(fileURLWithPath: path), options: .atomic)
+            DiagnosticLogger.shared.record(.info, component: "config", code: "migrated_flat_shape")
+        } catch {
+            DiagnosticLogger.shared.record(.warning, component: "config", code: "migration_failed", detail: diagnosticErrorDetail(error))
+        }
     }
 
     static func save(_ config: AppConfig) throws {
