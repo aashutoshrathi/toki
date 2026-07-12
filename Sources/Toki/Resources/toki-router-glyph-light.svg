@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Toki router glyph logo light mode">
+  <defs>
+    <style>
+      .bg { fill: #f4f1ea; }
+      .mark { fill: none; stroke: #24262b; stroke-width: 74; stroke-linecap: round; stroke-linejoin: round; }
+      .mark-fill { fill: #24262b; }
+      .cutout { fill: #f4f1ea; }
+      .sage { fill: #8ea99b; }
+      .amber { fill: #c99a52; }
+    </style>
+  </defs>
+  <rect class="bg" width="1024" height="1024" rx="232"/>
+  <g transform="translate(0 6)">
+    <path class="mark" d="M250 280H744"/>
+    <path class="mark" d="M502 352V718"/>
+    <path class="mark" d="M502 608L656 468"/>
+    <path class="mark" d="M502 608L646 748H728"/>
+    <circle class="mark-fill" cx="250" cy="280" r="37"/>
+    <circle class="sage" cx="790" cy="280" r="39"/>
+    <circle class="mark-fill" cx="502" cy="280" r="96"/>
+    <circle class="cutout" cx="502" cy="280" r="48"/>
+    <circle class="mark-fill" cx="656" cy="468" r="39"/>
+    <circle class="mark-fill" cx="502" cy="608" r="40"/>
+    <circle class="amber" cx="770" cy="748" r="38"/>
+  </g>
+</svg>
