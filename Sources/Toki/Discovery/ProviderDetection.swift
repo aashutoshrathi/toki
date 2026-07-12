@@ -45,19 +45,16 @@ enum ProviderDetection {
         )
     }
 
+    // Requires readCredentials() to actually succeed (file exists, parses, and contains a
+    // non-empty OAuth access token) rather than just checking the auth file exists - a file
+    // that's present but stale/malformed shouldn't be offered as a one-click connect.
     private static func detectCodex() -> DetectedProvider? {
-        let path = expandedPath("~/.codex/auth.json")
-        guard FileManager.default.fileExists(atPath: path) else { return nil }
-        var detail = "Signed in"
         let probeAccount = AccountConfig(id: "codex-probe", name: "Codex", provider: .codex)
-        if let credentials = try? CodexCredentialReader.readCredentials(account: probeAccount),
-           let email = credentials.email {
-            detail = email
-        }
+        guard let credentials = try? CodexCredentialReader.readCredentials(account: probeAccount) else { return nil }
         return DetectedProvider(
             provider: .codex,
             title: "Codex",
-            detail: detail,
+            detail: credentials.email ?? "Signed in",
             makeAccount: {
                 var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
                 account.codexAuthPath = "~/.codex/auth.json"
