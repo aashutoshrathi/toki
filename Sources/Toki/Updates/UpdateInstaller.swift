@@ -144,20 +144,18 @@ enum UpdateInstaller {
 
     private static func run(_ executable: String, arguments: [String]) throws -> Data {
         let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
+        let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = errors
+        process.standardOutput = pipe
+        process.standardError = pipe
         try process.run()
-        let outputData = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            let detail = String(data: errorData, encoding: .utf8) ?? ""
+            let detail = String(data: data, encoding: .utf8) ?? ""
             throw LocalizedErrorMessage(detail.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        return outputData
+        return data
     }
 }
