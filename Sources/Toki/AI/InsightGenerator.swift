@@ -1,5 +1,13 @@
 import Foundation
 
+// Default on-device AI prompt. Declared outside the FoundationModels guard so the Settings
+// editor can reference it as placeholder text without depending on the gated enum.
+let defaultAIInstructions = """
+    You summarize a developer's AI coding-tool usage for a menu bar app. Be concise \
+    and specific. Only restate and interpret the facts you are given - never invent \
+    quota numbers, account names, or reset times.
+    """
+
 // On-device usage insights via Apple's Foundation Models. The module only exists in the
 // macOS 26 SDK, so `canImport` keeps this file compiling on older SDKs (e.g. CI runners),
 // and `@available` keeps FoundationModels unlinked at runtime on older systems.
@@ -55,11 +63,7 @@ enum InsightGenerator {
         }
     }
 
-    static let defaultInstructions = """
-        You summarize a developer's AI coding-tool usage for a menu bar app. Be concise \
-        and specific. Only restate and interpret the facts you are given - never invent \
-        quota numbers, account names, or reset times.
-        """
+    static let defaultInstructions = defaultAIInstructions
 
     // Pure function - unit-testable without the model.
     static func prompt(snapshots: [AccountSnapshot], grounding: SmartRecommendation) -> String {
