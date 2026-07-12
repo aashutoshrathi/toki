@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Regenerates homebrew/toki.rb with the current version and the sha256 of the
-# published release DMG. Run after a release DMG is available on GitHub, then copy
-# homebrew/toki.rb into the tap repo (aashutoshrathi/homebrew-tap) as Casks/toki.rb.
+# Regenerates a Toki cask file with the current version and the sha256 of the published
+# release DMG. Run after a release DMG is available on GitHub. Pass the cask path as the
+# first argument to update a tap checkout directly (default: the in-repo template).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
 
-VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
+VERSION=$(grep '^let appVersion' "$ROOT_DIR/Sources/Toki/Config/Constants.swift" | sed 's/.*"\(.*\)"/\1/')
 DMG_URL="https://github.com/aashutoshrathi/toki/releases/download/v${VERSION}/Toki_${VERSION}_universal.dmg"
-CASK="homebrew/toki.rb"
+CASK="${1:-$ROOT_DIR/homebrew/toki.rb}"
 
 echo "==> Fetching $DMG_URL"
 TMP_DMG="$(mktemp -t toki-dmg).dmg"

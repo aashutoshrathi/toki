@@ -12,7 +12,7 @@ cask "toki" do
   desc "Menu bar companion for AI coding agents and usage"
   homepage "https://github.com/aashutoshrathi/toki"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Toki.app"
 

@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,3 +29,21 @@ jobs:
             ".build/Toki_${VERSION}_universal.dmg" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes
+
+      - name: Update Homebrew tap
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        run: |
+          TAP_DIR="$(mktemp -d)"
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/aashutoshrathi/homebrew-tap.git" "$TAP_DIR"
+          # Rewrite the tap's cask with this release's version + DMG sha256.
+          bash scripts/update-cask.sh "$TAP_DIR/Casks/toki.rb"
+          cd "$TAP_DIR"
+          if git diff --quiet; then
+            echo "Cask already up to date; nothing to push."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/toki.rb
+          git commit -m "Update Toki cask to ${GITHUB_REF_NAME}"
+          git push
