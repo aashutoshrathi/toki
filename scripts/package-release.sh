@@ -53,7 +53,7 @@ cat > "$INFO_PLIST" <<PLIST
   <key>CFBundleShortVersionString</key>
   <string>$VERSION</string>
   <key>CFBundleVersion</key>
-  <string>7</string>
+  <string>8</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>
