@@ -36,6 +36,7 @@ enum ConfigLoader {
     // scenario) from one that doesn't decode at all. Safe to build on top of the former;
     // the latter must not be touched, or a genuinely corrupt config.json would be lost.
     static func loadRawIfParsable() -> AppConfig? {
+        let path = Self.path
         guard FileManager.default.fileExists(atPath: path),
               let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             return nil
