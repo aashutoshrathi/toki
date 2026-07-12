@@ -38,11 +38,12 @@ struct ActiveAgentsPanel: View {
                                         Text(agent.title)
                                             .font(.system(size: 12, weight: .semibold))
                                             .lineLimit(1)
-                                        if let chat = agent.chatTitle {
-                                            Text(chat)
+                                        if let dir = agent.directoryDisplay {
+                                            Text(dir)
                                                 .font(.system(size: 10))
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
+                                                .truncationMode(.middle)
                                         }
                                         Text(agentDetail(agent))
                                             .font(.system(size: 9))

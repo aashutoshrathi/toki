@@ -4,12 +4,32 @@ import Foundation
 struct ActiveAgent: Identifiable, Hashable, Sendable {
     let id: Int32
     let provider: Provider
-    let title: String
+    let directory: String?
     let chatTitle: String?
     let hostApp: String?
     let processID: Int32
     let runtime: String
     let terminalTTY: String?
+
+    // Primary label: the conversation title, else the project folder, else the provider.
+    var title: String {
+        if let chatTitle { return chatTitle }
+        if let folder = directory.map({ ($0 as NSString).lastPathComponent }), !folder.isEmpty, folder != "/" {
+            return folder
+        }
+        return "\(provider.displayName) agent"
+    }
+
+    // Working directory shown relative to home (~/Code/tokenbar), when meaningful.
+    // Root or app-bundle cwds (e.g. GUI-hosted agents) carry no useful project, so
+    // they're hidden rather than shown as a bare "/".
+    var directoryDisplay: String? {
+        guard let directory, directory != "/", !directory.contains("/.app/"), !directory.hasSuffix(".app") else { return nil }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if directory == home { return "~" }
+        if directory.hasPrefix(home + "/") { return "~" + directory.dropFirst(home.count) }
+        return directory
+    }
 
     // Every agent can be surfaced: TTY-backed ones focus the exact terminal tab,
     // the rest fall back to activating the likely host app.
@@ -63,7 +83,15 @@ enum ActiveAgentScanner {
         let executable = URL(fileURLWithPath: String(executablePath)).lastPathComponent.lowercased()
         let entrypoint = commandParts.dropFirst().first.map { String($0).lowercased() }
         let normalizedCommand = command.lowercased()
-        guard !normalizedCommand.contains("app-server"), !normalizedCommand.contains(".app/contents/") else { return nil }
+        // The ChatGPT desktop app hosts a real Codex agent at
+        // .../Contents/Resources/codex ... app-server - allow it through the noise
+        // filters below, which otherwise reject everything under an .app bundle.
+        let isChatGPTCodex = executable == "codex"
+            && normalizedCommand.contains("chatgpt.app/contents/resources/codex")
+            && normalizedCommand.contains("app-server")
+        if !isChatGPTCodex {
+            guard !normalizedCommand.contains("app-server"), !normalizedCommand.contains(".app/contents/") else { return nil }
+        }
 
         let provider: Provider
         if executable == "opencode" {
@@ -84,13 +112,11 @@ enum ActiveAgentScanner {
         let tty = ttyValue == "??" || ttyValue == "-" ? nil : ttyValue
         let cwd = AgentSessionResolver.workingDirectory(fromCommand: command)
             ?? AgentSessionResolver.workingDirectory(ofPID: pid)
-        let title = cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
-            ?? "\(provider.displayName) agent"
         return Candidate(
             agent: ActiveAgent(
                 id: pid,
                 provider: provider,
-                title: title,
+                directory: cwd,
                 chatTitle: AgentSessionResolver.chatTitle(provider: provider, command: command, cwd: cwd),
                 hostApp: AgentSessionResolver.hostApp(ofPID: pid),
                 processID: pid,
@@ -130,7 +156,12 @@ enum ActiveAgentNavigator {
             }
         }
 
-        let bundleIDs = ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"]
+        // Prefer the agent's actual resolved host app; fall back to common host apps.
+        var bundleIDs: [String] = []
+        if let host = agent.hostApp, let id = AgentSessionResolver.bundleID(forHostApp: host) {
+            bundleIDs.append(id)
+        }
+        bundleIDs.append(contentsOf: ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"])
         if let application = NSWorkspace.shared.runningApplications.first(where: { app in
             app.bundleIdentifier.map(bundleIDs.contains) == true
         }) {

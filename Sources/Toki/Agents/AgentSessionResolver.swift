@@ -97,6 +97,7 @@ enum AgentSessionResolver {
         if comm.contains("code - insiders") { return "VS Code Insiders" }
         if comm.contains("code helper") || comm.contains("visual studio code") || comm == "code" || comm.contains("electron") && comm.contains("code") { return "VS Code" }
         if comm.contains("cursor") { return "Cursor" }
+        if comm.contains("chatgpt") { return "ChatGPT" }
         if comm.contains("iterm") { return "iTerm" }
         if comm.contains("wezterm") { return "WezTerm" }
         if comm.contains("alacritty") { return "Alacritty" }
@@ -104,6 +105,23 @@ enum AgentSessionResolver {
         if comm.contains("ghostty") { return "Ghostty" }
         if comm.contains("terminal") { return "Terminal" }
         return nil
+    }
+
+    // Bundle identifier for a resolved host app, so navigation can activate the exact app.
+    static func bundleID(forHostApp host: String) -> String? {
+        switch host {
+        case "VS Code Insiders": return "com.microsoft.VSCodeInsiders"
+        case "VS Code": return "com.microsoft.VSCode"
+        case "Cursor": return "com.todesktop.230313mzl4w4u92"
+        case "ChatGPT": return "com.openai.codex"
+        case "iTerm": return "com.googlecode.iterm2"
+        case "WezTerm": return "com.github.wez.wezterm"
+        case "Alacritty": return "org.alacritty"
+        case "kitty": return "net.kovidgoyal.kitty"
+        case "Ghostty": return "com.mitchellh.ghostty"
+        case "Terminal": return "com.apple.Terminal"
+        default: return nil
+        }
     }
 
     static func workingDirectory(ofPID pid: Int32) -> String? {

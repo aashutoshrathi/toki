@@ -39,7 +39,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Inactive Claude account lookup from macOS Keychain service `claude-swap`.
 - Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
 - Codex usage and rate-limit display through the local Codex app-server.
-- Active-agent discovery for Codex, Claude Code, Copilot CLI, and OpenCode, including PID, runtime, terminal metadata, and best-effort navigation back to the running terminal tab.
+- Active-agent discovery for Codex, Claude Code, Copilot CLI, OpenCode, and ChatGPT-hosted Codex, including runtime, terminal metadata, working directory, and best-effort navigation to the matching terminal tab or host app via bundle ID.
 - GitHub release checks with one-click, verified DMG installation and relaunch.
 - Privacy-safe rotating diagnostics in `~/.toki/logs/` with an attached debug-report share action.
 - Smart recommendation panel for which coding account to use next.
@@ -152,7 +152,7 @@ Toki keeps v2.1 preferences, notification cooldowns, event history, usage histor
 
 The Settings tab controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
 
-The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. When an agent has a terminal TTY, clicking it attempts to select the matching iTerm2 or Terminal tab. For editor-hosted and background processes, Toki can only activate a likely host application because VS Code does not expose a stable process-to-window mapping.
+The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2, Terminal, or WezTerm. For editor-hosted processes (VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
 
 Copilot and OpenCode are intentionally not configurable as usage accounts. Toki detects their running agents locally, but does not invent quotas or infer billing across their different plans and model providers.
 
