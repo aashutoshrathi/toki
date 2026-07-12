@@ -3,11 +3,17 @@ import Foundation
 import SwiftUI
 
 func resetDescription(_ value: Any?) -> String? {
-    guard let raw = value as? String,
-          let resetDate = ISO8601DateFormatter().date(from: raw) else {
-        return nil
+    // Accept an ISO8601 string or a numeric epoch (seconds or milliseconds), since
+    // reset timestamps arrive in different shapes across providers/payloads.
+    if let raw = value as? String, let resetDate = ISO8601DateFormatter().date(from: raw) {
+        return resetDescription(for: resetDate)
     }
-    return resetDescription(for: resetDate)
+    if let seconds = optionalNumber(value) {
+        // Values above ~year-2001-in-ms are milliseconds; scale them down.
+        let normalized = seconds > 100_000_000_000 ? seconds / 1000 : seconds
+        return resetDescription(for: Date(timeIntervalSince1970: normalized))
+    }
+    return nil
 }
 
 func resetDescriptionFromUnix(_ value: Any?) -> String? {

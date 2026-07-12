@@ -297,7 +297,7 @@ struct SettingsPanel: View {
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
         }
-        .frame(maxHeight: accountListHeight())
+        .frame(maxHeight: .infinity)
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<AppPreferences, Value>) -> Binding<Value> {

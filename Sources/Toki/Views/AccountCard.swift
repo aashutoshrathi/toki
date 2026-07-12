@@ -101,15 +101,19 @@ struct AccountCard: View {
                     ProviderPill(provider: snapshot.provider)
                 }
 
-                Picker("", selection: $expandedTab) {
-                    ForEach(ExpandedTab.allCases) { tab in
-                        Text(tab.rawValue).tag(tab)
+                // Sessions only make sense for a connected account; when the account is
+                // not connected, hide the toggle and just show usage (the error state).
+                if !snapshot.isError {
+                    Picker("", selection: $expandedTab) {
+                        ForEach(ExpandedTab.allCases) { tab in
+                            Text(tab.rawValue).tag(tab)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
 
-                if expandedTab == .usage {
+                if snapshot.isError || expandedTab == .usage {
                     if !snapshot.metrics.isEmpty {
                         VStack(spacing: 3) {
                             ForEach(snapshot.metrics) { metric in
