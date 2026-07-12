@@ -5,7 +5,7 @@ import SwiftUI
 func resetDescription(_ value: Any?) -> String? {
     // Accept an ISO8601 string or a numeric epoch (seconds or milliseconds), since
     // reset timestamps arrive in different shapes across providers/payloads.
-    if let raw = value as? String, let resetDate = ISO8601DateFormatter().date(from: raw) {
+    if let raw = value as? String, let resetDate = parseISODate(raw) {
         return resetDescription(for: resetDate)
     }
     if let seconds = optionalNumber(value) {
@@ -16,16 +16,28 @@ func resetDescription(_ value: Any?) -> String? {
     return nil
 }
 
+// Anthropic's resets_at includes fractional seconds (e.g. 2026-07-12T18:00:00.000Z),
+// which the default ISO8601DateFormatter rejects - try both configurations.
+private func parseISODate(_ raw: String) -> Date? {
+    let withFraction = ISO8601DateFormatter()
+    withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = withFraction.date(from: raw) { return date }
+    return ISO8601DateFormatter().date(from: raw)
+}
+
 func resetDescriptionFromUnix(_ value: Any?) -> String? {
     guard let seconds = optionalNumber(value) else { return nil }
     return resetDescription(for: Date(timeIntervalSince1970: seconds))
 }
 
+// Returns e.g. "3 hr (18:00)" - a countdown followed by the clock time. Callers prefix
+// "resets in", so the leading "in " from the relative formatter is stripped here.
 func resetDescription(for resetDate: Date) -> String {
     let countdown = relativeDate(resetDate)
+        .replacingOccurrences(of: "in ", with: "")
     let formatter = DateFormatter()
     formatter.dateFormat = Calendar.current.isDateInToday(resetDate) ? "HH:mm" : "MMM d HH:mm"
-    return "\(formatter.string(from: resetDate)) (\(countdown))"
+    return "\(countdown) (\(formatter.string(from: resetDate)))"
 }
 
 func formatCompact(_ value: Double) -> String {

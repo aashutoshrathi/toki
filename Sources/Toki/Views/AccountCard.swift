@@ -333,8 +333,8 @@ struct AccountCard: View {
             return resetMetric.value
         }
         if let metric = snapshot.metrics.first(where: { ["Daily", "5h", "Today"].contains($0.label) }),
-           let range = metric.value.range(of: "resets ") {
-            return String(metric.value[range.upperBound...])
+           let range = metric.value.range(of: "resets in ") {
+            return "resets in " + metric.value[range.upperBound...]
         }
         return nil
     }

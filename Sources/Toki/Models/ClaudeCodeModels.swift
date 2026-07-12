@@ -73,7 +73,7 @@ struct ClaudeCodeUsage {
         )
         var value = "\(Int(utilization.rounded()))% used"
         if let reset = primaryMetric?.resetDescription {
-            value += " - resets \(reset)"
+            value += " - resets in \(reset)"
         }
         metrics.append(MetricLine(label: label, value: value))
     }
@@ -84,7 +84,7 @@ struct ClaudeCodeUsage {
 
         var value = "\(Int(utilization.rounded()))% used"
         if let reset = resetDescription(window["resets_at"]) {
-            value += " - resets \(reset)"
+            value += " - resets in \(reset)"
         }
         metrics.append(MetricLine(label: label, value: value))
     }
@@ -104,7 +104,7 @@ struct ClaudeCodeUsage {
         var value = "\(formatUSD(usedCents / 100)) / \(formatUSD(limitCents / 100))"
         value += " - \(Int(utilization.rounded()))%"
         if let reset = resetDescription(extraUsage["resets_at"]) {
-            value += " - resets \(reset)"
+            value += " - resets in \(reset)"
         }
         metrics.append(MetricLine(label: "Extra", value: value))
     }
