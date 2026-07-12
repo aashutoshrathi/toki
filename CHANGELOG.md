@@ -17,7 +17,7 @@
 - Six-hour update polling with a manual "Check now" action in Settings.
 - Privacy-safe rotating local diagnostics and an attached debug-report share action.
 - Config migration from `name`/`provider`/`id` to `label`/`type` with automatic migration and `.bak` backup.
-- In-app JSON config editor with syntax highlighting.
+- In-app JSON config editor.
 - Optional `aiInstructions` config field for customizing the on-device LLM prompt.
 - Homebrew cask installation (`brew install --cask toki`).
 - Cask update automation script.

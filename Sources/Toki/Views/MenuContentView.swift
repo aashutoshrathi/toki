@@ -42,6 +42,9 @@ struct MenuContentView: View {
             if let update = updateChecker.availableUpdate {
                 updateBanner(update)
             }
+            if let session = store.session {
+                SessionRecordingCard(startedAt: session.startedAt)
+            }
             overview
             tabBar
             if let configError = store.configError {
@@ -148,6 +151,20 @@ struct MenuContentView: View {
     private var headerControls: some View {
         HStack(spacing: 5) {
             Button {
+                store.session == nil ? store.startSession() : store.endSession()
+            } label: {
+                Image(systemName: store.session == nil ? "play.fill" : "stop.fill")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 25, height: 25)
+            .foregroundStyle(store.session == nil ? Color.primary : Color.blue)
+            .background((store.session == nil ? Color.primary : Color.blue).opacity(store.session == nil ? 0.06 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .help(store.session == nil ? "Start session tracking" : "End session tracking")
+            .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
+            .pointerOnHover()
+
+            Button {
                 store.refresh(minimumRefreshInterval: 60)
             } label: {
                 Image(systemName: "arrow.clockwise")
@@ -191,27 +208,13 @@ struct MenuContentView: View {
     }
 
     private var overview: some View {
-        HStack(spacing: 8) {
-            StatBlock(title: "Use", value: recommendedAgentText, systemImage: "sparkles", action: smartSwitchAction)
-                .help("Recommended account")
-            StatBlock(title: "Status", value: store.preferences.dndEnabled ? "DND" : "Ready", systemImage: store.preferences.dndEnabled ? "moon.zzz" : "bell")
-            StatBlock(
-                title: store.session == nil ? "Session" : "Active",
-                value: store.session == nil ? "Off" : sessionDetail,
-                systemImage: store.session == nil ? "timer" : "timer.circle.fill",
-                action: sessionAction
-            )
-            .help(store.session == nil ? "Start session tracking" : sessionDetail)
-        }
-    }
-
-    private var sessionAction: StatBlockAction? {
-        StatBlockAction(
-            systemImage: store.session == nil ? "play.fill" : "stop.fill",
-            help: store.session == nil ? "Start session tracking" : "End session tracking"
-        ) {
-            store.session == nil ? store.startSession() : store.endSession()
-        }
+        AIInsightCard(
+            summary: store.aiInsight?.summary ?? "\(store.recommendation.title) - \(store.recommendation.detail)",
+            suggestions: store.aiInsight?.suggestions ?? [],
+            isAI: store.aiInsight != nil,
+            isUpdating: store.isGeneratingInsight,
+            switchAction: smartSwitchAction
+        )
     }
 
     private var smartSwitchAction: StatBlockAction? {
@@ -298,18 +301,6 @@ struct MenuContentView: View {
             }
             .frame(maxHeight: accountListHeight())
         }
-    }
-
-    private var sessionDetail: String {
-        guard let session = store.session else {
-            return "Track burn rate while you work."
-        }
-        let elapsed = formatDuration(seconds: Date().timeIntervalSince(session.startedAt))
-        let lines = store.sessionBurnLines()
-        guard let first = lines.first else {
-            return "Running for \(elapsed)."
-        }
-        return "\(elapsed), \(first.value)"
     }
 
     private var debugPanel: some View {

@@ -4,6 +4,7 @@ struct AppConfig: Codable {
     var refreshMinutes: Int?
     var accountLabels: [AccountLabelConfig]?
     var accounts: [AccountConfig]
+    var aiInstructions: String?
 }
 
 struct AccountLabelConfig: Codable {

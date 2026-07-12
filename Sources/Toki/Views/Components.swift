@@ -57,6 +57,132 @@ struct StatBlock: View {
     }
 }
 
+// MARK: - SessionRecordingCard
+
+// Thin banner shown while a tracking session is active, with a live-ticking stopwatch.
+struct SessionRecordingCard: View {
+    var startedAt: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+            HStack(spacing: 7) {
+                Image(systemName: "record.circle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.red)
+                Text("Recording token usage for this session")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 4)
+                Text(formatDuration(seconds: context.date.timeIntervalSince(startedAt)))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Color.red.opacity(0.2), lineWidth: 1)
+            )
+        }
+    }
+}
+
+// MARK: - AIInsightCard
+
+// The compact overview. Shows a one-line summary (AI-generated when available, else the
+// deterministic recommendation) and reveals suggestions on tap. An optional switch action
+// carries over the one-click "switch to best account" that used to live in the stat cards.
+struct AIInsightCard: View {
+    var summary: String
+    var suggestions: [UsageSuggestion]
+    var isAI: Bool
+    var isUpdating: Bool = false
+    var switchAction: StatBlockAction?
+
+    @State private var expanded = false
+
+    private var canExpand: Bool { !suggestions.isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: expanded ? 6 : 0) {
+            Button {
+                if canExpand { expanded.toggle() }
+            } label: {
+                HStack(alignment: .top, spacing: 6) {
+                    if isUpdating {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 11, height: 11)
+                    } else {
+                        Image(systemName: isAI ? "sparkles" : "lightbulb")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(isAI ? .purple : .secondary)
+                    }
+                    Text(summary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 4)
+                    if let switchAction {
+                        Button(action: switchAction.perform) {
+                            Image(systemName: switchAction.systemImage)
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 22, height: 22)
+                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .help(switchAction.help)
+                        .pointerOnHover()
+                    }
+                    if canExpand {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 3)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .pointerOnHover()
+
+            if expanded {
+                ForEach(suggestions) { suggestion in
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle()
+                            .fill(color(for: suggestion.severity))
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 5)
+                        Text(suggestion.text)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background((isAI ? Color.purple : Color.primary).opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke((isAI ? Color.purple : Color.primary).opacity(isAI ? 0.18 : 0.08), lineWidth: 1)
+        )
+    }
+
+    private func color(for severity: RecommendationSeverity) -> Color {
+        switch severity {
+        case .good: return .green
+        case .warning: return .orange
+        case .critical: return .red
+        case .neutral: return .secondary
+        }
+    }
+}
+
 // MARK: - ErrorBanner
 
 struct ErrorBanner: View {

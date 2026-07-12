@@ -15,6 +15,8 @@ final class UsageStore: ObservableObject {
     @Published var history: [UsageHistoryEntry] = []
     @Published var session: SessionState?
     @Published var activeAgents: [ActiveAgent] = []
+    @Published var aiInsight: UsageInsight?
+    @Published var isGeneratingInsight = false
     @Published var recommendation = SmartRecommendation(
         title: "Loading",
         detail: "Checking account quota.",
@@ -31,13 +33,14 @@ final class UsageStore: ObservableObject {
     private var isRefreshing = false
     private var isScanningAgents = false
     private var eventGeneration = 0
+    private var insightGeneration = 0
     private var notificationAuthorization: Bool?
     private var agentTimer: Timer?
 
     init() {
         reloadConfig()
         refreshActiveAgents()
-        agentTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
+        agentTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshActiveAgents() }
         }
     }
@@ -367,6 +370,31 @@ final class UsageStore: ObservableObject {
             statusEntries = menuBarPlaceholderEntries()
         }
         syncPublishedState()
+        refreshAIInsight(for: snapshots)
+    }
+
+    // Enriches the overview with an on-device LLM summary when Apple Intelligence is
+    // available. The deterministic recommendation is already shown; this only replaces
+    // it once ready, and stays nil (rule-based visible) on older systems or failure.
+    private func refreshAIInsight(for snapshots: [AccountSnapshot]) {
+        guard #available(macOS 26, *), InsightGenerator.isAvailable else {
+            aiInsight = nil
+            isGeneratingInsight = false
+            return
+        }
+        let grounding = recommendation
+        let instructions = config?.aiInstructions
+        // Keep the previous summary visible while regenerating; a token guards against a
+        // slower earlier generation overwriting a newer one.
+        insightGeneration += 1
+        let generation = insightGeneration
+        isGeneratingInsight = true
+        Task { @MainActor in
+            let result = await InsightGenerator.generate(snapshots: snapshots, grounding: grounding, instructions: instructions)
+            guard generation == insightGeneration else { return }
+            if let result { aiInsight = result }
+            isGeneratingInsight = false
+        }
     }
 
     private func recordHistory(for snapshots: [AccountSnapshot], at date: Date) {

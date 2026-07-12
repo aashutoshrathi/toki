@@ -92,6 +92,8 @@ enum ConfigLoader {
         }
         let config = try JSONDecoder().decode(AppConfig.self, from: data)
         try validate(config)
-        try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        let fileURL = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: fileURL, options: .atomic)
     }
 }

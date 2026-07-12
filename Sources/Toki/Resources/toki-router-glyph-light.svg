@@ -11,16 +11,13 @@
   </defs>
   <rect class="bg" width="1024" height="1024" rx="232"/>
   <g transform="translate(0 6)">
-    <path class="mark" d="M250 280H744"/>
-    <path class="mark" d="M502 352V718"/>
-    <path class="mark" d="M502 608L656 468"/>
-    <path class="mark" d="M502 608L646 748H728"/>
-    <circle class="mark-fill" cx="250" cy="280" r="37"/>
-    <circle class="sage" cx="790" cy="280" r="39"/>
-    <circle class="mark-fill" cx="502" cy="280" r="96"/>
-    <circle class="cutout" cx="502" cy="280" r="48"/>
-    <circle class="mark-fill" cx="656" cy="468" r="39"/>
-    <circle class="mark-fill" cx="502" cy="608" r="40"/>
-    <circle class="amber" cx="770" cy="748" r="38"/>
+    <path class="mark-fill" d="M268 245H704L682 282L704 319H268C248 319 232 303 232 282C232 261 248 245 268 245Z"/>
+    <path class="mark" d="M520 600L636 484"/>
+    <path class="mark-fill" d="M465 354H539V636C539 674 558 690 600 690H684L662 727H566C502 727 465 690 465 636Z"/>
+    <circle class="mark-fill" cx="502" cy="282" r="96"/>
+    <circle class="cutout" cx="502" cy="282" r="48"/>
+    <circle class="sage" cx="746" cy="282" r="39"/>
+    <circle class="mark-fill" cx="636" cy="484" r="39"/>
+    <circle class="amber" cx="744" cy="708" r="38"/>
   </g>
 </svg>
