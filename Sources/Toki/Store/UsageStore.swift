@@ -89,6 +89,14 @@ final class UsageStore: ObservableObject {
         }
     }
 
+    // Re-probes for newly installed/authenticated CLIs while the onboarding screen is
+    // showing, so e.g. signing into Codex after Toki launched doesn't require a restart.
+    // Called each time the popover opens; a no-op once a config exists.
+    func rescanProvidersIfNeeded() {
+        guard needsOnboarding else { return }
+        scanForOnboarding()
+    }
+
     // Probes for installed/authenticated CLIs (Claude Code, Codex, OpenCode) so the
     // onboarding screen can offer them as one-click connects.
     private func scanForOnboarding() {
@@ -102,11 +110,22 @@ final class UsageStore: ObservableObject {
 
     // Appends detected accounts to config.json (creating it if this is a fresh install)
     // and reloads. Accounts already present for the same provider+id are skipped.
+    //
+    // config is nil for ANY load failure, not just "no file yet" - a file that exists but
+    // failed to parse/validate must not be silently replaced with a blank one (data loss).
+    // Only synthesize a fresh config when there truly is no file on disk.
     func connect(_ accounts: [AccountConfig]) {
+        guard config != nil || !FileManager.default.fileExists(atPath: ConfigLoader.path) else {
+            configError = "config.json exists but couldn't be loaded - fix or replace it with the config editor before connecting."
+            return
+        }
         var next = config ?? AppConfig(refreshMinutes: nil, accountLabels: nil, accounts: [], aiInstructions: nil)
-        let existingKeys = Set(next.accounts.map { "\($0.provider.rawValue):\($0.id)" })
-        for account in accounts where !existingKeys.contains("\(account.provider.rawValue):\(account.id)") {
+        var existingKeys = Set(next.accounts.map { "\($0.provider.rawValue):\($0.id)" })
+        for account in accounts {
+            let key = "\(account.provider.rawValue):\(account.id)"
+            guard !existingKeys.contains(key) else { continue }
             next.accounts.append(account)
+            existingKeys.insert(key)
         }
         do {
             try ConfigLoader.validate(next)
