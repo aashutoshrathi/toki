@@ -8,7 +8,7 @@ struct PreparedUpdate {
 
 enum UpdateInstaller {
     static func prepare(downloadURL: URL, expectedVersion: String) async throws -> PreparedUpdate {
-        guard downloadURL.host == "github.com", downloadURL.pathExtension.lowercased() == "dmg" else {
+        guard downloadURL.scheme == "https", downloadURL.host == "github.com", downloadURL.pathExtension.lowercased() == "dmg" else {
             throw LocalizedErrorMessage("The release download is not a trusted GitHub DMG.")
         }
 
@@ -151,8 +151,8 @@ enum UpdateInstaller {
         process.standardOutput = output
         process.standardError = errors
         try process.run()
-        process.waitUntilExit()
         let outputData = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let detail = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             throw LocalizedErrorMessage(detail.trimmingCharacters(in: .whitespacesAndNewlines))

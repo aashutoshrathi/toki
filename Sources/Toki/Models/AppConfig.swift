@@ -126,6 +126,6 @@ struct AccountConfig: Codable, Identifiable {
         for byte in label.utf8 {
             hash = (hash ^ UInt64(byte)) &* 0x100000001b3
         }
-        return "\(root)-\(hash % 1000)"
+        return "\(root)-\(String(format: "%x", hash % 1_000_000))"
     }
 }

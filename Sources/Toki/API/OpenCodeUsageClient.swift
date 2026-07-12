@@ -10,7 +10,8 @@ struct OpenCodeUsageClient {
     func snapshot() async throws -> AccountSnapshot {
         let dbPath = OpenCodeUsageClient.databasePath()
         guard FileManager.default.fileExists(atPath: dbPath) else {
-            throw LocalizedErrorMessage("OpenCode database not found at \(dbPath)")
+            let shortPath = dbPath.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+            throw LocalizedErrorMessage("OpenCode database not found at \(shortPath)")
         }
 
         // One DB open: today's figures via conditional SUMs alongside all-time totals.
