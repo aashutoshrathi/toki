@@ -20,7 +20,7 @@ struct AccountLabelConfig: Codable {
 // properties keep their original names (id/name/provider) so the rest of the app is
 // untouched; only the JSON key mapping changed. Decoding accepts the old shape
 // (id/name/provider) too, so existing configs load and can be migrated forward.
-struct AccountConfig: Codable, Identifiable {
+struct AccountConfig: Codable, Identifiable, Sendable {
     var id: String
     var name: String
     var provider: Provider
