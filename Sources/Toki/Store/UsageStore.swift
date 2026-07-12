@@ -63,13 +63,15 @@ final class UsageStore: ObservableObject {
     }
 
     // True when there's nothing to lose by showing the connect wizard: no config.json yet,
-    // or one that decodes fine but simply has no accounts. A config.json that exists but
-    // fails to parse/validate for any other reason is a real error - connect() refuses to
-    // write over it, so showing Connect buttons there would be a dead end. That case falls
-    // through to the normal error banner instead (config stays nil, needsOnboarding is false).
+    // or one that decodes fine but simply has no accounts. A config.json that exists and
+    // decodes but is invalid for any other reason (e.g. a copilot entry) - or doesn't decode
+    // at all - is a real error; connect() would still fail its own validate() call there, so
+    // showing Connect buttons would be a dead end. Those cases fall through to the normal
+    // error banner instead (config stays nil, needsOnboarding is false).
     var needsOnboarding: Bool {
         guard config == nil else { return false }
-        return !FileManager.default.fileExists(atPath: ConfigLoader.path) || ConfigLoader.loadRawIfParsable() != nil
+        guard FileManager.default.fileExists(atPath: ConfigLoader.path) else { return true }
+        return ConfigLoader.loadRawIfParsable()?.accounts.isEmpty ?? false
     }
 
     func reloadConfig() {
@@ -86,13 +88,15 @@ final class UsageStore: ObservableObject {
         } catch {
             DiagnosticLogger.shared.record(.error, component: "config", code: "load_failed", detail: diagnosticErrorDetail(error))
             config = nil
-            configError = error.localizedDescription
             snapshots = []
             updateDerivedState(for: snapshots)
-            // Only scan (shells out to `security`) when onboarding will actually show -
-            // a genuinely broken config.json goes to the error banner instead.
+            // The onboarding state (missing/empty config) is expected, not an error - don't
+            // show a scary "Missing config" message for it. Genuinely broken configs still do.
             if needsOnboarding {
+                configError = nil
                 scanForOnboarding()
+            } else {
+                configError = error.localizedDescription
             }
         }
     }
