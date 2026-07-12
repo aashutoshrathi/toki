@@ -142,7 +142,7 @@ final class UsageStore: ObservableObject {
         } else if !FileManager.default.fileExists(atPath: ConfigLoader.path) {
             next = AppConfig(refreshMinutes: nil, accountLabels: nil, accounts: [], aiInstructions: nil)
         } else {
-            configError = "config.json exists but couldn't be parsed - fix or replace it with the config editor before connecting."
+            configError = "\(ConfigLoader.path) exists but couldn't be parsed - fix or replace it with the config editor before connecting."
             return
         }
         var existingKeys = Set(next.accounts.map { "\($0.provider.rawValue):\($0.id)" })
