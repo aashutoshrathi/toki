@@ -59,8 +59,10 @@ enum SVGLogoAsset {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Resources/\(name).svg")
+        // Resources ship as raw files in Contents/Resources (see package-release.sh), so we
+        // resolve via Bundle.main rather than Bundle.module - the SPM accessor fatal-errors
+        // when its .bundle isn't at the app root, which conflicts with codesign's layout.
         let urls = [
-            Bundle.module.url(forResource: name, withExtension: "svg"),
             Bundle.main.url(forResource: name, withExtension: "svg"),
             Bundle.main.resourceURL?.appendingPathComponent("\(name).svg"),
             executableResourceURL

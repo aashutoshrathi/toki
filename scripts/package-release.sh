@@ -32,11 +32,6 @@ lipo -create \
 echo "==> Copying resources"
 cp "$ROOT_DIR/Sources/Toki/Resources/"* "$APP_DIR/Contents/Resources/"
 
-echo "==> Copying SPM resource bundle"
-# Must live under Contents/Resources so Bundle.module resolves it and codesign can seal the
-# bundle. Placing it in the .app root leaves "unsealed contents" and codesign --deep fails.
-cp -R "$BUILD_DIR/release/Toki_Toki.bundle" "$APP_DIR/Contents/Resources/"
-
 echo "==> Generating Info.plist"
 INFO_PLIST="$APP_DIR/Contents/Info.plist"
 cat > "$INFO_PLIST" <<PLIST
