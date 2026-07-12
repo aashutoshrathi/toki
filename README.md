@@ -64,6 +64,21 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 
 macOS may ask for Keychain access the first time Toki reads Claude Code or `claude-swap` credentials.
 
+## Install
+
+### Homebrew
+
+```sh
+brew tap aashutoshrathi/tap
+brew install --cask toki
+```
+
+The cask installs the latest release DMG. Toki is ad-hoc signed and not notarized, so on first launch macOS may block it - right-click Toki in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Toki.app`.
+
+### Direct download
+
+Grab the latest `Toki_<version>_universal.dmg` from the [releases page](https://github.com/aashutoshrathi/toki/releases/latest), open it, and drag Toki to Applications. Updates install in-app once running.
+
 ## Install From Source
 
 Build and run:
