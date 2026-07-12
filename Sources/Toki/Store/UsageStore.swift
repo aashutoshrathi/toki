@@ -28,6 +28,7 @@ final class UsageStore: ObservableObject {
     @Published var statusEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
     @Published var detectedProviders: [DetectedProvider] = []
     @Published var isScanningProviders = false
+    @Published private(set) var needsOnboarding = false
 
     private var config: AppConfig?
     private var usageState = UsageState()
@@ -68,8 +69,11 @@ final class UsageStore: ObservableObject {
     // at all - is a real error; connect() would still fail its own validate() call there, so
     // showing Connect buttons would be a dead end. Those cases fall through to the normal
     // error banner instead (config stays nil, needsOnboarding is false).
-    var needsOnboarding: Bool {
-        guard config == nil else { return false }
+    //
+    // Computed once per reloadConfig() and cached in the stored property above rather than
+    // recomputed as a view-body computed property - it does synchronous disk I/O + JSON
+    // decoding, which shouldn't run on every SwiftUI re-render.
+    private func computeNeedsOnboarding() -> Bool {
         guard FileManager.default.fileExists(atPath: ConfigLoader.path) else { return true }
         return ConfigLoader.loadRawIfParsable()?.accounts.isEmpty ?? false
     }
@@ -77,6 +81,7 @@ final class UsageStore: ObservableObject {
     func reloadConfig() {
         do {
             config = try ConfigLoader.load()
+            needsOnboarding = false
             usageState = StateLoader.load()
             syncPublishedState()
             applyScheduledResets()
@@ -88,6 +93,7 @@ final class UsageStore: ObservableObject {
         } catch {
             DiagnosticLogger.shared.record(.error, component: "config", code: "load_failed", detail: diagnosticErrorDetail(error))
             config = nil
+            needsOnboarding = computeNeedsOnboarding()
             snapshots = []
             updateDerivedState(for: snapshots)
             // The onboarding state (missing/empty config) is expected, not an error - don't
