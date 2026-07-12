@@ -357,3 +357,32 @@ struct AccountBadge: View {
         .frame(width: size, height: size)
     }
 }
+
+// MARK: - EmptyPanel
+
+struct EmptyPanel: View {
+    var systemImage: String
+    var title: String
+    var detail: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(18)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+    }
+}

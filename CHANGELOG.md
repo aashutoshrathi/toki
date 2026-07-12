@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.5 - 2026-07-13
+
+### Changed
+
+- Internal restructuring, no user-facing changes: split the `UsageStore` god-object (685 lines mixing config/onboarding, refresh, sessions, notifications, AI insight, and debug logging) into per-concern extension files, and broke up `SmartPanels.swift` (a 532-line grab-bag of unrelated views accumulated across the last few features) into one file per view, matching the rest of the codebase's one-type-per-file convention.
+
 ## 2.1.4 - 2026-07-12
 
 ### Added
