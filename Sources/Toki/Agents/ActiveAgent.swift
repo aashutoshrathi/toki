@@ -51,7 +51,7 @@ enum ActiveAgentScanner {
     }
 
     // Caches the immutable-per-process fields (cwd, host app) by PID so they're resolved
-    // once, not on every 8s scan. `command` guards against PID reuse. Accessed only from
+    // once, not on every scan tick. `command` guards against PID reuse. Accessed only from
     // the serialized scan task (UsageStore gates concurrent scans).
     private struct CacheEntry {
         let command: String

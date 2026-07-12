@@ -4,6 +4,7 @@
 # scripts/update-cask.sh regenerates the version + sha256 after each release.
 cask "toki" do
   version "2.1.1"
+  # update-cask.sh replaces this after each release
   sha256 "PLACEHOLDER_SHA256"
 
   url "https://github.com/aashutoshrathi/toki/releases/download/v#{version}/Toki_#{version}_universal.dmg"

@@ -6,8 +6,14 @@ struct UsageInsight: Equatable {
     var suggestions: [UsageSuggestion]
 }
 
-struct UsageSuggestion: Equatable, Identifiable {
+struct UsageSuggestion: Identifiable {
     var id = UUID()
     var text: String
     var severity: RecommendationSeverity
+}
+
+extension UsageSuggestion: Equatable {
+    static func == (lhs: UsageSuggestion, rhs: UsageSuggestion) -> Bool {
+        lhs.text == rhs.text && lhs.severity == rhs.severity
+    }
 }
