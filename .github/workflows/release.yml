@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macos-26 ships Xcode 26 with the macOS 26 SDK, so FoundationModels resolves and the
+    # on-device AI insight compiles into the release (it is otherwise stripped by canImport).
+    runs-on: macos-26
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
