@@ -111,15 +111,22 @@ final class UsageStore: ObservableObject {
     // Appends detected accounts to config.json (creating it if this is a fresh install)
     // and reloads. Accounts already present for the same provider+id are skipped.
     //
-    // config is nil for ANY load failure, not just "no file yet" - a file that exists but
-    // failed to parse/validate must not be silently replaced with a blank one (data loss).
-    // Only synthesize a fresh config when there truly is no file on disk.
+    // config is nil for ANY load failure, including the exact onboarding case of a file
+    // that decodes fine but has no accounts yet - that's safe to build on top of via
+    // loadRawIfParsable(). A file that exists but doesn't decode at all must not be
+    // silently replaced with a blank one (data loss), so that case alone is refused.
     func connect(_ accounts: [AccountConfig]) {
-        guard config != nil || !FileManager.default.fileExists(atPath: ConfigLoader.path) else {
-            configError = "config.json exists but couldn't be loaded - fix or replace it with the config editor before connecting."
+        var next: AppConfig
+        if let config {
+            next = config
+        } else if let parsed = ConfigLoader.loadRawIfParsable() {
+            next = parsed
+        } else if !FileManager.default.fileExists(atPath: ConfigLoader.path) {
+            next = AppConfig(refreshMinutes: nil, accountLabels: nil, accounts: [], aiInstructions: nil)
+        } else {
+            configError = "config.json exists but couldn't be parsed - fix or replace it with the config editor before connecting."
             return
         }
-        var next = config ?? AppConfig(refreshMinutes: nil, accountLabels: nil, accounts: [], aiInstructions: nil)
         var existingKeys = Set(next.accounts.map { "\($0.provider.rawValue):\($0.id)" })
         for account in accounts {
             let key = "\(account.provider.rawValue):\(account.id)"
