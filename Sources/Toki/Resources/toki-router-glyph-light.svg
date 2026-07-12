@@ -13,7 +13,7 @@
   <g transform="translate(0 6)">
     <path class="mark-fill" d="M268 245H704L682 282L704 319H268C248 319 232 303 232 282C232 261 248 245 268 245Z"/>
     <path class="mark" d="M520 600L636 484"/>
-    <path class="mark-fill" d="M465 354H539V636C539 674 558 690 600 690H704L684 708L704 727H566C502 727 465 690 465 636Z"/>
+    <path class="mark-fill" d="M465 354H539V626C539 664 558 671 600 671H704L684 708L704 745H566C502 745 465 708 465 636Z"/>
     <circle class="mark-fill" cx="502" cy="282" r="96"/>
     <circle class="cutout" cx="502" cy="282" r="48"/>
     <circle class="sage" cx="746" cy="282" r="39"/>
