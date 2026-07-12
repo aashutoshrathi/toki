@@ -32,15 +32,11 @@ struct AccountCard: View {
                     aliasEditor
 
                     VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 4) {
-                            Text(snapshot.provider.displayName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            if store.debugMode && snapshot.isError {
-                                Image(systemName: "exclamationmark.bubble.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.orange)
-                            }
+                        // Provider name is omitted here - the account logo already conveys it.
+                        if store.debugMode && snapshot.isError {
+                            Image(systemName: "exclamationmark.bubble.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.orange)
                         }
                         if let secondaryIdentifier {
                             Text(secondaryIdentifier)
