@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.2 - 2026-07-12
+
+### Added
+
+- Settings editor for the AI insight instructions (`aiInstructions`), with the default prompt shown as placeholder and reset-to-default; saving regenerates the insight immediately. Shown only when on-device AI is available.
+
+### Changed
+
+- Release builds now run on the macOS 26 runner so the on-device AI insight (Foundation Models) is compiled into the shipped app instead of being stripped on an older SDK.
+
+### Fixed
+
+- Settings back button now responds across its whole surface, not only the chevron glyph.
+- AI instructions editor surfaces a save failure inline instead of showing a false "Saved".
+
 ## 2.1.1 - 2026-07-12
 
 ### Added
