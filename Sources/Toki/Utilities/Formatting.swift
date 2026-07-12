@@ -30,11 +30,18 @@ func resetDescriptionFromUnix(_ value: Any?) -> String? {
     return resetDescription(for: Date(timeIntervalSince1970: seconds))
 }
 
-// Returns e.g. "3 hr (18:00)" - a countdown followed by the clock time. Callers prefix
-// "resets in", so the leading "in " from the relative formatter is stripped here.
+// Returns e.g. "3h (18:00)" - a countdown followed by the clock time. Callers prefix
+// "resets in", so the countdown must not itself say "in". A fixed en_US_POSIX relative
+// formatter keeps this deterministic (system-locale strings vary in word order and would
+// either not start with "in" or embed it mid-word, e.g. Finnish "min").
 func resetDescription(for resetDate: Date) -> String {
-    let countdown = relativeDate(resetDate)
-        .replacingOccurrences(of: "in ", with: "")
+    let relative = RelativeDateTimeFormatter()
+    relative.unitsStyle = .abbreviated
+    relative.locale = Locale(identifier: "en_US_POSIX")
+    var countdown = relative.localizedString(for: resetDate, relativeTo: Date())
+    if countdown.hasPrefix("in ") {
+        countdown.removeFirst(3)
+    }
     let formatter = DateFormatter()
     formatter.dateFormat = Calendar.current.isDateInToday(resetDate) ? "HH:mm" : "MMM d HH:mm"
     return "\(countdown) (\(formatter.string(from: resetDate)))"

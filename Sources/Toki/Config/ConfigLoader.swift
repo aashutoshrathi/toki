@@ -42,20 +42,32 @@ enum ConfigLoader {
     }
 
     // One-time rewrite of legacy configs (name/provider keys) into the flat label/type
-    // shape. A .bak copy is kept before overwriting so the original is recoverable.
+    // shape. A .bak copy of the true original is kept once and never overwritten.
     private static func migrateToFlatShapeIfNeeded(rawData: Data, config: AppConfig, path: String) {
-        guard let text = String(data: rawData, encoding: .utf8),
-              text.contains("\"provider\"") || text.contains("\"name\"") else {
-            return
-        }
+        guard hasLegacyAccountKeys(rawData) else { return }
+        let backupPath = path + ".bak"
         do {
-            try rawData.write(to: URL(fileURLWithPath: path + ".bak"), options: .atomic)
+            // Preserve only the FIRST original; a later spurious trigger must not clobber it.
+            if !FileManager.default.fileExists(atPath: backupPath) {
+                try rawData.write(to: URL(fileURLWithPath: backupPath), options: .atomic)
+            }
             let migrated = try JSONEncoder.toki.encode(config)
             try migrated.write(to: URL(fileURLWithPath: path), options: .atomic)
             DiagnosticLogger.shared.record(.info, component: "config", code: "migrated_flat_shape")
         } catch {
             DiagnosticLogger.shared.record(.warning, component: "config", code: "migration_failed", detail: diagnosticErrorDetail(error))
         }
+    }
+
+    // True only if an actual account object carries a legacy key ("name"/"provider").
+    // Parsing the structure avoids false positives from those tokens appearing inside a
+    // string value elsewhere (e.g. a notes field), which would re-migrate every launch.
+    private static func hasLegacyAccountKeys(_ rawData: Data) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: rawData) as? [String: Any],
+              let accounts = root["accounts"] as? [[String: Any]] else {
+            return false
+        }
+        return accounts.contains { $0["name"] != nil || $0["provider"] != nil }
     }
 
     static func save(_ config: AppConfig) throws {

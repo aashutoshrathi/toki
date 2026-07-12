@@ -22,7 +22,8 @@ enum UsageFetcher {
         minimumRefreshInterval: TimeInterval?
     ) async -> UsageFetchResponse {
         let accounts = accountsIncludingAutoDetected(config.accounts)
-        let previousByID = Dictionary(uniqueKeysWithValues: previousSnapshots.map { ($0.id, $0) })
+        // uniquingKeysWith (not uniqueKeysWithValues) so duplicate account ids never trap.
+        let previousByID = Dictionary(previousSnapshots.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         let fetchedAt = Date()
         return await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
             for (index, account) in accounts.enumerated() {

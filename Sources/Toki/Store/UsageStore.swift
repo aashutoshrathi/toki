@@ -29,6 +29,7 @@ final class UsageStore: ObservableObject {
     private var usageState = UsageState()
     private var timer: Timer?
     private var isRefreshing = false
+    private var isScanningAgents = false
     private var eventGeneration = 0
     private var notificationAuthorization: Bool?
     private var agentTimer: Timer?
@@ -42,8 +43,13 @@ final class UsageStore: ObservableObject {
     }
 
     func refreshActiveAgents() {
+        // Serialize scans: a slow scan must not overlap the next 8s tick, or two detached
+        // tasks would race the scanner's PID cache. isScanningAgents is MainActor-isolated.
+        guard !isScanningAgents else { return }
+        isScanningAgents = true
         Task {
             activeAgents = await ActiveAgentScanner.scan()
+            isScanningAgents = false
         }
     }
 

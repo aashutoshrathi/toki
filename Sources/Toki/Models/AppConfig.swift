@@ -52,10 +52,12 @@ struct AccountConfig: Codable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        // New key "label" (fallback to legacy "name").
-        guard let label = try c.decodeIfPresent(String.self, forKey: .label)
-            ?? c.decodeIfPresent(String.self, forKey: .name) else {
-            throw DecodingError.keyNotFound(CodingKeys.label, .init(codingPath: decoder.codingPath, debugDescription: "account needs a label"))
+        // New key "label" (fallback to legacy "name"); must be non-empty.
+        guard let label = try (c.decodeIfPresent(String.self, forKey: .label)
+            ?? c.decodeIfPresent(String.self, forKey: .name))?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !label.isEmpty else {
+            throw DecodingError.keyNotFound(CodingKeys.label, .init(codingPath: decoder.codingPath, debugDescription: "account needs a non-empty label"))
         }
         name = label
         // New key "type" (fallback to legacy "provider").
@@ -111,9 +113,19 @@ struct AccountConfig: Codable, Identifiable {
         self.provider = provider
     }
 
+    // Derives an id from the label. Two labels that normalize to the same base (e.g.
+    // "Work!" and "Work") get distinct ids via a short suffix of a STABLE hash of the raw
+    // label, so different accounts never collapse to one identity and the id is the same
+    // across launches (Swift's Hashable is per-run randomized, so it can't be used here).
     private static func slug(label: String, provider: Provider) -> String {
         let base = label.lowercased().replacingOccurrences(of: " ", with: "-")
             .filter { $0.isLetter || $0.isNumber || $0 == "-" }
-        return base.isEmpty ? provider.rawValue : base
+        let root = base.isEmpty ? provider.rawValue : base
+        // FNV-1a over the raw label - deterministic across processes.
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in label.utf8 {
+            hash = (hash ^ UInt64(byte)) &* 0x100000001b3
+        }
+        return "\(root)-\(hash % 1000)"
     }
 }

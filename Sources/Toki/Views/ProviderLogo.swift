@@ -49,7 +49,9 @@ struct ProviderLogo: View {
 // Loads named SVGs from the app's Resources folder, cached per name. Drop a
 // `<name>.svg` into Sources/Toki/Resources to add or replace a provider logo.
 enum SVGLogoAsset {
-    @MainActor private static var cache: [String: NSImage] = [:]
+    // Caches hits AND misses (the optional), so a missing SVG isn't re-probed across
+    // four candidate URLs on every render.
+    @MainActor private static var cache: [String: NSImage?] = [:]
 
     @MainActor static func image(named name: String) -> NSImage? {
         if let cached = cache[name] { return cached }
@@ -63,13 +65,9 @@ enum SVGLogoAsset {
             Bundle.main.resourceURL?.appendingPathComponent("\(name).svg"),
             executableResourceURL
         ]
-        for url in urls.compactMap({ $0 }) {
-            if let image = NSImage(contentsOf: url) {
-                cache[name] = image
-                return image
-            }
-        }
-        return nil
+        let image = urls.compactMap { $0 }.lazy.compactMap { NSImage(contentsOf: $0) }.first
+        cache[name] = image
+        return image
     }
 }
 

@@ -50,9 +50,15 @@ enum ActiveAgentScanner {
         let tty: String?
     }
 
-    // Per-PID enrichment cache so a live agent's cwd/host/title are resolved once, not on
-    // every 8s scan. Written only from the serialized detached scan task.
-    private nonisolated(unsafe) static var cache: [Int32: ActiveAgent] = [:]
+    // Caches the immutable-per-process fields (cwd, host app) by PID so they're resolved
+    // once, not on every 8s scan. `command` guards against PID reuse. Accessed only from
+    // the serialized scan task (UsageStore gates concurrent scans).
+    private struct CacheEntry {
+        let command: String
+        let directory: String?
+        let hostApp: HostApp?
+    }
+    private nonisolated(unsafe) static var cache: [Int32: CacheEntry] = [:]
 
     static func scan() async -> [ActiveAgent] {
         await Task.detached(priority: .utility) {
@@ -127,16 +133,18 @@ enum ActiveAgentScanner {
         return Candidate(pid: pid, parentPID: parentPID, provider: provider, command: command, runtime: String(parts[3]), tty: tty)
     }
 
-    // Resolves the expensive, mostly-static fields (cwd, host app, chat title). Cached by
-    // PID across scans since a live process's identity doesn't change; lastActivity is
-    // refreshed every scan because it moves.
+    // Resolves the expensive fields. cwd and host app are truly immutable for a live
+    // process, so they're cached by PID (validated against the command line to survive
+    // PID reuse). chatTitle and lastActivity change as the session evolves, so they're
+    // re-resolved every scan.
     private static func enrich(_ c: Candidate) -> ActiveAgent {
         let cached = cache[c.pid]
-        let cwd = cached?.directory
+        let reusable = cached?.command == c.command ? cached : nil
+        let cwd = reusable?.directory
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
-        let chatTitle = cached?.chatTitle ?? AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
-        let hostApp = cached?.hostApp ?? AgentSessionResolver.hostApp(ofPID: c.pid)
+        let hostApp = reusable?.hostApp ?? AgentSessionResolver.hostApp(ofPID: c.pid)
+        let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
         let agent = ActiveAgent(
             id: c.pid,
             provider: c.provider,
@@ -148,7 +156,7 @@ enum ActiveAgentScanner {
             runtime: c.runtime,
             terminalTTY: c.tty
         )
-        cache[c.pid] = agent
+        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp)
         return agent
     }
 }

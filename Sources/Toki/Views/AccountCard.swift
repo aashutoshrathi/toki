@@ -205,6 +205,11 @@ struct AccountCard: View {
             including: .gesture
         )
         .pointerOnHover()
+        .onChange(of: snapshot.isError) { _, isError in
+            // Sessions has no meaning for a disconnected account; snap back to Usage so a
+            // reconnect doesn't leave the toggle stuck on a hidden Sessions selection.
+            if isError { expandedTab = .usage }
+        }
     }
 
     @ViewBuilder
