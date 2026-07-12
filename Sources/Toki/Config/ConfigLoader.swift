@@ -31,6 +31,18 @@ enum ConfigLoader {
         return config
     }
 
+    // Best-effort parse used by UsageStore.connect() to distinguish a file that exists and
+    // decodes fine but merely fails validate() (e.g. no accounts yet - the exact onboarding
+    // scenario) from one that doesn't decode at all. Safe to build on top of the former;
+    // the latter must not be touched, or a genuinely corrupt config.json would be lost.
+    static func loadRawIfParsable() -> AppConfig? {
+        guard FileManager.default.fileExists(atPath: path),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(AppConfig.self, from: data)
+    }
+
     // The invariants a config must satisfy, shared by load() and the in-app editor.
     static func validate(_ config: AppConfig) throws {
         guard !config.accounts.isEmpty else {
