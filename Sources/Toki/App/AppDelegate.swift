@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             popover.contentViewController?.view.window?.makeKey()
             store.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
             store.refreshActiveAgents()
+            store.rescanProvidersIfNeeded()
         }
     }
 }
