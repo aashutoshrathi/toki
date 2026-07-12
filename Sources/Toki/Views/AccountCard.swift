@@ -7,6 +7,17 @@ struct AccountCard: View {
     @State private var isExpanded = false
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
+    @State private var expandedTab: ExpandedTab = .usage
+
+    private enum ExpandedTab: String, CaseIterable, Identifiable {
+        case usage = "Usage"
+        case sessions = "Sessions"
+        var id: String { rawValue }
+    }
+
+    private var accountAgents: [ActiveAgent] {
+        store.activeAgents.filter { $0.provider == snapshot.provider }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -90,16 +101,28 @@ struct AccountCard: View {
                     ProviderPill(provider: snapshot.provider)
                 }
 
-                if !snapshot.metrics.isEmpty {
-                    VStack(spacing: 3) {
-                        ForEach(snapshot.metrics) { metric in
-                            MetricRow(metric: metric)
-                        }
+                Picker("", selection: $expandedTab) {
+                    ForEach(ExpandedTab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
                     }
-                    .font(.system(size: 11, weight: .medium))
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                if expandedTab == .usage {
+                    if !snapshot.metrics.isEmpty {
+                        VStack(spacing: 3) {
+                            ForEach(snapshot.metrics) { metric in
+                                MetricRow(metric: metric)
+                            }
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                } else {
+                    accountSessions
                 }
 
-                if !snapshot.accountInfo.isEmpty {
+                if expandedTab == .usage && !snapshot.accountInfo.isEmpty {
                     Divider()
                         .padding(.vertical, 1)
                     VStack(spacing: 3) {
@@ -241,10 +264,7 @@ struct AccountCard: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         } else {
-            VStack(alignment: .trailing, spacing: 2) {
-                QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
-                QuotaSummaryLine(label: "weekly", value: weeklyAvailability, resetHint: weeklyResetTime)
-            }
+            QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
         }
     }
 
@@ -252,8 +272,49 @@ struct AccountCard: View {
         availabilityText(for: ["Daily", "5h", "Today"]) ?? snapshot.primary
     }
 
-    private var weeklyAvailability: String {
-        availabilityText(for: ["7d", "Weekly", "Week"]) ?? "--"
+    @ViewBuilder
+    private var accountSessions: some View {
+        if accountAgents.isEmpty {
+            Text("No active \(snapshot.provider.displayName) sessions")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 6)
+        } else {
+            VStack(spacing: 4) {
+                ForEach(accountAgents) { agent in
+                    Button {
+                        ActiveAgentNavigator.navigate(to: agent)
+                    } label: {
+                        HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(agent.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                                if let dir = agent.directoryDisplay {
+                                    Text(dir)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                            Spacer()
+                            if let host = agent.hostApp {
+                                Text(host)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Image(systemName: agent.hasTerminalTarget ? "arrow.up.forward.app" : "macwindow.on.rectangle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .pointerOnHover()
+                }
+            }
+        }
     }
 
     private func availabilityText(for labels: Set<String>) -> String? {
@@ -274,13 +335,6 @@ struct AccountCard: View {
         return nil
     }
 
-    private var weeklyResetTime: String? {
-        if let metric = snapshot.metrics.first(where: { ["7d", "Weekly", "Week"].contains($0.label) }),
-           let range = metric.value.range(of: "resets ") {
-            return String(metric.value[range.upperBound...])
-        }
-        return nil
-    }
 
     private var progressRatio: Double? {
         snapshot.progressRatio ?? snapshot.remainingRatio.map { 1 - $0 }
