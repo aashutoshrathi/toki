@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.1.1 - 2026-07-12
+
+### Added
+
+- Active-agent discovery for Codex, Claude Code, Copilot CLI, OpenCode, and ChatGPT-hosted Codex with runtime, terminal metadata, and working directory display.
+- Conversation title and project folder display for each agent, shown relative to home (`~/Code/project`).
+- Best-effort navigation to matching terminal tabs (iTerm2, Terminal, WezTerm) and editor-hosted sessions (VS Code, Cursor, ChatGPT) via bundle ID resolution.
+- On-device AI insight card using Apple Intelligence (macOS 26+) for natural-language account summaries, with a deterministic recommendation fallback and expandable suggestions.
+- Session recording banner with a live animated stopwatch while tracking is active.
+- Session play/stop toggle moved to the header controls bar.
+- OpenCode usage tracking from its local SQLite database (today's spend, tokens, all-time totals), auto-detected when available.
+- OpenCode SVG logo resource.
+- Claude SVG logo resource.
+- Automatic GitHub release checks and verified one-click DMG installation.
+- Six-hour update polling with a manual "Check now" action in Settings.
+- Privacy-safe rotating local diagnostics and an attached debug-report share action.
+- Config migration from `name`/`provider`/`id` to `label`/`type` with automatic migration and `.bak` backup.
+- In-app JSON config editor.
+- Optional `aiInstructions` config field for customizing the on-device LLM prompt.
+- Homebrew cask installation (`brew install --cask toki`).
+- Cask update automation script.
+- Full-page settings view replacing the Settings tab.
+- Copilot provider entry (agent-detection only, no quota tracking).
+
+### Changed
+
+- Release bundles are ad-hoc signed so downloaded updates can be verified before installation.
+- Overview panel now uses a unified AIInsightCard replacing three separate stat blocks.
+- Account config format migrated to `label`/`type`; legacy configs load and convert automatically.
+- Provider logos switched to SVG assets with fallback marks for new providers.
+
+### Fixed
+
+- Pipe deadlock in subprocess runner: drain stdout and stderr before `waitUntilExit`.
+- Update download URL validation now enforces `https` scheme alongside host check.
+
 ## 2.1.0 - 2026-07-11
 
 ### Added

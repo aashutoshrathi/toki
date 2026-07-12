@@ -14,6 +14,9 @@ final class UsageStore: ObservableObject {
     @Published var events: [TokiEvent] = []
     @Published var history: [UsageHistoryEntry] = []
     @Published var session: SessionState?
+    @Published var activeAgents: [ActiveAgent] = []
+    @Published var aiInsight: UsageInsight?
+    @Published var isGeneratingInsight = false
     @Published var recommendation = SmartRecommendation(
         title: "Loading",
         detail: "Checking account quota.",
@@ -28,11 +31,29 @@ final class UsageStore: ObservableObject {
     private var usageState = UsageState()
     private var timer: Timer?
     private var isRefreshing = false
+    private var isScanningAgents = false
     private var eventGeneration = 0
+    private var insightGeneration = 0
     private var notificationAuthorization: Bool?
+    private var agentTimer: Timer?
 
     init() {
         reloadConfig()
+        refreshActiveAgents()
+        agentTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshActiveAgents() }
+        }
+    }
+
+    func refreshActiveAgents() {
+        // Serialize scans: a slow scan must not overlap the next tick, or two detached
+        // tasks would race the scanner's PID cache. isScanningAgents is MainActor-isolated.
+        guard !isScanningAgents else { return }
+        isScanningAgents = true
+        Task {
+            activeAgents = await ActiveAgentScanner.scan()
+            isScanningAgents = false
+        }
     }
 
     var refreshInterval: TimeInterval {
@@ -51,6 +72,7 @@ final class UsageStore: ObservableObject {
             scheduleRefresh()
             refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
         } catch {
+            DiagnosticLogger.shared.record(.error, component: "config", code: "load_failed", detail: diagnosticErrorDetail(error))
             config = nil
             configError = error.localizedDescription
             snapshots = [
@@ -101,7 +123,7 @@ final class UsageStore: ObservableObject {
             let errorCount = sorted.filter(\.isError).count
             logDebug("Refresh complete: \(sorted.count) accounts (\(errorCount) errors)")
             for snapshot in sorted where snapshot.isError {
-                logDebug("  [\(snapshot.id)] \(snapshot.name): \(snapshot.subtitle)")
+                logDebug("  \(snapshot.provider.displayName): unavailable")
             }
             recordHistory(for: sorted, at: response.fetchedAt)
             evaluateEventsAndNotifications(for: sorted, previous: previousSnapshots, at: response.fetchedAt)
@@ -174,6 +196,7 @@ final class UsageStore: ObservableObject {
                 return updated
             }
         } catch {
+            DiagnosticLogger.shared.record(.error, component: "config", code: "alias_save_failed", detail: diagnosticErrorDetail(error))
             configError = "Could not save alias: \(error.localizedDescription)"
         }
     }
@@ -263,6 +286,7 @@ final class UsageStore: ObservableObject {
                 appendEvent(kind: .switchAccount, title: "Account switched", detail: "Claude Code switched to \(target).", deliveredNotification: false)
                 reloadConfig()
             case .failure(let error):
+                DiagnosticLogger.shared.record(.error, component: "account_switch", code: "switch_failed", detail: diagnosticErrorDetail(error))
                 appendEvent(kind: .switchAccount, title: "Switch failed", detail: error.localizedDescription, deliveredNotification: false)
                 snapshots = currentSnapshots.map { snapshot in
                     guard snapshot.switchTarget == target else { return snapshot }
@@ -346,6 +370,31 @@ final class UsageStore: ObservableObject {
             statusEntries = menuBarPlaceholderEntries()
         }
         syncPublishedState()
+        refreshAIInsight(for: snapshots)
+    }
+
+    // Enriches the overview with an on-device LLM summary when Apple Intelligence is
+    // available. The deterministic recommendation is already shown; this only replaces
+    // it once ready, and stays nil (rule-based visible) on older systems or failure.
+    private func refreshAIInsight(for snapshots: [AccountSnapshot]) {
+        guard #available(macOS 26, *), InsightGenerator.isAvailable else {
+            aiInsight = nil
+            isGeneratingInsight = false
+            return
+        }
+        let grounding = recommendation
+        let instructions = config?.aiInstructions
+        // Keep the previous summary visible while regenerating; a token guards against a
+        // slower earlier generation overwriting a newer one.
+        insightGeneration += 1
+        let generation = insightGeneration
+        isGeneratingInsight = true
+        Task { @MainActor in
+            let result = await InsightGenerator.generate(snapshots: snapshots, grounding: grounding, instructions: instructions)
+            guard generation == insightGeneration else { return }
+            if let result { aiInsight = result }
+            isGeneratingInsight = false
+        }
     }
 
     private func recordHistory(for snapshots: [AccountSnapshot], at date: Date) {

@@ -154,8 +154,39 @@ struct EventPanel: View {
     }
 }
 
+// Full-page settings/config view opened from the header gear (no longer a bottom tab).
+struct ConfigPage: View {
+    @ObservedObject var store: UsageStore
+    @ObservedObject var updateChecker: UpdateChecker
+    var onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Button(action: onClose) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 25, height: 25)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .help("Back")
+                .accessibilityLabel("Back")
+                .pointerOnHover()
+                Text("Settings")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+            }
+            SettingsPanel(store: store, updateChecker: updateChecker)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
 struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
+    @ObservedObject var updateChecker: UpdateChecker
 
     var body: some View {
         ScrollView {
@@ -193,14 +224,70 @@ struct SettingsPanel: View {
 
                 Divider()
 
-                Button {
-                    ConfigLoader.openInDefaultEditor()
-                } label: {
-                    Label("Open JSON config", systemImage: "gearshape")
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("App updates")
+                            .font(.system(size: 11, weight: .semibold))
+                        if updateChecker.isChecking {
+                            Text("Checking GitHub…")
+                                .foregroundStyle(.secondary)
+                        } else if let message = updateChecker.checkMessage {
+                            Text(message)
+                                .foregroundStyle(.secondary)
+                        } else if let date = updateChecker.lastCheckedAt {
+                            HStack(spacing: 3) {
+                                Text("Checked")
+                                Text(date, style: .relative)
+                            }
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text("Checks automatically every 6 hours")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.system(size: 10))
+
+                    Spacer()
+
+                    Button {
+                        updateChecker.checkNow()
+                    } label: {
+                        if updateChecker.isChecking {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Check now")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(updateChecker.isChecking)
+                    .pointerOnHover()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .pointerOnHover()
+
+                Divider()
+
+                ConfigEditor(store: store)
+
+                HStack(spacing: 8) {
+                    Button {
+                        DiagnosticsReporter.presentSharePicker()
+                    } label: {
+                        Label("Send debug report", systemImage: "paperclip")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .pointerOnHover()
+
+                    Button {
+                        DiagnosticsReporter.openLogFolder()
+                    } label: {
+                        Label("Logs", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .pointerOnHover()
+                }
             }
             .font(.system(size: 12))
             .padding(8)
@@ -210,7 +297,7 @@ struct SettingsPanel: View {
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
         }
-        .frame(maxHeight: accountListHeight())
+        .frame(maxHeight: .infinity)
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<AppPreferences, Value>) -> Binding<Value> {
@@ -233,6 +320,89 @@ struct SettingsPanel: View {
                 store.updatePreferences(next)
             }
         )
+    }
+}
+
+// In-app editor for the full config.json. Validates on save (rejecting invalid edits
+// before they reach disk) and reloads the store so changes take effect immediately.
+struct ConfigEditor: View {
+    @ObservedObject var store: UsageStore
+
+    @State private var text = ConfigLoader.rawContents()
+    @State private var error: String?
+    @State private var saved = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Config JSON")
+                    .font(.system(size: 11, weight: .semibold))
+                Spacer()
+                Button {
+                    ConfigLoader.openInDefaultEditor()
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                }
+                .buttonStyle(.plain)
+                .help("Open in external editor")
+                .pointerOnHover()
+            }
+
+            TextEditor(text: $text)
+                .font(.system(size: 10, design: .monospaced))
+                .frame(height: 150)
+                .padding(4)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                )
+
+            if let error {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    save()
+                } label: {
+                    Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .pointerOnHover()
+
+                Button {
+                    text = ConfigLoader.rawContents()
+                    error = nil
+                    saved = false
+                } label: {
+                    Label("Revert", systemImage: "arrow.uturn.backward")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .pointerOnHover()
+            }
+        }
+    }
+
+    private func save() {
+        do {
+            try ConfigLoader.saveRaw(text)
+            error = nil
+            saved = true
+            store.reloadConfig()
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.5))
+                saved = false
+            }
+        } catch {
+            self.error = error.localizedDescription
+            saved = false
+        }
     }
 }
 

@@ -71,10 +71,11 @@ struct ClaudeCodeUsage {
             utilization: utilization,
             resetDescription: resetDescription(window["resets_at"])
         )
-        metrics.append(MetricLine(label: label, value: "\(Int(utilization.rounded()))% used"))
+        var value = "\(Int(utilization.rounded()))% used"
         if let reset = primaryMetric?.resetDescription {
-            metrics.append(MetricLine(label: "Reset", value: reset))
+            value += " - resets in \(reset)"
         }
+        metrics.append(MetricLine(label: label, value: value))
     }
 
     private mutating func appendWindow(_ label: String, _ window: [String: Any]) {
@@ -83,7 +84,7 @@ struct ClaudeCodeUsage {
 
         var value = "\(Int(utilization.rounded()))% used"
         if let reset = resetDescription(window["resets_at"]) {
-            value += " - resets \(reset)"
+            value += " - resets in \(reset)"
         }
         metrics.append(MetricLine(label: label, value: value))
     }
@@ -103,7 +104,7 @@ struct ClaudeCodeUsage {
         var value = "\(formatUSD(usedCents / 100)) / \(formatUSD(limitCents / 100))"
         value += " - \(Int(utilization.rounded()))%"
         if let reset = resetDescription(extraUsage["resets_at"]) {
-            value += " - resets \(reset)"
+            value += " - resets in \(reset)"
         }
         metrics.append(MetricLine(label: "Extra", value: value))
     }

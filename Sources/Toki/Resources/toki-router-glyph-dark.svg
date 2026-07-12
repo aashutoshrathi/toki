@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Toki router glyph logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Toki router glyph logo dark mode">
   <defs>
     <style>
-      .bg { fill: #f4f1ea; }
-      .mark { fill: none; stroke: #24262b; stroke-width: 74; stroke-linecap: round; stroke-linejoin: round; }
-      .mark-fill { fill: #24262b; }
-      .cutout { fill: #f4f1ea; }
-      .sage { fill: #8ea99b; }
-      .amber { fill: #c99a52; }
+      .bg { fill: #181a1f; }
+      .mark { fill: none; stroke: #f4f1ea; stroke-width: 74; stroke-linecap: round; stroke-linejoin: round; }
+      .mark-fill { fill: #f4f1ea; }
+      .cutout { fill: #181a1f; }
+      .sage { fill: #9bb5a7; }
+      .amber { fill: #d3a45c; }
     </style>
   </defs>
   <rect class="bg" width="1024" height="1024" rx="232"/>

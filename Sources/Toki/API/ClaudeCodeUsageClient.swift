@@ -29,6 +29,7 @@ struct ClaudeCodeUsageClient {
         do {
             return try await snapshot(for: record)
         } catch {
+            DiagnosticLogger.shared.record(.error, component: "usage", code: "claude_account_failed", detail: diagnosticErrorDetail(error))
             return AccountSnapshot(
                 id: record.id,
                 name: record.label?.nickname ?? record.name,

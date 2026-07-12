@@ -13,8 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusHostingView: PassthroughHostingView<MenuBarStatusView>?
     private let popover = NSPopover()
     private let store = UsageStore()
+    private let updateChecker = UpdateChecker()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DiagnosticLogger.shared.record(.info, component: "app", code: "launched", detail: "version=\(appVersion)")
         NSApp.setActivationPolicy(.accessory)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -24,8 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         popover.behavior = .transient
         popover.contentSize = NSSize(width: popoverWidth(), height: popoverHeight())
-        popover.contentViewController = NSHostingController(rootView: MenuContentView(store: store))
+        popover.contentViewController = NSHostingController(
+            rootView: MenuContentView(store: store, updateChecker: updateChecker)
+        )
         popover.delegate = self
+
+        updateChecker.startAutomaticChecks()
 
         Task { @MainActor in
             for await entries in store.$statusEntries.values {
@@ -66,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
             store.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
+            store.refreshActiveAgents()
         }
     }
 }

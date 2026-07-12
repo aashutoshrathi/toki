@@ -149,7 +149,7 @@ struct CodexRateLimits {
 
         var value = "\(Int(clampedUsed.rounded()))% used"
         if let reset = resetDescriptionFromUnix(firstValue(window, keys: ["resetsAt"])) {
-            value += " - resets \(reset)"
+            value += " - resets in \(reset)"
         }
         metrics.append(MetricLine(label: label, value: value))
     }

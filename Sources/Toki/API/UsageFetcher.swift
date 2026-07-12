@@ -21,8 +21,9 @@ enum UsageFetcher {
         previousSnapshots: [AccountSnapshot],
         minimumRefreshInterval: TimeInterval?
     ) async -> UsageFetchResponse {
-        let accounts = config.accounts
-        let previousByID = Dictionary(uniqueKeysWithValues: previousSnapshots.map { ($0.id, $0) })
+        let accounts = accountsIncludingAutoDetected(config.accounts)
+        // uniquingKeysWith (not uniqueKeysWithValues) so duplicate account ids never trap.
+        let previousByID = Dictionary(previousSnapshots.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         let fetchedAt = Date()
         return await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
             for (index, account) in accounts.enumerated() {
@@ -55,6 +56,16 @@ enum UsageFetcher {
         }
     }
 
+    // Appends a synthetic OpenCode account when its local database exists and the user
+    // hasn't configured one explicitly. Never persisted - detected fresh each fetch.
+    private static func accountsIncludingAutoDetected(_ configured: [AccountConfig]) -> [AccountConfig] {
+        guard !configured.contains(where: { $0.provider == .openCode }),
+              let detected = OpenCodeUsageClient.autoDetectedAccount() else {
+            return configured
+        }
+        return configured + [detected]
+    }
+
     private static func snapshots(
         for account: AccountConfig,
         config: AppConfig,
@@ -85,6 +96,10 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
+            case .copilot:
+                snapshots = [agentOnlySnapshot(for: account)]
+            case .openCode:
+                snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
             case .openai:
                 snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
             case .codex:
@@ -108,13 +123,19 @@ enum UsageFetcher {
             }
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         } catch {
+            DiagnosticLogger.shared.record(
+                .error,
+                component: "usage",
+                code: "provider_fetch_failed",
+                detail: "provider=\(account.provider.rawValue) \(diagnosticErrorDetail(error))"
+            )
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         }
     }
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic:
             return "\(account.provider.rawValue):\(account.id)"
@@ -138,7 +159,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .manual:
             return 0
         }
     }
@@ -223,6 +244,19 @@ enum UsageFetcher {
             remainingRatio: ratio,
             metrics: metrics,
             canAdjust: true
+        )
+    }
+
+    private static func agentOnlySnapshot(for account: AccountConfig) -> AccountSnapshot {
+        AccountSnapshot(
+            id: account.id,
+            name: account.name,
+            provider: account.provider,
+            primary: "Agent detection only",
+            subtitle: "Use the Agents tab for active sessions.",
+            remainingRatio: nil,
+            metrics: [],
+            isError: false
         )
     }
 }

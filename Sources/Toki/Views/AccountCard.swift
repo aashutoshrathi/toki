@@ -7,6 +7,20 @@ struct AccountCard: View {
     @State private var isExpanded = false
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
+    @State private var expandedTab: ExpandedTab = .usage
+
+    private enum ExpandedTab: String, CaseIterable, Identifiable {
+        case usage = "Usage"
+        case sessions = "Sessions"
+        var id: String { rawValue }
+    }
+
+    // Active agents are discovered by scanning processes, which reveals the provider but not
+    // which configured account authenticated them. So sessions are provider-scoped: every card
+    // for a given provider surfaces the same list. The UI copy makes that scope explicit.
+    private var accountAgents: [ActiveAgent] {
+        store.activeAgents.filter { $0.provider == snapshot.provider }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -32,15 +46,11 @@ struct AccountCard: View {
                     aliasEditor
 
                     VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 4) {
-                            Text(snapshot.provider.displayName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            if store.debugMode && snapshot.isError {
-                                Image(systemName: "exclamationmark.bubble.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.orange)
-                            }
+                        // Provider name is omitted here - the account logo already conveys it.
+                        if store.debugMode && snapshot.isError {
+                            Image(systemName: "exclamationmark.bubble.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.orange)
                         }
                         if let secondaryIdentifier {
                             Text(secondaryIdentifier)
@@ -94,16 +104,32 @@ struct AccountCard: View {
                     ProviderPill(provider: snapshot.provider)
                 }
 
-                if !snapshot.metrics.isEmpty {
-                    VStack(spacing: 3) {
-                        ForEach(snapshot.metrics) { metric in
-                            MetricRow(metric: metric)
+                // Sessions only make sense for a connected account; when the account is
+                // not connected, hide the toggle and just show usage (the error state).
+                if !snapshot.isError {
+                    Picker("", selection: $expandedTab) {
+                        ForEach(ExpandedTab.allCases) { tab in
+                            Text(tab.rawValue).tag(tab)
                         }
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
 
-                if !snapshot.accountInfo.isEmpty {
+                if snapshot.isError || expandedTab == .usage {
+                    if !snapshot.metrics.isEmpty {
+                        VStack(spacing: 3) {
+                            ForEach(snapshot.metrics) { metric in
+                                MetricRow(metric: metric)
+                            }
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
+                } else {
+                    accountSessions
+                }
+
+                if expandedTab == .usage && !snapshot.accountInfo.isEmpty {
                     Divider()
                         .padding(.vertical, 1)
                     VStack(spacing: 3) {
@@ -182,6 +208,11 @@ struct AccountCard: View {
             including: .gesture
         )
         .pointerOnHover()
+        .onChange(of: snapshot.isError) { _, isError in
+            // Sessions has no meaning for a disconnected account; snap back to Usage so a
+            // reconnect doesn't leave the toggle stuck on a hidden Sessions selection.
+            if isError { expandedTab = .usage }
+        }
     }
 
     @ViewBuilder
@@ -245,10 +276,7 @@ struct AccountCard: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         } else {
-            VStack(alignment: .trailing, spacing: 2) {
-                QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
-                QuotaSummaryLine(label: "weekly", value: weeklyAvailability, resetHint: weeklyResetTime)
-            }
+            QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
         }
     }
 
@@ -256,8 +284,52 @@ struct AccountCard: View {
         availabilityText(for: ["Daily", "5h", "Today"]) ?? snapshot.primary
     }
 
-    private var weeklyAvailability: String {
-        availabilityText(for: ["7d", "Weekly", "Week"]) ?? "--"
+    @ViewBuilder
+    private var accountSessions: some View {
+        if accountAgents.isEmpty {
+            Text("No active \(snapshot.provider.displayName) sessions")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 6)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("All active \(snapshot.provider.displayName) sessions")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                ForEach(accountAgents) { agent in
+                    Button {
+                        ActiveAgentNavigator.navigate(to: agent)
+                    } label: {
+                        HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(agent.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                                if let dir = agent.directoryDisplay {
+                                    Text(dir)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                            Spacer()
+                            if let host = agent.hostApp {
+                                Text(host.displayName)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Image(systemName: agent.hasTerminalTarget ? "arrow.up.forward.app" : "macwindow.on.rectangle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .pointerOnHover()
+                }
+            }
+        }
     }
 
     private func availabilityText(for labels: Set<String>) -> String? {
@@ -268,23 +340,13 @@ struct AccountCard: View {
     }
 
     private var currentResetTime: String? {
-        if let resetMetric = snapshot.metrics.first(where: { $0.label == "Reset" }) {
-            return resetMetric.value
+        guard let metric = snapshot.metrics.first(where: { ["Daily", "5h", "Today"].contains($0.label) }),
+              let range = metric.value.range(of: "resets in ") else {
+            return nil
         }
-        if let metric = snapshot.metrics.first(where: { ["Daily", "5h", "Today"].contains($0.label) }),
-           let range = metric.value.range(of: "resets ") {
-            return String(metric.value[range.upperBound...])
-        }
-        return nil
+        return String(metric.value[range.lowerBound...])
     }
 
-    private var weeklyResetTime: String? {
-        if let metric = snapshot.metrics.first(where: { ["7d", "Weekly", "Week"].contains($0.label) }),
-           let range = metric.value.range(of: "resets ") {
-            return String(metric.value[range.upperBound...])
-        }
-        return nil
-    }
 
     private var progressRatio: Double? {
         snapshot.progressRatio ?? snapshot.remainingRatio.map { 1 - $0 }

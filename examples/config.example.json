@@ -15,23 +15,20 @@
   ],
   "accounts": [
     {
-      "id": "claude-code",
-      "name": "Claude",
-      "provider": "claudeCode",
+      "label": "Claude",
+      "type": "claudeCode",
       "claudeSwapCommand": "claude-swap",
       "notes": "Reads Claude Code OAuth credentials from macOS Keychain and calls Anthropic OAuth usage."
     },
     {
-      "id": "codex",
-      "name": "Codex",
-      "provider": "codex",
+      "label": "Codex",
+      "type": "codex",
       "codexAuthPath": "~/.codex/auth.json",
       "notes": "Reads local Codex login from ~/.codex/auth.json and asks Codex app-server for usage."
     },
     {
-      "id": "chatgpt-manual",
-      "name": "ChatGPT",
-      "provider": "chatgpt",
+      "label": "ChatGPT",
+      "type": "chatgpt",
       "limitLabel": "messages",
       "used": 12,
       "limit": 80,

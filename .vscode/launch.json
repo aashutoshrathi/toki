@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Debug Toki",
+            "target": "Toki",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Toki"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Release Toki",
+            "target": "Toki",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Toki"
+        }
+    ]
+}

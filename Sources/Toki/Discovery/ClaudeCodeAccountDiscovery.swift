@@ -30,6 +30,7 @@ enum ClaudeCodeAccountDiscovery {
                 label: resolveLabel(email: email, organizationName: orgName, organizationUUID: orgUUID, labels: labels)
             )
         } catch {
+            DiagnosticLogger.shared.record(.error, component: "claude_discovery", code: "fallback_credentials_failed", detail: diagnosticErrorDetail(error))
             return ClaudeCodeAccountRecord(
                 id: config.id,
                 name: config.name,
@@ -95,6 +96,7 @@ enum ClaudeCodeAccountDiscovery {
                 let activeBundle = try ClaudeCodeCredentialReader.readMacOSKeychainCredentials()
                 return (activeBundle.credentials, "\(activeBundle.source) active", nil)
             } catch {
+                DiagnosticLogger.shared.record(.error, component: "claude_discovery", code: "active_credentials_failed", detail: diagnosticErrorDetail(error))
                 return (nil, "Claude Code Keychain active", error.localizedDescription)
             }
         }
@@ -104,6 +106,7 @@ enum ClaudeCodeAccountDiscovery {
             let credentials = try ClaudeCodeCredentialReader.readKeychain(service: "claude-swap", account: keychainAccount)
             return (credentials, "claude-swap \(number)", nil)
         } catch {
+            DiagnosticLogger.shared.record(.error, component: "claude_discovery", code: "stored_credentials_failed", detail: diagnosticErrorDetail(error))
             return (nil, "claude-swap \(number)", error.localizedDescription)
         }
     }

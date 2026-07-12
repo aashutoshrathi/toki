@@ -53,7 +53,7 @@ cat > "$INFO_PLIST" <<PLIST
   <key>CFBundleShortVersionString</key>
   <string>$VERSION</string>
   <key>CFBundleVersion</key>
-  <string>6</string>
+  <string>7</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>
@@ -65,6 +65,9 @@ cat > "$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+
+echo "==> Signing app bundle"
+codesign --force --deep --sign - "$APP_DIR"
 
 echo "==> Creating DMG"
 DMG_NAME="${APP_NAME}_${VERSION}_universal.dmg"

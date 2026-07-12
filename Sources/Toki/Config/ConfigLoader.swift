@@ -26,10 +26,48 @@ enum ConfigLoader {
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let config = try JSONDecoder().decode(AppConfig.self, from: data)
+        try validate(config)
+        migrateToFlatShapeIfNeeded(rawData: data, config: config, path: path)
+        return config
+    }
+
+    // The invariants a config must satisfy, shared by load() and the in-app editor.
+    static func validate(_ config: AppConfig) throws {
         guard !config.accounts.isEmpty else {
             throw LocalizedErrorMessage("Config has no accounts")
         }
-        return config
+        guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
+            throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
+        }
+    }
+
+    // One-time rewrite of legacy configs (name/provider keys) into the flat label/type
+    // shape. A .bak copy of the true original is kept once and never overwritten.
+    private static func migrateToFlatShapeIfNeeded(rawData: Data, config: AppConfig, path: String) {
+        guard hasLegacyAccountKeys(rawData) else { return }
+        let backupPath = path + ".bak"
+        do {
+            // Preserve only the FIRST original; a later spurious trigger must not clobber it.
+            if !FileManager.default.fileExists(atPath: backupPath) {
+                try rawData.write(to: URL(fileURLWithPath: backupPath), options: .atomic)
+            }
+            let migrated = try JSONEncoder.toki.encode(config)
+            try migrated.write(to: URL(fileURLWithPath: path), options: .atomic)
+            DiagnosticLogger.shared.record(.info, component: "config", code: "migrated_flat_shape")
+        } catch {
+            DiagnosticLogger.shared.record(.warning, component: "config", code: "migration_failed", detail: diagnosticErrorDetail(error))
+        }
+    }
+
+    // True only if an actual account object carries a legacy key ("name"/"provider").
+    // Parsing the structure avoids false positives from those tokens appearing inside a
+    // string value elsewhere (e.g. a notes field), which would re-migrate every launch.
+    private static func hasLegacyAccountKeys(_ rawData: Data) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: rawData) as? [String: Any],
+              let accounts = root["accounts"] as? [[String: Any]] else {
+            return false
+        }
+        return accounts.contains { $0["name"] != nil || $0["provider"] != nil }
     }
 
     static func save(_ config: AppConfig) throws {
@@ -40,5 +78,22 @@ enum ConfigLoader {
 
     static func openInDefaultEditor() {
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    static func rawContents() -> String {
+        (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    }
+
+    // Validates raw JSON with the same rules as load() before writing, so a bad edit is
+    // rejected in the UI rather than persisted and breaking the next launch.
+    static func saveRaw(_ text: String) throws {
+        guard let data = text.data(using: .utf8) else {
+            throw LocalizedErrorMessage("Config is not valid UTF-8")
+        }
+        let config = try JSONDecoder().decode(AppConfig.self, from: data)
+        try validate(config)
+        let fileURL = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: fileURL, options: .atomic)
     }
 }

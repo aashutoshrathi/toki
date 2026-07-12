@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <strong>A tiny macOS menu bar balance sheet for Claude Code and Codex usage.</strong>
+  <strong>A tiny macOS menu bar companion for AI coding agents and usage.</strong>
 </p>
 
 <p align="center">
-  <img alt="Version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-2f80ed">
+  <img alt="Version 2.1.1" src="https://img.shields.io/badge/version-2.1.1-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
@@ -25,7 +25,7 @@
 
 ## Why Toki
 
-Toki is built for people who jump between Claude Code and Codex during the day and want a fast, local answer to: "how much coding fuel do I have left?"
+Toki is built for people who jump between Claude Code, Codex, Copilot, and OpenCode during the day and want a fast, local view of usage and active agents.
 
 It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
 
@@ -39,11 +39,15 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Inactive Claude account lookup from macOS Keychain service `claude-swap`.
 - Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
 - Codex usage and rate-limit display through the local Codex app-server.
-- Smart recommendation panel for which coding account to use next.
+- OpenCode usage tracking from its local SQLite database (today's spend, tokens, all-time totals).
+- Active-agent discovery for Codex, Claude Code, Copilot CLI, OpenCode, and ChatGPT-hosted Codex, including runtime, terminal metadata, working directory, and best-effort navigation to the matching terminal tab or host app via bundle ID.
+- GitHub release checks with one-click, verified DMG installation and relaunch.
+- Privacy-safe rotating diagnostics in `~/.toki/logs/` with an attached debug-report share action.
+- AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to deterministic recommendations, with expandable suggestions and one-click switch.
 - One-click switch to the recommended Claude Code account, straight from the overview (Claude Code accounts only, via `claude-swap`).
 - Native low-quota notifications with cooldowns, DND mode, and local event history.
 - Local usage history so recent quota movement is visible without opening provider tools.
-- Session mode for tracking quota burn during a focused coding run.
+- Session mode for tracking quota burn during a focused coding run, with a live stopwatch banner and header toggle.
 - Menu bar display modes for smart, lowest, Claude, Codex, combined, or account-count status.
 - Inline account aliases so long emails can become readable names.
 - Switch button for inactive Claude Code accounts via `claude-swap --switch-to`.
@@ -57,8 +61,24 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Claude Code installed and authenticated.
 - `claude-swap` installed and configured for multi-account Claude workflows.
 - Codex installed and authenticated for Codex usage.
+- Copilot CLI or OpenCode installed when using active-agent discovery for those tools.
 
 macOS may ask for Keychain access the first time Toki reads Claude Code or `claude-swap` credentials.
+
+## Install
+
+### Homebrew
+
+```sh
+brew tap aashutoshrathi/tap
+brew install --cask toki
+```
+
+The cask installs the latest release DMG. Toki is ad-hoc signed and not notarized, so on first launch macOS may block it - right-click Toki in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Toki.app`.
+
+### Direct download
+
+Grab the latest `Toki_<version>_universal.dmg` from the [releases page](https://github.com/aashutoshrathi/toki/releases/latest), open it, and drag Toki to Applications. Updates install in-app once running.
 
 ## Install From Source
 
@@ -119,26 +139,27 @@ Minimal Claude Code plus Codex config:
   ],
   "accounts": [
     {
-      "id": "claude-code",
-      "name": "Claude",
-      "provider": "claudeCode",
+      "label": "Claude",
+      "type": "claudeCode",
       "claudeSwapCommand": "claude-swap"
     },
     {
-      "id": "codex",
-      "name": "Codex",
-      "provider": "codex",
+      "label": "Codex",
+      "type": "codex",
       "codexAuthPath": "~/.codex/auth.json"
     }
   ]
 }
 ```
 
+Each account needs a `label` (display name) and a `type` (provider). An `id` is optional and derived from the label when omitted. Older configs using `name`/`provider`/`id` are migrated automatically on launch, keeping a `.bak` of the original.
+
 `accountLabels` are optional presentation overrides. Toki matches discovered Claude accounts by email and, when provided, organization UUID or name. Labels do not alter credentials or switching behavior.
 
 `refreshMinutes` defaults to `5`. API-backed providers refresh stale-while-revalidate style: Toki keeps the last visible usage while refreshing in the background. Automatic refreshes pace Claude Code API calls at 7.5 minutes to reduce early `429` responses, while Codex uses the 5-minute cadence. Opening the popover or pressing reload can refresh sooner, but still keeps a 1-minute minimum between provider API calls. If a provider returns `429`, Toki keeps showing the last good usage snapshot.
 
-### Smart Recommendations, Notifications, and History
+`aiInstructions` is an optional string that customizes the on-device LLM prompt used by the AIInsightCard on macOS 26+. When absent, Toki uses a default prompt based on the current recommendation and account snapshots.
+### Smart Recommendations, AI Insights, Notifications, and History
 
 Toki keeps v2.1 preferences, notification cooldowns, event history, usage history, and session state in:
 
@@ -146,11 +167,23 @@ Toki keeps v2.1 preferences, notification cooldowns, event history, usage histor
 ~/.toki/usage-state.json
 ```
 
-The Settings tab controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
+The overview shows a single AIInsightCard replacing the three separate stat blocks (Use, Status, Session). When running macOS 26+ with Apple Intelligence available, Toki generates a natural-language summary of your account state with actionable suggestions. A purple sparkle icon and border distinguish AI-generated content from the rule-based fallback. The optional `aiInstructions` config field lets you steer the on-device LLM prompt. On older systems the card shows the same deterministic recommendation with a lightbulb icon.
 
-The recommendation panel picks the healthiest available account from live snapshots. For Claude Code multi-account setups, it can switch to the recommended inactive account through the same configured `claude-swap --switch-to` path used by account rows.
+The settings panel controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
 
-Session mode records starting quota for visible accounts, then shows burn during the current coding session and logs session warning events when quota drops sharply or crosses the configured warning threshold.
+The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2 or Terminal. For other hosts (iTerm, VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
+
+OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot is agent-detection-only: Toki detects running Copilot processes locally, but does not invent quotas or infer billing across its different plans and model providers.
+
+### Updates and Diagnostics
+
+Toki checks the latest public GitHub release at most once every six hours, including while the app remains open. Settings also provides a manual “Check now” action that bypasses the schedule. A newer release shows an Update button that downloads its DMG, verifies the `local.toki` bundle identity, version, and code signature, stages the app, replaces the installed bundle after Toki exits, and relaunches it. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` when developing to preview the banner without publishing a release.
+
+Toki writes rotating diagnostics to `~/.toki/logs/toki.log`. These logs contain app-level error categories and status codes only; they exclude credentials, account configuration, prompts, session titles, workspace names, and full file paths. “Send debug report” in Settings creates a local text attachment and opens the macOS share picker. Toki never sends the report automatically.
+
+The AIInsightCard picks the healthiest available account from live snapshots and can optionally surface an on-device LLM summary on macOS 26+. For Claude Code multi-account setups, it can switch to the recommended inactive account through the same configured `claude-swap --switch-to` path used by account rows.
+
+Session mode records starting quota for visible accounts, then shows a prominent red banner with a live stopwatch and per-account burn during the current coding session. It logs session warning events when quota drops sharply or crosses the configured warning threshold. The play/stop toggle lives in the header bar next to the refresh button.
 
 ### Environment Overrides
 
