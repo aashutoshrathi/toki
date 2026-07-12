@@ -26,6 +26,8 @@ final class UsageStore: ObservableObject {
         severity: .neutral
     )
     @Published var statusEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
+    @Published var detectedProviders: [DetectedProvider] = []
+    @Published var isScanningProviders = false
 
     private var config: AppConfig?
     private var usageState = UsageState()
@@ -60,6 +62,12 @@ final class UsageStore: ObservableObject {
         TimeInterval(max(config?.refreshMinutes ?? 5, 1) * 60)
     }
 
+    // True when there's no usable config.json yet (missing file or no accounts), so the
+    // popover should show the connect wizard instead of the normal account list.
+    var needsOnboarding: Bool {
+        config == nil
+    }
+
     func reloadConfig() {
         do {
             config = try ConfigLoader.load()
@@ -75,20 +83,38 @@ final class UsageStore: ObservableObject {
             DiagnosticLogger.shared.record(.error, component: "config", code: "load_failed", detail: diagnosticErrorDetail(error))
             config = nil
             configError = error.localizedDescription
-            snapshots = [
-                AccountSnapshot(
-                    id: "config-error",
-                    name: "Config needed",
-                    provider: .manual,
-                    primary: "No config",
-                    subtitle: ConfigLoader.path,
-                    remainingRatio: nil,
-                    progressRatio: nil,
-                    metrics: [MetricLine(label: "Open README", value: "README.md")],
-                    isError: true
-                )
-            ]
+            snapshots = []
             updateDerivedState(for: snapshots)
+            scanForOnboarding()
+        }
+    }
+
+    // Probes for installed/authenticated CLIs (Claude Code, Codex, OpenCode) so the
+    // onboarding screen can offer them as one-click connects.
+    private func scanForOnboarding() {
+        guard !isScanningProviders else { return }
+        isScanningProviders = true
+        Task {
+            detectedProviders = await ProviderDetection.scan()
+            isScanningProviders = false
+        }
+    }
+
+    // Appends detected accounts to config.json (creating it if this is a fresh install)
+    // and reloads. Accounts already present for the same provider+id are skipped.
+    func connect(_ accounts: [AccountConfig]) {
+        var next = config ?? AppConfig(refreshMinutes: nil, accountLabels: nil, accounts: [], aiInstructions: nil)
+        let existingKeys = Set(next.accounts.map { "\($0.provider.rawValue):\($0.id)" })
+        for account in accounts where !existingKeys.contains("\(account.provider.rawValue):\(account.id)") {
+            next.accounts.append(account)
+        }
+        do {
+            try ConfigLoader.validate(next)
+            try ConfigLoader.save(next)
+            reloadConfig()
+        } catch {
+            DiagnosticLogger.shared.record(.error, component: "config", code: "connect_failed", detail: diagnosticErrorDetail(error))
+            configError = "Could not connect account: \(error.localizedDescription)"
         }
     }
 

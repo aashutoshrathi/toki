@@ -45,12 +45,16 @@ struct MenuContentView: View {
             if let session = store.session {
                 SessionRecordingCard(startedAt: session.startedAt)
             }
-            overview
-            tabBar
-            if let configError = store.configError {
-                ErrorBanner(message: configError)
+            if store.needsOnboarding {
+                OnboardingView(store: store) { showConfig = true }
+            } else {
+                overview
+                tabBar
+                if let configError = store.configError {
+                    ErrorBanner(message: configError)
+                }
+                tabContent
             }
-            tabContent
 
             if store.debugMode {
                 debugPanel

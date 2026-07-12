@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.1.3" src="https://img.shields.io/badge/version-2.1.3-2f80ed">
+  <img alt="Version 2.1.4" src="https://img.shields.io/badge/version-2.1.4-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
@@ -106,7 +106,9 @@ The generated app bundle is written to `.build/Toki.app`.
 
 ## Configuration
 
-Toki reads:
+On first launch, with no `~/.toki/config.json` yet, Toki's popover shows a **Connect an account** screen instead of an empty list. It scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), and OpenCode (its local database), and a single click on **Connect** (or **Connect all detected**) writes the right entries to `~/.toki/config.json` for you - no JSON to hand-write. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
+
+For scripting, multi-account setups, or fields the wizard doesn't cover (API keys, budgets, manual trackers), edit the config directly. Toki reads:
 
 ```text
 ~/.toki/config.json

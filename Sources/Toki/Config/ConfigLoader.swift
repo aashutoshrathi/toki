@@ -72,6 +72,7 @@ enum ConfigLoader {
 
     static func save(_ config: AppConfig) throws {
         let url = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONEncoder.toki.encode(config)
         try data.write(to: url, options: .atomic)
     }
