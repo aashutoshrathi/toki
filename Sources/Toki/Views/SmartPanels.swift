@@ -154,6 +154,36 @@ struct EventPanel: View {
     }
 }
 
+// Full-page settings/config view opened from the header gear (no longer a bottom tab).
+struct ConfigPage: View {
+    @ObservedObject var store: UsageStore
+    @ObservedObject var updateChecker: UpdateChecker
+    var onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Button(action: onClose) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 25, height: 25)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .help("Back")
+                .accessibilityLabel("Back")
+                .pointerOnHover()
+                Text("Settings")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+            }
+            SettingsPanel(store: store, updateChecker: updateChecker)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
 struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker

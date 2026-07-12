@@ -4,13 +4,13 @@ struct MenuContentView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
     @State private var selectedTab: TokiTab = .accounts
+    @State private var showConfig = false
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
         case agents = "Agents"
         case history = "History"
         case events = "Events"
-        case settings = "Settings"
 
         var id: String { rawValue }
 
@@ -20,12 +20,23 @@ struct MenuContentView: View {
             case .history: return "chart.line.uptrend.xyaxis"
             case .events: return "bell.badge"
             case .agents: return "terminal"
-            case .settings: return "slider.horizontal.3"
             }
         }
     }
 
     var body: some View {
+        Group {
+            if showConfig {
+                ConfigPage(store: store, updateChecker: updateChecker) { showConfig = false }
+            } else {
+                mainContent
+            }
+        }
+        .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
+        .background(.regularMaterial)
+    }
+
+    private var mainContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if let update = updateChecker.availableUpdate {
@@ -43,8 +54,7 @@ struct MenuContentView: View {
             }
         }
         .padding(12)
-        .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
-        .background(.regularMaterial)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func updateBanner(_ update: AvailableUpdate) -> some View {
@@ -150,7 +160,7 @@ struct MenuContentView: View {
             .pointerOnHover()
 
             Button {
-                ConfigLoader.openInDefaultEditor()
+                showConfig = true
             } label: {
                 Image(systemName: "gearshape")
             }
@@ -158,7 +168,7 @@ struct MenuContentView: View {
             .font(.system(size: 13, weight: .semibold))
             .frame(width: 25, height: 25)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .help("Open config")
+            .help("Settings")
             .pointerOnHover()
 
             Button {
@@ -264,8 +274,6 @@ struct MenuContentView: View {
             EventPanel(store: store)
         case .agents:
             ActiveAgentsPanel(store: store)
-        case .settings:
-            SettingsPanel(store: store, updateChecker: updateChecker)
         }
     }
 
