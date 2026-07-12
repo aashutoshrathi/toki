@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.3 - 2026-07-12
+
+### Fixed
+
+- Fixed a launch crash in the released app: resources are now resolved via `Bundle.main` from `Contents/Resources` instead of the SwiftPM `Bundle.module` accessor, which fatal-errored because its resource bundle can't sit at the code-signed app root.
+
 ## 2.1.2 - 2026-07-12
 
 ### Added

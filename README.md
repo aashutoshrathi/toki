@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.1.2" src="https://img.shields.io/badge/version-2.1.2-2f80ed">
+  <img alt="Version 2.1.3" src="https://img.shields.io/badge/version-2.1.3-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
