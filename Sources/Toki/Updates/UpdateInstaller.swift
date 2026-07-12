@@ -152,9 +152,10 @@ enum UpdateInstaller {
         process.standardError = errors
         try process.run()
         let outputData = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            let detail = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let detail = String(data: errorData, encoding: .utf8) ?? ""
             throw LocalizedErrorMessage(detail.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return outputData

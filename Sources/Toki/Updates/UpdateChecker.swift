@@ -165,8 +165,8 @@ final class UpdateChecker: ObservableObject {
                 checkMessage = "The latest release has no DMG."
                 return
             }
-            guard release.htmlURL.host == "github.com",
-                  asset.browserDownloadURL.host == "github.com" else {
+            guard release.htmlURL.scheme == "https", release.htmlURL.host == "github.com",
+                  asset.browserDownloadURL.scheme == "https", asset.browserDownloadURL.host == "github.com" else {
                 checkMessage = "The release metadata is not trusted."
                 return
             }

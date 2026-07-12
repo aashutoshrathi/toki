@@ -172,7 +172,7 @@ The Settings tab controls native notifications, DND mode, low-quota threshold, s
 
 The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2, Terminal, or WezTerm. For editor-hosted processes (VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
 
-Copilot and OpenCode are intentionally not configurable as usage accounts. Toki detects their running agents locally, but does not invent quotas or infer billing across their different plans and model providers.
+OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot is agent-detection-only: Toki detects running Copilot processes locally, but does not invent quotas or infer billing across its different plans and model providers.
 
 ### Updates and Diagnostics
 
