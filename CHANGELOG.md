@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.4 - 2026-07-12
+
+### Added
+
+- Click-to-connect onboarding: when no `config.json` exists yet, the popover scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), and OpenCode (local database) and lets you add them with one click instead of hand-writing JSON. A manual JSON editor link remains for advanced setups.
+
+### Fixed
+
+- `ConfigLoader.save` now creates `~/.toki` if it doesn't exist yet, so the first-ever config write (including from the new onboarding flow) no longer fails on a fresh install.
+
 ## 2.1.3 - 2026-07-12
 
 ### Fixed
