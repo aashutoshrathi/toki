@@ -1,8 +1,11 @@
 import Foundation
+
+// On-device usage insights via Apple's Foundation Models. The module only exists in the
+// macOS 26 SDK, so `canImport` keeps this file compiling on older SDKs (e.g. CI runners),
+// and `@available` keeps FoundationModels unlinked at runtime on older systems.
+#if canImport(FoundationModels)
 import FoundationModels
 
-// On-device usage insights via Apple's Foundation Models. Gated to macOS 26 so the rest
-// of the app never links FoundationModels at runtime on older systems.
 @available(macOS 26, *)
 enum InsightGenerator {
     @Generable
@@ -80,3 +83,4 @@ enum InsightGenerator {
         }
     }
 }
+#endif

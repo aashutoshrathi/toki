@@ -377,6 +377,9 @@ final class UsageStore: ObservableObject {
     // available. The deterministic recommendation is already shown; this only replaces
     // it once ready, and stays nil (rule-based visible) on older systems or failure.
     private func refreshAIInsight(for snapshots: [AccountSnapshot]) {
+        // FoundationModels only exists in the macOS 26 SDK; when building against an older
+        // SDK the generator is compiled out entirely and the rule-based recommendation stays.
+        #if canImport(FoundationModels)
         guard #available(macOS 26, *), InsightGenerator.isAvailable else {
             aiInsight = nil
             isGeneratingInsight = false
@@ -395,6 +398,10 @@ final class UsageStore: ObservableObject {
             if let result { aiInsight = result }
             isGeneratingInsight = false
         }
+        #else
+        aiInsight = nil
+        isGeneratingInsight = false
+        #endif
     }
 
     private func recordHistory(for snapshots: [AccountSnapshot], at date: Date) {
