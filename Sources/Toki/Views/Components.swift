@@ -108,46 +108,50 @@ struct AIInsightCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: expanded ? 6 : 0) {
-            Button {
-                if canExpand { expanded.toggle() }
-            } label: {
-                HStack(alignment: .top, spacing: 6) {
-                    if isUpdating {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .frame(width: 11, height: 11)
-                    } else {
-                        Image(systemName: isAI ? "sparkles" : "lightbulb")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(isAI ? .purple : .secondary)
-                    }
-                    Text(summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                    Spacer(minLength: 4)
-                    if let switchAction {
-                        Button(action: switchAction.perform) {
-                            Image(systemName: switchAction.systemImage)
+            HStack(alignment: .top, spacing: 6) {
+                Button {
+                    if canExpand { expanded.toggle() }
+                } label: {
+                    HStack(alignment: .top, spacing: 6) {
+                        if isUpdating {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .frame(width: 11, height: 11)
+                        } else {
+                            Image(systemName: isAI ? "sparkles" : "lightbulb")
                                 .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(isAI ? .purple : .secondary)
                         }
-                        .buttonStyle(.plain)
-                        .frame(width: 22, height: 22)
-                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .help(switchAction.help)
-                        .pointerOnHover()
-                    }
-                    if canExpand {
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 3)
+                        Text(summary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                        if canExpand {
+                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 3)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+                .pointerOnHover()
+
+                Spacer(minLength: 4)
+
+                if let switchAction {
+                    Button(action: switchAction.perform) {
+                        Image(systemName: switchAction.systemImage)
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 22, height: 22)
+                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .help(switchAction.help)
+                    .pointerOnHover()
+                }
             }
-            .buttonStyle(.plain)
-            .pointerOnHover()
 
             if expanded {
                 ForEach(suggestions) { suggestion in

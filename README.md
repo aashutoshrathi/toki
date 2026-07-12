@@ -43,19 +43,11 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Active-agent discovery for Codex, Claude Code, Copilot CLI, OpenCode, and ChatGPT-hosted Codex, including runtime, terminal metadata, working directory, and best-effort navigation to the matching terminal tab or host app via bundle ID.
 - GitHub release checks with one-click, verified DMG installation and relaunch.
 - Privacy-safe rotating diagnostics in `~/.toki/logs/` with an attached debug-report share action.
-<<<<<<< HEAD
 - AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to deterministic recommendations, with expandable suggestions and one-click switch.
 - One-click switch to the recommended Claude Code account, straight from the overview (Claude Code accounts only, via `claude-swap`).
 - Native low-quota notifications with cooldowns, DND mode, and local event history.
 - Local usage history so recent quota movement is visible without opening provider tools.
 - Session mode for tracking quota burn during a focused coding run, with a live stopwatch banner and header toggle.
-=======
-- AI-powered insight card that summarizes account state on-device via Apple Intelligence (macOS 26+), falling back to a deterministic recommendation, with expandable suggestions and one-click switch.
-- One-click switch to the recommended Claude Code account, straight from the overview (Claude Code accounts only, via `claude-swap`).
-- Native low-quota notifications with cooldowns, DND mode, and local event history.
-- Local usage history so recent quota movement is visible without opening provider tools.
-- Session mode for tracking quota burn during a focused coding run, with a live stopwatch banner.
->>>>>>> c1aeebc (Add on-device AI usage insights via Apple Intelligence)
 - Menu bar display modes for smart, lowest, Claude, Codex, combined, or account-count status.
 - Inline account aliases so long emails can become readable names.
 - Switch button for inactive Claude Code accounts via `claude-swap --switch-to`.
@@ -166,11 +158,7 @@ Each account needs a `label` (display name) and a `type` (provider). An `id` is 
 
 `refreshMinutes` defaults to `5`. API-backed providers refresh stale-while-revalidate style: Toki keeps the last visible usage while refreshing in the background. Automatic refreshes pace Claude Code API calls at 7.5 minutes to reduce early `429` responses, while Codex uses the 5-minute cadence. Opening the popover or pressing reload can refresh sooner, but still keeps a 1-minute minimum between provider API calls. If a provider returns `429`, Toki keeps showing the last good usage snapshot.
 
-<<<<<<< HEAD
-=======
 `aiInstructions` is an optional string that customizes the on-device LLM prompt used by the AIInsightCard on macOS 26+. When absent, Toki uses a default prompt based on the current recommendation and account snapshots.
-
->>>>>>> c1aeebc (Add on-device AI usage insights via Apple Intelligence)
 ### Smart Recommendations, AI Insights, Notifications, and History
 
 Toki keeps v2.1 preferences, notification cooldowns, event history, usage history, and session state in:
@@ -179,11 +167,7 @@ Toki keeps v2.1 preferences, notification cooldowns, event history, usage histor
 ~/.toki/usage-state.json
 ```
 
-<<<<<<< HEAD
 The overview shows a single AIInsightCard replacing the three separate stat blocks (Use, Status, Session). When running macOS 26+ with Apple Intelligence available, Toki generates a natural-language summary of your account state with actionable suggestions. A purple sparkle icon and border distinguish AI-generated content from the rule-based fallback. The optional `aiInstructions` config field lets you steer the on-device LLM prompt. On older systems the card shows the same deterministic recommendation with a lightbulb icon.
-=======
-The overview now shows a single AIInsightCard replacing the three separate stat blocks. When running macOS 26+ with Apple Intelligence available, Toki generates a natural-language summary of your account state with actionable suggestions. The `aiInstructions` config field lets you steer the on-device LLM prompt. On older systems the card shows the deterministic recommendation with a lightbulb icon.
->>>>>>> c1aeebc (Add on-device AI usage insights via Apple Intelligence)
 
 The settings panel controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
 
