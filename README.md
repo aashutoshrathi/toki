@@ -171,7 +171,7 @@ The overview shows a single AIInsightCard replacing the three separate stat bloc
 
 The settings panel controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
 
-The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2, Terminal, or WezTerm. For editor-hosted processes (VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
+The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2 or Terminal. For other hosts (iTerm, VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
 
 OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot is agent-detection-only: Toki detects running Copilot processes locally, but does not invent quotas or infer billing across its different plans and model providers.
 

@@ -6,6 +6,12 @@ struct PreparedUpdate {
     let targetAppURL: URL
 }
 
+// Reference box so the concurrent stderr read can hand its result back across the
+// DispatchGroup barrier without capturing a mutable local (which the compiler flags).
+private final class DataBox: @unchecked Sendable {
+    var data = Data()
+}
+
 enum UpdateInstaller {
     static func prepare(downloadURL: URL, expectedVersion: String) async throws -> PreparedUpdate {
         guard downloadURL.scheme == "https", downloadURL.host == "github.com", downloadURL.pathExtension.lowercased() == "dmg" else {
@@ -72,7 +78,8 @@ enum UpdateInstaller {
         guard arguments.count == 5, arguments[1] == "--install-update" else { return false }
         let stagedApp = URL(fileURLWithPath: arguments[2])
         let targetApp = URL(fileURLWithPath: arguments[3])
-        guard let parentPID = Int32(arguments[4]) else { return true }
+        // Fail safe: a malformed PID means continue normal startup, not exit the app.
+        guard let parentPID = Int32(arguments[4]) else { return false }
 
         while kill(parentPID, 0) == 0 {
             Thread.sleep(forTimeInterval: 0.2)
@@ -151,8 +158,16 @@ enum UpdateInstaller {
         process.standardOutput = outPipe
         process.standardError = errPipe
         try process.run()
+        // Keep stdout and stderr separate (stdout is parsed as a plist for hdiutil), but
+        // drain them concurrently so neither pipe can fill and deadlock the child.
+        let errBox = DataBox()
+        let group = DispatchGroup()
+        DispatchQueue.global().async(group: group) {
+            errBox.data = errPipe.fileHandleForReading.readDataToEndOfFile()
+        }
         let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        group.wait()
+        let errData = errBox.data
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let detail = String(data: data, encoding: .utf8) ?? ""
