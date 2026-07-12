@@ -3,7 +3,7 @@
 # This file belongs in a tap repo (aashutoshrathi/homebrew-tap) under Casks/toki.rb.
 # scripts/update-cask.sh regenerates the version + sha256 after each release.
 cask "toki" do
-  version "2.1.1"
+  version "2.1.2"
   # update-cask.sh replaces this after each release
   sha256 "PLACEHOLDER_SHA256"
 
