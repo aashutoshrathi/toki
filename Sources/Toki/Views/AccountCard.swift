@@ -15,6 +15,9 @@ struct AccountCard: View {
         var id: String { rawValue }
     }
 
+    // Active agents are discovered by scanning processes, which reveals the provider but not
+    // which configured account authenticated them. So sessions are provider-scoped: every card
+    // for a given provider surfaces the same list. The UI copy makes that scope explicit.
     private var accountAgents: [ActiveAgent] {
         store.activeAgents.filter { $0.provider == snapshot.provider }
     }
@@ -290,7 +293,10 @@ struct AccountCard: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 6)
         } else {
-            VStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("All active \(snapshot.provider.displayName) sessions")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
                 ForEach(accountAgents) { agent in
                     Button {
                         ActiveAgentNavigator.navigate(to: agent)

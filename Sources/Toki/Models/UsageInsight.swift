@@ -6,14 +6,11 @@ struct UsageInsight: Equatable {
     var suggestions: [UsageSuggestion]
 }
 
-struct UsageSuggestion: Identifiable {
-    var id = UUID()
+struct UsageSuggestion: Identifiable, Equatable {
     var text: String
     var severity: RecommendationSeverity
-}
 
-extension UsageSuggestion: Equatable {
-    static func == (lhs: UsageSuggestion, rhs: UsageSuggestion) -> Bool {
-        lhs.text == rhs.text && lhs.severity == rhs.severity
-    }
+    // Derive identity from content so regenerating an unchanged suggestion keeps the
+    // same SwiftUI row identity instead of churning as a brand-new item every refresh.
+    var id: String { "\(severity)-\(text)" }
 }
