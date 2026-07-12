@@ -166,10 +166,13 @@ struct ConfigPage: View {
                 Button(action: onClose) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
+                        // Fill the whole 25x25 so the entire button surface is the hit
+                        // target, not just the glyph. contentShape makes the padded area tappable.
+                        .frame(width: 25, height: 25)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .frame(width: 25, height: 25)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .help("Back")
                 .accessibilityLabel("Back")
                 .pointerOnHover()
