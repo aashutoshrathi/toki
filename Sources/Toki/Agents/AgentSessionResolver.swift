@@ -17,6 +17,34 @@ enum AgentSessionResolver {
         }
     }
 
+    // When the agent's session was last written - used to sort most-recent first.
+    static func lastActivity(provider: Provider, command: String, cwd: String?) -> Date? {
+        switch provider {
+        case .claudeCode, .claude, .anthropic:
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            guard let file = newestSessionFile(home: home, cwd: cwd) else { return nil }
+            return (try? FileManager.default.attributesOfItem(atPath: file)[.modificationDate]) as? Date
+        case .openCode:
+            return openCodeLastActivity(cwd: cwd)
+        default:
+            return nil
+        }
+    }
+
+    private static func openCodeLastActivity(cwd: String?) -> Date? {
+        guard let cwd else { return nil }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let db = "\(home)/.local/share/opencode/opencode.db"
+        guard FileManager.default.fileExists(atPath: db) else { return nil }
+        let escaped = cwd.replacingOccurrences(of: "'", with: "''")
+        let query = "SELECT MAX(time_updated) FROM session WHERE directory='\(escaped)';"
+        guard let output = try? shellOutput(executable: "/usr/bin/sqlite3", arguments: ["-readonly", db, query]),
+              let ms = Double(output.trimmingCharacters(in: .whitespacesAndNewlines)), ms > 0 else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: ms / 1000)
+    }
+
     private static func claudeChatTitle(command: String, cwd: String?) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         // Prefer the explicit session id from args; else the newest session in the project dir.

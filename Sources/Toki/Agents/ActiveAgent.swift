@@ -7,6 +7,7 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let directory: String?
     let chatTitle: String?
     let hostApp: String?
+    let lastActivity: Date?
     let processID: Int32
     let runtime: String
     let terminalTTY: String?
@@ -59,11 +60,16 @@ enum ActiveAgentScanner {
                             && possibleParent.agent.provider == candidate.agent.provider
                     }
                 }.map(\.agent)
+                // Most recently active session first; agents without a known
+                // activity time fall to the bottom, tie-broken by provider and PID.
                 return roots.sorted { lhs, rhs in
-                    if lhs.provider.displayName == rhs.provider.displayName {
-                        return lhs.processID < rhs.processID
+                    let l = lhs.lastActivity ?? .distantPast
+                    let r = rhs.lastActivity ?? .distantPast
+                    if l != r { return l > r }
+                    if lhs.provider.displayName != rhs.provider.displayName {
+                        return lhs.provider.displayName < rhs.provider.displayName
                     }
-                    return lhs.provider.displayName < rhs.provider.displayName
+                    return lhs.processID < rhs.processID
                 }
             } catch {
                 DiagnosticLogger.shared.record(.warning, component: "agents", code: "scan_failed", detail: diagnosticErrorDetail(error))
@@ -119,6 +125,7 @@ enum ActiveAgentScanner {
                 directory: cwd,
                 chatTitle: AgentSessionResolver.chatTitle(provider: provider, command: command, cwd: cwd),
                 hostApp: AgentSessionResolver.hostApp(ofPID: pid),
+                lastActivity: AgentSessionResolver.lastActivity(provider: provider, command: command, cwd: cwd),
                 processID: pid,
                 runtime: runtime,
                 terminalTTY: tty
