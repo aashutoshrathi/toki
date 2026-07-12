@@ -62,10 +62,14 @@ final class UsageStore: ObservableObject {
         TimeInterval(max(config?.refreshMinutes ?? 5, 1) * 60)
     }
 
-    // True when there's no usable config.json yet (missing file or no accounts), so the
-    // popover should show the connect wizard instead of the normal account list.
+    // True when there's nothing to lose by showing the connect wizard: no config.json yet,
+    // or one that decodes fine but simply has no accounts. A config.json that exists but
+    // fails to parse/validate for any other reason is a real error - connect() refuses to
+    // write over it, so showing Connect buttons there would be a dead end. That case falls
+    // through to the normal error banner instead (config stays nil, needsOnboarding is false).
     var needsOnboarding: Bool {
-        config == nil
+        guard config == nil else { return false }
+        return !FileManager.default.fileExists(atPath: ConfigLoader.path) || ConfigLoader.loadRawIfParsable() != nil
     }
 
     func reloadConfig() {
@@ -85,7 +89,11 @@ final class UsageStore: ObservableObject {
             configError = error.localizedDescription
             snapshots = []
             updateDerivedState(for: snapshots)
-            scanForOnboarding()
+            // Only scan (shells out to `security`) when onboarding will actually show -
+            // a genuinely broken config.json goes to the error banner instead.
+            if needsOnboarding {
+                scanForOnboarding()
+            }
         }
     }
 
