@@ -32,6 +32,9 @@ lipo -create \
 echo "==> Copying resources"
 cp "$ROOT_DIR/Sources/Toki/Resources/"* "$APP_DIR/Contents/Resources/"
 
+echo "==> Copying SPM resource bundle"
+cp -R "$BUILD_DIR/release/Toki_Toki.bundle" "$APP_DIR/"
+
 echo "==> Generating Info.plist"
 INFO_PLIST="$APP_DIR/Contents/Info.plist"
 cat > "$INFO_PLIST" <<PLIST
