@@ -184,7 +184,7 @@ Settings has a "Launch at login" toggle backed by `SMAppService`. It reflects wh
 ### Command Line Status
 
 ```sh
-Toki status              # one line per account, e.g. "Claude Code: 82% left"
+Toki status              # one line per account, e.g. "Work: 82% left" (uses each account's configured name, not the provider name)
 Toki status --compact    # single line matching the menu bar icon, for prompts/status bars
 Toki status --json       # full snapshot as JSON
 ```

@@ -18,8 +18,9 @@ enum StatusCommand {
             return 1
         }
 
+        var exitCode: Int32 = 0
         if flags.contains("--json") {
-            printJSON(cache)
+            if !printJSON(cache) { exitCode = 1 }
         } else if flags.contains("--compact") {
             printCompact(cache)
         } else {
@@ -30,15 +31,18 @@ enum StatusCommand {
         if age > staleAfter {
             printErr("(stale - last updated \(Int(age / 60))m ago; is Toki running?)")
         }
-        return 0
+        return exitCode
     }
 
-    private static func printJSON(_ cache: StatusCache) {
+    // Returns whether encoding succeeded, so callers driving this from a script (checking
+    // $?, not just stdout) can tell a real failure apart from a clean run.
+    private static func printJSON(_ cache: StatusCache) -> Bool {
         guard let data = try? JSONEncoder.toki.encode(cache), let text = String(data: data, encoding: .utf8) else {
             printErr("Could not encode status as JSON.")
-            return
+            return false
         }
         print(text)
+        return true
     }
 
     // Mirrors exactly what the menu bar icon currently shows (same entries, same
