@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.1.4" src="https://img.shields.io/badge/version-2.1.4-2f80ed">
+  <img alt="Version 2.1.5" src="https://img.shields.io/badge/version-2.1.5-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
@@ -25,7 +25,7 @@
 
 ## Why Toki
 
-Toki is built for people who jump between Claude Code, Codex, Copilot, and OpenCode during the day and want a fast, local view of usage and active agents.
+Toki is built for people who jump between Claude Code, Codex, Copilot, Gemini, and OpenCode during the day and want a fast, local view of usage and active agents.
 
 It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
 
@@ -33,28 +33,14 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 
 ## Features
 
-- Native macOS menu bar app with a compact popover and right-aligned header controls.
-- Claude Code account discovery from `~/.claude-swap-backup/sequence.json`.
-- Active Claude Code credential lookup from macOS Keychain service `Claude Code-credentials`.
-- Inactive Claude account lookup from macOS Keychain service `claude-swap`.
-- Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
-- Codex usage and rate-limit display through the local Codex app-server.
-- OpenCode usage tracking from its local SQLite database (today's spend, tokens, all-time totals).
-- Active-agent discovery for Codex, Claude Code, Copilot CLI, OpenCode, Gemini CLI, and ChatGPT-hosted Codex, including runtime, terminal metadata, working directory, and best-effort navigation to the matching terminal tab or host app via bundle ID.
-- GitHub release checks with one-click, verified DMG installation and relaunch.
-- Privacy-safe rotating diagnostics in `~/.toki/logs/` with an attached debug-report share action.
-- AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to deterministic recommendations, with expandable suggestions and one-click switch.
-- One-click switch to the recommended Claude Code account, straight from the overview (Claude Code accounts only, via `claude-swap`).
-- Native low-quota notifications with cooldowns, DND mode, and local event history.
-- Local usage history so recent quota movement is visible without opening provider tools.
-- Session mode for tracking quota burn during a focused coding run, with a live stopwatch banner and header toggle.
-- Menu bar display modes for smart, lowest, Claude, Codex, combined, or account-count status.
-- Inline account aliases so long emails can become readable names.
-- Switch button for inactive Claude Code accounts via `claude-swap --switch-to`.
-- Optional manual ledgers for consumer plans where exact provider APIs are not available.
-- Bundled `/toki` wallet logo and Codex SVG account mark.
-- Launch at login toggle backed by `SMAppService`, kept in sync with System Settings > Login Items.
-- `toki status` CLI for scripting and shell prompts (starship, tmux, etc.) - reads the same snapshot the popover shows, no live fetch.
+- Live quota, rate-limit, and spend tracking for Claude Code (multi-account via `claude-swap`, with discovery, one-click switching, and Keychain credential lookup), Codex, and OpenCode.
+- Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, OpenCode, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app.
+- AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch.
+- Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
+- Session mode for tracking quota burn during a focused coding run.
+- `toki status` CLI for scripting and shell prompts, plus a Launch at Login toggle backed by `SMAppService`.
+- Configurable menu bar display modes, inline account aliases, and optional manual ledgers for plans without a usage API.
+- One-click, verified app updates and privacy-safe rotating diagnostics.
 
 ## Requirements
 
@@ -63,7 +49,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Claude Code installed and authenticated.
 - `claude-swap` installed and configured for multi-account Claude workflows.
 - Codex installed and authenticated for Codex usage.
-- Copilot CLI or OpenCode installed when using active-agent discovery for those tools.
+- Copilot CLI, Gemini CLI, or OpenCode installed when using active-agent discovery for those tools.
 
 macOS may ask for Keychain access the first time Toki reads Claude Code or `claude-swap` credentials.
 
