@@ -2,7 +2,7 @@ import Foundation
 
 // Per-account detail for `Toki status --json` / the human-readable list. Mirrors the
 // live AccountSnapshot fields a CLI consumer would actually want; not the full snapshot.
-struct StatusCacheEntry: Codable {
+struct StatusCacheEntry: Codable, Sendable {
     var id: String
     var name: String
     var provider: Provider
@@ -15,7 +15,7 @@ struct StatusCacheEntry: Codable {
 // every real refresh and read by the `Toki status` CLI. The CLI never fetches live - it
 // only reads this file - so it stays instant even though live snapshots require network
 // calls and Keychain access that have no place running on every shell prompt render.
-struct StatusCache: Codable {
+struct StatusCache: Codable, Sendable {
     var updatedAt: Date
     var recommendationTitle: String
     var recommendationDetail: String
@@ -40,6 +40,11 @@ enum StatusCacheStore {
     // which recompute derived state from the same snapshots without actually refreshing
     // them. Stamping "now" there would make the cache look fresh and defeat the CLI's
     // stale-cache warning.
+    //
+    // The actual encode+write happens off the @MainActor caller: this is invoked from
+    // updateDerivedState(), which updatePreferences() calls on every change - and Settings
+    // sliders emit a change per drag tick, not just on release. Keeping directory-check +
+    // JSON encode + atomic write on a background task avoids stuttering the UI on a drag.
     static func write(snapshots: [AccountSnapshot], recommendation: SmartRecommendation, menuBarEntries: [MenuBarStatusEntry], updatedAt: Date) {
         guard !snapshots.isEmpty, !snapshots.allSatisfy(\.isLoadingPlaceholder) else { return }
 
@@ -59,14 +64,17 @@ enum StatusCacheStore {
                 )
             }
         )
+        let writePath = path
 
-        let url = URL(fileURLWithPath: path)
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try JSONEncoder.toki.encode(cache)
-            try data.write(to: url, options: .atomic)
-        } catch {
-            DiagnosticLogger.shared.record(.error, component: "status_cache", code: "save_failed", detail: diagnosticErrorDetail(error))
+        Task.detached(priority: .utility) {
+            let url = URL(fileURLWithPath: writePath)
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let data = try JSONEncoder.toki.encode(cache)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                DiagnosticLogger.shared.record(.error, component: "status_cache", code: "save_failed", detail: diagnosticErrorDetail(error))
+            }
         }
     }
 
