@@ -34,11 +34,17 @@ enum StatusCacheStore {
     // Skips loading placeholders (empty ratio, "Refreshing" primary) so a config
     // reload or app relaunch never clobbers the last real snapshot with blanks while
     // the first fetch is still in flight.
-    static func write(snapshots: [AccountSnapshot], recommendation: SmartRecommendation, menuBarEntries: [MenuBarStatusEntry]) {
+    //
+    // updatedAt is the caller's last-real-refresh timestamp, not Date() at write time:
+    // this is also called after preference-only changes (see UsageStore.updatePreferences),
+    // which recompute derived state from the same snapshots without actually refreshing
+    // them. Stamping "now" there would make the cache look fresh and defeat the CLI's
+    // stale-cache warning.
+    static func write(snapshots: [AccountSnapshot], recommendation: SmartRecommendation, menuBarEntries: [MenuBarStatusEntry], updatedAt: Date) {
         guard !snapshots.isEmpty, !snapshots.allSatisfy(\.isLoadingPlaceholder) else { return }
 
         let cache = StatusCache(
-            updatedAt: Date(),
+            updatedAt: updatedAt,
             recommendationTitle: recommendation.title,
             recommendationDetail: recommendation.detail,
             menuBarEntries: menuBarEntries,

@@ -6,8 +6,13 @@ import ServiceManagement
 // source of truth, so the Settings toggle can't drift out of sync with what System
 // Settings > General > Login Items actually shows (e.g. if the user removes it there).
 enum LaunchAtLogin {
+    // .requiresApproval counts as enabled: the item IS registered, just pending a flip in
+    // System Settings > Login Items. Treating it as disabled would snap the toggle back
+    // off right after the user turned it on, contradicting the "Needs approval" note
+    // shown alongside it.
     static var isEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
+        let status = SMAppService.mainApp.status
+        return status == .enabled || status == .requiresApproval
     }
 
     // macOS sometimes requires the user to flip a switch in System Settings > Login
@@ -19,11 +24,12 @@ enum LaunchAtLogin {
     }
 
     static func setEnabled(_ enabled: Bool) throws {
+        let status = SMAppService.mainApp.status
         if enabled {
-            guard SMAppService.mainApp.status != .enabled else { return }
+            guard status != .enabled, status != .requiresApproval else { return }
             try SMAppService.mainApp.register()
         } else {
-            guard SMAppService.mainApp.status != .notRegistered else { return }
+            guard status != .notRegistered else { return }
             try SMAppService.mainApp.unregister()
         }
     }
