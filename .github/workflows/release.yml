@@ -61,6 +61,11 @@ jobs:
         run: bash scripts/package-release.sh
 
       - name: Notarize DMG
+        # notarytool rejects ad-hoc signed binaries outright, so if notarization creds are
+        # configured but the signing identity isn't, running this unconditionally would
+        # fail the step (and so the whole release) instead of just skipping notarization
+        # the way notarize.sh's own credential check does.
+        if: ${{ env.APPLE_SIGNING_IDENTITY != '' }}
         run: |
           VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
           bash scripts/notarize.sh ".build/Toki_${VERSION}_universal.dmg"
