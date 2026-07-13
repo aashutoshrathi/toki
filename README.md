@@ -40,7 +40,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Claude Code 5-hour and 7-day utilization, reset timing, and spend data when available.
 - Codex usage and rate-limit display through the local Codex app-server.
 - OpenCode usage tracking from its local SQLite database (today's spend, tokens, all-time totals).
-- Active-agent discovery for Codex, Claude Code, Copilot CLI, OpenCode, and ChatGPT-hosted Codex, including runtime, terminal metadata, working directory, and best-effort navigation to the matching terminal tab or host app via bundle ID.
+- Active-agent discovery for Codex, Claude Code, Copilot CLI, OpenCode, Gemini CLI, and ChatGPT-hosted Codex, including runtime, terminal metadata, working directory, and best-effort navigation to the matching terminal tab or host app via bundle ID.
 - GitHub release checks with one-click, verified DMG installation and relaunch.
 - Privacy-safe rotating diagnostics in `~/.toki/logs/` with an attached debug-report share action.
 - AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to deterministic recommendations, with expandable suggestions and one-click switch.
@@ -177,7 +177,7 @@ The settings panel controls native notifications, DND mode, low-quota threshold,
 
 The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2 or Terminal. For other hosts (iTerm, VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
 
-OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot is agent-detection-only: Toki detects running Copilot processes locally, but does not invent quotas or infer billing across its different plans and model providers.
+OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot and Gemini are agent-detection-only: Toki detects running Copilot or Gemini CLI processes locally (and, for Gemini, whether `gemini` is signed in for the onboarding screen), but does not invent quotas - neither GitHub nor Google expose a usage/quota API for these that Toki could read from.
 
 ### Updates and Diagnostics
 

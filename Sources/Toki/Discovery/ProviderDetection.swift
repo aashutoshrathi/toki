@@ -26,6 +26,7 @@ enum ProviderDetection {
             if let claude = detectClaudeCode() { detected.append(claude) }
             if let codex = detectCodex() { detected.append(codex) }
             if let openCode = detectOpenCode() { detected.append(openCode) }
+            if let gemini = detectGemini() { detected.append(gemini) }
             return detected
         }.value
     }
@@ -69,6 +70,20 @@ enum ProviderDetection {
             provider: .openCode,
             title: "OpenCode",
             detail: "Auto-detected from its local database - no setup needed",
+            makeAccount: nil
+        )
+    }
+
+    // Gemini has no makeAccount, same as OpenCode: nothing to write into config.json.
+    // Unlike OpenCode though, there's no local usage database to read either - Google's
+    // gemini-cli exposes no quota API for personal accounts, so this only surfaces Gemini
+    // as signed-in; actual usage still shows up via agent detection in the Agents tab.
+    private static func detectGemini() -> DetectedProvider? {
+        guard let credentials = try? GeminiCredentialReader.readCredentials() else { return nil }
+        return DetectedProvider(
+            provider: .gemini,
+            title: "Gemini",
+            detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in via Google OAuth",
             makeAccount: nil
         )
     }

@@ -52,6 +52,9 @@ enum ConfigLoader {
         guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
             throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
         }
+        guard !config.accounts.contains(where: { $0.provider == .gemini }) else {
+            throw LocalizedErrorMessage("Gemini is detected automatically in the Agents tab and is not a usage-ledger account")
+        }
     }
 
     // One-time rewrite of legacy configs (name/provider keys) into the flat label/type
