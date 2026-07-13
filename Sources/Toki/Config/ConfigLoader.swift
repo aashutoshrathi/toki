@@ -55,6 +55,13 @@ enum ConfigLoader {
         guard !config.accounts.contains(where: { $0.provider == .gemini }) else {
             throw LocalizedErrorMessage("Gemini is detected automatically in the Agents tab and is not a usage-ledger account")
         }
+        // id is the key several call sites build Dictionary(uniqueKeysWithValues:) from
+        // (e.g. UsageStore.startSession()) and what SwiftUI's ForEach identifies rows by -
+        // a duplicate would crash there, not here, so it's worth catching at the boundary.
+        let ids = config.accounts.map(\.id)
+        guard Set(ids).count == ids.count else {
+            throw LocalizedErrorMessage("Config has accounts with duplicate ids - each account needs a unique id")
+        }
     }
 
     // One-time rewrite of legacy configs (name/provider keys) into the flat label/type

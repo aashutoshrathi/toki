@@ -27,6 +27,11 @@ final class UsageStore: ObservableObject {
     @Published var isScanningProviders = false
     @Published private(set) var needsOnboarding = false
 
+    // Not private(set): these are written from UsageStore+*.swift extensions in other
+    // files, and Swift's `private`/`private(set)` is scoped to the declaring file, not
+    // the type - a same-type extension in a different file can't assign through it.
+    // Nothing outside UsageStore reads or writes these; the boundary is convention here,
+    // not the compiler.
     var config: AppConfig?
     var usageState = UsageState()
     var timer: Timer?
