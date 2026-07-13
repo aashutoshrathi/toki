@@ -181,14 +181,24 @@ struct SettingsPanel: View {
             )
         }
         .frame(maxHeight: .infinity)
-        .onAppear(perform: refreshLaunchAtLoginState)
+        .onAppear(perform: resyncLaunchAtLoginFromSystem)
         // SMAppService's status can change out from under this view - e.g. the user
         // clicks "Open" above, approves the item in System Settings, then switches back
         // to Toki. Refresh on foreground so the toggle/note don't go stale until the next
         // manual flip.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshLaunchAtLoginState()
+            resyncLaunchAtLoginFromSystem()
         }
+    }
+
+    // Only for external resync (view appearing, app regaining focus) - also clears any
+    // stale error, since those are exactly the moments the user might have fixed things
+    // outside the app (e.g. approved in System Settings) and an old failure message left
+    // over from before would now be misleading. Not used by the toggle's own binding
+    // below, which sets launchAtLoginError itself and would have it immediately wiped.
+    private func resyncLaunchAtLoginFromSystem() {
+        refreshLaunchAtLoginState()
+        launchAtLoginError = nil
     }
 
     private func refreshLaunchAtLoginState() {
