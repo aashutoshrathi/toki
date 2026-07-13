@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.1.5" src="https://img.shields.io/badge/version-2.1.5-2f80ed">
+  <img alt="Version 2.1.6" src="https://img.shields.io/badge/version-2.1.6-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
@@ -34,6 +34,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 ## Features
 
 - Live quota, rate-limit, and spend tracking for Claude Code (multi-account via `claude-swap`, with discovery, one-click switching, and Keychain credential lookup), Codex, and OpenCode.
+- One-click redemption of banked Codex rate-limit reset credits, gated to when the current window is mostly used.
 - Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, OpenCode, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app.
 - AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch.
 - Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
@@ -222,15 +223,17 @@ Add a Codex account when this Mac is signed in to Codex:
 
 ```json
 {
-  "id": "codex",
-  "name": "Codex",
-  "provider": "codex"
+  "label": "Codex",
+  "type": "codex",
+  "codexAuthPath": "~/.codex/auth.json"
 }
 ```
 
 Toki reads `~/.codex/auth.json` by default and asks the local Codex app-server for account usage and rate limits. Set `codexAuthPath` to use a different auth file.
 
 Codex usage is separate from OpenAI organization API usage.
+
+When OpenAI has a banked rate-limit reset credit for the account, the expanded Codex card shows a **Reset now** button (with the count when more than one is banked). It stays disabled until the current window is at least 80% used, so a reset isn't spent while there's still plenty of quota left - redeeming one resets the rate-limit window immediately via the Codex app-server.
 
 ## Development
 

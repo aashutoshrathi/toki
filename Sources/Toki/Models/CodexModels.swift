@@ -97,6 +97,7 @@ struct CodexRateLimits {
     var subtitle: String?
     var remainingRatio: Double?
     var progressRatio: Double?
+    var resetCreditsAvailable: Int = 0
 
     var hasUsage: Bool {
         !metrics.isEmpty || primary != nil
@@ -116,7 +117,10 @@ struct CodexRateLimits {
         }
         if let resetCredits = data["rateLimitResetCredits"] as? [String: Any],
            let count = optionalNumber(firstValue(resetCredits, keys: ["availableCount"])) {
-            metrics.append(MetricLine(label: "Resets", value: "\(Int(count)) available"))
+            resetCreditsAvailable = Int(count)
+            if resetCreditsAvailable > 0 {
+                metrics.append(MetricLine(label: "Resets", value: "\(resetCreditsAvailable) available"))
+            }
         }
         if let credits = limits["credits"] as? [String: Any] {
             appendCredits(credits)

@@ -24,6 +24,39 @@ extension UsageStore {
         refresh()
     }
 
+    func consumeCodexResetCredit(accountID: String) {
+        guard let account = config?.accounts.first(where: { $0.id == accountID }), account.provider == .codex,
+              !resettingAccountIDs.contains(accountID) else {
+            return
+        }
+        resettingAccountIDs.insert(accountID)
+        Task {
+            defer { resettingAccountIDs.remove(accountID) }
+            let result = await Task.detached {
+                Result { try CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil) }
+            }.value
+
+            switch result {
+            case .success(let outcome):
+                appendEvent(kind: .reset, title: "Codex reset", detail: resetOutcomeDescription(outcome), deliveredNotification: false)
+                refresh(keepsExistingSnapshots: true)
+            case .failure(let error):
+                DiagnosticLogger.shared.record(.error, component: "codex_reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
+                appendEvent(kind: .reset, title: "Codex reset failed", detail: error.localizedDescription, deliveredNotification: false)
+            }
+        }
+    }
+
+    private func resetOutcomeDescription(_ outcome: String) -> String {
+        switch outcome {
+        case "reset": return "Rate limit windows were reset."
+        case "nothingToReset": return "No rate limit window needed a reset."
+        case "noCredit": return "No reset credits were available."
+        case "alreadyRedeemed": return "That reset was already redeemed."
+        default: return "Reset outcome: \(outcome)."
+        }
+    }
+
     func renameAccount(snapshot: AccountSnapshot, alias: String) {
         let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, var config else { return }

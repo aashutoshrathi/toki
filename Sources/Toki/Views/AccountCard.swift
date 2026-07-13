@@ -140,6 +140,28 @@ struct AccountCard: View {
                     .font(.system(size: 11, weight: .medium))
                 }
 
+                if snapshot.resetCreditsAvailable > 0 {
+                    HStack(spacing: 8) {
+                        Button {
+                            store.consumeCodexResetCredit(accountID: snapshot.id)
+                        } label: {
+                            if isResetting {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Resetting Codex rate limit")
+                            } else {
+                                Label(resetButtonTitle, systemImage: "arrow.counterclockwise")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isResetting || !canUseResetCredit)
+                        .help(resetButtonHelp)
+                        .pointerOnHover()
+                        Spacer()
+                    }
+                }
+
                 if store.debugMode && snapshot.isError {
                     Divider()
                         .padding(.vertical, 1)
@@ -350,6 +372,33 @@ struct AccountCard: View {
 
     private var progressRatio: Double? {
         snapshot.progressRatio ?? snapshot.remainingRatio.map { 1 - $0 }
+    }
+
+    private var isResetting: Bool {
+        store.resettingAccountIDs.contains(snapshot.id)
+    }
+
+    // Resets are a limited, banked resource - redeeming one while plenty of quota remains
+    // just throws it away. Only allow it once the window is mostly spent. Uses the same
+    // progressRatio (used fraction) the progress bar renders, so it works whether the
+    // snapshot populated progressRatio or only remainingRatio.
+    private var canUseResetCredit: Bool {
+        guard let progressRatio else { return false }
+        return progressRatio >= 0.80
+    }
+
+    private var resetButtonTitle: String {
+        snapshot.resetCreditsAvailable > 1 ? "Reset now (\(snapshot.resetCreditsAvailable) available)" : "Reset now"
+    }
+
+    private var resetButtonHelp: String {
+        if canUseResetCredit {
+            return "Redeem a banked reset credit to reset this rate limit window now"
+        }
+        if progressRatio == nil {
+            return "Current usage is unavailable, so Toki can't confirm this reset would be worth spending"
+        }
+        return "Save this reset for when you're closer to the limit (usage must be at least 80% used)"
     }
 
     private var statusColor: Color {

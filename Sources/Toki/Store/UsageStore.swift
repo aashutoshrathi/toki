@@ -27,6 +27,7 @@ final class UsageStore: ObservableObject {
     @Published var detectedProviders: [DetectedProvider] = []
     @Published var isScanningProviders = false
     @Published private(set) var needsOnboarding = false
+    @Published var resettingAccountIDs: Set<String> = []
 
     // Not private(set): these are written from UsageStore+*.swift extensions in other
     // files, and Swift's `private`/`private(set)` is scoped to the declaring file, not
