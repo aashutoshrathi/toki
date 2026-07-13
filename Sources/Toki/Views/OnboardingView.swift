@@ -8,7 +8,7 @@ struct OnboardingView: View {
     var openConfigEditor: () -> Void
 
     private var connectable: [DetectedProvider] {
-        store.detectedProviders.filter(\.isConnectable)
+        store.addableProviders.filter(\.isConnectable)
     }
 
     var body: some View {
@@ -23,11 +23,20 @@ struct OnboardingView: View {
 
             if store.isScanningProviders {
                 scanningRow
-            } else if store.detectedProviders.isEmpty {
-                nothingDetected
+            } else if store.addableProviders.isEmpty {
+                // Two different empty states: genuinely nothing signed in on this machine,
+                // vs. everything detected is already connected (only reachable from the
+                // "Add account" page, since onboarding's snapshots are always empty).
+                // Telling someone with Claude Code already connected to "sign in to Claude
+                // Code" would be actively wrong.
+                if store.detectedProviders.isEmpty {
+                    nothingDetected
+                } else {
+                    allConnected
+                }
             } else {
                 VStack(spacing: 6) {
-                    ForEach(store.detectedProviders) { detected in
+                    ForEach(store.addableProviders) { detected in
                         ProviderConnectRow(detected: detected) {
                             if let makeAccount = detected.makeAccount {
                                 store.connect([makeAccount()])
@@ -88,6 +97,17 @@ struct OnboardingView: View {
             Text("Nothing detected yet")
                 .font(.system(size: 11, weight: .medium))
             Text("Sign in to Claude Code or Codex, then reopen this menu - Toki will pick them up automatically.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var allConnected: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Everything detected is already connected")
+                .font(.system(size: 11, weight: .medium))
+            Text("Sign in to another provider, then reopen this menu - Toki will pick it up automatically.")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

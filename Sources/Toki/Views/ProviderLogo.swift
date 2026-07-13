@@ -34,6 +34,16 @@ struct ProviderLogo: View {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: size * 0.72, weight: .bold))
                     .foregroundStyle(Color(red: 0.55, green: 0.45, blue: 0.95))
+            case .gemini:
+                Image(systemName: "sparkles")
+                    .font(.system(size: size * 0.72, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(red: 0.26, green: 0.52, blue: 0.96), Color(red: 0.66, green: 0.33, blue: 0.97)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)

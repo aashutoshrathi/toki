@@ -5,6 +5,7 @@ struct MenuContentView: View {
     @ObservedObject var updateChecker: UpdateChecker
     @State private var selectedTab: TokiTab = .accounts
     @State private var showConfig = false
+    @State private var showAddAccount = false
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
@@ -28,6 +29,11 @@ struct MenuContentView: View {
         Group {
             if showConfig {
                 ConfigPage(store: store, updateChecker: updateChecker) { showConfig = false }
+            } else if showAddAccount {
+                AddAccountPage(store: store, onClose: { showAddAccount = false }) {
+                    showAddAccount = false
+                    showConfig = true
+                }
             } else {
                 mainContent
             }
@@ -178,6 +184,19 @@ struct MenuContentView: View {
             .frame(width: 25, height: 25)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help("Refresh")
+            .pointerOnHover()
+
+            Button {
+                showAddAccount = true
+            } label: {
+                Image(systemName: "person.badge.plus")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 25, height: 25)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .help("Add account")
+            .accessibilityLabel("Add account")
             .pointerOnHover()
 
             Button {

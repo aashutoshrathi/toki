@@ -25,7 +25,7 @@ struct ActiveAgentsPanel: View {
                         EmptyPanel(
                             systemImage: "terminal",
                             title: "No active agents",
-                            detail: "Codex (terminal or inside ChatGPT), Claude Code, Copilot CLI, and OpenCode sessions appear here."
+                            detail: "Codex (terminal or inside ChatGPT), Claude Code, Copilot CLI, OpenCode, and Gemini sessions appear here."
                         )
                     } else {
                         ForEach(store.activeAgents) { agent in

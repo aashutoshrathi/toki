@@ -116,6 +116,9 @@ enum ActiveAgentScanner {
             provider = .codex
         } else if executable == "claude" {
             provider = .claudeCode
+        } else if executable == "gemini"
+                    || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") {
+            provider = .gemini
         } else {
             return nil
         }
