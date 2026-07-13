@@ -2,10 +2,13 @@ import Foundation
 
 extension UsageStore {
     func startSession() {
-        let ratios = Dictionary(uniqueKeysWithValues: snapshots.compactMap { snapshot in
+        // uniquingKeysWith (not uniqueKeysWithValues): config.json ids are validated
+        // unique, but a synthetic snapshot (e.g. OpenCode's fixed auto-detected id) could
+        // still collide with a hand-picked config id - that should never crash session start.
+        let ratios = Dictionary(snapshots.compactMap { snapshot in
             snapshot.remainingRatio.map { (snapshot.id, $0) }
-        })
-        let primaries = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.primary) })
+        }, uniquingKeysWith: { _, latest in latest })
+        let primaries = Dictionary(snapshots.map { ($0.id, $0.primary) }, uniquingKeysWith: { _, latest in latest })
         let next = SessionState(startedAt: Date(), startingRemainingRatios: ratios, startingPrimaries: primaries)
         session = next
         usageState.session = next
@@ -24,7 +27,7 @@ extension UsageStore {
 
     func sessionBurnLines() -> [MetricLine] {
         guard let session else { return [] }
-        let byID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+        let byID = Dictionary(snapshots.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         return session.startingRemainingRatios.compactMap { accountID, startingRatio in
             guard let snapshot = byID[accountID], let current = snapshot.remainingRatio else { return nil }
             let burned = max(0, startingRatio - current)

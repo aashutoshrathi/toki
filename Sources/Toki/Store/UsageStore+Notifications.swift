@@ -30,7 +30,10 @@ extension UsageStore {
     }
 
     func evaluateEventsAndNotifications(for snapshots: [AccountSnapshot], previous: [AccountSnapshot], at date: Date) {
-        let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+        // uniquingKeysWith: a synthetic snapshot id (e.g. OpenCode's fixed auto-detected
+        // id) could collide with a hand-picked config id - that should never crash
+        // notification evaluation.
+        let previousByID = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         for snapshot in snapshots where !snapshot.isError {
             guard let ratio = snapshot.remainingRatio else { continue }
             let previousRatio = previousByID[snapshot.id]?.remainingRatio
