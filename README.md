@@ -179,7 +179,7 @@ Session mode records starting quota for visible accounts, then shows a prominent
 
 ### Launch at Login
 
-Settings has a "Launch at login" toggle backed by `SMAppService`. It reflects whatever System Settings > Login Items actually says rather than a separate stored preference, so removing Toki there also turns the toggle off. macOS occasionally requires approving a freshly-added login item in System Settings before it takes effect - when that happens, the toggle shows an inline "Needs approval" note with a shortcut straight to that pane.
+Settings has a "Launch at login" toggle backed by `SMAppService`. It reflects whatever System Settings > General > Login Items actually says rather than a separate stored preference, so removing Toki there also turns the toggle off. macOS occasionally requires approving a freshly-added login item in that same pane before it takes effect - when that happens, the toggle shows an inline "Needs approval" note with a shortcut straight there.
 
 ### Command Line Status
 

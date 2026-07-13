@@ -38,7 +38,7 @@ jobs:
           KEYCHAIN_PASSWORD="$(uuidgen)"
           CERT_PATH="$RUNNER_TEMP/cert.p12"
 
-          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 --decode -o "$CERT_PATH"
+          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 -D -o "$CERT_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -54,7 +54,7 @@ jobs:
         if: ${{ env.APPLE_API_KEY_P8 != '' }}
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode -o "$KEY_PATH"
+          printf '%s' "$APPLE_API_KEY_P8" | base64 -D -o "$KEY_PATH"
           echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Build and package

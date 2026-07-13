@@ -50,7 +50,7 @@ struct SettingsPanel: View {
 
                 if launchAtLoginNeedsApproval {
                     HStack(spacing: 4) {
-                        Text("Needs approval in System Settings > Login Items.")
+                        Text("Needs approval in System Settings > General > Login Items.")
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                         Button("Open") {

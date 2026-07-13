@@ -7,16 +7,16 @@ import ServiceManagement
 // Settings > General > Login Items actually shows (e.g. if the user removes it there).
 enum LaunchAtLogin {
     // .requiresApproval counts as enabled: the item IS registered, just pending a flip in
-    // System Settings > Login Items. Treating it as disabled would snap the toggle back
-    // off right after the user turned it on, contradicting the "Needs approval" note
-    // shown alongside it.
+    // System Settings > General > Login Items. Treating it as disabled would snap the
+    // toggle back off right after the user turned it on, contradicting the "Needs
+    // approval" note shown alongside it.
     static var isEnabled: Bool {
         let status = SMAppService.mainApp.status
         return status == .enabled || status == .requiresApproval
     }
 
-    // macOS sometimes requires the user to flip a switch in System Settings > Login
-    // Items before a freshly-registered item actually runs at login - register()
+    // macOS sometimes requires the user to flip a switch in System Settings > General >
+    // Login Items before a freshly-registered item actually runs at login - register()
     // succeeds either way, so the UI needs to check this separately to explain why
     // the toggle is on but login-launching isn't active yet.
     static var requiresApproval: Bool {
