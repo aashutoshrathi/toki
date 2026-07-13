@@ -96,6 +96,8 @@ The generated app bundle is written to `.build/Toki.app`.
 
 Whenever `~/.toki/config.json` is missing, or exists but has no accounts yet, Toki's popover shows a **Connect an account** screen instead of an empty list. It scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), and OpenCode (its local database), and a single click on **Connect** (or **Connect all detected**) writes the right entries to `~/.toki/config.json` for you - no JSON to hand-write. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
 
+This screen isn't just for the first run - the header's **+** button opens it any time, so starting with just Claude Code and adding Codex (or anything else newly signed in) later needs no config editing either. It only offers providers you haven't already connected.
+
 For scripting, multi-account setups, or fields the wizard doesn't cover (API keys, budgets, manual trackers), edit the config directly. Toki reads:
 
 ```text

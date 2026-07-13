@@ -8,7 +8,7 @@ struct OnboardingView: View {
     var openConfigEditor: () -> Void
 
     private var connectable: [DetectedProvider] {
-        store.detectedProviders.filter(\.isConnectable)
+        store.addableProviders.filter(\.isConnectable)
     }
 
     var body: some View {
@@ -23,11 +23,11 @@ struct OnboardingView: View {
 
             if store.isScanningProviders {
                 scanningRow
-            } else if store.detectedProviders.isEmpty {
+            } else if store.addableProviders.isEmpty {
                 nothingDetected
             } else {
                 VStack(spacing: 6) {
-                    ForEach(store.detectedProviders) { detected in
+                    ForEach(store.addableProviders) { detected in
                         ProviderConnectRow(detected: detected) {
                             if let makeAccount = detected.makeAccount {
                                 store.connect([makeAccount()])
