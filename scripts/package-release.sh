@@ -67,7 +67,15 @@ cat > "$INFO_PLIST" <<PLIST
 PLIST
 
 echo "==> Signing app bundle"
-codesign --force --deep --sign - "$APP_DIR"
+if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+  echo "    Using Developer ID identity: $APPLE_SIGNING_IDENTITY"
+  # Hardened runtime + a secure timestamp are required for notarization to accept the
+  # binary; ad-hoc signing (the fallback below) can't be notarized at all.
+  codesign --force --deep --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$APP_DIR"
+else
+  echo "    No APPLE_SIGNING_IDENTITY set - falling back to ad-hoc signing (not notarizable)."
+  codesign --force --deep --sign - "$APP_DIR"
+fi
 
 echo "==> Creating DMG"
 DMG_NAME="${APP_NAME}_${VERSION}_universal.dmg"
