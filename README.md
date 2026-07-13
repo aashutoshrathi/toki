@@ -39,7 +39,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
 - Session mode for tracking quota burn during a focused coding run.
 - `Toki status` CLI for scripting and shell prompts, plus a Launch at Login toggle backed by `SMAppService`.
-- Configurable menu bar display modes, inline account aliases, and optional manual ledgers for plans without a usage API.
+- Configurable menu bar display modes, inline account aliases, an "Add account" button to connect more providers any time (not just on first run), and optional manual ledgers for plans without a usage API.
 - One-click, verified app updates and privacy-safe rotating diagnostics.
 
 ## Requirements
