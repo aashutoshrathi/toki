@@ -54,6 +54,7 @@ extension UsageStore {
         }
         syncPublishedState()
         refreshAIInsight(for: snapshots)
+        StatusCacheStore.write(snapshots: snapshots, recommendation: recommendation, menuBarEntries: statusEntries)
     }
 
     func recordHistory(for snapshots: [AccountSnapshot], at date: Date) {

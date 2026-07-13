@@ -37,9 +37,37 @@ struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
 
+    @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
+    @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
+    @State private var launchAtLoginError: String?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                Toggle("Launch at login", isOn: launchAtLoginBinding)
+                    .toggleStyle(.switch)
+
+                if launchAtLoginNeedsApproval {
+                    HStack(spacing: 4) {
+                        Text("Needs approval in System Settings > Login Items.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                        Button("Open") {
+                            LaunchAtLogin.openSystemSettings()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.blue)
+                        .pointerOnHover()
+                    }
+                }
+
+                if let launchAtLoginError {
+                    Text(launchAtLoginError)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.red)
+                }
+
                 Toggle("Notifications", isOn: binding(\.notificationsEnabled))
                     .toggleStyle(.switch)
 
@@ -152,6 +180,22 @@ struct SettingsPanel: View {
             )
         }
         .frame(maxHeight: .infinity)
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLoginEnabled },
+            set: { newValue in
+                do {
+                    try LaunchAtLogin.setEnabled(newValue)
+                    launchAtLoginError = nil
+                } catch {
+                    launchAtLoginError = "Could not \(newValue ? "enable" : "disable") launch at login: \(error.localizedDescription)"
+                }
+                launchAtLoginEnabled = LaunchAtLogin.isEnabled
+                launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
+            }
+        )
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<AppPreferences, Value>) -> Binding<Value> {

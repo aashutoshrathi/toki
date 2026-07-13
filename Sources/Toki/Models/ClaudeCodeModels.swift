@@ -116,7 +116,7 @@ struct DebugLogEntry: Identifiable {
     let message: String
 }
 
-struct MenuBarStatusEntry: Identifiable {
+struct MenuBarStatusEntry: Identifiable, Codable {
     var id: Provider { provider }
     var provider: Provider
     var value: String

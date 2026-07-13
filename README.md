@@ -53,6 +53,8 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Switch button for inactive Claude Code accounts via `claude-swap --switch-to`.
 - Optional manual ledgers for consumer plans where exact provider APIs are not available.
 - Bundled `/toki` wallet logo and Codex SVG account mark.
+- Launch at login toggle backed by `SMAppService`, kept in sync with System Settings > Login Items.
+- `toki status` CLI for scripting and shell prompts (starship, tmux, etc.) - reads the same snapshot the popover shows, no live fetch.
 
 ## Requirements
 
@@ -187,11 +189,26 @@ The AIInsightCard picks the healthiest available account from live snapshots and
 
 Session mode records starting quota for visible accounts, then shows a prominent red banner with a live stopwatch and per-account burn during the current coding session. It logs session warning events when quota drops sharply or crosses the configured warning threshold. The play/stop toggle lives in the header bar next to the refresh button.
 
+### Launch at Login
+
+Settings has a "Launch at login" toggle backed by `SMAppService`. It reflects whatever System Settings > Login Items actually says rather than a separate stored preference, so removing Toki there also turns the toggle off. macOS occasionally requires approving a freshly-added login item in System Settings before it takes effect - when that happens, the toggle shows an inline "Needs approval" note with a shortcut straight to that pane.
+
+### Command Line Status
+
+```sh
+Toki status              # one line per account, e.g. "Claude Code: 82% left"
+Toki status --compact    # single line matching the menu bar icon, for prompts/status bars
+Toki status --json       # full snapshot as JSON
+```
+
+Run the installed app's binary directly, e.g. `/Applications/Toki.app/Contents/MacOS/Toki status`. This reads a cache the running app writes after every refresh at `~/.toki/status.json` (override with `TOKI_STATUS_CACHE`) - it never launches the menu bar app or makes a live network/Keychain call, so it's safe to call on every shell prompt render. If Toki hasn't run yet, or the cache is more than 15 minutes old, it says so on stderr.
+
 ### Environment Overrides
 
 ```sh
 TOKI_CONFIG=/path/to/config.json swift run Toki
 TOKI_STATE=/path/to/usage-state.json swift run Toki
+TOKI_STATUS_CACHE=/path/to/status.json swift run Toki
 ```
 
 Legacy TokenBar paths and variables are still recognized during the rename:
