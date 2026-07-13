@@ -100,12 +100,16 @@ extension UsageStore {
             configError = "\(ConfigLoader.path) exists but couldn't be parsed - fix or replace it with the config editor before connecting."
             return
         }
-        var existingKeys = Set(next.accounts.map { "\($0.provider.rawValue):\($0.id)" })
+        // Dedupe on bare id, not provider+id: ConfigLoader.validate() now requires ids to
+        // be unique across the whole config, not just per provider, so skipping only
+        // provider+id matches here could still append an id that's already taken under a
+        // different provider (e.g. a manual account someone happened to id "codex") and
+        // fail validate() below - turning a working connect into an opaque error.
+        var existingIDs = Set(next.accounts.map(\.id))
         for account in accounts {
-            let key = "\(account.provider.rawValue):\(account.id)"
-            guard !existingKeys.contains(key) else { continue }
+            guard !existingIDs.contains(account.id) else { continue }
             next.accounts.append(account)
-            existingKeys.insert(key)
+            existingIDs.insert(account.id)
         }
         do {
             try ConfigLoader.validate(next)

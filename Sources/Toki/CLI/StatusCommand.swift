@@ -14,7 +14,14 @@ enum StatusCommand {
         let flags = Set(arguments.dropFirst(2))
 
         guard let cache = StatusCacheStore.load() else {
-            printErr("No usage data yet - open Toki at least once so it can compute a snapshot.")
+            // load() returns nil both when the file is simply missing (the common
+            // first-run case) and when it exists but failed to read/decode (a partial
+            // write, a schema change across an update) - those need different guidance.
+            if FileManager.default.fileExists(atPath: StatusCacheStore.path) {
+                printErr("Could not read the cached status at \(StatusCacheStore.path) - it may be corrupt. Reopen Toki to regenerate it.")
+            } else {
+                printErr("No usage data yet - open Toki at least once so it can compute a snapshot.")
+            }
             return 1
         }
 
