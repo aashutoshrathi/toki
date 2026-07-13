@@ -124,6 +124,10 @@ extension UsageStore {
                     failed.metrics = [MetricLine(label: "Switch", value: error.localizedDescription)] + snapshot.metrics
                     return failed
                 }
+                // Unlike the success path (reloadConfig() -> refresh() -> this), nothing
+                // else recomputes recommendation/menu bar/status cache here - without this
+                // they'd keep recommending the now-errored account until the next refresh.
+                updateDerivedState(for: snapshots)
             }
         }
     }

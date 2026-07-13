@@ -59,6 +59,9 @@ extension UsageStore {
                 updated.name = trimmed
                 return updated
             }
+            // recommendation/menu bar text and the status cache all embed account names -
+            // without this they'd keep showing the old name until the next refresh.
+            updateDerivedState(for: snapshots)
         } catch {
             DiagnosticLogger.shared.record(.error, component: "config", code: "alias_save_failed", detail: diagnosticErrorDetail(error))
             configError = "Could not save alias: \(error.localizedDescription)"

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // Full-page settings/config view opened from the header gear (no longer a bottom tab).
@@ -180,6 +181,19 @@ struct SettingsPanel: View {
             )
         }
         .frame(maxHeight: .infinity)
+        .onAppear(perform: refreshLaunchAtLoginState)
+        // SMAppService's status can change out from under this view - e.g. the user
+        // clicks "Open" above, approves the item in System Settings, then switches back
+        // to Toki. Refresh on foreground so the toggle/note don't go stale until the next
+        // manual flip.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshLaunchAtLoginState()
+        }
+    }
+
+    private func refreshLaunchAtLoginState() {
+        launchAtLoginEnabled = LaunchAtLogin.isEnabled
+        launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     }
 
     private var launchAtLoginBinding: Binding<Bool> {
@@ -192,8 +206,7 @@ struct SettingsPanel: View {
                 } catch {
                     launchAtLoginError = "Could not \(newValue ? "enable" : "disable") launch at login: \(error.localizedDescription)"
                 }
-                launchAtLoginEnabled = LaunchAtLogin.isEnabled
-                launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
+                refreshLaunchAtLoginState()
             }
         )
     }

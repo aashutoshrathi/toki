@@ -47,12 +47,16 @@ enum StatusCommand {
 
     // Mirrors exactly what the menu bar icon currently shows (same entries, same
     // display-mode preference), so it stays consistent with what the user already sees.
+    // MenuBarStatusView swaps the provider logo for leadingText (the break-suggestion
+    // emoji) when quota is exhausted - text has no logo to fall back to, so it takes
+    // leadingText the same way, and otherwise uses the provider name as the logo's
+    // printable stand-in.
     private static func printCompact(_ cache: StatusCache) {
         guard !cache.menuBarEntries.isEmpty else {
             print(cache.recommendationTitle)
             return
         }
-        print(cache.menuBarEntries.map { "\($0.provider.displayName) \($0.value)" }.joined(separator: "  "))
+        print(cache.menuBarEntries.map { "\($0.leadingText ?? $0.provider.displayName) \($0.value)" }.joined(separator: "  "))
     }
 
     private static func printText(_ cache: StatusCache) {
