@@ -38,7 +38,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch.
 - Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
 - Session mode for tracking quota burn during a focused coding run.
-- `toki status` CLI for scripting and shell prompts, plus a Launch at Login toggle backed by `SMAppService`.
+- `Toki status` CLI for scripting and shell prompts, plus a Launch at Login toggle backed by `SMAppService`.
 - Configurable menu bar display modes, inline account aliases, and optional manual ledgers for plans without a usage API.
 - One-click, verified app updates and privacy-safe rotating diagnostics.
 
@@ -94,7 +94,7 @@ The generated app bundle is written to `.build/Toki.app`.
 
 ## Configuration
 
-Whenever `~/.toki/config.json` is missing, or exists but has no accounts yet, Toki's popover shows a **Connect an account** screen instead of an empty list. It scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), and OpenCode (its local database), and a single click on **Connect** (or **Connect all detected**) writes the right entries to `~/.toki/config.json` for you - no JSON to hand-write. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
+Whenever `~/.toki/config.json` is missing, or exists but has no accounts yet, Toki's popover shows a **Connect an account** screen instead of an empty list. It scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), and Gemini CLI (`~/.gemini/oauth_creds.json`), and a single click on **Connect** (or **Connect all detected**) writes the right entries to `~/.toki/config.json` for you - no JSON to hand-write. Gemini shows up as signed-in but has no Connect button: like Copilot, it's detection-only (see Features), so there's nothing to write for it. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
 
 This screen isn't just for the first run - the header's **+** button opens it any time, so starting with just Claude Code and adding Codex (or anything else newly signed in) later needs no config editing either. It only offers providers you haven't already connected.
 

@@ -1,6 +1,6 @@
 import Foundation
 
-// Per-account detail for `toki status --json` / the human-readable list. Mirrors the
+// Per-account detail for `Toki status --json` / the human-readable list. Mirrors the
 // live AccountSnapshot fields a CLI consumer would actually want; not the full snapshot.
 struct StatusCacheEntry: Codable {
     var id: String
@@ -12,7 +12,7 @@ struct StatusCacheEntry: Codable {
 }
 
 // Snapshot of "what the popover would show right now," written by the running app after
-// every real refresh and read by the `toki status` CLI. The CLI never fetches live - it
+// every real refresh and read by the `Toki status` CLI. The CLI never fetches live - it
 // only reads this file - so it stays instant even though live snapshots require network
 // calls and Keychain access that have no place running on every shell prompt render.
 struct StatusCache: Codable {
