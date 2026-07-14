@@ -103,6 +103,7 @@ enum TokiEventKind: String, Codable {
     case session
     case notification
     case refresh
+    case reset
 }
 
 struct TokiEvent: Codable, Identifiable, Hashable {

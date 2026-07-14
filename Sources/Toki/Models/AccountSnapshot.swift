@@ -14,6 +14,7 @@ struct AccountSnapshot: Identifiable, Hashable {
     var subtitle: String
     var remainingRatio: Double?
     var progressRatio: Double? = nil
+    var resetCreditsAvailable: Int = 0
     var metrics: [MetricLine]
     var accountInfo: [MetricLine] = []
     var isError: Bool = false
