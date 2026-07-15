@@ -25,7 +25,7 @@
 
 ## Why Toki
 
-Toki is built for people who jump between Claude Code, Codex, Copilot, Gemini, and OpenCode during the day and want a fast, local view of usage and active agents.
+Toki is built for people who jump between Claude Code, Codex, Copilot, Gemini, Grok, and OpenCode during the day and want a fast, local view of usage and active agents.
 
 It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
 
@@ -35,12 +35,12 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 
 - Live quota, rate-limit, and spend tracking for Claude Code (multi-account via `claude-swap`, with discovery, one-click switching, and Keychain credential lookup), Codex, and OpenCode.
 - One-click redemption of banked Codex rate-limit reset credits, gated to when the current window is mostly used.
-- Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, OpenCode, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app.
-- AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch.
+- Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app.
+- AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch. Custom instructions get their own Settings page and take priority over the default tone/format.
 - Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
 - Session mode for tracking quota burn during a focused coding run.
 - `Toki status` CLI for scripting and shell prompts, plus a Launch at Login toggle backed by `SMAppService`.
-- Configurable menu bar display modes, inline account aliases, an "Add account" button to connect more providers any time (not just on first run), and optional manual ledgers for plans without a usage API.
+- Configurable menu bar display modes, inline account aliases, automatic connection of any detected provider the moment it's signed in (no manual step), and optional manual ledgers for plans without a usage API.
 - One-click, verified app updates and privacy-safe rotating diagnostics.
 
 ## Requirements
@@ -50,7 +50,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Claude Code installed and authenticated.
 - `claude-swap` installed and configured for multi-account Claude workflows.
 - Codex installed and authenticated for Codex usage.
-- Copilot CLI, Gemini CLI, or OpenCode installed when using active-agent discovery for those tools.
+- Copilot CLI, Gemini CLI, Grok CLI, or OpenCode installed when using active-agent discovery for those tools.
 
 macOS may ask for Keychain access the first time Toki reads Claude Code or `claude-swap` credentials.
 
@@ -95,9 +95,9 @@ The generated app bundle is written to `.build/Toki.app`.
 
 ## Configuration
 
-Whenever `~/.toki/config.json` is missing, or exists but has no accounts yet, Toki's popover shows a **Connect an account** screen instead of an empty list. It scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), and Gemini CLI (`~/.gemini/oauth_creds.json`), and a single click on **Connect** (or **Connect all detected**) writes the right entries to `~/.toki/config.json` for you - no JSON to hand-write. Gemini shows up as signed-in but has no Connect button: like Copilot, it's detection-only (see Features), so there's nothing to write for it. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
+Toki connects providers automatically. Every time the popover opens, it scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`), and immediately writes the right entry to `~/.toki/config.json` for anything newly signed in - no Connect button, no JSON to hand-write. This isn't just a first-run thing: starting with just Claude Code and signing into Codex (or anything else) later picks it up the next time you open the menu, with no config editing needed.
 
-This screen isn't just for the first run - the header's **+** button opens it any time, so starting with just Claude Code and adding Codex (or anything else newly signed in) later needs no config editing either. It only offers providers you haven't already connected.
+Whenever `~/.toki/config.json` is missing, or exists but has no accounts yet, Toki's popover shows a **Connect an account** screen instead of an empty list while it scans. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
 
 For scripting, multi-account setups, or fields the wizard doesn't cover (API keys, budgets, manual trackers), edit the config directly. Toki reads:
 
@@ -166,7 +166,7 @@ The settings panel controls native notifications, DND mode, low-quota threshold,
 
 The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2 or Terminal. For other hosts (iTerm, VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
 
-OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot and Gemini are agent-detection-only: Toki detects running Copilot or Gemini CLI processes locally (and, for Gemini, whether `gemini` is signed in for the onboarding screen), but does not invent quotas - neither GitHub nor Google expose a usage/quota API for these that Toki could read from.
+OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot, Gemini, and Grok are agent-detection-only: Toki detects running processes locally (and, for Gemini/Grok, whether they're signed in) and shows an active-session count on their card, but does not invent quotas - none of GitHub, Google, or xAI expose a usage/quota API for these that Toki could read from.
 
 ### Updates and Diagnostics
 

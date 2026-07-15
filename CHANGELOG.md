@@ -2,13 +2,27 @@
 
 ## 2.1.9 - 2026-07-16
 
+### Added
+
+- Grok (xAI's own CLI) and Gemini support: detection, sign-in, and a real account card for each. Neither has a usage API (confirmed directly against both CLIs), so their cards show active session count instead of a percentage - and Grok's sessions now resolve their real conversation title instead of a generic "Grok agent" label.
+- Providers auto-connect the moment they're detected, signed in and running - no manual "Connect" click needed. The "Add account" button/page is gone; opening the popover is enough.
+- "Remove" action on each account card's expanded section, with a confirmation dialog (only edits local config, doesn't sign anything out).
+- A small session-count badge on every account card's logo, and on the Agents tab icon.
+- AI insight instructions get their own Settings page, reachable even when Apple Intelligence isn't available yet on the Mac (with an inline note explaining why generation is inactive).
+- Basic syntax highlighting in the Config JSON editor.
+
 ### Changed
 
-- AI insight instructions moved to the top of Settings with more prominent styling (icon, larger heading, tinted card) - it's the one setting that actually changes what the on-device AI says about your usage, so it shouldn't be buried below a page of toggles.
-- The "update available" banner (with its install/dismiss controls) now also shows directly under the "Check now" button in Settings, not just in the main popover tab, so a manual check surfaces the same install UI in place.
+- Custom AI instructions now take priority over Toki's default tone and length instead of competing with a hardcoded "summarize in one sentence" line - they're composed with the anti-hallucination grounding rather than replacing it outright.
+- Settings reorganized into labeled sections (General, Notifications, Updates, Advanced) instead of one flat list.
+- The main account list now orders cards by how much they can actually show: real usage data first, then agent-detection-only accounts with something running right now, then idle ones.
+- Assorted polish: smaller toggles, de-emphasized "Send debug report"/Save/Revert buttons, cleaner error-state cards (no more mid-word truncation, no redundant provider badge), plainer Accounts tab icon, "Active coding agents" renamed to "Active agents".
+- Removed the unused History tab.
 
 ### Fixed
 
+- `ConfigLoader.validate()` still rejected any config.json account for Grok/Copilot, a holdover from before either had a real config entry - this would have made connecting Grok fail outright, and broken loading the entire config on the next launch.
+- Several icon buttons (header row, event-log clear, account-card actions) were only clickable on the glyph itself, not the visible rounded button behind it.
 - The menu bar icon (and the popover anchored to it) could shift position on refresh, since its width was recalculated from the fitted percentage text and digit count changes (e.g. "9%" to "58%" to "100%") every poll. The percentage now renders in a fixed-width field so the status item's width - and therefore its screen position - stays stable.
 - Rarely, the popover would open pinned to the top-left corner of the screen instead of under the menu bar icon - a timing race where the popover anchored before the status item's own layout pass had settled. The popover now defers to the next run loop tick before anchoring, and falls back to a sane rect if the button's bounds are momentarily degenerate.
 

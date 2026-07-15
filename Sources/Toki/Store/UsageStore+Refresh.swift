@@ -28,7 +28,7 @@ extension UsageStore {
             if !response.apiCallKeys.isEmpty {
                 StateLoader.save(usageState)
             }
-            let sorted = sortedByAvailability(response.snapshots)
+            let sorted = sortedByAvailability(response.snapshots, activeProviders: Set(activeAgents.map(\.provider)))
             let errorCount = sorted.filter(\.isError).count
             logDebug("Refresh complete: \(sorted.count) accounts (\(errorCount) errors)")
             for snapshot in sorted where snapshot.isError {

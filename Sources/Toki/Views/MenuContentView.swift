@@ -15,7 +15,7 @@ struct MenuContentView: View {
 
         var systemImage: String {
             switch self {
-            case .accounts: return "person.2"
+            case .accounts: return "person.crop.circle"
             case .events: return "bell.badge"
             case .agents: return "terminal"
             }
