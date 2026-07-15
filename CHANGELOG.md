@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.8 - 2026-07-15
+
+### Changed
+
+- Codex's collapsed account-card summary now shows its two rate-limit windows (rolling 5h and 7-day/weekly) explicitly and separately instead of one generic percentage - or, when only one window has data, just that one - rather than falling back to a raw token count whenever the other window happened to be unavailable. Claude's card is unaffected; it only ever has one window.
+
 ## 2.1.7 - 2026-07-15
 
 ### Fixed

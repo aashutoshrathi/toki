@@ -98,6 +98,8 @@ struct CodexRateLimits {
     var remainingRatio: Double?
     var progressRatio: Double?
     var resetCreditsAvailable: Int = 0
+    var primaryWindow: RateLimitWindow?
+    var secondaryWindow: RateLimitWindow?
 
     var hasUsage: Bool {
         !metrics.isEmpty || primary != nil
@@ -109,11 +111,11 @@ struct CodexRateLimits {
         let plan = firstValue(limits, keys: ["planType"]) as? String
         subtitle = plan.map { "OpenAI Codex - \($0)" } ?? "OpenAI Codex rate limits"
 
-        if let primaryWindow = limits["primary"] as? [String: Any] {
-            appendWindow(primaryWindow, fallbackLabel: "5h")
+        if let primaryData = limits["primary"] as? [String: Any] {
+            appendWindow(primaryData, slot: .primary)
         }
-        if let secondaryWindow = limits["secondary"] as? [String: Any] {
-            appendWindow(secondaryWindow, fallbackLabel: "7d")
+        if let secondaryData = limits["secondary"] as? [String: Any] {
+            appendWindow(secondaryData, slot: .secondary)
         }
         if let resetCredits = data["rateLimitResetCredits"] as? [String: Any],
            let count = optionalNumber(firstValue(resetCredits, keys: ["availableCount"])) {
@@ -138,23 +140,41 @@ struct CodexRateLimits {
         return (data["rateLimits"] as? [String: Any]) ?? [:]
     }
 
-    private mutating func appendWindow(_ window: [String: Any], fallbackLabel: String) {
+    private enum WindowSlot {
+        case primary, secondary
+
+        var fallbackLabel: String {
+            switch self {
+            case .primary: return "5h"
+            case .secondary: return "7d"
+            }
+        }
+    }
+
+    private mutating func appendWindow(_ window: [String: Any], slot: WindowSlot) {
         guard let usedPercent = optionalNumber(firstValue(window, keys: ["usedPercent"])) else {
             return
         }
 
-        let label = windowLabel(window, fallback: fallbackLabel)
+        let label = windowLabel(window, fallback: slot.fallbackLabel)
         let clampedUsed = max(0, min(100, usedPercent))
+        let percentLeft = Int((100 - clampedUsed).rounded())
+        let resetText = resetDescriptionFromUnix(firstValue(window, keys: ["resetsAt"])).map { "resets in \($0)" }
+
         if primary == nil {
-            primary = "\(Int((100 - clampedUsed).rounded()))% left"
+            primary = "\(percentLeft)% left"
             progressRatio = clampedUsed / 100
             remainingRatio = 1 - (clampedUsed / 100)
         }
 
-        var value = "\(Int(clampedUsed.rounded()))% used"
-        if let reset = resetDescriptionFromUnix(firstValue(window, keys: ["resetsAt"])) {
-            value += " - resets in \(reset)"
+        let summary = RateLimitWindow(label: label, percentLeft: percentLeft, resetHint: resetText)
+        switch slot {
+        case .primary: primaryWindow = summary
+        case .secondary: secondaryWindow = summary
         }
+
+        var value = "\(Int(clampedUsed.rounded()))% used"
+        if let resetText { value += " - \(resetText)" }
         metrics.append(MetricLine(label: label, value: value))
     }
 

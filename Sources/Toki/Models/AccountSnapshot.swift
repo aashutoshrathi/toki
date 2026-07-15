@@ -6,6 +6,16 @@ struct MetricLine: Identifiable, Hashable {
     var value: String
 }
 
+// A single rate-limit window (e.g. Codex's rolling 5h window or its 7-day window), broken
+// out separately from `metrics` so providers with more than one concurrent quota window can
+// surface each one explicitly instead of collapsing them into a single generic percentage.
+struct RateLimitWindow: Identifiable, Hashable {
+    var id: String { label }
+    var label: String
+    var percentLeft: Int
+    var resetHint: String?
+}
+
 struct AccountSnapshot: Identifiable, Hashable {
     var id: String
     var name: String
@@ -23,6 +33,8 @@ struct AccountSnapshot: Identifiable, Hashable {
     var switchCommand: String?
     var emoji: String?
     var colorHex: String?
+    var primaryWindow: RateLimitWindow? = nil
+    var secondaryWindow: RateLimitWindow? = nil
 
     static let loadingPrimary = "Refreshing"
 

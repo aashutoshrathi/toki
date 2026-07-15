@@ -297,9 +297,22 @@ struct AccountCard: View {
                 .foregroundStyle(statusColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+        } else if snapshot.provider == .codex, !codexWindows.isEmpty {
+            // Codex carries two independent quota windows (5h + weekly) instead of Claude's
+            // single rolling one, so it gets its own summary instead of the generic fallback
+            // to a raw token count below - shows just one line when only one window is available.
+            VStack(alignment: .trailing, spacing: 3) {
+                ForEach(codexWindows) { window in
+                    QuotaSummaryLine(label: window.label, value: "\(window.percentLeft)% left", resetHint: window.resetHint)
+                }
+            }
         } else {
             QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
         }
+    }
+
+    private var codexWindows: [RateLimitWindow] {
+        [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
     }
 
     private var currentSessionAvailability: String {

@@ -1,6 +1,6 @@
 import Foundation
 
-let appVersion = "2.1.7"
+let appVersion = "2.1.8"
 let appUserAgent = "Toki/\(appVersion)"
 let defaultConfigPath = "~/.toki/config.json"
 let defaultStatePath = "~/.toki/usage-state.json"

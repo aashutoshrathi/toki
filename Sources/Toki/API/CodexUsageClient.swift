@@ -35,7 +35,9 @@ struct CodexUsageClient {
             progressRatio: rateLimits.progressRatio,
             resetCreditsAvailable: rateLimits.resetCreditsAvailable,
             metrics: rateLimits.metrics + usage.metrics,
-            accountInfo: CodexCredentialReader.accountInfo(from: credentials) + CodexAccountInfo.lines(from: payload.account)
+            accountInfo: CodexCredentialReader.accountInfo(from: credentials) + CodexAccountInfo.lines(from: payload.account),
+            primaryWindow: rateLimits.primaryWindow,
+            secondaryWindow: rateLimits.secondaryWindow
         )
     }
 }
