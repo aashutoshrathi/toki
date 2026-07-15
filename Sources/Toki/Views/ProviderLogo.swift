@@ -34,18 +34,13 @@ struct ProviderLogo: View {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: size * 0.72, weight: .bold))
                     .foregroundStyle(Color(red: 0.55, green: 0.45, blue: 0.95))
-            case .gemini:
-                SVGLogoMark(asset: "gemini-logo", size: size) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: size * 0.72, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color(red: 0.26, green: 0.52, blue: 0.96), Color(red: 0.66, green: 0.33, blue: 0.97)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+            case .grok:
+                SVGLogoMark(asset: "grok-logo", size: size, template: true) {
+                    Image(systemName: "asterisk")
+                        .font(.system(size: size * 0.72, weight: .bold))
+                        .foregroundStyle(Color.primary)
                 }
+                .foregroundStyle(Color.primary)
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)
@@ -65,7 +60,10 @@ enum SVGLogoAsset {
     // four candidate URLs on every render.
     @MainActor private static var cache: [String: NSImage?] = [:]
 
-    @MainActor static func image(named name: String) -> NSImage? {
+    // template: true renders the SVG as a monochrome mask that follows .foregroundStyle,
+    // for single-color marks (like Grok's) that need to adapt to light/dark instead of
+    // shipping with a baked-in fill color the way the other brand-color logos do.
+    @MainActor static func image(named name: String, template: Bool = false) -> NSImage? {
         if let cached = cache[name] { return cached }
         let executableResourceURL = Bundle.main.executableURL?
             .deletingLastPathComponent()
@@ -80,6 +78,7 @@ enum SVGLogoAsset {
             executableResourceURL
         ]
         let image = urls.compactMap { $0 }.lazy.compactMap { NSImage(contentsOf: $0) }.first
+        image.flatMap { $0 }?.isTemplate = template
         cache[name] = image
         return image
     }
@@ -88,11 +87,12 @@ enum SVGLogoAsset {
 struct SVGLogoMark<Fallback: View>: View {
     var asset: String
     var size: CGFloat
+    var template: Bool = false
     @ViewBuilder var fallback: () -> Fallback
 
     var body: some View {
         Group {
-            if let image = SVGLogoAsset.image(named: asset) {
+            if let image = SVGLogoAsset.image(named: asset, template: template) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()

@@ -70,7 +70,7 @@ extension UsageStore {
         detectedProviders.filter { detected in !snapshots.contains(where: { $0.provider == detected.provider }) }
     }
 
-    // Probes for installed/authenticated CLIs (Claude Code, Codex, OpenCode, Gemini) so
+    // Probes for installed/authenticated CLIs (Claude Code, Codex, OpenCode, Grok) so
     // the onboarding/add-account screens can offer them as one-click connects.
     private func scanForOnboarding() {
         guard !isScanningProviders else { return }

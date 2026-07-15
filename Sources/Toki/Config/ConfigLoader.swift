@@ -52,8 +52,8 @@ enum ConfigLoader {
         guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
             throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
         }
-        guard !config.accounts.contains(where: { $0.provider == .gemini }) else {
-            throw LocalizedErrorMessage("Gemini is detected automatically in the Agents tab and is not a usage-ledger account")
+        guard !config.accounts.contains(where: { $0.provider == .grok }) else {
+            throw LocalizedErrorMessage("Grok is detected automatically in the Agents tab and is not a usage-ledger account")
         }
         // id is what SwiftUI's ForEach identifies account rows by, and what several
         // Dictionary lookups key snapshots on (those now use uniquingKeysWith rather than

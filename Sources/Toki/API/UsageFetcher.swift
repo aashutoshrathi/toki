@@ -96,7 +96,7 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .gemini:
+            case .copilot, .grok:
                 snapshots = [agentOnlySnapshot(for: account)]
             case .openCode:
                 snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
@@ -135,7 +135,7 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .gemini, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic:
             return "\(account.provider.rawValue):\(account.id)"
@@ -159,7 +159,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .gemini, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .manual:
             return 0
         }
     }

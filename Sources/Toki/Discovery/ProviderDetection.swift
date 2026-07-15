@@ -26,7 +26,7 @@ enum ProviderDetection {
             if let claude = detectClaudeCode() { detected.append(claude) }
             if let codex = detectCodex() { detected.append(codex) }
             if let openCode = detectOpenCode() { detected.append(openCode) }
-            if let gemini = detectGemini() { detected.append(gemini) }
+            if let grok = detectGrok() { detected.append(grok) }
             return detected
         }.value
     }
@@ -74,16 +74,16 @@ enum ProviderDetection {
         )
     }
 
-    // Gemini has no makeAccount, same as OpenCode: nothing to write into config.json.
-    // Unlike OpenCode though, there's no local usage database to read either - Google's
-    // gemini-cli exposes no quota API for personal accounts, so this only surfaces Gemini
-    // as signed-in; actual usage still shows up via agent detection in the Agents tab.
-    private static func detectGemini() -> DetectedProvider? {
-        guard let credentials = try? GeminiCredentialReader.readCredentials() else { return nil }
+    // Grok has no makeAccount, same as OpenCode: nothing to write into config.json.
+    // Unlike OpenCode though, there's no local usage database to read either - the grok
+    // CLI's own subcommands have no account/usage/billing lookup, so this only surfaces
+    // Grok as signed-in; actual usage still shows up via agent detection in the Agents tab.
+    private static func detectGrok() -> DetectedProvider? {
+        guard let credentials = try? GrokCredentialReader.readCredentials() else { return nil }
         return DetectedProvider(
-            provider: .gemini,
-            title: "Gemini",
-            detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in via Google OAuth",
+            provider: .grok,
+            title: "Grok",
+            detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in",
             makeAccount: nil
         )
     }
