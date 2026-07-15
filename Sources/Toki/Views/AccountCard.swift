@@ -58,7 +58,10 @@ struct AccountCard: View {
                                 .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
-                                .truncationMode(.middle)
+                                // Error text reads better cut from the end (keeps the
+                                // meaningful lead-in); emails/org names keep .middle so the
+                                // domain/tail stays visible instead of just the local part.
+                                .truncationMode(snapshot.isError ? .tail : .middle)
                         }
                     }
                 }
@@ -102,7 +105,12 @@ struct AccountCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                     Spacer()
-                    ProviderPill(provider: snapshot.provider)
+                    // Redundant with the header logo when the account is down anyway - only
+                    // useful once the card's actually showing usage, to remind you which
+                    // provider a custom alias maps to.
+                    if !snapshot.isError {
+                        ProviderPill(provider: snapshot.provider)
+                    }
                 }
 
                 // Sessions only make sense for a connected account; when the account is

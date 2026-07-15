@@ -130,12 +130,20 @@ struct MenuContentView: View {
                 showAddAccount = true
             } label: {
                 Image(systemName: "plus")
+                    .overlay(alignment: .topTrailing) {
+                        if !store.addableProviders.isEmpty {
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 6, height: 6)
+                                .offset(x: 7, y: -7)
+                        }
+                    }
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
             .frame(width: 25, height: 25)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .help("Add account")
+            .help(store.addableProviders.isEmpty ? "Add account" : "Add account - new provider detected")
             .accessibilityLabel("Add account")
             .pointerOnHover()
 
