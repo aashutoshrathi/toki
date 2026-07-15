@@ -369,6 +369,9 @@ struct QuotaSummaryLine: View {
                 Text(resetHint)
                     .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 120, alignment: .trailing)
             }
         }
     }

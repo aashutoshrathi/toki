@@ -57,22 +57,6 @@ extension UsageStore {
         }
     }
 
-    func removeAccount(accountID: String) {
-        guard var config, let index = config.accounts.firstIndex(where: { $0.id == accountID }) else { return }
-        config.accounts.remove(at: index)
-        do {
-            try ConfigLoader.save(config)
-            self.config = config
-            usageState.accounts.removeValue(forKey: accountID)
-            StateLoader.save(usageState)
-            snapshots.removeAll { $0.id == accountID }
-            updateDerivedState(for: snapshots)
-        } catch {
-            DiagnosticLogger.shared.record(.error, component: "config", code: "remove_account_failed", detail: diagnosticErrorDetail(error))
-            configError = "Could not remove account: \(error.localizedDescription)"
-        }
-    }
-
     func renameAccount(snapshot: AccountSnapshot, alias: String) {
         let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, var config else { return }

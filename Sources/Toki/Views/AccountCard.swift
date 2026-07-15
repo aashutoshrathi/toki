@@ -8,7 +8,6 @@ struct AccountCard: View {
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
     @State private var expandedTab: ExpandedTab
-    @State private var showRemoveConfirmation = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
@@ -239,35 +238,6 @@ struct AccountCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .pointerOnHover()
-                }
-
-                Divider()
-                    .padding(.top, 1)
-
-                HStack {
-                    Spacer()
-                    Button(role: .destructive) {
-                        showRemoveConfirmation = true
-                    } label: {
-                        Label("Remove", systemImage: "trash")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(.red)
-                    .help("Remove this account from Toki")
-                    .pointerOnHover()
-                }
-                .confirmationDialog(
-                    "Remove \(snapshot.name)?",
-                    isPresented: $showRemoveConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Remove", role: .destructive) {
-                        store.removeAccount(accountID: snapshot.id)
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("This only removes it from Toki's config - it doesn't sign you out or affect the account itself. You can add it back later.")
                 }
             }
         }
