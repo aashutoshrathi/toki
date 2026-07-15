@@ -74,17 +74,20 @@ enum ProviderDetection {
         )
     }
 
-    // Grok has no makeAccount, same as OpenCode: nothing to write into config.json.
-    // Unlike OpenCode though, there's no local usage database to read either - the grok
-    // CLI's own subcommands have no account/usage/billing lookup, so this only surfaces
-    // Grok as signed-in; actual usage still shows up via agent detection in the Agents tab.
+    // Unlike Claude Code/Codex, there's no quota API to poll here - the grok CLI's own
+    // subcommands have no account/usage/billing lookup. Still worth a config.json entry
+    // (unlike OpenCode, which is auto-tracked without one) so it gets a real card instead
+    // of only surfacing via agent detection in the Agents tab; UsageFetcher renders it as
+    // an agent-detection-only snapshot (see agentOnlySnapshot).
     private static func detectGrok() -> DetectedProvider? {
         guard let credentials = try? GrokCredentialReader.readCredentials() else { return nil }
         return DetectedProvider(
             provider: .grok,
             title: "Grok",
             detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in",
-            makeAccount: nil
+            makeAccount: {
+                AccountConfig(id: "grok", name: "Grok", provider: .grok)
+            }
         )
     }
 }

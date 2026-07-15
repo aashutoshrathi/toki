@@ -146,7 +146,8 @@ struct MenuContentView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .help(store.addableProviders.isEmpty ? "Add account" : "Add account - new provider detected")
+            .disabled(store.addableProviders.isEmpty)
+            .help(store.addableProviders.isEmpty ? "No new providers detected" : "Add account - new provider detected")
             .accessibilityLabel("Add account")
             .pointerOnHover()
 

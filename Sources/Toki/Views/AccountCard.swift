@@ -7,13 +7,22 @@ struct AccountCard: View {
     @State private var isExpanded = false
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
-    @State private var expandedTab: ExpandedTab = .usage
+    @State private var expandedTab: ExpandedTab
     @State private var showRemoveConfirmation = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
         case sessions = "Sessions"
         var id: String { rawValue }
+    }
+
+    init(snapshot: AccountSnapshot, store: UsageStore, onExpand: @escaping (String) -> Void = { _ in }) {
+        self.snapshot = snapshot
+        self.store = store
+        self.onExpand = onExpand
+        // No usage metrics ever populate for agent-detection-only providers, so the
+        // Usage tab would just be empty - open straight to Sessions instead.
+        _expandedTab = State(initialValue: snapshot.isAgentDetectionOnly ? .sessions : .usage)
     }
 
     // Active agents are discovered by scanning processes, which reveals the provider but not
@@ -335,6 +344,18 @@ struct AccountCard: View {
                 .foregroundStyle(statusColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+        } else if snapshot.isAgentDetectionOnly {
+            // No usage API to show a percentage for - the session count from process
+            // detection is the only live signal available, so surface that instead.
+            if accountAgents.isEmpty {
+                Text("Not running")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("\(accountAgents.count) active")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.blue)
+            }
         } else if snapshot.provider == .codex, !codexWindows.isEmpty {
             // Codex carries two independent quota windows (5h + weekly) instead of Claude's
             // single rolling one, so it gets its own summary instead of the generic fallback

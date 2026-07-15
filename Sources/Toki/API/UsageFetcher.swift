@@ -252,11 +252,12 @@ enum UsageFetcher {
             id: account.id,
             name: account.name,
             provider: account.provider,
-            primary: "Agent detection only",
-            subtitle: "Use the Agents tab for active sessions.",
+            primary: "No usage API available",
+            subtitle: "Detected only - active sessions still show up below and in the Agents tab.",
             remainingRatio: nil,
             metrics: [],
-            isError: false
+            isError: false,
+            isAgentDetectionOnly: true
         )
     }
 }
