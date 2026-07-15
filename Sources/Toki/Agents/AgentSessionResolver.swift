@@ -12,6 +12,8 @@ enum AgentSessionResolver {
             return claudeChatTitle(command: command, cwd: cwd)
         case .openCode:
             return openCodeChatTitle(cwd: cwd)
+        case .grok:
+            return newestGrokSession(cwd: cwd)?.title
         default:
             return nil
         }
@@ -24,9 +26,43 @@ enum AgentSessionResolver {
             return newestClaudeSession(command: command, cwd: cwd)?.modified
         case .openCode:
             return openCodeLastActivity(cwd: cwd)
+        case .grok:
+            return newestGrokSession(cwd: cwd)?.lastActiveAt
         default:
             return nil
         }
+    }
+
+    // ~/.grok/sessions/<percent-encoded-cwd>/<session-uuid>/summary.json - generated_title
+    // is the grok CLI's own auto-generated conversation summary (rewritten as the session
+    // evolves, same idea as Claude's aiTitle), and last_active_at sorts multiple sessions
+    // in the same project so the most recent one wins.
+    private static func newestGrokSession(cwd: String?) -> (title: String?, lastActiveAt: Date?)? {
+        guard let cwd else { return nil }
+        let encoded = cwd.replacingOccurrences(of: "/", with: "%2F")
+        let dir = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.grok/sessions/\(encoded)"
+        guard let sessionIDs = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
+        let sessions: [(title: String?, lastActiveAt: Date?)] = sessionIDs.compactMap { id in
+            let summaryPath = "\(dir)/\(id)/summary.json"
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: summaryPath)),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+            let title = json["generated_title"] as? String
+            let lastActiveAt = (json["last_active_at"] as? String).flatMap(parseGrokTimestamp)
+            return (title, lastActiveAt)
+        }
+        return sessions.max { ($0.lastActiveAt ?? .distantPast) < ($1.lastActiveAt ?? .distantPast) }
+    }
+
+    // Truncates the fractional-seconds portion before parsing - the CLI writes microsecond
+    // precision, which ISO8601DateFormatter's fixed 3-digit fractional-seconds mode rejects,
+    // and whole-second precision is all sorting/relative display needs anyway.
+    private static func parseGrokTimestamp(_ raw: String) -> Date? {
+        guard let dotIndex = raw.firstIndex(of: ".") else {
+            return ISO8601DateFormatter().date(from: raw)
+        }
+        return ISO8601DateFormatter().date(from: "\(raw[..<dotIndex])Z")
     }
 
     private static func openCodeLastActivity(cwd: String?) -> Date? {

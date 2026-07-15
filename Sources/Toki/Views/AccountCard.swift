@@ -50,6 +50,17 @@ struct AccountCard: View {
                 .padding(.top, 8)
 
                 AccountBadge(snapshot: snapshot, size: 26)
+                    .overlay(alignment: .topTrailing) {
+                        if !accountAgents.isEmpty {
+                            Text("\(accountAgents.count)")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(2)
+                                .frame(minWidth: 12, minHeight: 12)
+                                .background(Color.blue, in: Circle())
+                                .offset(x: 4, y: -1)
+                        }
+                    }
                     .padding(.top, 3)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -345,17 +356,12 @@ struct AccountCard: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         } else if snapshot.isAgentDetectionOnly {
-            // No usage API to show a percentage for - the session count from process
-            // detection is the only live signal available, so surface that instead.
-            if accountAgents.isEmpty {
-                Text("Not running")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("\(accountAgents.count) active")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.blue)
-            }
+            // No usage API to show a percentage for - the session count badge on the
+            // account logo above already covers the live signal, so this just says
+            // whether anything is running at all.
+            Text(accountAgents.isEmpty ? "Not running" : "Active")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(accountAgents.isEmpty ? Color.secondary : Color.blue)
         } else if snapshot.provider == .codex, !codexWindows.isEmpty {
             // Codex carries two independent quota windows (5h + weekly) instead of Claude's
             // single rolling one, so it gets its own summary instead of the generic fallback
