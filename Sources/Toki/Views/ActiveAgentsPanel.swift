@@ -6,7 +6,7 @@ struct ActiveAgentsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Active coding agents")
+                Text("Active agents")
                     .font(.system(size: 11, weight: .semibold))
                 Spacer()
                 Button {
@@ -25,7 +25,7 @@ struct ActiveAgentsPanel: View {
                         EmptyPanel(
                             systemImage: "terminal",
                             title: "No active agents",
-                            detail: "Codex (terminal or inside ChatGPT), Claude Code, Copilot CLI, OpenCode, and Gemini sessions appear here."
+                            detail: "Codex (terminal or inside ChatGPT), Claude Code, Copilot CLI, OpenCode, Grok, and Gemini sessions appear here."
                         )
                     } else {
                         ForEach(store.activeAgents) { agent in

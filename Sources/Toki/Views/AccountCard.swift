@@ -7,12 +7,21 @@ struct AccountCard: View {
     @State private var isExpanded = false
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
-    @State private var expandedTab: ExpandedTab = .usage
+    @State private var expandedTab: ExpandedTab
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
         case sessions = "Sessions"
         var id: String { rawValue }
+    }
+
+    init(snapshot: AccountSnapshot, store: UsageStore, onExpand: @escaping (String) -> Void = { _ in }) {
+        self.snapshot = snapshot
+        self.store = store
+        self.onExpand = onExpand
+        // No usage metrics ever populate for agent-detection-only providers, so the
+        // Usage tab would just be empty - open straight to Sessions instead.
+        _expandedTab = State(initialValue: snapshot.isAgentDetectionOnly ? .sessions : .usage)
     }
 
     // Active agents are discovered by scanning processes, which reveals the provider but not
@@ -40,6 +49,17 @@ struct AccountCard: View {
                 .padding(.top, 8)
 
                 AccountBadge(snapshot: snapshot, size: 26)
+                    .overlay(alignment: .topTrailing) {
+                        if !accountAgents.isEmpty {
+                            Text("\(accountAgents.count)")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(2)
+                                .frame(minWidth: 12, minHeight: 12)
+                                .background(Color.blue, in: Circle())
+                                .offset(x: 4, y: -1)
+                        }
+                    }
                     .padding(.top, 3)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -57,7 +77,10 @@ struct AccountCard: View {
                                 .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
-                                .truncationMode(.middle)
+                                // Error text reads better cut from the end (keeps the
+                                // meaningful lead-in); emails/org names keep .middle so the
+                                // domain/tail stays visible instead of just the local part.
+                                .truncationMode(snapshot.isError ? .tail : .middle)
                         }
                     }
                 }
@@ -101,7 +124,12 @@ struct AccountCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                     Spacer()
-                    ProviderPill(provider: snapshot.provider)
+                    // Redundant with the header logo when the account is down anyway - only
+                    // useful once the card's actually showing usage, to remind you which
+                    // provider a custom alias maps to.
+                    if !snapshot.isError {
+                        ProviderPill(provider: snapshot.provider)
+                    }
                 }
 
                 // Sessions only make sense for a connected account; when the account is
@@ -297,6 +325,13 @@ struct AccountCard: View {
                 .foregroundStyle(statusColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+        } else if snapshot.isAgentDetectionOnly {
+            // No usage API to show a percentage for - the session count badge on the
+            // account logo above already covers the live signal, so this just says
+            // whether anything is running at all.
+            Text(accountAgents.isEmpty ? "Not running" : "Active")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(accountAgents.isEmpty ? Color.secondary : Color.blue)
         } else if snapshot.provider == .codex, !codexWindows.isEmpty {
             // Codex carries two independent quota windows (5h + weekly) instead of Claude's
             // single rolling one, so it gets its own summary instead of the generic fallback

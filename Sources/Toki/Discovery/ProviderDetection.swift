@@ -26,6 +26,7 @@ enum ProviderDetection {
             if let claude = detectClaudeCode() { detected.append(claude) }
             if let codex = detectCodex() { detected.append(codex) }
             if let openCode = detectOpenCode() { detected.append(openCode) }
+            if let grok = detectGrok() { detected.append(grok) }
             if let gemini = detectGemini() { detected.append(gemini) }
             return detected
         }.value
@@ -74,17 +75,34 @@ enum ProviderDetection {
         )
     }
 
-    // Gemini has no makeAccount, same as OpenCode: nothing to write into config.json.
-    // Unlike OpenCode though, there's no local usage database to read either - Google's
-    // gemini-cli exposes no quota API for personal accounts, so this only surfaces Gemini
-    // as signed-in; actual usage still shows up via agent detection in the Agents tab.
+    // Unlike Claude Code/Codex, there's no quota API to poll here - the grok CLI's own
+    // subcommands have no account/usage/billing lookup. Still worth a config.json entry
+    // (unlike OpenCode, which is auto-tracked without one) so it gets a real card instead
+    // of only surfacing via agent detection in the Agents tab; UsageFetcher renders it as
+    // an agent-detection-only snapshot (see agentOnlySnapshot).
+    private static func detectGrok() -> DetectedProvider? {
+        guard let credentials = try? GrokCredentialReader.readCredentials() else { return nil }
+        return DetectedProvider(
+            provider: .grok,
+            title: "Grok",
+            detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in",
+            makeAccount: {
+                AccountConfig(id: "grok", name: "Grok", provider: .grok)
+            }
+        )
+    }
+
+    // Same story as Grok: gemini-cli has no quota API for personal accounts either
+    // (checked its shipped source directly), so this is agent-detection-only too.
     private static func detectGemini() -> DetectedProvider? {
         guard let credentials = try? GeminiCredentialReader.readCredentials() else { return nil }
         return DetectedProvider(
             provider: .gemini,
             title: "Gemini",
             detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in via Google OAuth",
-            makeAccount: nil
+            makeAccount: {
+                AccountConfig(id: "gemini", name: "Gemini", provider: .gemini)
+            }
         )
     }
 }

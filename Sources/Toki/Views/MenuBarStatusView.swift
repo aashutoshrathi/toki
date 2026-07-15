@@ -16,6 +16,11 @@ struct MenuBarStatusView: View {
                     Text(entry.value)
                         .font(.system(size: 13, weight: .regular, design: .monospaced))
                         .foregroundStyle(.primary)
+                        // Fixed width regardless of digit count (e.g. "5%" vs "100%") so the
+                        // status item's overall fitting size - and therefore its position in
+                        // the menu bar and the popover anchored to it - doesn't shift on every
+                        // refresh as the percentage ticks up or down.
+                        .frame(minWidth: 30, alignment: .trailing)
                 }
             }
         }

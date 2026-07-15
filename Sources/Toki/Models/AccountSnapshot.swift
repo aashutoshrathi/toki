@@ -35,6 +35,9 @@ struct AccountSnapshot: Identifiable, Hashable {
     var colorHex: String?
     var primaryWindow: RateLimitWindow? = nil
     var secondaryWindow: RateLimitWindow? = nil
+    // True for providers with no usage/quota API at all (Grok, Copilot) - the card still
+    // shows identity and active-session count, but never a percentage or progress bar.
+    var isAgentDetectionOnly: Bool = false
 
     static let loadingPrimary = "Refreshing"
 

@@ -39,46 +39,50 @@ extension UsageStore {
             // show a scary "Missing config" message for it. Genuinely broken configs still do.
             if needsOnboarding {
                 configError = nil
-                scanForOnboarding()
+                rescanProviders()
             } else {
                 configError = error.localizedDescription
             }
         }
     }
 
-    // Re-probes for newly installed/authenticated CLIs while the onboarding screen is
-    // showing, so e.g. signing into Codex after Toki launched doesn't require a restart.
-    // Called each time the popover opens; a no-op once a config exists (use
-    // rescanProviders() to scan unconditionally, e.g. for the "Add account" page).
-    func rescanProvidersIfNeeded() {
-        guard needsOnboarding else { return }
-        scanForOnboarding()
-    }
-
-    // Same probe, but runs regardless of needsOnboarding - for the "Add account" page,
-    // which stays reachable after the first account is connected (someone might start
-    // with just Claude and add Codex later without hand-editing config.json).
+    // Re-probes for newly installed/authenticated CLIs every time the popover opens, so
+    // e.g. signing into Codex - or connecting Grok for the first time - after Toki
+    // launched doesn't require a restart. Runs regardless of needsOnboarding: someone
+    // might start with just Claude and pick up Codex, Grok, etc. later. Anything
+    // detected that's connectable gets added automatically (see connectDetected) -
+    // there's no separate manual "Add account" step to trigger it.
     func rescanProviders() {
-        scanForOnboarding()
+        guard !isScanningProviders else { return }
+        isScanningProviders = true
+        Task {
+            let detected = await ProviderDetection.scan()
+            detectedProviders = detected
+            isScanningProviders = false
+            connectDetected(detected)
+        }
     }
 
     // detectedProviders minus anything already present in snapshots (whether connected
-    // through config.json or auto-detected like OpenCode) - what's left to offer, whether
-    // this is first-run onboarding (snapshots is always empty there, so this is just
-    // detectedProviders) or the "Add account" page reached after accounts already exist.
+    // through config.json or auto-detected like OpenCode) - only ever non-empty for a
+    // moment between a scan finding something and connectDetected writing it, or for
+    // providers with no makeAccount (OpenCode) that never get written at all.
     var addableProviders: [DetectedProvider] {
         detectedProviders.filter { detected in !snapshots.contains(where: { $0.provider == detected.provider }) }
     }
 
-    // Probes for installed/authenticated CLIs (Claude Code, Codex, OpenCode, Gemini) so
-    // the onboarding/add-account screens can offer them as one-click connects.
-    private func scanForOnboarding() {
-        guard !isScanningProviders else { return }
-        isScanningProviders = true
-        Task {
-            detectedProviders = await ProviderDetection.scan()
-            isScanningProviders = false
+    // Auto-adds every newly detected, connectable provider - no manual "Connect" click
+    // needed. Providers with no makeAccount (OpenCode) are untouched; they're already
+    // auto-tracked without a config entry.
+    private func connectDetected(_ detected: [DetectedProvider]) {
+        let newAccounts = detected.compactMap { candidate -> AccountConfig? in
+            guard candidate.isConnectable, !snapshots.contains(where: { $0.provider == candidate.provider }) else {
+                return nil
+            }
+            return candidate.makeAccount?()
         }
+        guard !newAccounts.isEmpty else { return }
+        connect(newAccounts)
     }
 
     // Appends detected accounts to config.json (creating it if this is a fresh install)

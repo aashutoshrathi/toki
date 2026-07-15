@@ -19,11 +19,22 @@ func nextResetDate(for account: AccountConfig, state: AccountUsageState?) -> Dat
     return anchor.addingTimeInterval(windowsElapsed * window)
 }
 
-func sortedByAvailability(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
+// Cards are grouped first by whether there's anything useful to show: a real quota
+// (tier 0), then agent-detection-only providers with an active session right now
+// (tier 1, since there's at least a live signal), then agent-detection-only providers
+// sitting idle (tier 2). Everything else (error state, remaining ratio) only breaks
+// ties within a tier - it never lets an idle no-API card outrank a real quota card.
+func sortedByAvailability(_ snapshots: [AccountSnapshot], activeProviders: Set<Provider> = []) -> [AccountSnapshot] {
     snapshots.enumerated()
         .sorted { lhs, rhs in
             let left = lhs.element
             let right = rhs.element
+
+            let leftTier = availabilityTier(for: left, activeProviders: activeProviders)
+            let rightTier = availabilityTier(for: right, activeProviders: activeProviders)
+            if leftTier != rightTier {
+                return leftTier < rightTier
+            }
 
             if left.isError != right.isError {
                 return !left.isError
@@ -42,6 +53,11 @@ func sortedByAvailability(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
             return lhs.offset < rhs.offset
         }
         .map(\.element)
+}
+
+private func availabilityTier(for snapshot: AccountSnapshot, activeProviders: Set<Provider>) -> Int {
+    if !snapshot.isAgentDetectionOnly { return 0 }
+    return activeProviders.contains(snapshot.provider) ? 1 : 2
 }
 
 func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> [MenuBarStatusEntry] {

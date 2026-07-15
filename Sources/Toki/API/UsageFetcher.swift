@@ -96,7 +96,7 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .gemini:
+            case .copilot, .grok, .gemini:
                 snapshots = [agentOnlySnapshot(for: account)]
             case .openCode:
                 snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
@@ -135,7 +135,7 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .gemini, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic:
             return "\(account.provider.rawValue):\(account.id)"
@@ -159,7 +159,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .gemini, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .manual:
             return 0
         }
     }
@@ -252,11 +252,12 @@ enum UsageFetcher {
             id: account.id,
             name: account.name,
             provider: account.provider,
-            primary: "Agent detection only",
-            subtitle: "Use the Agents tab for active sessions.",
+            primary: "No usage API available",
+            subtitle: "Detected only - active sessions still show up below and in the Agents tab.",
             remainingRatio: nil,
             metrics: [],
-            isError: false
+            isError: false,
+            isAgentDetectionOnly: true
         )
     }
 }

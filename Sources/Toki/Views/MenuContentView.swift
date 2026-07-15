@@ -5,20 +5,17 @@ struct MenuContentView: View {
     @ObservedObject var updateChecker: UpdateChecker
     @State private var selectedTab: TokiTab = .accounts
     @State private var showConfig = false
-    @State private var showAddAccount = false
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
         case agents = "Agents"
-        case history = "History"
         case events = "Events"
 
         var id: String { rawValue }
 
         var systemImage: String {
             switch self {
-            case .accounts: return "person.2"
-            case .history: return "chart.line.uptrend.xyaxis"
+            case .accounts: return "person.crop.circle"
             case .events: return "bell.badge"
             case .agents: return "terminal"
             }
@@ -29,11 +26,6 @@ struct MenuContentView: View {
         Group {
             if showConfig {
                 ConfigPage(store: store, updateChecker: updateChecker) { showConfig = false }
-            } else if showAddAccount {
-                AddAccountPage(store: store, onClose: { showAddAccount = false }) {
-                    showAddAccount = false
-                    showConfig = true
-                }
             } else {
                 mainContent
             }
@@ -46,7 +38,7 @@ struct MenuContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if let update = updateChecker.availableUpdate {
-                updateBanner(update)
+                UpdateAvailableBanner(update: update, updateChecker: updateChecker)
             }
             if let session = store.session {
                 SessionRecordingCard(startedAt: session.startedAt)
@@ -68,64 +60,6 @@ struct MenuContentView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-
-    private func updateBanner(_ update: AvailableUpdate) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.blue)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Toki \(update.version) is available")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(updateChecker.isInstalling ? "Downloading and verifying update…" : "Install the latest GitHub release.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Button {
-                    updateChecker.installUpdate()
-                } label: {
-                    if updateChecker.isInstalling {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("Update")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(updateChecker.isInstalling)
-
-                Button {
-                    updateChecker.dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Dismiss this version")
-                .accessibilityLabel("Dismiss update notification")
-            }
-
-            if let error = updateChecker.installError {
-                Text(error)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
-            }
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 8)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.blue.opacity(0.28), lineWidth: 1)
-        )
     }
 
     private var header: some View {
@@ -164,12 +98,13 @@ struct MenuContentView: View {
                 store.session == nil ? store.startSession() : store.endSession()
             } label: {
                 Image(systemName: store.session == nil ? "play.fill" : "stop.fill")
+                    .frame(width: 25, height: 25)
+                    .background((store.session == nil ? Color.primary : Color.blue).opacity(store.session == nil ? 0.06 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
             .foregroundStyle(store.session == nil ? Color.primary : Color.blue)
-            .background((store.session == nil ? Color.primary : Color.blue).opacity(store.session == nil ? 0.06 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help(store.session == nil ? "Start session tracking" : "End session tracking")
             .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
             .pointerOnHover()
@@ -178,36 +113,25 @@ struct MenuContentView: View {
                 store.refresh(minimumRefreshInterval: 60)
             } label: {
                 Image(systemName: "arrow.clockwise")
+                    .frame(width: 25, height: 25)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help("Refresh")
-            .pointerOnHover()
-
-            Button {
-                showAddAccount = true
-            } label: {
-                Image(systemName: "person.badge.plus")
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .help("Add account")
-            .accessibilityLabel("Add account")
             .pointerOnHover()
 
             Button {
                 showConfig = true
             } label: {
                 Image(systemName: "gearshape")
+                    .frame(width: 25, height: 25)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help("Settings")
             .pointerOnHover()
 
@@ -215,16 +139,17 @@ struct MenuContentView: View {
                 NSApp.terminate(nil)
             } label: {
                 Image(systemName: "power")
+                    .frame(width: 25, height: 25)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(Color.red.opacity(0.42), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
             .foregroundStyle(.red)
-            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(Color.red.opacity(0.42), lineWidth: 1)
-            )
             .help("Quit")
             .pointerOnHover()
         }
@@ -273,6 +198,17 @@ struct MenuContentView: View {
                     selectedTab = tab
                 } label: {
                     Image(systemName: tab.systemImage)
+                        .overlay(alignment: .topTrailing) {
+                            if tab == .agents, !store.activeAgents.isEmpty {
+                                Text("\(store.activeAgents.count)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(2)
+                                    .frame(minWidth: 12, minHeight: 12)
+                                    .background(Color.blue, in: Circle())
+                                    .offset(x: 9, y: -7)
+                            }
+                        }
                         .frame(maxWidth: .infinity, minHeight: 28)
                         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                         .background(selectedTab == tab ? Color.primary.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -294,8 +230,6 @@ struct MenuContentView: View {
         switch selectedTab {
         case .accounts:
             accountList
-        case .history:
-            HistoryPanel(store: store)
         case .events:
             EventPanel(store: store)
         case .agents:
