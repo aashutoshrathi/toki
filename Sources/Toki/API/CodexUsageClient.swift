@@ -99,6 +99,12 @@ enum CodexAppServerClient {
     // faster path) wins, silently degrading the display to raw tokens. Poll for every expected
     // response id instead, exiting as soon as they've all arrived (bounded by ~10.4s: a 0.4s
     // handshake plus up to 100 * 0.1s poll iterations).
+    //
+    // codex app-server is a single-client stdio transport: it exits as soon as it sees EOF
+    // on stdin, regardless of requests still in flight. The subshell feeding stdin must
+    // therefore stay alive (via a trailing sleep) for at least as long as we intend to poll,
+    // or app-server tears itself down mid-round-trip and every response after initialize goes
+    // missing - the app-server process itself is still killed explicitly below once we're done.
     private static func call(account: AccountConfig, requests: [(id: Int, method: String, params: String)]) throws -> (results: [Int: Any], errors: [String]) {
         let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"Toki","version":"\#(appVersion)"},"capabilities":{"experimentalApi":true}}}"#
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
@@ -117,7 +123,8 @@ enum CodexAppServerClient {
         sleep 0.2; \
         printf '%s\\n' '\(shellEscaped(initialized))'; \
         sleep 0.2; \
-        printf '%s\\n' \(printfArgs) ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path)" codex app-server --stdio > "$__toki_out" 2>&1 & \
+        printf '%s\\n' \(printfArgs); \
+        sleep 11 ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path)" codex app-server --stdio > "$__toki_out" 2>&1 & \
         __toki_pid=$!; \
         for ((__toki_i = 1; __toki_i <= 100; __toki_i++)); do \
         sleep 0.1; \
