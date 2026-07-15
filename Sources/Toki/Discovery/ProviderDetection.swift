@@ -27,6 +27,7 @@ enum ProviderDetection {
             if let codex = detectCodex() { detected.append(codex) }
             if let openCode = detectOpenCode() { detected.append(openCode) }
             if let grok = detectGrok() { detected.append(grok) }
+            if let gemini = detectGemini() { detected.append(gemini) }
             return detected
         }.value
     }
@@ -87,6 +88,20 @@ enum ProviderDetection {
             detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in",
             makeAccount: {
                 AccountConfig(id: "grok", name: "Grok", provider: .grok)
+            }
+        )
+    }
+
+    // Same story as Grok: gemini-cli has no quota API for personal accounts either
+    // (checked its shipped source directly), so this is agent-detection-only too.
+    private static func detectGemini() -> DetectedProvider? {
+        guard let credentials = try? GeminiCredentialReader.readCredentials() else { return nil }
+        return DetectedProvider(
+            provider: .gemini,
+            title: "Gemini",
+            detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in via Google OAuth",
+            makeAccount: {
+                AccountConfig(id: "gemini", name: "Gemini", provider: .gemini)
             }
         )
     }

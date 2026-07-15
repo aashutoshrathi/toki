@@ -5,7 +5,6 @@ struct MenuContentView: View {
     @ObservedObject var updateChecker: UpdateChecker
     @State private var selectedTab: TokiTab = .accounts
     @State private var showConfig = false
-    @State private var showAddAccount = false
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
@@ -27,11 +26,6 @@ struct MenuContentView: View {
         Group {
             if showConfig {
                 ConfigPage(store: store, updateChecker: updateChecker) { showConfig = false }
-            } else if showAddAccount {
-                AddAccountPage(store: store, onClose: { showAddAccount = false }) {
-                    showAddAccount = false
-                    showConfig = true
-                }
             } else {
                 mainContent
             }
@@ -129,29 +123,6 @@ struct MenuContentView: View {
             .pointerOnHover()
 
             Button {
-                showAddAccount = true
-            } label: {
-                Image(systemName: "plus")
-                    .overlay(alignment: .topTrailing) {
-                        if !store.addableProviders.isEmpty {
-                            Circle()
-                                .fill(Color.blue)
-                                .frame(width: 6, height: 6)
-                                .offset(x: 7, y: -7)
-                        }
-                    }
-                    .frame(width: 25, height: 25)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
-            .disabled(store.addableProviders.isEmpty)
-            .help(store.addableProviders.isEmpty ? "No new providers detected" : "Add account - new provider detected")
-            .accessibilityLabel("Add account")
-            .pointerOnHover()
-
-            Button {
                 showConfig = true
             } label: {
                 Image(systemName: "gearshape")
@@ -227,6 +198,17 @@ struct MenuContentView: View {
                     selectedTab = tab
                 } label: {
                     Image(systemName: tab.systemImage)
+                        .overlay(alignment: .topTrailing) {
+                            if tab == .agents, !store.activeAgents.isEmpty {
+                                Text("\(store.activeAgents.count)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(2)
+                                    .frame(minWidth: 12, minHeight: 12)
+                                    .background(Color.blue, in: Circle())
+                                    .offset(x: 9, y: -7)
+                            }
+                        }
                         .frame(maxWidth: .infinity, minHeight: 28)
                         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                         .background(selectedTab == tab ? Color.primary.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))

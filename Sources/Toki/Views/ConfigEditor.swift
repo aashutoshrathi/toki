@@ -41,11 +41,13 @@ struct ConfigEditor: View {
                         save()
                     } label: {
                         Image(systemName: saved ? "checkmark" : "square.and.arrow.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(saved ? Color.green : Color.blue)
                             .frame(width: 25, height: 25)
+                            .background((saved ? Color.green : Color.blue).opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                     .help(saved ? "Saved" : "Save")
                     .accessibilityLabel(saved ? "Saved" : "Save")
                     .pointerOnHover()
@@ -56,11 +58,13 @@ struct ConfigEditor: View {
                         saved = false
                     } label: {
                         Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
                             .frame(width: 25, height: 25)
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                     .help("Revert")
                     .accessibilityLabel("Revert")
                     .pointerOnHover()

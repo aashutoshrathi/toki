@@ -49,12 +49,11 @@ enum ConfigLoader {
         guard !config.accounts.isEmpty else {
             throw LocalizedErrorMessage("Config has no accounts")
         }
-        guard !config.accounts.contains(where: { $0.provider == .copilot }) else {
-            throw LocalizedErrorMessage("Copilot is detected automatically in the Agents tab and is not a usage-ledger account")
-        }
-        guard !config.accounts.contains(where: { $0.provider == .grok }) else {
-            throw LocalizedErrorMessage("Grok is detected automatically in the Agents tab and is not a usage-ledger account")
-        }
+        // Copilot, Grok, and Gemini are legitimate accounts with no usage API - UsageFetcher
+        // renders them as agent-detection-only cards (see agentOnlySnapshot). They used to be
+        // rejected here from back when nothing ever wrote them into config.json, but Grok/
+        // Gemini's onboarding now does exactly that, so blocking them here would make
+        // connecting - and every subsequent config reload - fail outright.
         // id is what SwiftUI's ForEach identifies account rows by, and what several
         // Dictionary lookups key snapshots on (those now use uniquingKeysWith rather than
         // uniqueKeysWithValues, so a duplicate can't crash them - but it's still confusing

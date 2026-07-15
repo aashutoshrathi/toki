@@ -118,6 +118,9 @@ enum ActiveAgentScanner {
             provider = .claudeCode
         } else if executable == "grok" {
             provider = .grok
+        } else if executable == "gemini"
+                    || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") {
+            provider = .gemini
         } else {
             return nil
         }

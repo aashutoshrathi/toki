@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
             store.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
             store.refreshActiveAgents()
-            store.rescanProvidersIfNeeded()
+            store.rescanProviders()
         }
     }
 }
