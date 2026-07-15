@@ -7,36 +7,45 @@ struct ConfigPage: View {
     @ObservedObject var updateChecker: UpdateChecker
     var onClose: () -> Void
 
+    @State private var showAIInstructions = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Button(action: onClose) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
-                        // Fill the whole 25x25 so the entire button surface is the hit
-                        // target, not just the glyph. contentShape makes the padded area tappable.
-                        .frame(width: 25, height: 25)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        Group {
+            if showAIInstructions {
+                AIInstructionsPage(store: store) { showAIInstructions = false }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Button(action: onClose) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 13, weight: .semibold))
+                                // Fill the whole 25x25 so the entire button surface is the hit
+                                // target, not just the glyph. contentShape makes the padded area tappable.
+                                .frame(width: 25, height: 25)
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Back")
+                        .accessibilityLabel("Back")
+                        .pointerOnHover()
+                        Text("Settings")
+                            .font(.system(size: 14, weight: .semibold))
+                        Spacer()
+                    }
+                    SettingsPanel(store: store, updateChecker: updateChecker, onOpenAIInstructions: { showAIInstructions = true })
                 }
-                .buttonStyle(.plain)
-                .help("Back")
-                .accessibilityLabel("Back")
-                .pointerOnHover()
-                Text("Settings")
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            SettingsPanel(store: store, updateChecker: updateChecker)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
 struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
+    var onOpenAIInstructions: () -> Void
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
@@ -47,14 +56,46 @@ struct SettingsPanel: View {
             VStack(alignment: .leading, spacing: 10) {
                 // Surfaced first, above the plain toggles below - it's the one setting that
                 // changes what the AI actually says about your usage, so it shouldn't require
-                // scrolling past half the page to find.
-                if store.isAIInsightAvailable {
-                    AIInstructionsEditor(store: store)
-                    Divider()
+                // scrolling past half the page to find. Its own page (rather than inline) keeps
+                // the text editor from crowding the rest of Settings. Shown regardless of
+                // isAIInsightAvailable - instructions are still worth writing/saving ahead of
+                // Apple Intelligence becoming available, and hiding the row entirely made it
+                // look like the feature didn't exist rather than just being inactive for now.
+                Button(action: onOpenAIInstructions) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.purple)
+                        Text("AI insight instructions")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        if !store.isAIInsightAvailable {
+                            Text("Apple Intelligence off")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(8)
+                    .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.purple.opacity(0.14), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
+                .buttonStyle(.plain)
+                .help("Customize what the on-device AI says about your usage")
+                .pointerOnHover()
+                Divider()
+
+                sectionHeader("General")
 
                 Toggle("Launch at login", isOn: launchAtLoginBinding)
                     .toggleStyle(.switch)
+                    .controlSize(.small)
 
                 if launchAtLoginNeedsApproval {
                     HStack(spacing: 4) {
@@ -77,14 +118,25 @@ struct SettingsPanel: View {
                         .foregroundStyle(.red)
                 }
 
+                Picker("Menu bar", selection: binding(\.menuBarMode)) {
+                    ForEach(MenuBarDisplayMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+
+                Divider()
+                sectionHeader("Notifications")
+
                 Toggle("Notifications", isOn: binding(\.notificationsEnabled))
                     .toggleStyle(.switch)
+                    .controlSize(.small)
 
                 Toggle("Do not disturb", isOn: Binding(
                     get: { store.preferences.dndEnabled },
                     set: { store.setDND($0) }
                 ))
                 .toggleStyle(.switch)
+                .controlSize(.small)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Low quota threshold \(percentText(store.preferences.lowQuotaThreshold))")
@@ -102,13 +154,8 @@ struct SettingsPanel: View {
 
                 Stepper("History \(store.preferences.historyRetentionDays)d", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
 
-                Picker("Menu bar", selection: binding(\.menuBarMode)) {
-                    ForEach(MenuBarDisplayMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-
                 Divider()
+                sectionHeader("Updates")
 
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -120,12 +167,9 @@ struct SettingsPanel: View {
                         } else if let message = updateChecker.checkMessage {
                             Text(message)
                                 .foregroundStyle(.secondary)
-                        } else if let date = updateChecker.lastCheckedAt {
-                            HStack(spacing: 3) {
-                                Text("Checked")
-                                Text(date, style: .relative)
-                            }
-                            .foregroundStyle(.secondary)
+                        } else if updateChecker.lastCheckedAt != nil {
+                            Text("Checked")
+                                .foregroundStyle(.secondary)
                         } else {
                             Text("Checks automatically every 6 hours")
                                 .foregroundStyle(.secondary)
@@ -156,6 +200,7 @@ struct SettingsPanel: View {
                 }
 
                 Divider()
+                sectionHeader("Advanced")
 
                 ConfigEditor(store: store)
 
@@ -237,6 +282,13 @@ struct SettingsPanel: View {
                 store.updatePreferences(next)
             }
         )
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.tertiary)
+            .tracking(0.5)
     }
 
     private func intBinding(_ keyPath: WritableKeyPath<AppPreferences, Int>) -> Binding<Int> {

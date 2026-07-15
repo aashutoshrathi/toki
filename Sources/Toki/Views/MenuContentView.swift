@@ -10,7 +10,6 @@ struct MenuContentView: View {
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
         case agents = "Agents"
-        case history = "History"
         case events = "Events"
 
         var id: String { rawValue }
@@ -18,7 +17,6 @@ struct MenuContentView: View {
         var systemImage: String {
             switch self {
             case .accounts: return "person.2"
-            case .history: return "chart.line.uptrend.xyaxis"
             case .events: return "bell.badge"
             case .agents: return "terminal"
             }
@@ -131,7 +129,7 @@ struct MenuContentView: View {
             Button {
                 showAddAccount = true
             } label: {
-                Image(systemName: "person.badge.plus")
+                Image(systemName: "plus")
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
@@ -236,8 +234,6 @@ struct MenuContentView: View {
         switch selectedTab {
         case .accounts:
             accountList
-        case .history:
-            HistoryPanel(store: store)
         case .events:
             EventPanel(store: store)
         case .agents:

@@ -25,44 +25,45 @@ struct ConfigEditor: View {
                 .pointerOnHover()
             }
 
-            TextEditor(text: $text)
-                .font(.system(size: 10, design: .monospaced))
-                .frame(height: 150)
-                .padding(4)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                )
+            VStack(alignment: .leading, spacing: 6) {
+                JSONTextEditor(text: $text)
+                    .frame(height: 150)
 
-            if let error {
-                Text(error)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    save()
-                } label: {
-                    Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+                if let error {
+                    Text(error)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .pointerOnHover()
 
-                Button {
-                    text = ConfigLoader.rawContents()
-                    error = nil
-                    saved = false
-                } label: {
-                    Label("Revert", systemImage: "arrow.uturn.backward")
+                HStack(spacing: 8) {
+                    Button {
+                        save()
+                    } label: {
+                        Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .pointerOnHover()
+
+                    Button {
+                        text = ConfigLoader.rawContents()
+                        error = nil
+                        saved = false
+                    } label: {
+                        Label("Revert", systemImage: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .pointerOnHover()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .pointerOnHover()
             }
+            .padding(6)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+            )
         }
     }
 
