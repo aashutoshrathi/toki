@@ -229,7 +229,7 @@ struct AccountCard: View {
                     Button(role: .destructive) {
                         showRemoveConfirmation = true
                     } label: {
-                        Label("Remove account", systemImage: "trash")
+                        Label("Remove", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)

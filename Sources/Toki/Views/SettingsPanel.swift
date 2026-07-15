@@ -210,7 +210,7 @@ struct SettingsPanel: View {
                     } label: {
                         Label("Send debug report", systemImage: "paperclip")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
                     .pointerOnHover()
 

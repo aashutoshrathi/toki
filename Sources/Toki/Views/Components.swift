@@ -104,10 +104,11 @@ struct StatBlock: View {
                 Button(action: action.perform) {
                     Image(systemName: action.systemImage)
                         .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 22, height: 22)
+                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .frame(width: 22, height: 22)
-                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .help(action.help)
                 .accessibilityLabel(action.help)
                 .pointerOnHover()
@@ -211,10 +212,11 @@ struct AIInsightCard: View {
                     Button(action: switchAction.perform) {
                         Image(systemName: switchAction.systemImage)
                             .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 22, height: 22)
+                            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .frame(width: 22, height: 22)
-                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .help(switchAction.help)
                     .pointerOnHover()
                 }

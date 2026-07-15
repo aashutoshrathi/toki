@@ -104,12 +104,13 @@ struct MenuContentView: View {
                 store.session == nil ? store.startSession() : store.endSession()
             } label: {
                 Image(systemName: store.session == nil ? "play.fill" : "stop.fill")
+                    .frame(width: 25, height: 25)
+                    .background((store.session == nil ? Color.primary : Color.blue).opacity(store.session == nil ? 0.06 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
             .foregroundStyle(store.session == nil ? Color.primary : Color.blue)
-            .background((store.session == nil ? Color.primary : Color.blue).opacity(store.session == nil ? 0.06 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help(store.session == nil ? "Start session tracking" : "End session tracking")
             .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
             .pointerOnHover()
@@ -118,11 +119,12 @@ struct MenuContentView: View {
                 store.refresh(minimumRefreshInterval: 60)
             } label: {
                 Image(systemName: "arrow.clockwise")
+                    .frame(width: 25, height: 25)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help("Refresh")
             .pointerOnHover()
 
@@ -138,11 +140,12 @@ struct MenuContentView: View {
                                 .offset(x: 7, y: -7)
                         }
                     }
+                    .frame(width: 25, height: 25)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help(store.addableProviders.isEmpty ? "Add account" : "Add account - new provider detected")
             .accessibilityLabel("Add account")
             .pointerOnHover()
@@ -151,11 +154,12 @@ struct MenuContentView: View {
                 showConfig = true
             } label: {
                 Image(systemName: "gearshape")
+                    .frame(width: 25, height: 25)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .help("Settings")
             .pointerOnHover()
 
@@ -163,16 +167,17 @@ struct MenuContentView: View {
                 NSApp.terminate(nil)
             } label: {
                 Image(systemName: "power")
+                    .frame(width: 25, height: 25)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(Color.red.opacity(0.42), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
-            .frame(width: 25, height: 25)
             .foregroundStyle(.red)
-            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(Color.red.opacity(0.42), lineWidth: 1)
-            )
             .help("Quit")
             .pointerOnHover()
         }

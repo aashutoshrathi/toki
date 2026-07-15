@@ -40,10 +40,14 @@ struct ConfigEditor: View {
                     Button {
                         save()
                     } label: {
-                        Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+                        Image(systemName: saved ? "checkmark" : "square.and.arrow.down")
+                            .frame(width: 25, height: 25)
+                            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .help(saved ? "Saved" : "Save")
+                    .accessibilityLabel(saved ? "Saved" : "Save")
                     .pointerOnHover()
 
                     Button {
@@ -51,10 +55,14 @@ struct ConfigEditor: View {
                         error = nil
                         saved = false
                     } label: {
-                        Label("Revert", systemImage: "arrow.uturn.backward")
+                        Image(systemName: "arrow.uturn.backward")
+                            .frame(width: 25, height: 25)
+                            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help("Revert")
+                    .accessibilityLabel("Revert")
                     .pointerOnHover()
                 }
             }

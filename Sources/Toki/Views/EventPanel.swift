@@ -22,10 +22,11 @@ struct EventPanel: View {
                     store.clearEvents()
                 } label: {
                     Image(systemName: "trash")
+                        .frame(width: 25, height: 25)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .frame(width: 25, height: 25)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .help("Clear event history")
                 .accessibilityLabel("Clear event history")
                 .pointerOnHover()
