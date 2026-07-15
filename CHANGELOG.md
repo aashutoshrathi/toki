@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.9 - 2026-07-16
+
+### Changed
+
+- AI insight instructions moved to the top of Settings with more prominent styling (icon, larger heading, tinted card) - it's the one setting that actually changes what the on-device AI says about your usage, so it shouldn't be buried below a page of toggles.
+- The "update available" banner (with its install/dismiss controls) now also shows directly under the "Check now" button in Settings, not just in the main popover tab, so a manual check surfaces the same install UI in place.
+
+### Fixed
+
+- The menu bar icon (and the popover anchored to it) could shift position on refresh, since its width was recalculated from the fitted percentage text and digit count changes (e.g. "9%" to "58%" to "100%") every poll. The percentage now renders in a fixed-width field so the status item's width - and therefore its screen position - stays stable.
+- Rarely, the popover would open pinned to the top-left corner of the screen instead of under the menu bar icon - a timing race where the popover anchored before the status item's own layout pass had settled. The popover now defers to the next run loop tick before anchoring, and falls back to a sane rect if the button's bounds are momentarily degenerate.
+
 ## 2.1.8 - 2026-07-15
 
 ### Changed

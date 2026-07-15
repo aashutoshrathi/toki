@@ -45,6 +45,14 @@ struct SettingsPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                // Surfaced first, above the plain toggles below - it's the one setting that
+                // changes what the AI actually says about your usage, so it shouldn't require
+                // scrolling past half the page to find.
+                if store.isAIInsightAvailable {
+                    AIInstructionsEditor(store: store)
+                    Divider()
+                }
+
                 Toggle("Launch at login", isOn: launchAtLoginBinding)
                     .toggleStyle(.switch)
 
@@ -100,11 +108,6 @@ struct SettingsPanel: View {
                     }
                 }
 
-                if store.isAIInsightAvailable {
-                    Divider()
-                    AIInstructionsEditor(store: store)
-                }
-
                 Divider()
 
                 HStack(spacing: 8) {
@@ -146,6 +149,10 @@ struct SettingsPanel: View {
                     .controlSize(.small)
                     .disabled(updateChecker.isChecking)
                     .pointerOnHover()
+                }
+
+                if let update = updateChecker.availableUpdate {
+                    UpdateAvailableBanner(update: update, updateChecker: updateChecker)
                 }
 
                 Divider()

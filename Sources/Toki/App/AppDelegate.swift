@@ -65,12 +65,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc private func togglePopover() {
-        guard let button = statusItem.button else { return }
+        guard statusItem.button != nil else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            // Anchoring immediately on the click can race the status bar's own layout pass -
+            // e.g. right after updateStatusItem resizes the button, or when the item was just
+            // pulled out of the overflow ("hidden items") menu - and NSPopover occasionally
+            // falls back to the screen origin, showing up at the top-left corner instead of
+            // under the icon. Deferring one runloop tick lets the button's frame settle first.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let button = self.statusItem.button else { return }
+                let anchorRect = button.bounds.isEmpty
+                    ? NSRect(x: 0, y: 0, width: self.statusItem.length, height: NSStatusBar.system.thickness)
+                    : button.bounds
+                self.popover.show(relativeTo: anchorRect, of: button, preferredEdge: .minY)
+                self.popover.contentViewController?.view.window?.makeKey()
+            }
             store.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
             store.refreshActiveAgents()
             store.rescanProvidersIfNeeded()

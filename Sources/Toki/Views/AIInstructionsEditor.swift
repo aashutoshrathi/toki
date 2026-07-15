@@ -16,8 +16,13 @@ struct AIInstructionsEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("AI insight instructions")
-                .font(.system(size: 11, weight: .semibold))
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.purple)
+                Text("AI insight instructions")
+                    .font(.system(size: 12, weight: .semibold))
+            }
             Text("Steer how the on-device AI summarizes your usage. Leave empty for the default.")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
@@ -34,14 +39,14 @@ struct AIInstructionsEditor: View {
                 }
                 TextEditor(text: $text)
                     .font(.system(size: 10))
-                    .frame(height: 90)
+                    .frame(height: 110)
                     .padding(4)
                     .scrollContentBackground(.hidden)
             }
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                    .stroke(Color.purple.opacity(0.18), lineWidth: 1)
             )
 
             if let error {
@@ -73,6 +78,12 @@ struct AIInstructionsEditor: View {
                 .pointerOnHover()
             }
         }
+        .padding(8)
+        .background(Color.purple.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.purple.opacity(0.12), lineWidth: 1)
+        )
     }
 
     private func persist(_ value: String) {
