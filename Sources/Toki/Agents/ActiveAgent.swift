@@ -11,6 +11,12 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let processID: Int32
     let runtime: String
     let terminalTTY: String?
+    // Resident set size in kilobytes, straight from `ps rss=` - the same figure Activity
+    // Monitor's "Memory" column shows.
+    let memoryKB: Int
+    // The full command line at scan time - kept only so ActiveAgentTerminator can confirm
+    // the PID still refers to this same process immediately before signalling it.
+    let command: String
 
     // Primary label: the conversation title, else the project folder, else the provider.
     var title: String {
@@ -19,6 +25,11 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
             return folder
         }
         return "\(provider.displayName) agent"
+    }
+
+    var memoryDisplay: String {
+        let mb = Double(memoryKB) / 1024
+        return mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb)
     }
 
     // Working directory shown relative to home (~/Code/tokenbar), when meaningful.
@@ -48,6 +59,7 @@ enum ActiveAgentScanner {
         let command: String
         let runtime: String
         let tty: String?
+        let memoryKB: Int
     }
 
     // Caches the immutable-per-process fields (cwd, host app) by PID so they're resolved
@@ -62,7 +74,7 @@ enum ActiveAgentScanner {
 
     static func scan() async -> [ActiveAgent] {
         await Task.detached(priority: .utility) {
-            guard let output = Shell.output("/bin/ps", ["-axo", "pid=,ppid=,tty=,etime=,command="]) else {
+            guard let output = Shell.output("/bin/ps", ["-axo", "pid=,ppid=,tty=,etime=,rss=,command="]) else {
                 DiagnosticLogger.shared.record(.warning, component: "agents", code: "scan_failed")
                 return []
             }
@@ -93,9 +105,10 @@ enum ActiveAgentScanner {
     // Cheap, I/O-free parse: identify the provider, tty, and lineage from the ps row.
     // Enrichment (cwd, host, title, activity) happens later, only for root agents.
     private static func parse(line: Substring) -> Candidate? {
-        let parts = line.split(maxSplits: 4, whereSeparator: { $0.isWhitespace })
-        guard parts.count == 5, let pid = Int32(parts[0]), let parentPID = Int32(parts[1]) else { return nil }
-        let command = String(parts[4])
+        let parts = line.split(maxSplits: 5, whereSeparator: { $0.isWhitespace })
+        guard parts.count == 6, let pid = Int32(parts[0]), let parentPID = Int32(parts[1]) else { return nil }
+        let memoryKB = Int(parts[4]) ?? 0
+        let command = String(parts[5])
         let commandParts = command.split(whereSeparator: { $0.isWhitespace })
         guard let executablePath = commandParts.first else { return nil }
         let executable = URL(fileURLWithPath: String(executablePath)).lastPathComponent.lowercased()
@@ -135,7 +148,7 @@ enum ActiveAgentScanner {
 
         let ttyValue = String(parts[2])
         let tty = ttyValue == "??" || ttyValue == "-" ? nil : ttyValue
-        return Candidate(pid: pid, parentPID: parentPID, provider: provider, command: command, runtime: String(parts[3]), tty: tty)
+        return Candidate(pid: pid, parentPID: parentPID, provider: provider, command: command, runtime: String(parts[3]), tty: tty, memoryKB: memoryKB)
     }
 
     // Resolves the expensive fields. cwd and host app are truly immutable for a live
@@ -159,10 +172,34 @@ enum ActiveAgentScanner {
             lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd),
             processID: c.pid,
             runtime: c.runtime,
-            terminalTTY: c.tty
+            terminalTTY: c.tty,
+            memoryKB: c.memoryKB,
+            command: c.command
         )
         cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp)
         return agent
+    }
+}
+
+@MainActor
+enum ActiveAgentTerminator {
+    // SIGTERM, not SIGKILL - gives the agent a chance to exit the way Ctrl-C in its own
+    // terminal would, instead of yanking it out from under any in-progress file write.
+    //
+    // Re-checks that the PID still belongs to the same process immediately before
+    // signalling it. The confirmation dialog can sit open for a while (and even without
+    // it, the scan that produced this agent may already be stale), and macOS reuses PIDs -
+    // without this, an agent that already exited could have its PID reassigned to some
+    // unrelated process by the time "Quit" is actually clicked, which would then be the
+    // one to receive the signal instead.
+    static func terminate(_ agent: ActiveAgent) {
+        let currentCommand = Shell.output("/bin/ps", ["-p", String(agent.processID), "-o", "command="])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard currentCommand == agent.command else {
+            DiagnosticLogger.shared.record(.warning, component: "agents", code: "terminate_stale_pid")
+            return
+        }
+        kill(agent.processID, SIGTERM)
     }
 }
 
