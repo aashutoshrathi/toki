@@ -8,14 +8,16 @@ private enum ChangelogAsset {
 
     @MainActor static func text() -> String? {
         if let cached { return cached }
-        let executableResourceURL = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Resources/CHANGELOG.md")
+        let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
         let urls = [
             Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
             Bundle.main.resourceURL?.appendingPathComponent("CHANGELOG.md"),
-            executableResourceURL
+            executableDir?.deletingLastPathComponent().appendingPathComponent("Resources/CHANGELOG.md"),
+            // `swift run Toki` (the documented dev workflow, see README) never produces a
+            // real .app - resources land in an SPM-generated bundle right next to the
+            // executable instead of Contents/Resources, which none of the candidates above
+            // reach.
+            executableDir?.appendingPathComponent("Toki_Toki.bundle/CHANGELOG.md")
         ]
         let content = urls.compactMap { $0 }.lazy.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.first
         cached = content

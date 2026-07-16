@@ -4,19 +4,18 @@
 
 ### Added
 
-- A "What's new" page reachable from a header icon, showing this changelog inside the app.
+- A "What's new" page, reachable from a header icon, that renders this changelog inside the app. The popover is a bit wider to give the header room for the new icon.
 
 ### Changed
 
-- Custom AI insight instructions now fully override Toki's default behavior - tone, style, format, and length - instead of only taking priority over tone/length while still competing with the default framing. The one thing that still can't be overridden is the anti-hallucination rule (never invent quota numbers, account names, or reset times), which is now appended as a separate fixed constraint rather than presented as a rule the custom instructions merely take priority over.
+- Custom AI insight instructions now genuinely override Toki's default behavior instead of just nudging it. Three things were limiting how much a custom prompt could actually change the output: the instructions were composed after a fixed grounding rule and only given priority over tone/length, not format or content; the guided-generation schema declared its suggestions list with an exact-count guide, so the model was structurally forced to produce exactly 3 suggestions no matter what you asked for; and the instructions text itself was only ever stated once, in an early system prompt, with the summary field's own guide referring to it abstractly rather than restating it. Custom instructions are now the primary directive (overriding tone, style, format, and length, with only the anti-hallucination rule surviving underneath as a separate fixed constraint), suggestions can be reduced to none, and the instructions text is echoed directly in every generation request instead of only referenced indirectly - on-device models follow directives far more reliably when they're restated next to the task.
+- The AI insight instructions editor moved from its own page back into an expandable row inline in Settings, so editing a prompt doesn't lose your place in the rest of the list.
 
 ### Fixed
 
 - The AI insight instructions box in Settings showed its placeholder text and real typing caret at slightly different positions, because the placeholder was drawn with hand-picked padding that didn't match SwiftUI TextEditor's own (private, undocumented) internal inset. It's now backed by a custom text view with an explicit inset that the placeholder matches exactly.
 - Provider logos (menu bar icon and account cards alike) could get stuck showing the generic SF Symbol fallback instead of the real brand mark for the rest of the app's lifetime. The logo loader cached failed lookups exactly like successful ones, so if the very first attempt to load a given logo - which can happen as early as the menu bar status item's first render, before the rest of the app has finished starting up - ever came back empty for a transient reason, nothing ever re-tried it. Only successful loads are cached now.
-- The AI insight's guided-generation schema declared its suggestions list with `.count(3)`, which FoundationModels treats as an exact element count, not a maximum - so the model was structurally forced to emit exactly 3 suggestion objects on every response regardless of what custom instructions asked for. Changed to `.maximumCount(3)` and reworded the per-request prompt so custom instructions can actually suppress suggestions entirely.
-- The header's "/toki" wordmark could wrap onto two lines - it lost the fight for space to the header icon row once a 5th icon (the new changelog button) was added. The wordmark no longer wraps, and the popover is a bit wider to give the header room.
-- Custom instructions still barely moved the generated summary even after the fixes above, because the actual instructions text was only ever stated once, in the model session's system-level instructions, and the summary field's own guide only referred to it abstractly ("the tone described in your instructions"). Apple's on-device model is small and follows instructions far more reliably when they're restated right next to the generation task rather than referenced indirectly from an earlier system prompt - the per-request prompt now echoes the actual instructions text directly.
+- Provider logos and the new changelog page both failed to load when running from source via `swift run Toki` (the documented dev workflow) - none of their resource-lookup candidates reached the SPM-generated resource bundle that layout actually uses, so every logo showed its SF Symbol fallback and the changelog page always said "unavailable." Both now also check that bundle.
 
 ## 2.1.9 - 2026-07-16
 

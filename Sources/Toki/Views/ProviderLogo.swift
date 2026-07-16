@@ -81,17 +81,19 @@ enum SVGLogoAsset {
     // shipping with a baked-in fill color the way the other brand-color logos do.
     @MainActor static func image(named name: String, template: Bool = false) -> NSImage? {
         if let cached = cache[name] { return cached }
-        let executableResourceURL = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Resources/\(name).svg")
+        let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
         // Resources ship as raw files in Contents/Resources (see package-release.sh), so we
         // resolve via Bundle.main rather than Bundle.module - the SPM accessor fatal-errors
         // when its .bundle isn't at the app root, which conflicts with codesign's layout.
         let urls = [
             Bundle.main.url(forResource: name, withExtension: "svg"),
             Bundle.main.resourceURL?.appendingPathComponent("\(name).svg"),
-            executableResourceURL
+            executableDir?.deletingLastPathComponent().appendingPathComponent("Resources/\(name).svg"),
+            // `swift run Toki` (the documented dev workflow, see README) never produces a
+            // real .app - resources land in an SPM-generated bundle right next to the
+            // executable instead of Contents/Resources, which none of the candidates above
+            // reach.
+            executableDir?.appendingPathComponent("Toki_Toki.bundle/\(name).svg")
         ]
         guard let image = urls.compactMap({ $0 }).lazy.compactMap({ NSImage(contentsOf: $0) }).first else {
             return nil
