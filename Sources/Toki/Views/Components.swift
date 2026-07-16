@@ -190,11 +190,7 @@ struct AIInsightCard: View {
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(isAI ? .purple : .secondary)
                         }
-                        // The leading icon above already marks AI vs. rule-based, but at
-                        // 11pt it's easy to miss - the emoji in the text itself is a much
-                        // harder-to-miss signal that this line came from the model, not a
-                        // canned template.
-                        Text(isAI ? "✨ \(summary)" : summary)
+                        Text(summary)
                             .font(.system(size: 11))
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)

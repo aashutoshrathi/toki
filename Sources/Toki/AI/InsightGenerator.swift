@@ -37,11 +37,14 @@ enum InsightGenerator {
     // that's a schema-level constraint the model has to satisfy no matter what the system
     // prompt says, so a custom instruction asking for entirely different subject matter (not
     // just a different tone) was still losing to it. This variant doesn't presuppose the
-    // content at all, so custom instructions are free to redirect it completely.
+    // content at all, so custom instructions are free to redirect it completely. The field is
+    // also renamed away from "summary" - guided generation exposes property names to the
+    // model as part of the schema, not just the description text, and "summary" alone nudges
+    // toward summarizing whatever data is in context regardless of what's asked for.
     @Generable
     struct GeneratedFreeformInsight {
         @Guide(description: "Your response, following the instructions you were given exactly - their content, tone, style, format, and length take full priority over any default framing")
-        let summary: String
+        let response: String
         // .maximumCount, not .count - the latter forces an EXACT element count in
         // FoundationModels' guided generation, which would mean the schema mandates
         // exactly 3 suggestion objects always, no matter what the instructions say. That
@@ -87,7 +90,7 @@ enum InsightGenerator {
             let suggestions: [GeneratedSuggestion]
             if hasCustom {
                 let response = try await session.respond(to: userPrompt, generating: GeneratedFreeformInsight.self)
-                (summary, suggestions) = (response.content.summary, response.content.suggestions)
+                (summary, suggestions) = (response.content.response, response.content.suggestions)
             } else {
                 let response = try await session.respond(to: userPrompt, generating: GeneratedInsight.self)
                 (summary, suggestions) = (response.content.summary, response.content.suggestions)
@@ -113,6 +116,27 @@ enum InsightGenerator {
     // when they're restated next to the task than when only referenced abstractly ("the
     // tone described in your instructions") from a system prompt set earlier.
     static func prompt(snapshots: [AccountSnapshot], grounding: SmartRecommendation, customInstructions: String? = nil) -> String {
+        if let customInstructions {
+            // Account data is offered as optional reference, not the thing being responded
+            // to - a small on-device model tends to anchor hard on whatever concrete data
+            // sits in the same turn, so handing it over unconditionally (as the no-custom
+            // branch below does) fights an instruction like "ignore this and talk about
+            // cats" even when the system prompt says to. Putting the instructions first and
+            // explicitly permitting the model to disregard the data entirely counteracts that.
+            var lines: [String] = []
+            lines.append("Your instructions: \(customInstructions)")
+            lines.append("")
+            lines.append("Optional reference data, only relevant if your instructions ask about coding usage - ignore it completely otherwise:")
+            lines.append("Recommendation: \(grounding.title) - \(grounding.detail)")
+            for snapshot in snapshots where !snapshot.isError {
+                let status = snapshot.remainingRatio.map { "\(percentText($0)) remaining" } ?? snapshot.primary
+                lines.append("- \(snapshot.name) [\(snapshot.provider.displayName)]: \(status)")
+            }
+            lines.append("")
+            lines.append("Respond using only your instructions above. If they don't ask about coding usage, don't mention accounts, percentages, or quotas at all - answer with whatever they actually ask for instead.")
+            return lines.joined(separator: "\n")
+        }
+
         var lines: [String] = []
         lines.append("Recommendation: \(grounding.title) - \(grounding.detail)")
         lines.append("Accounts (percentages are quota REMAINING, higher is better):")
@@ -120,12 +144,7 @@ enum InsightGenerator {
             let status = snapshot.remainingRatio.map { "\(percentText($0)) remaining" } ?? snapshot.primary
             lines.append("- \(snapshot.name) [\(snapshot.provider.displayName)]: \(status)")
         }
-        if let customInstructions {
-            lines.append("Your instructions, which apply to both the summary and whether to include suggestions at all: \(customInstructions)")
-            lines.append("Respond to the situation above following only those instructions - don't add suggestions, structure, or content they don't call for.")
-        } else {
-            lines.append("Summarize the current situation in one sentence and give up to 3 suggestions.")
-        }
+        lines.append("Summarize the current situation in one sentence and give up to 3 suggestions.")
         return lines.joined(separator: "\n")
     }
 
