@@ -6,18 +6,32 @@ import SwiftUI
 private enum ChangelogAsset {
     @MainActor private static var cached: String??
 
+    // #filePath is this source file's absolute path on whichever machine compiled it - only
+    // meaningful for local dev builds (`swift run`/`swift build`), where it correctly points
+    // at the real repo-root CHANGELOG.md. That's needed because the symlink at
+    // Sources/Toki/Resources/CHANGELOG.md doesn't survive SPM's own resource-bundling step
+    // for that workflow: SPM copies it as a symlink rather than dereferencing it (unlike the
+    // plain `cp` in the packaging scripts), so the relative target - correct from
+    // Sources/Toki/Resources - resolves to a nonexistent path once relocated into the
+    // differently-nested Toki_Toki.bundle. In a shipped release .app this candidate simply
+    // won't exist on disk, which is fine - the earlier candidates already succeed there.
+    private static let devRepoRootChangelog = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent() // Views
+        .deletingLastPathComponent() // Toki
+        .deletingLastPathComponent() // Sources
+        .deletingLastPathComponent() // repo root
+        .appendingPathComponent("CHANGELOG.md")
+
     @MainActor static func text() -> String? {
         if let cached { return cached }
-        let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
         let urls = [
             Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
             Bundle.main.resourceURL?.appendingPathComponent("CHANGELOG.md"),
-            executableDir?.deletingLastPathComponent().appendingPathComponent("Resources/CHANGELOG.md"),
-            // `swift run Toki` (the documented dev workflow, see README) never produces a
-            // real .app - resources land in an SPM-generated bundle right next to the
-            // executable instead of Contents/Resources, which none of the candidates above
-            // reach.
-            executableDir?.appendingPathComponent("Toki_Toki.bundle/CHANGELOG.md")
+            Bundle.main.executableURL?
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Resources/CHANGELOG.md"),
+            devRepoRootChangelog
         ]
         let content = urls.compactMap { $0 }.lazy.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.first
         cached = content
