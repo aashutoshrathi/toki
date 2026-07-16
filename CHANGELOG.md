@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.1 - 2026-07-16
+
+### Added
+
+- Active agent cards now show memory usage (RSS, the same figure Activity Monitor's "Memory" column shows) alongside the host app.
+- A quit button on each active agent card, with a confirmation dialog before it sends the process a terminate signal.
+
 ## 2.2.0 - 2026-07-16
 
 ### Added
