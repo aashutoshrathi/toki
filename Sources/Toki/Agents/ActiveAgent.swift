@@ -14,6 +14,9 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     // Resident set size in kilobytes, straight from `ps rss=` - the same figure Activity
     // Monitor's "Memory" column shows.
     let memoryKB: Int
+    // The full command line at scan time - kept only so ActiveAgentTerminator can confirm
+    // the PID still refers to this same process immediately before signalling it.
+    let command: String
 
     // Primary label: the conversation title, else the project folder, else the provider.
     var title: String {
@@ -170,7 +173,8 @@ enum ActiveAgentScanner {
             processID: c.pid,
             runtime: c.runtime,
             terminalTTY: c.tty,
-            memoryKB: c.memoryKB
+            memoryKB: c.memoryKB,
+            command: c.command
         )
         cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp)
         return agent
@@ -181,7 +185,20 @@ enum ActiveAgentScanner {
 enum ActiveAgentTerminator {
     // SIGTERM, not SIGKILL - gives the agent a chance to exit the way Ctrl-C in its own
     // terminal would, instead of yanking it out from under any in-progress file write.
+    //
+    // Re-checks that the PID still belongs to the same process immediately before
+    // signalling it. The confirmation dialog can sit open for a while (and even without
+    // it, the scan that produced this agent may already be stale), and macOS reuses PIDs -
+    // without this, an agent that already exited could have its PID reassigned to some
+    // unrelated process by the time "Quit" is actually clicked, which would then be the
+    // one to receive the signal instead.
     static func terminate(_ agent: ActiveAgent) {
+        let currentCommand = Shell.output("/bin/ps", ["-p", String(agent.processID), "-o", "command="])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard currentCommand == agent.command else {
+            DiagnosticLogger.shared.record(.warning, component: "agents", code: "terminate_stale_pid")
+            return
+        }
         kill(agent.processID, SIGTERM)
     }
 }

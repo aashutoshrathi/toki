@@ -5,7 +5,7 @@
 ### Added
 
 - Active agent cards now show memory usage (RSS, the same figure Activity Monitor's "Memory" column shows) alongside the host app.
-- A quit button on each active agent card, with a confirmation dialog before it sends the process a terminate signal.
+- A quit button on each active agent card, with a confirmation dialog before it sends the process a terminate signal. Since the confirmation can sit open for a while (and PIDs get reused), it re-verifies the process still matches what was shown before actually signalling it, rather than trusting a possibly-stale PID.
 
 ## 2.2.0 - 2026-07-16
 
