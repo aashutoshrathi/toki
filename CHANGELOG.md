@@ -14,6 +14,8 @@
 
 - The AI insight instructions box in Settings showed its placeholder text and real typing caret at slightly different positions, because the placeholder was drawn with hand-picked padding that didn't match SwiftUI TextEditor's own (private, undocumented) internal inset. It's now backed by a custom text view with an explicit inset that the placeholder matches exactly.
 - Provider logos (menu bar icon and account cards alike) could get stuck showing the generic SF Symbol fallback instead of the real brand mark for the rest of the app's lifetime. The logo loader cached failed lookups exactly like successful ones, so if the very first attempt to load a given logo - which can happen as early as the menu bar status item's first render, before the rest of the app has finished starting up - ever came back empty for a transient reason, nothing ever re-tried it. Only successful loads are cached now.
+- The AI insight's guided-generation schema declared its suggestions list with `.count(3)`, which FoundationModels treats as an exact element count, not a maximum - so the model was structurally forced to emit exactly 3 suggestion objects on every response regardless of what custom instructions asked for. Changed to `.maximumCount(3)` and reworded the per-request prompt so custom instructions can actually suppress suggestions entirely.
+- The header's "/toki" wordmark could wrap onto two lines - it lost the fight for space to the header icon row once a 5th icon (the new changelog button) was added. The wordmark no longer wraps, and the popover is a bit wider to give the header room.
 
 ## 2.1.9 - 2026-07-16
 

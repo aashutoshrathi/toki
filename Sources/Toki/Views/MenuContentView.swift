@@ -79,6 +79,8 @@ struct MenuContentView: View {
                 HStack(spacing: 6) {
                     Text("/toki")
                         .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                        .fixedSize()
                     Text("v\(appVersion)")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.secondary)

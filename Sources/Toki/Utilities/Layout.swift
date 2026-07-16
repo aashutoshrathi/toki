@@ -1,7 +1,10 @@
 import AppKit
 
 func popoverWidth() -> CGFloat {
-    min(350, max(320, (NSScreen.main?.visibleFrame.width ?? 350) - 32))
+    // 390, not 350 - the header row needs room for 5 icon buttons (session, refresh,
+    // changelog, settings, quit) plus the "/toki" wordmark and version badge without
+    // wrapping or crowding.
+    min(390, max(360, (NSScreen.main?.visibleFrame.width ?? 390) - 32))
 }
 
 func popoverHeight() -> CGFloat {

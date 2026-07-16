@@ -28,7 +28,12 @@ enum InsightGenerator {
     struct GeneratedInsight {
         @Guide(description: "A summary of the user's coding usage across accounts, in the tone, style, and length described by your instructions - default to one natural, specific sentence only if your instructions don't say otherwise")
         let summary: String
-        @Guide(description: "Up to 3 short, actionable suggestions", .count(3))
+        // .maximumCount, not .count - the latter forces an EXACT element count in
+        // FoundationModels' guided generation, which would mean the schema mandates
+        // exactly 3 suggestion objects always, no matter what the instructions say. That
+        // silently overrode custom instructions asking for fewer, none, or a different
+        // shape entirely - the one thing this whole feature is supposed to respect.
+        @Guide(description: "Actionable suggestions - fewer than 3, or none at all, if your instructions call for something else", .maximumCount(3))
         let suggestions: [GeneratedSuggestion]
     }
 
@@ -95,7 +100,7 @@ enum InsightGenerator {
         }
         lines.append(
             freeform
-                ? "Summarize the current situation and give up to 3 suggestions, following your instructions above."
+                ? "Respond to the situation above using only the instructions you were given - don't add suggestions, structure, or content they don't call for."
                 : "Summarize the current situation in one sentence and give up to 3 suggestions."
         )
         return lines.joined(separator: "\n")
