@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.0 - 2026-07-16
+
+### Added
+
+- A "What's new" page reachable from a header icon, showing this changelog inside the app.
+
+### Changed
+
+- Custom AI insight instructions now fully override Toki's default behavior - tone, style, format, and length - instead of only taking priority over tone/length while still competing with the default framing. The one thing that still can't be overridden is the anti-hallucination rule (never invent quota numbers, account names, or reset times), which is now appended as a separate fixed constraint rather than presented as a rule the custom instructions merely take priority over.
+
+### Fixed
+
+- The AI insight instructions box in Settings showed its placeholder text and real typing caret at slightly different positions, because the placeholder was drawn with hand-picked padding that didn't match SwiftUI TextEditor's own (private, undocumented) internal inset. It's now backed by a custom text view with an explicit inset that the placeholder matches exactly.
+- Provider logos (menu bar icon and account cards alike) could get stuck showing the generic SF Symbol fallback instead of the real brand mark for the rest of the app's lifetime. The logo loader cached failed lookups exactly like successful ones, so if the very first attempt to load a given logo - which can happen as early as the menu bar status item's first render, before the rest of the app has finished starting up - ever came back empty for a transient reason, nothing ever re-tried it. Only successful loads are cached now.
+
 ## 2.1.9 - 2026-07-16
 
 ### Added

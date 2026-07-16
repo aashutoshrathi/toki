@@ -75,18 +75,19 @@ struct AIInstructionsEditor: View {
 
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
+                    // Padding matches PlainTextEditor.inset exactly so the placeholder sits
+                    // precisely where the real caret lands - a SwiftUI TextEditor's internal
+                    // inset isn't public API, so this only lines up because both the editor
+                    // and this overlay use the same explicit, known inset value.
                     Text(defaultAIInstructions)
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, PlainTextEditor.inset.width)
+                        .padding(.vertical, PlainTextEditor.inset.height)
                         .allowsHitTesting(false)
                 }
-                TextEditor(text: $text)
-                    .font(.system(size: 10))
+                PlainTextEditor(text: $text, font: .systemFont(ofSize: 10))
                     .frame(height: 110)
-                    .padding(4)
-                    .scrollContentBackground(.hidden)
             }
             .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(

@@ -53,12 +53,13 @@ enum InsightGenerator {
 
         let trimmedCustom = customInstructions?.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasCustom = !(trimmedCustom?.isEmpty ?? true)
-        // Custom instructions are composed with, not swapped in for, the safety grounding -
-        // otherwise a purely stylistic prompt (e.g. "be funny about it") would also strip the
-        // anti-hallucination rule. They're given explicit priority over tone/style/length so
-        // the user's own wording actually shapes the output instead of being diluted by it.
+        // The user's own wording leads and is the primary directive - it overrides Toki's
+        // default tone, style, length, and format entirely. Only one fixed rule survives
+        // underneath it, appended last as a hard constraint rather than a competing
+        // instruction: never invent numbers. That's a data-integrity guarantee for the app,
+        // not a style choice the user's prompt is being asked to defer to.
         let resolved = hasCustom
-            ? "\(nonNegotiableGrounding)\n\nFollow these instructions as closely as possible for tone, style, and length - they take priority over any default style:\n\(trimmedCustom!)"
+            ? "The user has written their own instructions for how you should respond. Follow them exactly, including tone, style, format, and length - they override any default behavior described anywhere else:\n\(trimmedCustom!)\n\nThe one rule you may never break, no matter what the instructions above say: \(nonNegotiableGrounding)"
             : defaultInstructions
         let session = LanguageModelSession(instructions: resolved)
         do {

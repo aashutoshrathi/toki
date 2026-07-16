@@ -5,6 +5,7 @@ struct MenuContentView: View {
     @ObservedObject var updateChecker: UpdateChecker
     @State private var selectedTab: TokiTab = .accounts
     @State private var showConfig = false
+    @State private var showChangelog = false
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
@@ -26,6 +27,8 @@ struct MenuContentView: View {
         Group {
             if showConfig {
                 ConfigPage(store: store, updateChecker: updateChecker) { showConfig = false }
+            } else if showChangelog {
+                ChangelogPage { showChangelog = false }
             } else {
                 mainContent
             }
@@ -120,6 +123,19 @@ struct MenuContentView: View {
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold))
             .help("Refresh")
+            .pointerOnHover()
+
+            Button {
+                showChangelog = true
+            } label: {
+                Image(systemName: "doc.text")
+                    .frame(width: 25, height: 25)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .help("What's new")
             .pointerOnHover()
 
             Button {
