@@ -68,29 +68,37 @@ struct ProviderLogo: View {
 // Loads named SVGs from the app's Resources folder, cached per name. Drop a
 // `<name>.svg` into Sources/Toki/Resources to add or replace a provider logo.
 enum SVGLogoAsset {
-    // Caches hits AND misses (the optional), so a missing SVG isn't re-probed across
-    // four candidate URLs on every render.
-    @MainActor private static var cache: [String: NSImage?] = [:]
+    // Only successful loads are cached. A handful of these logos are resolved as early as
+    // the menu bar status item's first render, before the rest of the app has finished
+    // setting up - if that first probe ever came back nil for a transient reason, caching
+    // the miss would lock the fallback SF Symbol in for the rest of the process's life,
+    // since nothing else ever calls back in to retry it. Re-probing a genuine miss on
+    // every render is cheap (a few file existence checks), so there's no real cost here.
+    @MainActor private static var cache: [String: NSImage] = [:]
 
     // template: true renders the SVG as a monochrome mask that follows .foregroundStyle,
     // for single-color marks (like Grok's) that need to adapt to light/dark instead of
     // shipping with a baked-in fill color the way the other brand-color logos do.
     @MainActor static func image(named name: String, template: Bool = false) -> NSImage? {
         if let cached = cache[name] { return cached }
-        let executableResourceURL = Bundle.main.executableURL?
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Resources/\(name).svg")
+        let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
         // Resources ship as raw files in Contents/Resources (see package-release.sh), so we
         // resolve via Bundle.main rather than Bundle.module - the SPM accessor fatal-errors
         // when its .bundle isn't at the app root, which conflicts with codesign's layout.
         let urls = [
             Bundle.main.url(forResource: name, withExtension: "svg"),
             Bundle.main.resourceURL?.appendingPathComponent("\(name).svg"),
-            executableResourceURL
+            executableDir?.deletingLastPathComponent().appendingPathComponent("Resources/\(name).svg"),
+            // `swift run Toki` (the documented dev workflow, see README) never produces a
+            // real .app - resources land in an SPM-generated bundle right next to the
+            // executable instead of Contents/Resources, which none of the candidates above
+            // reach.
+            executableDir?.appendingPathComponent("Toki_Toki.bundle/\(name).svg")
         ]
-        let image = urls.compactMap { $0 }.lazy.compactMap { NSImage(contentsOf: $0) }.first
-        image.flatMap { $0 }?.isTemplate = template
+        guard let image = urls.compactMap({ $0 }).lazy.compactMap({ NSImage(contentsOf: $0) }).first else {
+            return nil
+        }
+        image.isTemplate = template
         cache[name] = image
         return image
     }

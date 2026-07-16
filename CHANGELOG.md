@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.2.0 - 2026-07-16
+
+### Added
+
+- A "What's new" page, reachable from a header icon, that renders this changelog inside the app. The popover is a bit wider to give the header room for the new icon.
+
+### Changed
+
+- Custom AI insight instructions now genuinely override Toki's default behavior instead of just nudging it. Several things were limiting how much a custom prompt could actually change the output: the instructions were composed after a fixed grounding rule and only given priority over tone/length, not format or content; the guided-generation schema declared its suggestions list with an exact-count guide, so the model was structurally forced to produce exactly 3 suggestions no matter what you asked for; the instructions text itself was only ever stated once, in an early system prompt, with the summary field's own guide referring to it abstractly rather than restating it; the summary field's guide description and property name both hardcoded "a summary of coding usage" as required content - schema-level constraints the model has to satisfy regardless of the system prompt; and the account/quota data was always handed over unconditionally as the thing to respond to, which a small on-device model anchors on hard even when told to ignore it. Custom instructions now lead the request entirely, account data is offered as optional reference the model is explicitly told it may disregard, and a separate, content-agnostic guided-generation schema (with a neutral `response` field instead of `summary`) is used whenever custom instructions are set.
+- The AI insight instructions editor moved from its own page back into an expandable row inline in Settings, so editing a prompt doesn't lose your place in the rest of the list.
+
+### Fixed
+
+- The AI insight instructions box in Settings showed its placeholder text and real typing caret at slightly different positions, because the placeholder was drawn with hand-picked padding that didn't match SwiftUI TextEditor's own (private, undocumented) internal inset. It's now backed by a custom text view with an explicit inset that the placeholder matches exactly.
+- Provider logos (menu bar icon and account cards alike) could get stuck showing the generic SF Symbol fallback instead of the real brand mark for the rest of the app's lifetime. The logo loader cached failed lookups exactly like successful ones, so if the very first attempt to load a given logo - which can happen as early as the menu bar status item's first render, before the rest of the app has finished starting up - ever came back empty for a transient reason, nothing ever re-tried it. Only successful loads are cached now.
+- Provider logos and the new changelog page both failed to load when running from source via `swift run Toki` (the documented dev workflow) - none of their resource-lookup candidates reached the SPM-generated resource bundle that layout actually uses, so every logo showed its SF Symbol fallback and the changelog page always said "unavailable." Both now also check that bundle.
+
 ## 2.1.9 - 2026-07-16
 
 ### Added
