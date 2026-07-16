@@ -69,7 +69,7 @@ enum InsightGenerator {
         let session = LanguageModelSession(instructions: resolved)
         do {
             let response = try await session.respond(
-                to: prompt(snapshots: snapshots, grounding: grounding, freeform: hasCustom),
+                to: prompt(snapshots: snapshots, grounding: grounding, customInstructions: hasCustom ? trimmedCustom : nil),
                 generating: GeneratedInsight.self
             )
             let content = response.content
@@ -87,10 +87,13 @@ enum InsightGenerator {
 
     static let defaultInstructions = defaultAIInstructions
 
-    // Pure function - unit-testable without the model. `freeform` is set once custom
-    // instructions are in play, so the fixed "one sentence" nudge below doesn't fight
-    // whatever length/format the user actually asked for in their instructions.
-    static func prompt(snapshots: [AccountSnapshot], grounding: SmartRecommendation, freeform: Bool = false) -> String {
+    // Pure function - unit-testable without the model. customInstructions is echoed again
+    // here, right next to the actual generation task, rather than trusted to have carried
+    // over from the session-level `instructions:` set once at session creation - Apple's
+    // on-device model is small, and small models follow instructions far more reliably
+    // when they're restated next to the task than when only referenced abstractly ("the
+    // tone described in your instructions") from a system prompt set earlier.
+    static func prompt(snapshots: [AccountSnapshot], grounding: SmartRecommendation, customInstructions: String? = nil) -> String {
         var lines: [String] = []
         lines.append("Recommendation: \(grounding.title) - \(grounding.detail)")
         lines.append("Accounts (percentages are quota REMAINING, higher is better):")
@@ -98,11 +101,12 @@ enum InsightGenerator {
             let status = snapshot.remainingRatio.map { "\(percentText($0)) remaining" } ?? snapshot.primary
             lines.append("- \(snapshot.name) [\(snapshot.provider.displayName)]: \(status)")
         }
-        lines.append(
-            freeform
-                ? "Respond to the situation above using only the instructions you were given - don't add suggestions, structure, or content they don't call for."
-                : "Summarize the current situation in one sentence and give up to 3 suggestions."
-        )
+        if let customInstructions {
+            lines.append("Your instructions, which apply to both the summary and whether to include suggestions at all: \(customInstructions)")
+            lines.append("Respond to the situation above following only those instructions - don't add suggestions, structure, or content they don't call for.")
+        } else {
+            lines.append("Summarize the current situation in one sentence and give up to 3 suggestions.")
+        }
         return lines.joined(separator: "\n")
     }
 
