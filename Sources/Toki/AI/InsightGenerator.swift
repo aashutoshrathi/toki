@@ -26,14 +26,28 @@ import FoundationModels
 enum InsightGenerator {
     @Generable
     struct GeneratedInsight {
-        @Guide(description: "A summary of the user's coding usage across accounts, in the tone, style, and length described by your instructions - default to one natural, specific sentence only if your instructions don't say otherwise")
+        @Guide(description: "A summary of the user's coding usage across accounts, in one natural, specific sentence")
+        let summary: String
+        @Guide(description: "Up to 3 actionable suggestions", .maximumCount(3))
+        let suggestions: [GeneratedSuggestion]
+    }
+
+    // Used instead of GeneratedInsight whenever custom instructions are set. GeneratedInsight's
+    // own field descriptions hardcode "a summary of coding usage" as the required content -
+    // that's a schema-level constraint the model has to satisfy no matter what the system
+    // prompt says, so a custom instruction asking for entirely different subject matter (not
+    // just a different tone) was still losing to it. This variant doesn't presuppose the
+    // content at all, so custom instructions are free to redirect it completely.
+    @Generable
+    struct GeneratedFreeformInsight {
+        @Guide(description: "Your response, following the instructions you were given exactly - their content, tone, style, format, and length take full priority over any default framing")
         let summary: String
         // .maximumCount, not .count - the latter forces an EXACT element count in
         // FoundationModels' guided generation, which would mean the schema mandates
         // exactly 3 suggestion objects always, no matter what the instructions say. That
         // silently overrode custom instructions asking for fewer, none, or a different
         // shape entirely - the one thing this whole feature is supposed to respect.
-        @Guide(description: "Actionable suggestions - fewer than 3, or none at all, if your instructions call for something else", .maximumCount(3))
+        @Guide(description: "Suggestions, only if your instructions call for them - leave empty otherwise", .maximumCount(3))
         let suggestions: [GeneratedSuggestion]
     }
 
@@ -67,15 +81,20 @@ enum InsightGenerator {
             ? "The user has written their own instructions for how you should respond. Follow them exactly, including tone, style, format, and length - they override any default behavior described anywhere else:\n\(trimmedCustom!)\n\nThe one rule you may never break, no matter what the instructions above say: \(nonNegotiableGrounding)"
             : defaultInstructions
         let session = LanguageModelSession(instructions: resolved)
+        let userPrompt = prompt(snapshots: snapshots, grounding: grounding, customInstructions: hasCustom ? trimmedCustom : nil)
         do {
-            let response = try await session.respond(
-                to: prompt(snapshots: snapshots, grounding: grounding, customInstructions: hasCustom ? trimmedCustom : nil),
-                generating: GeneratedInsight.self
-            )
-            let content = response.content
+            let summary: String
+            let suggestions: [GeneratedSuggestion]
+            if hasCustom {
+                let response = try await session.respond(to: userPrompt, generating: GeneratedFreeformInsight.self)
+                (summary, suggestions) = (response.content.summary, response.content.suggestions)
+            } else {
+                let response = try await session.respond(to: userPrompt, generating: GeneratedInsight.self)
+                (summary, suggestions) = (response.content.summary, response.content.suggestions)
+            }
             return UsageInsight(
-                summary: content.summary,
-                suggestions: content.suggestions.map {
+                summary: summary,
+                suggestions: suggestions.map {
                     UsageSuggestion(text: $0.text, severity: severity(from: $0.severity))
                 }
             )
