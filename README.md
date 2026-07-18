@@ -61,6 +61,7 @@ macOS may ask for Keychain access the first time Toki reads Claude Code or `clau
 
 ```sh
 brew tap aashutoshrathi/tap
+brew trust --cask aashutoshrathi/tap/toki
 brew install --cask toki
 ```
 
