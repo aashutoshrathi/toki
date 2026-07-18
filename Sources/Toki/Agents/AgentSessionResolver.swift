@@ -14,6 +14,8 @@ enum AgentSessionResolver {
             return openCodeChatTitle(cwd: cwd)
         case .grok:
             return newestGrokSession(cwd: cwd)?.title
+        case .pi:
+            return PiUsageClient.latestSession(cwd: cwd)?.title
         default:
             return nil
         }
@@ -28,6 +30,8 @@ enum AgentSessionResolver {
             return openCodeLastActivity(cwd: cwd)
         case .grok:
             return newestGrokSession(cwd: cwd)?.lastActiveAt
+        case .pi:
+            return PiUsageClient.latestSession(cwd: cwd)?.modified
         default:
             return nil
         }

@@ -26,6 +26,7 @@ enum ProviderDetection {
             if let claude = detectClaudeCode() { detected.append(claude) }
             if let codex = detectCodex() { detected.append(codex) }
             if let openCode = detectOpenCode() { detected.append(openCode) }
+            if let pi = detectPi() { detected.append(pi) }
             if let grok = detectGrok() { detected.append(grok) }
             if let gemini = detectGemini() { detected.append(gemini) }
             return detected
@@ -71,6 +72,16 @@ enum ProviderDetection {
             provider: .openCode,
             title: "OpenCode",
             detail: "Auto-detected from its local database - no setup needed",
+            makeAccount: nil
+        )
+    }
+
+    private static func detectPi() -> DetectedProvider? {
+        guard PiUsageClient.autoDetectedAccount() != nil else { return nil }
+        return DetectedProvider(
+            provider: .pi,
+            title: "Pi",
+            detail: "Auto-detected from local session history - no setup needed",
             makeAccount: nil
         )
     }

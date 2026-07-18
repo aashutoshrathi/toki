@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0 - 2026-07-18
+
+### Added
+
+- Pi support using local JSONL session metadata for token and estimated-cost usage, active-agent detection with session titles, and automatic session-root discovery without authentication or Toki account configuration.
+
 ## 2.2.1 - 2026-07-16
 
 ### Added
