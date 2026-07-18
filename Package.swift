@@ -16,6 +16,11 @@ let package = Package(
             resources: [
                 .process("Resources")
             ]
+        ),
+        .testTarget(
+            name: "TokiTests",
+            dependencies: ["Toki"],
+            resources: [.copy("Fixtures")]
         )
     ]
 )

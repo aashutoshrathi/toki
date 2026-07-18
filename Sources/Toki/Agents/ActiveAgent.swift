@@ -117,24 +117,7 @@ enum ActiveAgentScanner {
         // Classify by executable first. A recognized agent binary is a real agent no matter
         // where it lives (e.g. Codex inside ChatGPT.app); the bundle-helper noise filter
         // only decides whether an UNRECOGNIZED process is worth ignoring.
-        let provider: Provider
-        if executable == "opencode" {
-            provider = .openCode
-        } else if executable == "copilot"
-                    || (executable == "node" && entrypoint?.contains("/@github/copilot/") == true) {
-            provider = .copilot
-        } else if executable == "codex"
-                    || executable.hasPrefix("codex-")
-                    || (executable == "node" && entrypoint?.contains("/@openai/codex/") == true) {
-            provider = .codex
-        } else if executable == "claude" {
-            provider = .claudeCode
-        } else if executable == "grok" {
-            provider = .grok
-        } else if executable == "gemini"
-                    || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") {
-            provider = .gemini
-        } else {
+        guard let provider = providerForProcess(executable: executable, entrypoint: entrypoint) else {
             return nil
         }
 
@@ -149,6 +132,29 @@ enum ActiveAgentScanner {
         let ttyValue = String(parts[2])
         let tty = ttyValue == "??" || ttyValue == "-" ? nil : ttyValue
         return Candidate(pid: pid, parentPID: parentPID, provider: provider, command: command, runtime: String(parts[3]), tty: tty, memoryKB: memoryKB)
+    }
+
+    static func providerForCommand(_ command: String) -> Provider? {
+        let parts = command.split(whereSeparator: { $0.isWhitespace })
+        guard let first = parts.first else { return nil }
+        let executable = URL(fileURLWithPath: String(first)).lastPathComponent.lowercased()
+        return providerForProcess(executable: executable, entrypoint: parts.dropFirst().first.map { String($0).lowercased() })
+    }
+
+    private static func providerForProcess(executable: String, entrypoint: String?) -> Provider? {
+        if executable == "pi" { return .pi }
+        if (executable == "node" || executable == "bun"), let entrypoint,
+           entrypoint.contains("/@earendil-works/pi-coding-agent/")
+            || entrypoint.contains("/@mariozechner/pi-coding-agent/") {
+            return .pi
+        }
+        if executable == "opencode" { return .openCode }
+        if executable == "copilot" || (executable == "node" && entrypoint?.contains("/@github/copilot/") == true) { return .copilot }
+        if executable == "codex" || executable.hasPrefix("codex-") || (executable == "node" && entrypoint?.contains("/@openai/codex/") == true) { return .codex }
+        if executable == "claude" { return .claudeCode }
+        if executable == "grok" { return .grok }
+        if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
+        return nil
     }
 
     // Resolves the expensive fields. cwd and host app are truly immutable for a live
