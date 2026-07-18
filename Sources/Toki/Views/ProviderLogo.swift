@@ -53,6 +53,13 @@ struct ProviderLogo: View {
                             )
                         )
                 }
+            case .pi:
+                // Official Pi press-kit badge: https://pi.dev/press-kit
+                SVGLogoMark(asset: "pi-logo", size: size) {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: size * 0.72, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                }
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)

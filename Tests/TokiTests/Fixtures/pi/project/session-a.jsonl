@@ -1,0 +1,7 @@
+{"type":"session","id":"session-a","timestamp":"2026-07-18T10:00:00Z","cwd":"/tmp/pi-project"}
+{"type":"session_info","id":"info-a","timestamp":"2026-07-18T10:01:00Z","name":"Older title"}
+{"type":"message","id":"assistant-1","timestamp":"2026-07-18T12:00:01Z","message":{"role":"assistant","provider":"openai","api":"responses","model":"gpt-test","timestamp":1784376000000,"usage":{"input":100,"output":20,"cacheRead":5,"cacheWrite":2,"totalTokens":127,"cost":{"total":0.12}},"stopReason":"stop"}}
+{"type":"message","id":"assistant-old","timestamp":"2026-07-17T12:00:00Z","message":{"role":"assistant","provider":"openai","api":"responses","model":"gpt-test","timestamp":1784289600000,"usage":{"input":10,"output":4,"cacheRead":1,"cacheWrite":0,"totalTokens":15,"cost":{"total":0.01}},"stopReason":"error"}}
+{"type":"message","id":"assistant-outer","timestamp":"2026-07-18T13:00:00Z","message":{"role":"assistant","provider":"anthropic","api":"messages","model":"claude-test","usage":{"input":7,"output":3,"cacheRead":0,"cacheWrite":0,"totalTokens":10,"cost":{"total":0.07}},"stopReason":"aborted"}}
+{"type":"message","id":"ignored-user","message":{"role":"user","usage":{"input":999,"output":999,"cost":{"total":99}}}}
+{"type":"message","id":"truncated"

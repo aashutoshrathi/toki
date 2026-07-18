@@ -25,7 +25,7 @@
 
 ## Why Toki
 
-Toki is built for people who jump between Claude Code, Codex, Copilot, Gemini, Grok, and OpenCode during the day and want a fast, local view of usage and active agents.
+Toki is built for people who jump between Claude Code, Codex, Copilot, Gemini, Grok, OpenCode, and Pi during the day and want a fast, local view of usage and active agents.
 
 It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
 
@@ -33,9 +33,9 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 
 ## Features
 
-- Live quota, rate-limit, and spend tracking for Claude Code (multi-account via `claude-swap`, with discovery, one-click switching, and Keychain credential lookup), Codex, and OpenCode.
+- Live quota and rate-limit tracking for Claude Code (multi-account via `claude-swap`, with discovery, one-click switching, and Keychain credential lookup) and Codex, plus local token and spend tracking for OpenCode and Pi. Pi usage comes from local session history and shows tokens plus estimated costs.
 - One-click redemption of banked Codex rate-limit reset credits, gated to when the current window is mostly used.
-- Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app.
+- Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app.
 - AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch. Custom instructions get their own Settings page and take priority over the default tone/format.
 - Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
 - Session mode for tracking quota burn during a focused coding run.
@@ -50,6 +50,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 - Claude Code installed and authenticated.
 - `claude-swap` installed and configured for multi-account Claude workflows.
 - Codex installed and authenticated for Codex usage.
+- Pi installed with local session history when using Pi usage and active-agent tracking.
 - Copilot CLI, Gemini CLI, Grok CLI, or OpenCode installed when using active-agent discovery for those tools.
 
 macOS may ask for Keychain access the first time Toki reads Claude Code or `claude-swap` credentials.
@@ -95,7 +96,7 @@ The generated app bundle is written to `.build/Toki.app`.
 
 ## Configuration
 
-Toki connects providers automatically. Every time the popover opens, it scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`), and immediately writes the right entry to `~/.toki/config.json` for anything newly signed in - no Connect button, no JSON to hand-write. This isn't just a first-run thing: starting with just Claude Code and signing into Codex (or anything else) later picks it up the next time you open the menu, with no config editing needed.
+Toki connects providers automatically. Every time the popover opens, it scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), Pi (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`). Config-backed providers are immediately written to `~/.toki/config.json`; local-only OpenCode and Pi accounts are detected fresh without adding config. There is no Connect button or JSON to hand-write. This isn't just a first-run thing: starting with just Claude Code and signing into Codex, or creating Pi session history, picks it up the next time you open the menu.
 
 Whenever `~/.toki/config.json` is missing, or exists but has no accounts yet, Toki's popover shows a **Connect an account** screen instead of an empty list while it scans. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
 
@@ -164,9 +165,9 @@ The overview shows a single AIInsightCard replacing the three separate stat bloc
 
 The settings panel controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
 
-The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2 or Terminal. For other hosts (iTerm, VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
+The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available (including Pi's local session title), otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2 or Terminal. For other hosts (iTerm, VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
 
-OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Copilot, Gemini, and Grok are agent-detection-only: Toki detects running processes locally (and, for Gemini/Grok, whether they're signed in) and shows an active-session count on their card, but does not invent quotas - none of GitHub, Google, or xAI expose a usage/quota API for these that Toki could read from.
+OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Pi is similarly auto-detected from local session history and remains one aggregated harness card even when its sessions use different underlying model providers. Copilot, Gemini, and Grok are agent-detection-only: Toki detects running processes locally (and, for Gemini/Grok, whether they're signed in) and shows an active-session count on their card, but does not invent quotas - none of GitHub, Google, or xAI expose a usage/quota API for these that Toki could read from.
 
 ### Updates and Diagnostics
 
@@ -235,6 +236,18 @@ Codex usage is separate from OpenAI organization API usage.
 
 When OpenAI has a banked rate-limit reset credit for the account, the expanded Codex card shows a **Reset now** button (with the count when more than one is banked). It stays disabled until the current window is at least 80% used, so a reset isn't spent while there's still plenty of quota left - redeeming one resets the rate-limit window immediately via the Codex app-server.
 
+## Pi Usage
+
+Pi needs no Toki account configuration. Toki reads only local Pi JSONL session metadata needed for usage and active-agent display: assistant token counts, Pi's estimated costs, session working directories, timestamps, and session titles. It does not access Pi authentication data or decode or retain prompt/message content. Usage from all underlying providers is combined into one Pi harness card.
+
+Toki discovers the session root in this order:
+
+1. `PI_CODING_AGENT_SESSION_DIR`.
+2. `sessionDir` in the global `~/.pi/agent/settings.json` (or the corresponding settings file under `PI_CODING_AGENT_DIR`).
+3. `${PI_CODING_AGENT_DIR}/sessions` (normally `~/.pi/agent/sessions`).
+
+Override paths must be absolute, exactly `~`, or begin with `~/`. Relative paths in `PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR`, or the global `settings.json` cannot be auto-resolved. Project-local `.pi/settings.json` `sessionDir` values are not globally discoverable, nor are per-invocation `--session-dir` values, so sessions stored only through either mechanism are not tracked.
+
 ## Development
 
 Common commands:
@@ -269,6 +282,7 @@ Toki keeps backwards-compatible config fallbacks for the old TokenBar name, but 
 - `No credentials found`: confirm Claude Code and `claude-swap` are authenticated and that Keychain access was allowed.
 - `Claude Code usage unavailable`: Anthropic did not return usage data for that account. Try refreshing later or check the account in Claude Code.
 - `Codex usage unavailable`: confirm `codex login` has created `~/.codex/auth.json`, then refresh Toki.
+- Pi does not appear: confirm its session directory contains JSONL history and that any global environment/settings override is absolute, exactly `~`, or begins with `~/`. Per-invocation `--session-dir` sessions are not auto-discovered.
 - Switch fails: run `claude-swap --switch-to <slot>` in Terminal to inspect the underlying error.
 - Notifications do not appear: open the Events tab to check whether DND or cooldowns suppressed delivery, then confirm macOS notification permission for Toki.
 

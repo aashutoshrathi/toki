@@ -86,7 +86,7 @@ struct OnboardingView: View {
         HStack(spacing: 6) {
             ProgressView()
                 .controlSize(.small)
-            Text("Looking for Claude Code, Codex, OpenCode…")
+            Text("Looking for supported coding agents and local usage…")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
@@ -96,7 +96,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Nothing detected yet")
                 .font(.system(size: 11, weight: .medium))
-            Text("Sign in to Claude Code or Codex, then reopen this menu - Toki will pick them up automatically.")
+            Text("Sign in to or use a supported coding agent, then reopen this menu - Toki will pick it up automatically.")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

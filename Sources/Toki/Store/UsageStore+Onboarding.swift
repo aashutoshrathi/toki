@@ -1,9 +1,29 @@
 import Foundation
 
+enum ProviderScanDisposition: Equatable {
+    case persistConnectable
+    case activateLocalUsage
+    case noAction
+}
+
+func providerScanDisposition(
+    detected: [DetectedProvider],
+    snapshotProviders: Set<Provider>,
+    configIsNil: Bool,
+    needsOnboarding: Bool
+) -> ProviderScanDisposition {
+    let newProviders = detected.filter { !snapshotProviders.contains($0.provider) }
+    if newProviders.contains(where: \.isConnectable) { return .persistConnectable }
+    if configIsNil, needsOnboarding, newProviders.contains(where: { !$0.isConnectable }) {
+        return .activateLocalUsage
+    }
+    return .noAction
+}
+
 extension UsageStore {
     // True when there's nothing to lose by showing the connect wizard: no config.json yet,
     // or one that decodes fine but simply has no accounts. A config.json that exists and
-    // decodes but is invalid for any other reason (e.g. a copilot entry) - or doesn't decode
+    // decodes but is invalid for any other reason (e.g. duplicate account ids) - or doesn't decode
     // at all - is a real error; connect() would still fail its own validate() call there, so
     // showing Connect buttons would be a dead end. Those cases fall through to the normal
     // error banner instead (config stays nil, needsOnboarding is false).
@@ -66,23 +86,43 @@ extension UsageStore {
     // detectedProviders minus anything already present in snapshots (whether connected
     // through config.json or auto-detected like OpenCode) - only ever non-empty for a
     // moment between a scan finding something and connectDetected writing it, or for
-    // providers with no makeAccount (OpenCode) that never get written at all.
+    // local-only providers with no makeAccount that never get written at all.
     var addableProviders: [DetectedProvider] {
         detectedProviders.filter { detected in !snapshots.contains(where: { $0.provider == detected.provider }) }
     }
 
-    // Auto-adds every newly detected, connectable provider - no manual "Connect" click
-    // needed. Providers with no makeAccount (OpenCode) are untouched; they're already
-    // auto-tracked without a config entry.
+    // Auto-adds newly detected connectable providers. On a fresh install with only
+    // local-history providers, installs an empty config in memory so UsageFetcher can
+    // surface its synthetic accounts without creating config.json on disk.
     private func connectDetected(_ detected: [DetectedProvider]) {
-        let newAccounts = detected.compactMap { candidate -> AccountConfig? in
-            guard candidate.isConnectable, !snapshots.contains(where: { $0.provider == candidate.provider }) else {
-                return nil
+        let snapshotProviders = Set(snapshots.map(\.provider))
+        switch providerScanDisposition(
+            detected: detected,
+            snapshotProviders: snapshotProviders,
+            configIsNil: config == nil,
+            needsOnboarding: needsOnboarding
+        ) {
+        case .persistConnectable:
+            let newAccounts = detected.compactMap { candidate -> AccountConfig? in
+                guard candidate.isConnectable, !snapshotProviders.contains(candidate.provider) else { return nil }
+                return candidate.makeAccount?()
             }
-            return candidate.makeAccount?()
+            guard !newAccounts.isEmpty else { return }
+            connect(newAccounts)
+        case .activateLocalUsage:
+            config = AppConfig(refreshMinutes: nil, accountLabels: nil, accounts: [], aiInstructions: nil)
+            setNeedsOnboarding(false)
+            configError = nil
+            // Match the successful config-load path before refresh can persist state;
+            // otherwise a configless local-only launch would overwrite saved user state
+            // with the UsageStore initializer's defaults.
+            usageState = StateLoader.load()
+            syncPublishedState()
+            scheduleRefresh()
+            refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
+        case .noAction:
+            return
         }
-        guard !newAccounts.isEmpty else { return }
-        connect(newAccounts)
     }
 
     // Appends detected accounts to config.json (creating it if this is a fresh install)

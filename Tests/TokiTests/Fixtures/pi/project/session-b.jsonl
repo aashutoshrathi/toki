@@ -1,0 +1,4 @@
+{"type":"session","id":"session-b","timestamp":"2026-07-18T11:00:00Z","cwd":"/tmp/pi-project"}
+{"type":"session_info","id":"info-b","timestamp":"2026-07-18T11:01:00Z","name":"Explicit Pi title"}
+{"type":"message","id":"assistant-1","timestamp":"2026-07-18T12:00:01Z","message":{"role":"assistant","provider":"openai","api":"responses","model":"gpt-test","timestamp":1784376000000,"usage":{"input":100,"output":20,"cacheRead":5,"cacheWrite":2,"totalTokens":127,"cost":{"total":0.12}},"stopReason":"stop"}}
+{"type":"message","id":"assistant-1","timestamp":"2026-07-18T12:00:01Z","message":{"role":"assistant","provider":"openai","api":"responses","model":"gpt-test","timestamp":1784376000000,"usage":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"total":0.02}},"stopReason":"error"}}

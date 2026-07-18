@@ -56,14 +56,19 @@ enum UsageFetcher {
         }
     }
 
-    // Appends a synthetic OpenCode account when its local database exists and the user
-    // hasn't configured one explicitly. Never persisted - detected fresh each fetch.
+    // Appends synthetic local-only accounts when readable history exists. These are never
+    // persisted and are suppressed by an explicitly configured account of the same type.
     private static func accountsIncludingAutoDetected(_ configured: [AccountConfig]) -> [AccountConfig] {
-        guard !configured.contains(where: { $0.provider == .openCode }),
-              let detected = OpenCodeUsageClient.autoDetectedAccount() else {
-            return configured
+        var accounts = configured
+        if !configured.contains(where: { $0.provider == .openCode }),
+           let detected = OpenCodeUsageClient.autoDetectedAccount() {
+            accounts.append(detected)
         }
-        return configured + [detected]
+        if !configured.contains(where: { $0.provider == .pi }),
+           let detected = PiUsageClient.autoDetectedAccount() {
+            accounts.append(detected)
+        }
+        return accounts
     }
 
     private static func snapshots(
@@ -100,6 +105,8 @@ enum UsageFetcher {
                 snapshots = [agentOnlySnapshot(for: account)]
             case .openCode:
                 snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
+            case .pi:
+                snapshots = [try await PiUsageClient(account: account).snapshot()]
             case .openai:
                 snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
             case .codex:
@@ -135,7 +142,7 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic:
             return "\(account.provider.rawValue):\(account.id)"
@@ -159,7 +166,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .manual:
             return 0
         }
     }
