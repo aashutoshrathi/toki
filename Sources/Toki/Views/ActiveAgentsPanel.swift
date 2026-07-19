@@ -56,16 +56,17 @@ struct ActiveAgentsPanel: View {
                                         Image(systemName: agent.hasTerminalTarget ? "arrow.up.forward.app" : "macwindow.on.rectangle")
                                             .foregroundStyle(Color.blue)
                                     }
-                                    .padding(8)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                                    )
+                                    // Fill the row (minus the quit button) so the whole card area is
+                                    // tappable for navigation even though its label no longer owns
+                                    // the background.
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .help(agent.hasTerminalTarget ? "Go to this terminal session" : "Open the likely host app")
 
+                                // Quit button, folded inside the card next to the open affordance
+                                // (a sibling of the navigate button, not nested in it, so clicking
+                                // it never also triggers navigation).
                                 Button {
                                     pendingTermination = agent
                                 } label: {
@@ -79,6 +80,12 @@ struct ActiveAgentsPanel: View {
                                 .accessibilityLabel("Quit this agent")
                                 .pointerOnHover()
                             }
+                            .padding(8)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                            )
                         }
                     }
                 }
