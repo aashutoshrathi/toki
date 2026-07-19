@@ -277,6 +277,26 @@ struct PiUsageClient {
         return (agentDir as NSString).appendingPathComponent("sessions")
     }
 
+    // Summed usage for a single session file (cost + tokens). Returns nil when the
+    // file has no assistant messages with usage data.
+    static func sessionUsage(path: String) -> AgentSessionUsage? {
+        var cost = 0.0
+        var input = 0
+        var output = 0
+        var hasUsage = false
+        try? forEachEntry(path: path) { entry in
+            guard entry.type == "message", let message = entry.message,
+                  message.role == "assistant", let usage = message.usage else { return true }
+            cost += number(usage.cost?.total)
+            input += Int(number(usage.input))
+            output += Int(number(usage.output))
+            hasUsage = true
+            return true
+        }
+        guard hasUsage else { return nil }
+        return AgentSessionUsage(cost: cost > 0 ? cost : nil, tokensInput: input, tokensOutput: output)
+    }
+
     static func latestSession(cwd: String?,
                               root: String? = nil,
                               environment: [String: String] = ProcessInfo.processInfo.environment,

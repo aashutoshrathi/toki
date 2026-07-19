@@ -21,6 +21,20 @@ enum AgentSessionResolver {
         }
     }
 
+    // Per-session cost and token usage, resolved from local session data when available.
+    static func sessionUsage(provider: Provider, command: String, cwd: String?) -> AgentSessionUsage? {
+        switch provider {
+        case .openCode:
+            return openCodeSessionUsage(cwd: cwd)
+        case .pi:
+            return piSessionUsage(cwd: cwd)
+        case .claudeCode, .claude, .anthropic:
+            return claudeSessionUsage(command: command, cwd: cwd)
+        default:
+            return nil
+        }
+    }
+
     // When the agent's session was last written - used to sort most-recent first.
     static func lastActivity(provider: Provider, command: String, cwd: String?) -> Date? {
         switch provider {
@@ -197,6 +211,52 @@ enum AgentSessionResolver {
               match.numberOfRanges > 1,
               let captured = Range(match.range(at: 1), in: text) else { return nil }
         return String(text[captured])
+    }
+
+    private static func openCodeSessionUsage(cwd: String?) -> AgentSessionUsage? {
+        guard let cwd else { return nil }
+        let query = """
+        SELECT cost, tokens_input, tokens_output \
+        FROM session \
+        WHERE directory='\(sqlEscaped(cwd))' \
+        ORDER BY time_updated DESC LIMIT 1;
+        """
+        guard let raw = OpenCodeUsageClient.queryValue(query),
+              !raw.isEmpty else { return nil }
+        let parts = raw.split(separator: "|", omittingEmptySubsequences: false).map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard parts.count >= 3,
+              let tokensInput = Int(parts[1]),
+              let tokensOutput = Int(parts[2]) else { return nil }
+        let cost = optionalNumber(parts[0])
+        return AgentSessionUsage(cost: cost, tokensInput: tokensInput, tokensOutput: tokensOutput)
+    }
+
+    private static func piSessionUsage(cwd: String?) -> AgentSessionUsage? {
+        guard let cwd else { return nil }
+        guard let session = PiUsageClient.latestSession(cwd: cwd) else { return nil }
+        return PiUsageClient.sessionUsage(path: session.path)
+    }
+
+    private static func claudeSessionUsage(command: String, cwd: String?) -> AgentSessionUsage? {
+        guard let file = newestClaudeSession(command: command, cwd: cwd)?.path,
+              let data = try? Data(contentsOf: URL(fileURLWithPath: file)) else { return nil }
+        var totalInput = 0
+        var totalOutput = 0
+        for lineBytes in data.split(separator: 0x0A) {
+            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
+                  json["type"] as? String == "assistant",
+                  let message = json["message"] as? [String: Any],
+                  let usage = message["usage"] as? [String: Any] else { continue }
+            totalInput += (usage["input_tokens"] as? Int) ?? 0
+            totalOutput += (usage["output_tokens"] as? Int) ?? 0
+        }
+        guard totalInput > 0 || totalOutput > 0 else { return nil }
+        return AgentSessionUsage(cost: nil, tokensInput: totalInput, tokensOutput: totalOutput)
+    }
+
+    private static func optionalNumber(_ raw: String) -> Double? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : Double(trimmed)
     }
 }
 

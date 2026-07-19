@@ -51,6 +51,12 @@ struct ActiveAgentsPanel: View {
                                                 .font(.system(size: 9))
                                                 .foregroundStyle(.tertiary)
                                                 .lineLimit(1)
+                                            if let usageLine = agent.sessionUsage?.displayLine {
+                                                Text(usageLine)
+                                                    .font(.system(size: 9))
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            }
                                         }
                                         Spacer()
                                         Image(systemName: agent.hasTerminalTarget ? "arrow.up.forward.app" : "macwindow.on.rectangle")

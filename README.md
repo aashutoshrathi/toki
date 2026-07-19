@@ -35,7 +35,7 @@ Toki stays local. Credentials are read from your Mac, your configured commands, 
 
 - Live quota and rate-limit tracking for Claude Code (multi-account via `claude-swap`, with discovery, one-click switching, and Keychain credential lookup) and Codex, plus local token and spend tracking for OpenCode and Pi. Pi usage comes from local session history and shows tokens plus estimated costs.
 - One-click redemption of banked Codex rate-limit reset credits, gated to when the current window is mostly used.
-- Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app.
+- Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app. Each agent card shows per-session cost and token usage when available (OpenCode, Pi, and Claude Code).
 - AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch. Custom instructions get their own Settings page and take priority over the default tone/format.
 - Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
 - Session mode for tracking quota burn during a focused coding run.
@@ -164,7 +164,7 @@ The overview shows a single AIInsightCard in place of the old Use/Status/Session
 
 The settings panel controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND suppresses delivery but still records events so you can audit what would have fired.
 
-The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available (including Pi's local session title), otherwise the project folder name (`~/Code/project`). Clicking an agent with a terminal TTY selects its tab in iTerm2 or Terminal; other hosts (VS Code, Cursor, ChatGPT) are activated via bundle ID.
+The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available (including Pi's local session title), otherwise the project folder name (`~/Code/project`). OpenCode, Pi, and Claude Code agents also display the session's running cost and token counts directly on their card. Clicking an agent with a terminal TTY selects its tab in iTerm2 or Terminal; other hosts (VS Code, Cursor, ChatGPT) are activated via bundle ID.
 
 OpenCode and Pi are auto-detected from local storage and surfaced as accounts (Pi stays one aggregated card even across different underlying model providers). Copilot, Gemini, and Grok are agent-detection-only: Toki shows a local active-session count (and, for Gemini/Grok, sign-in state) but invents no quota, since none of GitHub, Google, or xAI expose a usage API for them.
 

@@ -40,7 +40,7 @@ struct ConfigEditor: View {
                     Button {
                         save()
                     } label: {
-                        Image(systemName: saved ? "checkmark" : "square.and.arrow.down")
+                        Image(systemName: saved ? "checkmark" : "arrow.down.doc")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(saved ? Color.green : Color.blue)
                             .frame(width: 25, height: 25)

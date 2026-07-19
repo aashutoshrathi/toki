@@ -69,7 +69,7 @@ struct AIInstructionsEditor: View {
                 Button {
                     persist(text)
                 } label: {
-                    Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+                    Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "arrow.down.doc")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

@@ -1,6 +1,28 @@
 import AppKit
 import Foundation
 
+struct AgentSessionUsage: Hashable, Sendable {
+    let cost: Double?
+    let tokensInput: Int
+    let tokensOutput: Int
+
+    var displayCost: String? {
+        cost.map { formatUSD($0) }
+    }
+
+    var displayTokens: String {
+        "\(formatCompact(Double(tokensInput))) in / \(formatCompact(Double(tokensOutput))) out"
+    }
+
+    var displayLine: String? {
+        guard tokensInput > 0 || tokensOutput > 0 else { return cost.map { formatUSD($0) } }
+        if let costStr = displayCost {
+            return "\(costStr) • \(displayTokens)"
+        }
+        return displayTokens
+    }
+}
+
 struct ActiveAgent: Identifiable, Hashable, Sendable {
     let id: Int32
     let provider: Provider
@@ -17,6 +39,8 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     // The full command line at scan time - kept only so ActiveAgentTerminator can confirm
     // the PID still refers to this same process immediately before signalling it.
     let command: String
+    // Per-session cost and token usage, resolved from local session data when available.
+    let sessionUsage: AgentSessionUsage?
 
     // Primary label: the conversation title, else the project folder, else the provider.
     var title: String {
@@ -180,7 +204,8 @@ enum ActiveAgentScanner {
             runtime: c.runtime,
             terminalTTY: c.tty,
             memoryKB: c.memoryKB,
-            command: c.command
+            command: c.command,
+            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd)
         )
         cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp)
         return agent
