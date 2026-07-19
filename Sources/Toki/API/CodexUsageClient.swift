@@ -167,10 +167,10 @@ enum CodexAppServerClient {
         }
 
         // No structured JSON-RPC error and no results usually means codex itself failed
-        // before speaking JSON-RPC (missing binary, permission error, crash) - surface that
-        // raw line instead of only the generic "did not return" fallback callers use.
+        // before speaking JSON-RPC (missing binary, permission error, crash) - surface a
+        // sanitized snippet instead of the raw line (which could contain paths or system info).
         if errors.isEmpty, results.isEmpty, let firstUnparsed = unparsedLines.first {
-            errors.append(firstUnparsed)
+            errors.append(String(firstUnparsed.prefix(200)))
         }
 
         return (results, errors)

@@ -70,8 +70,7 @@ enum StatusCacheStore {
             let url = URL(fileURLWithPath: writePath)
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let data = try JSONEncoder.toki.encode(cache)
-                try data.write(to: url, options: .atomic)
+                try SecureStore.write(data: JSONEncoder.toki.encode(cache), to: url)
             } catch {
                 DiagnosticLogger.shared.record(.error, component: "status_cache", code: "save_failed", detail: diagnosticErrorDetail(error))
             }

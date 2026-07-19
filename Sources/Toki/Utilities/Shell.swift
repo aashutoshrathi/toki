@@ -5,13 +5,24 @@ func shellEscaped(_ value: String) -> String {
 }
 
 func expandedPath(_ rawPath: String) -> String {
-    if rawPath == "~" { return FileManager.default.homeDirectoryForCurrentUser.path }
-    if rawPath.hasPrefix("~/") {
-        return FileManager.default.homeDirectoryForCurrentUser
+    let path: String
+    if rawPath == "~" { path = FileManager.default.homeDirectoryForCurrentUser.path }
+    else if rawPath.hasPrefix("~/") {
+        path = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(String(rawPath.dropFirst(2)))
             .path
+    } else {
+        path = rawPath
     }
-    return rawPath
+    return (path as NSString).standardizingPath
+}
+
+enum SecureStore {
+    static func write(data: Data, to url: URL) throws {
+        let resolved = url.resolvingSymlinksInPath()
+        try data.write(to: resolved, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: resolved.path)
+    }
 }
 
 // Single place to run a subprocess and capture stdout. Reads the output pipe BEFORE

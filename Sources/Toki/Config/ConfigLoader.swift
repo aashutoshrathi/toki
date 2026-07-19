@@ -22,7 +22,7 @@ enum ConfigLoader {
     static func load() throws -> AppConfig {
         let path = Self.path
         guard FileManager.default.fileExists(atPath: path) else {
-            throw LocalizedErrorMessage("Missing config at \(path)")
+            throw LocalizedErrorMessage("Config file not found")
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let config = try JSONDecoder().decode(AppConfig.self, from: data)
@@ -72,10 +72,9 @@ enum ConfigLoader {
         do {
             // Preserve only the FIRST original; a later spurious trigger must not clobber it.
             if !FileManager.default.fileExists(atPath: backupPath) {
-                try rawData.write(to: URL(fileURLWithPath: backupPath), options: .atomic)
+                try SecureStore.write(data: rawData, to: URL(fileURLWithPath: backupPath))
             }
-            let migrated = try JSONEncoder.toki.encode(config)
-            try migrated.write(to: URL(fileURLWithPath: path), options: .atomic)
+            try SecureStore.write(data: JSONEncoder.toki.encode(config), to: URL(fileURLWithPath: path))
             DiagnosticLogger.shared.record(.info, component: "config", code: "migrated_flat_shape")
         } catch {
             DiagnosticLogger.shared.record(.warning, component: "config", code: "migration_failed", detail: diagnosticErrorDetail(error))
@@ -96,8 +95,7 @@ enum ConfigLoader {
     static func save(_ config: AppConfig) throws {
         let url = URL(fileURLWithPath: path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try JSONEncoder.toki.encode(config)
-        try data.write(to: url, options: .atomic)
+        try SecureStore.write(data: JSONEncoder.toki.encode(config), to: url)
     }
 
     static func openInDefaultEditor() {
@@ -118,6 +116,6 @@ enum ConfigLoader {
         try validate(config)
         let fileURL = URL(fileURLWithPath: path)
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: fileURL, options: .atomic)
+        try SecureStore.write(data: data, to: fileURL)
     }
 }

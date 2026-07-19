@@ -24,13 +24,28 @@ enum SecretResolver {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         try process.run()
-        // Drain both pipes before waiting to avoid a full-buffer deadlock.
+        // Timeout after 15 seconds to prevent hung processes from blocking Toki.
+        let deadline = DispatchTime.now() + 15
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async {
+            process.waitUntilExit()
+            group.leave()
+        }
+        let exited = group.wait(timeout: deadline) == .success
+        if !exited {
+            process.terminate()
+            // Drain pipes so the terminated process doesn't leave us stuck.
+            _ = try? outputPipe.fileHandleForReading.readToEnd()
+            _ = try? errorPipe.fileHandleForReading.readToEnd()
+            throw LocalizedErrorMessage("API key command timed out")
+        }
+        // Drain both pipes to avoid a full-buffer deadlock.
         let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         let error = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let message = error.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw LocalizedErrorMessage(message.isEmpty ? "Command failed: \(command)" : message)
+            throw LocalizedErrorMessage(message.isEmpty ? "API key command failed" : message)
         }
         return output
     }
