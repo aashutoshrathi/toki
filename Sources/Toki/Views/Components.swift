@@ -333,7 +333,7 @@ struct MetricRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(metric.label)
                     .foregroundStyle(.secondary)
-                    .frame(width: 52, alignment: .leading)
+                    .frame(width: 90, alignment: .leading)
                     .lineLimit(1)
                 Text(copied ? "Copied" : metric.value)
                     .frame(maxWidth: .infinity, alignment: .trailing)
