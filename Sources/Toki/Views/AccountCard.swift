@@ -335,6 +335,22 @@ struct AccountCard: View {
             Text(accountAgents.isEmpty ? "Not running" : "Active")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(accountAgents.isEmpty ? Color.secondary : Color.blue)
+        } else if snapshot.remainingRatio == nil {
+            // Cost-based providers (Pi, OpenCode) have no quota percentage - show
+            // today's spend prominently, with token counts on a second line.
+            VStack(alignment: .trailing, spacing: 2) {
+                if let bar = snapshot.menuBarValue {
+                    Text(bar)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                if let todayMetric = snapshot.metrics.first(where: { $0.label == "Today" }) {
+                    Text(todayMetric.value)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
         } else if snapshot.provider == .codex, !codexWindows.isEmpty {
             // Codex carries two independent quota windows (5h + weekly) instead of Claude's
             // single rolling one, so it gets its own summary instead of the generic fallback

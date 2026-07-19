@@ -72,10 +72,10 @@ func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode =
     case .lowest:
         return lowestMenuBarEntries(for: snapshots)
     case .activeClaude:
-        return snapshots.first { $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError }
+        return snapshots.first { $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError && ($0.remainingRatio ?? 1) > 0 }
             .map { [menuBarEntry(for: $0)] } ?? []
     case .codex:
-        return snapshots.first { $0.provider == .codex && !$0.isError }
+        return snapshots.first { $0.provider == .codex && !$0.isError && ($0.remainingRatio ?? 1) > 0 }
             .map { [menuBarEntry(for: $0)] } ?? []
     case .combined:
         return smartMenuBarEntries(for: snapshots)
@@ -86,13 +86,13 @@ func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode =
 
 private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
     let activeClaude = snapshots.first {
-        $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError
+        $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError && ($0.remainingRatio ?? 1) > 0
     }
     let fallbackClaude = snapshots.first {
-        $0.provider.isClaudeAccount && !$0.isError
+        $0.provider.isClaudeAccount && !$0.isError && ($0.remainingRatio ?? 1) > 0
     }
     let codex = snapshots.first {
-        $0.provider == .codex && !$0.isError
+        $0.provider == .codex && !$0.isError && ($0.remainingRatio ?? 1) > 0
     }
 
     let quotaSegments = [activeClaude ?? fallbackClaude, codex].compactMap { $0 }
@@ -114,7 +114,7 @@ private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarSt
 
 private func lowestMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
     snapshots
-        .filter { !$0.isError && $0.remainingRatio != nil }
+        .filter { !$0.isError && $0.remainingRatio != nil && ($0.remainingRatio ?? 0) > 0 }
         .min { ($0.remainingRatio ?? 1) < ($1.remainingRatio ?? 1) }
         .map { [menuBarEntry(for: $0)] } ?? []
 }

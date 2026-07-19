@@ -46,7 +46,8 @@ struct OpenCodeUsageClient {
             subtitle: "OpenCode - local usage",
             remainingRatio: nil,
             metrics: metrics,
-            isError: false
+            isError: false,
+            menuBarValue: formatUSD(todayCost)
         )
     }
 

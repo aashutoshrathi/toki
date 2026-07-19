@@ -259,11 +259,27 @@ struct MenuContentView: View {
         }
     }
 
+    // Active accounts first, then exhausted (0% remaining), then errored/not connected.
+    private var sortedSnapshots: [AccountSnapshot] {
+        store.snapshots.sorted { a, b in
+            let aPriority = accountSortPriority(a)
+            let bPriority = accountSortPriority(b)
+            if aPriority != bPriority { return aPriority < bPriority }
+            return false // stable within groups
+        }
+    }
+
+    private func accountSortPriority(_ snapshot: AccountSnapshot) -> Int {
+        if snapshot.isError { return 2 }
+        if let ratio = snapshot.remainingRatio, ratio <= 0 { return 1 }
+        return 0
+    }
+
     private var accountList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(store.snapshots) { snapshot in
+                    ForEach(sortedSnapshots) { snapshot in
                         AccountCard(snapshot: snapshot, store: store) { id in
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                                 withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
