@@ -19,9 +19,18 @@
   <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away.
 </p>
 
-<p align="center">
-  <img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="420">
-</p>
+<table>
+  <tr><th>Menu bar</th><th>CLI</th></tr>
+  <tr>
+    <td><img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="420"></td>
+    <td>
+      <pre lang="text">Claude San: 85% left
+Codex: 0% left
+OpenCode: No usage today
+Pi: $0.01 today</pre>
+    </td>
+  </tr>
+</table>
 
 ## Why Toki
 
