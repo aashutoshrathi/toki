@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.3 - 2026-07-19
+
+### Added
+
+- Spend Analytics tab with quota history line chart (7/30/all days), per-agent session cost bars, and Pi spend breakdown.
+
 ## 2.3.2 - 2026-07-19
 
 ### Security

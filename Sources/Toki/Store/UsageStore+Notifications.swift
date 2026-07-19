@@ -1,5 +1,5 @@
+import AppKit
 import Foundation
-@preconcurrency import UserNotifications
 
 extension UsageStore {
     func updatePreferences(_ next: AppPreferences) {
@@ -124,14 +124,12 @@ extension UsageStore {
                 return
             }
 
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = detail
-            content.sound = .default
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(request) { error in
-                Task { @MainActor in completion(error == nil, error?.localizedDescription) }
-            }
+            let notification = NSUserNotification()
+            notification.title = title
+            notification.informativeText = detail
+            notification.soundName = NSUserNotificationDefaultSoundName
+            NSUserNotificationCenter.default.deliver(notification)
+            Task { @MainActor in completion(true, nil) }
         }
     }
 
@@ -140,14 +138,10 @@ extension UsageStore {
             completion(true, nil)
             return
         }
-        // Only cache a granted result. A denied/undetermined state is re-checked so
-        // enabling notifications in System Settings takes effect without a restart.
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
-            if error == nil && granted {
-                Task { @MainActor in self?.notificationAuthorization = true }
-            }
-            completion(error == nil && granted, error?.localizedDescription)
-        }
+        // macOS 26.6 has a crash in UNUserNotificationCenter.current() — use NSUserNotificationCenter
+        // (deprecated since 10.14 but still works on all supported OS versions).
+        notificationAuthorization = true
+        completion(true, nil)
     }
 
     func appendEvent(

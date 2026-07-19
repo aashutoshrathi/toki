@@ -10,6 +10,7 @@ struct MenuContentView: View {
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
         case agents = "Agents"
+        case analytics = "Analytics"
         case events = "Events"
 
         var id: String { rawValue }
@@ -19,6 +20,7 @@ struct MenuContentView: View {
             case .accounts: return "person.crop.circle"
             case .events: return "bell.badge"
             case .agents: return "terminal"
+            case .analytics: return "chart.bar.xaxis"
             }
         }
     }
@@ -248,10 +250,12 @@ struct MenuContentView: View {
         switch selectedTab {
         case .accounts:
             accountList
-        case .events:
-            EventPanel(store: store)
         case .agents:
             ActiveAgentsPanel(store: store)
+        case .analytics:
+            SpendAnalyticsPanel(store: store)
+        case .events:
+            EventPanel(store: store)
         }
     }
 
