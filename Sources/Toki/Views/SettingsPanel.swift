@@ -176,7 +176,7 @@ struct SettingsPanel: View {
                             Text("Checked")
                                 .foregroundStyle(.secondary)
                         } else {
-                            Text("Checks automatically every 6 hours")
+                            Text("Checks automatically every 5 minutes")
                                 .foregroundStyle(.secondary)
                         }
                     }

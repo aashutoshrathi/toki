@@ -198,7 +198,7 @@ final class UpdateChecker: ObservableObject {
 
 private let dismissedVersionKey = "dismissedUpdateVersion"
 private let lastUpdateCheckKey = "lastUpdateCheckAt"
-private let updateCheckInterval: TimeInterval = 6 * 60 * 60
+private let updateCheckInterval: TimeInterval = 5 * 60
 
 private func normalizedVersion(_ value: String) -> String {
     var version = value.trimmingCharacters(in: .whitespacesAndNewlines)
