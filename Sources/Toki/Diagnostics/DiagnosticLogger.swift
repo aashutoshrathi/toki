@@ -83,6 +83,7 @@ final class DiagnosticLogger: @unchecked Sendable {
         result = result.replacingOccurrences(of: home, with: "~")
         result = replacingMatches(in: result, pattern: #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#, with: "<redacted-email>")
         result = replacingMatches(in: result, pattern: #"(?i)(bearer|token|secret|api[_-]?key|password)\s*[:=]?\s*[^\s,;]+"#, with: "$1=<redacted>")
+        result = replacingMatches(in: result, pattern: #"(?i)\b(sk-[A-Za-z0-9]{20,}|[A-Za-z0-9+/]{40,}={0,2})\b"#, with: "<redacted-credential>")
         result = replacingMatches(in: result, pattern: #"https?://[^\s?#]+[?][^\s]+"#, with: "<redacted-url-query>")
         result = replacingMatches(in: result, pattern: #"\b[0-9a-fA-F]{24,}\b"#, with: "<redacted-id>")
         return String(result.prefix(500))
@@ -138,7 +139,7 @@ enum DiagnosticsReporter {
     private static func makeReport() throws -> URL {
         DiagnosticLogger.shared.flush()
         let reportURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Toki-Debug-Report-\(Int(Date().timeIntervalSince1970)).txt")
+            .appendingPathComponent("Toki-Debug-Report-\(UUID().uuidString).txt")
         var report = """
         Toki debug report
         App version: \(appVersion)
@@ -156,7 +157,7 @@ enum DiagnosticsReporter {
         } else {
             report += "\nNo diagnostic entries.\n"
         }
-        try Data(report.utf8).write(to: reportURL, options: .atomic)
+        try SecureStore.write(data: Data(report.utf8), to: reportURL)
         return reportURL
     }
 

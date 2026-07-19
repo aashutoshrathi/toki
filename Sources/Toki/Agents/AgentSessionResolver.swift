@@ -84,8 +84,8 @@ enum AgentSessionResolver {
     }
 
     private static func openCodeLastActivity(cwd: String?) -> Date? {
-        guard let cwd else { return nil }
-        let query = "SELECT MAX(time_updated) FROM session WHERE directory='\(sqlEscaped(cwd))';"
+        guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
+        let query = "SELECT MAX(time_updated) FROM session WHERE directory='\(safe)';"
         guard let raw = OpenCodeUsageClient.queryValue(query), let ms = Double(raw), ms > 0 else { return nil }
         return Date(timeIntervalSince1970: ms / 1000)
     }
@@ -137,8 +137,8 @@ enum AgentSessionResolver {
     }
 
     private static func openCodeChatTitle(cwd: String?) -> String? {
-        guard let cwd else { return nil }
-        let query = "SELECT title FROM session WHERE directory='\(sqlEscaped(cwd))' AND title != '' ORDER BY time_updated DESC LIMIT 1;"
+        guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
+        let query = "SELECT title FROM session WHERE directory='\(safe)' AND title != '' ORDER BY time_updated DESC LIMIT 1;"
         return OpenCodeUsageClient.queryValue(query)
     }
 
@@ -191,8 +191,9 @@ enum AgentSessionResolver {
         (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
     }
 
-    private static func sqlEscaped(_ value: String) -> String {
-        value.replacingOccurrences(of: "'", with: "''")
+    private static func safeSQLPath(_ value: String) -> String? {
+        guard value.hasPrefix("/"), !value.contains("'") else { return nil }
+        return value
     }
 
     private nonisolated(unsafe) static var regexCache: [String: NSRegularExpression] = [:]
@@ -214,11 +215,11 @@ enum AgentSessionResolver {
     }
 
     private static func openCodeSessionUsage(cwd: String?) -> AgentSessionUsage? {
-        guard let cwd else { return nil }
+        guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
         let query = """
         SELECT cost, tokens_input, tokens_output \
         FROM session \
-        WHERE directory='\(sqlEscaped(cwd))' \
+        WHERE directory='\(safe)' \
         ORDER BY time_updated DESC LIMIT 1;
         """
         guard let raw = OpenCodeUsageClient.queryValue(query),

@@ -37,8 +37,7 @@ enum StateLoader {
         let url = URL(fileURLWithPath: path)
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try JSONEncoder.toki.encode(state)
-            try data.write(to: url, options: .atomic)
+            try SecureStore.write(data: JSONEncoder.toki.encode(state), to: url)
         } catch {
             DiagnosticLogger.shared.record(.error, component: "state", code: "save_failed", detail: diagnosticErrorDetail(error))
         }

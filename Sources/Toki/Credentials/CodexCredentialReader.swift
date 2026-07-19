@@ -14,7 +14,7 @@ enum CodexCredentialReader {
 
         let path = expandedPath(account.codexAuthPath ?? "~/.codex/auth.json")
         guard FileManager.default.fileExists(atPath: path) else {
-            throw LocalizedErrorMessage("Missing Codex auth at \(path)")
+            throw LocalizedErrorMessage("Codex auth file not found")
         }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))

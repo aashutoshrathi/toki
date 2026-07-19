@@ -394,14 +394,17 @@ struct PiUsageClient {
         }
         var enumerationFailed = false
         guard let enumerator = FileManager.default.enumerator(
-            at: URL(fileURLWithPath: root), includingPropertiesForKeys: [.isRegularFileKey],
+            at: URL(fileURLWithPath: root), includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
             errorHandler: { _, _ in enumerationFailed = true; return false }
         ) else { throw LocalizedErrorMessage("Unable to read Pi session history") }
         let files: [String]
         do {
             files = try enumerator.compactMap { item -> String? in
-                guard let url = item as? URL, url.pathExtension.lowercased() == "jsonl",
-                      try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { return nil }
+                guard let url = item as? URL,
+                      url.pathExtension.lowercased() == "jsonl",
+                      try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true,
+                      !(try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true)
+                else { return nil }
                 return url.path
             }.sorted()
         } catch { throw LocalizedErrorMessage("Unable to read Pi session history") }
