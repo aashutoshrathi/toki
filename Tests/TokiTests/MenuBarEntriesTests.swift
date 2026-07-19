@@ -32,7 +32,9 @@ final class MenuBarEntriesTests: XCTestCase {
         XCTAssertEqual(entries.first?.value, "$1.20")
     }
 
-    func testCostSegmentTrailsQuotaSegments() {
+    // Smart mode caps at two segments: two quota providers fill both slots, so a cost provider
+    // is dropped rather than widening the status item to a size macOS might hide entirely.
+    func testSmartModeCapsAtTwoSegmentsAndDropsCostWhenQuotaFillsBoth() {
         let entries = menuBarEntries(
             for: [
                 snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
@@ -41,7 +43,19 @@ final class MenuBarEntriesTests: XCTestCase {
             ],
             mode: .smart
         )
-        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex, .pi])
+        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex])
+    }
+
+    // With only one quota provider, the cost provider fills the remaining slot.
+    func testCostSegmentFillsRemainingSlot() {
+        let entries = menuBarEntries(
+            for: [
+                snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
+                snapshot(id: "pi", provider: .pi, menuBarValue: "$0.40")
+            ],
+            mode: .smart
+        )
+        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .pi])
         XCTAssertEqual(entries.last?.value, "$0.40")
     }
 

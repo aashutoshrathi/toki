@@ -95,12 +95,19 @@ private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarSt
         $0.provider == .codex && !$0.isError
     }
 
+    let quotaSegments = [activeClaude ?? fallbackClaude, codex].compactMap { $0 }
+
     // Cost-based providers (Pi) have no quota percentage, so they're never picked as the
     // Claude/Codex quota segments above and would otherwise be invisible in the menu bar - even
-    // for a Pi-only user, who'd be left staring at the "-- / --" placeholder. Append their
-    // compact spend value after the quota segments so they always surface.
+    // for a Pi-only user, who'd be left staring at the "-- / --" placeholder.
     let costSegments = snapshots.filter { !$0.isError && $0.remainingRatio == nil && $0.menuBarValue != nil }
-    let segments = [activeClaude ?? fallbackClaude, codex].compactMap { $0 } + costSegments
+
+    // Hard-cap Smart mode at two segments. The status item's width grows with each segment, and
+    // a too-wide item is silently dropped by macOS on a crowded or notched menu bar - so a third
+    // (cost) segment could make the whole icon vanish. Quota providers take priority; a cost
+    // provider only fills a remaining slot, so a Pi-only user still sees Pi while a
+    // Claude+Codex+Pi user stays at two.
+    let segments = Array((quotaSegments + costSegments).prefix(2))
 
     return segments.map(menuBarEntry)
 }
