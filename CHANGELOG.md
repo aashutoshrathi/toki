@@ -18,6 +18,12 @@
 - `CodexUsageClient` unparsed output truncated to 200 characters.
 - Keychain access retained via `security` CLI (reverted from `SecItemCopyMatching` which requires code-signing entitlements for unsandboxed binaries).
 
+### Changed
+
+- README reorganized — Install sections moved above Requirements and Features.
+- README header now has downloads and stars badges.
+- README hero section replaced with a split table showing the menu bar screenshot alongside a `toki status` CLI output sample.
+
 ## 2.3.1 - 2026-07-19
 
 ### Added
