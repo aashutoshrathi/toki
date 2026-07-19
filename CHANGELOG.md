@@ -15,7 +15,7 @@
 
 ### Fixed
 
-- The popover could still open pinned to the top-left corner of the screen when the menu bar is set to auto-hide (or the status item is otherwise mid-reveal): the item's button exists and its local `bounds` are non-empty, so the previous `bounds.isEmpty` fallback never triggered, but the button's *window* has no valid on-screen position yet, and NSPopover falls back to the screen origin. Toki now checks the button's actual screen position (converting its bounds to screen coordinates and confirming they land on a connected display) and briefly retries until the status item settles before anchoring, falling back to a synthetic rect only as a last resort.
+- The popover could still open pinned to the top-left corner of the screen when the menu bar is set to auto-hide, when the status item is mid-reveal, or when the item is hidden behind the notch / collapsed into the overflow menu: the button exists and its local `bounds` are non-empty, so the previous `bounds.isEmpty` fallback never triggered, but the button's *window* has no valid on-screen position, and NSPopover falls back to the screen origin. Toki now checks the button's actual screen position (converting its bounds to screen coordinates and confirming they land on a connected display) and briefly retries until the status item settles before anchoring. When it never settles - the notch/overflow case, where retrying can't help because the item has no reachable position at all - the popover anchors to a transient 1x1 window parked just under the menu bar (on the screen under the pointer), so it opens near the top center instead of the corner. That anchor window is click-through and is torn down as soon as the popover closes.
 
 ## 2.3.0 - 2026-07-18
 

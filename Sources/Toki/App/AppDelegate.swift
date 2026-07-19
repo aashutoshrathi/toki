@@ -86,23 +86,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // Shows the popover only once the status item's button reports a real position on a screen.
     // While the menu bar is hidden/animating the button exists (so bounds are non-empty) but its
     // window isn't placed on any screen yet, which is exactly when NSPopover would pin to the
-    // top-left. We back off a few runloop ticks waiting for that to resolve, then fall back to a
-    // synthetic anchor rather than never opening.
+    // top-left. We back off a few runloop ticks waiting for that to resolve; if it never does
+    // (the item is hidden behind the notch or collapsed in the overflow menu), we anchor to a
+    // transient top-of-screen window instead of the corner.
     private func presentPopover(retriesRemaining: Int) {
         DispatchQueue.main.async { [weak self] in
             guard let self, let button = self.statusItem.button else { return }
-            if self.hasValidScreenPosition(button) || retriesRemaining <= 0 {
-                let anchorRect = button.bounds.isEmpty
-                    ? NSRect(x: 0, y: 0, width: self.statusItem.length, height: NSStatusBar.system.thickness)
-                    : button.bounds
-                self.popover.show(relativeTo: anchorRect, of: button, preferredEdge: .minY)
+            if self.hasValidScreenPosition(button) {
+                self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 self.popover.contentViewController?.view.window?.makeKey()
-            } else {
+            } else if retriesRemaining > 0 {
                 // 40ms is long enough to let a menu-bar reveal animation advance without the
                 // click feeling laggy across the handful of retries.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
                     self?.presentPopover(retriesRemaining: retriesRemaining - 1)
                 }
+            } else {
+                self.showFallbackPopover()
             }
         }
     }
@@ -115,5 +115,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let screenRect = window.convertToScreen(button.convert(button.bounds, to: nil))
         guard screenRect.width > 0, screenRect.height > 0 else { return false }
         return NSScreen.screens.contains { $0.frame.intersects(screenRect) }
+    }
+
+    // A 1x1 transparent, click-through window we park just under the menu bar so the popover
+    // always has something on-screen to anchor to. Only used when the status item itself has no
+    // reachable position (hidden behind the notch, or collapsed into the overflow menu) - the
+    // normal path anchors directly to the button. Ordered out again when the popover closes.
+    private lazy var fallbackAnchorWindow: NSWindow = {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: .borderless, backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.level = .statusBar
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        return window
+    }()
+
+    private func showFallbackPopover() {
+        // Prefer the screen under the pointer (where the user just clicked toward the menu bar),
+        // falling back to the main screen, so multi-display setups anchor on the right one.
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen, let anchorView = fallbackAnchorWindow.contentView else { return }
+
+        // Park just below the menu bar, horizontally centered on that screen.
+        let origin = NSPoint(x: screen.frame.midX, y: screen.visibleFrame.maxY - 1)
+        fallbackAnchorWindow.setFrame(NSRect(origin: origin, size: NSSize(width: 1, height: 1)), display: false)
+        fallbackAnchorWindow.orderFrontRegardless()
+
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        DiagnosticLogger.shared.record(.warning, component: "app", code: "popover_fallback_anchor")
+    }
+
+    // Tear the transient anchor window back down once the popover dismisses, so it never lingers
+    // invisibly on screen. Harmless on the normal path, where the window was never ordered in.
+    func popoverDidClose(_ notification: Notification) {
+        fallbackAnchorWindow.orderOut(nil)
     }
 }
