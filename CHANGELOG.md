@@ -4,11 +4,19 @@
 
 ### Security
 
-- Audited all network calls for certificate validation, TLS requirements, and potential SSRF vectors.
-- Reviewed file-system access patterns for path traversal, symlink following, and unsafe permissions.
-- Checked shell command construction for injection vulnerabilities.
-- Examined Keychain access, credential storage, and data-leakage surfaces.
-- Validated update mechanism integrity and code-signing checks.
+- Config, state, cache, and debug-report files now written with `0o600` permissions via new `SecureStore.write()` helper.
+- `SecretResolver.runShell()` hardened with 15-second timeout, concurrent pipe reads (deadlock-safe), and generic error messages — no command or path leakage on failure.
+- `CodexUsageClient.call()` raw output in errors truncated to 200 characters.
+- `FileManager.enumerator` in `PiUsageClient` now filters symbolic links.
+- Log redaction extended with patterns for `sk-` prefixed tokens and base64-like credential strings.
+- `expandedPath()` now calls `standardizingPath` to resolve `..` traversal in env-var path overrides.
+- `SecureStore.write()` resolves symlinks before writing (prevents atomic-write symlink following).
+- `safeSQLPath()` validates absolute paths and rejects single quotes before SQL interpolation in agent session queries.
+- `HTTPClient.requestJSON()` debug log no longer includes response body preview; error body truncated to 200 chars.
+- Debug report filenames use `UUID().uuidString` instead of predictable timestamps.
+- Config and Codex auth errors use generic messages instead of leaking full file paths.
+- `CodexUsageClient` unparsed output truncated to 200 characters.
+- Keychain access retained via `security` CLI (reverted from `SecItemCopyMatching` which requires code-signing entitlements for unsandboxed binaries).
 
 ## 2.3.1 - 2026-07-19
 
