@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.2 - 2026-07-19
+
+### Security
+
+- Audited all network calls for certificate validation, TLS requirements, and potential SSRF vectors.
+- Reviewed file-system access patterns for path traversal, symlink following, and unsafe permissions.
+- Checked shell command construction for injection vulnerabilities.
+- Examined Keychain access, credential storage, and data-leakage surfaces.
+- Validated update mechanism integrity and code-signing checks.
+
 ## 2.3.1 - 2026-07-19
 
 ### Added
