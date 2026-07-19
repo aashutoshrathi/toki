@@ -7,6 +7,7 @@ struct AccountCard: View {
     @State private var isExpanded = false
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
+    @FocusState private var aliasFocused: Bool
     @State private var expandedTab: ExpandedTab
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
@@ -273,6 +274,7 @@ struct AccountCard: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13, weight: .semibold))
                     .frame(width: 120)
+                    .focused($aliasFocused)
                     .onSubmit(saveAlias)
                 Button {
                     saveAlias()
@@ -291,6 +293,7 @@ struct AccountCard: View {
                 Button {
                     aliasDraft = accountIdentifier
                     isEditingAlias = true
+                    aliasFocused = true
                 } label: {
                     Image(systemName: "pencil")
                         .font(.system(size: 10, weight: .semibold))

@@ -29,6 +29,8 @@ struct PlainTextEditor: NSViewRepresentable {
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
+        context.coordinator.textView = textView
+
         let scrollView = NSScrollView()
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = false
@@ -37,8 +39,11 @@ struct PlainTextEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView, textView.string != text else { return }
-        textView.string = text
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+        context.coordinator.textView = textView
     }
 
     func makeCoordinator() -> Coordinator {
@@ -47,6 +52,7 @@ struct PlainTextEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        weak var textView: NSTextView?
 
         init(text: Binding<String>) {
             self.text = text
@@ -55,6 +61,10 @@ struct PlainTextEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
+        }
+
+        @MainActor @objc func selectAll(_ sender: Any?) {
+            textView?.selectAll(sender)
         }
     }
 }

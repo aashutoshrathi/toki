@@ -25,6 +25,8 @@ struct JSONTextEditor: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         Coordinator.applyHighlighting(to: textView.textStorage!, font: font)
 
+        context.coordinator.textView = textView
+
         let scrollView = NSScrollView()
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
@@ -34,9 +36,12 @@ struct JSONTextEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView, textView.string != text else { return }
-        textView.string = text
-        Coordinator.applyHighlighting(to: textView.textStorage!, font: font)
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+            Coordinator.applyHighlighting(to: textView.textStorage!, font: font)
+        }
+        context.coordinator.textView = textView
     }
 
     func makeCoordinator() -> Coordinator {
@@ -45,6 +50,7 @@ struct JSONTextEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        weak var textView: NSTextView?
 
         init(text: Binding<String>) {
             self.text = text
@@ -54,6 +60,10 @@ struct JSONTextEditor: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
             Coordinator.applyHighlighting(to: textView.textStorage!, font: textView.font ?? .monospacedSystemFont(ofSize: 10, weight: .regular))
+        }
+
+        @MainActor @objc func selectAll(_ sender: Any?) {
+            textView?.selectAll(sender)
         }
 
         // Colors attribute runs in place rather than replacing the string, so the cursor
