@@ -35,6 +35,9 @@ struct AccountSnapshot: Identifiable, Hashable {
     var colorHex: String?
     var primaryWindow: RateLimitWindow? = nil
     var secondaryWindow: RateLimitWindow? = nil
+    // A compact value (e.g. Pi's "$1.20" today-spend) for cost-based providers that have no
+    // percentage to show. When set, the menu bar renders this instead of a "--" placeholder.
+    var menuBarValue: String? = nil
     // True for providers with no usage/quota API at all (Grok, Copilot) - the card still
     // shows identity and active-session count, but never a percentage or progress bar.
     var isAgentDetectionOnly: Bool = false

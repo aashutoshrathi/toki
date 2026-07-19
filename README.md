@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.1.9" src="https://img.shields.io/badge/version-2.1.9-2f80ed">
+  <img alt="Version 2.3.1" src="https://img.shields.io/badge/version-2.3.1-2f80ed">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-f05138">
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
@@ -97,9 +97,7 @@ The generated app bundle is written to `.build/Toki.app`.
 
 ## Configuration
 
-Toki connects providers automatically. Every time the popover opens, it scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), Pi (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`). Config-backed providers are immediately written to `~/.toki/config.json`; local-only OpenCode and Pi accounts are detected fresh without adding config. There is no Connect button or JSON to hand-write. This isn't just a first-run thing: starting with just Claude Code and signing into Codex, or creating Pi session history, picks it up the next time you open the menu.
-
-Whenever `~/.toki/config.json` is missing, or exists but has no accounts yet, Toki's popover shows a **Connect an account** screen instead of an empty list while it scans. If nothing is detected yet, sign in to Claude Code or Codex and reopen the menu.
+Toki connects providers automatically. Every time the popover opens, it scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), Pi (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`). Config-backed providers get written to `~/.toki/config.json`; local-only OpenCode and Pi accounts are detected fresh each time. There's no Connect button or JSON to hand-write, and it re-scans on every open, so signing into a new provider later is picked up automatically. Until an account exists, the popover shows a **Connect an account** screen while it scans.
 
 For scripting, multi-account setups, or fields the wizard doesn't cover (API keys, budgets, manual trackers), edit the config directly. Toki reads:
 
@@ -162,23 +160,21 @@ Toki keeps v2.1 preferences, notification cooldowns, event history, usage histor
 ~/.toki/usage-state.json
 ```
 
-The overview shows a single AIInsightCard replacing the three separate stat blocks (Use, Status, Session). When running macOS 26+ with Apple Intelligence available, Toki generates a natural-language summary of your account state with actionable suggestions. A purple sparkle icon and border distinguish AI-generated content from the rule-based fallback. The optional `aiInstructions` config field lets you steer the on-device LLM prompt. On older systems the card shows the same deterministic recommendation with a lightbulb icon.
+The overview shows a single AIInsightCard in place of the old Use/Status/Session blocks. On macOS 26+ with Apple Intelligence available, it generates a natural-language summary with actionable suggestions, marked by a purple sparkle icon and border; steer its prompt with the optional `aiInstructions` config field. On older systems it shows the same deterministic recommendation with a lightbulb icon.
 
-The settings panel controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND mode suppresses macOS notification delivery but still records events so you can audit what would have fired.
+The settings panel controls native notifications, DND mode, low-quota threshold, session warning threshold, notification cooldown, history retention, and the menu bar display mode. DND suppresses delivery but still records events so you can audit what would have fired.
 
-The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available (including Pi's local session title), otherwise the project folder name relative to your home directory (`~/Code/project`). When an agent has a terminal TTY, clicking it selects the matching tab in iTerm2 or Terminal. For other hosts (iTerm, VS Code, Cursor, ChatGPT), Toki activates the resolved host app via its bundle ID.
+The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available (including Pi's local session title), otherwise the project folder name (`~/Code/project`). Clicking an agent with a terminal TTY selects its tab in iTerm2 or Terminal; other hosts (VS Code, Cursor, ChatGPT) are activated via bundle ID.
 
-OpenCode usage is automatically detected from its local SQLite database and surfaced as an account. Pi is similarly auto-detected from local session history and remains one aggregated harness card even when its sessions use different underlying model providers. Copilot, Gemini, and Grok are agent-detection-only: Toki detects running processes locally (and, for Gemini/Grok, whether they're signed in) and shows an active-session count on their card, but does not invent quotas - none of GitHub, Google, or xAI expose a usage/quota API for these that Toki could read from.
+OpenCode and Pi are auto-detected from local storage and surfaced as accounts (Pi stays one aggregated card even across different underlying model providers). Copilot, Gemini, and Grok are agent-detection-only: Toki shows a local active-session count (and, for Gemini/Grok, sign-in state) but invents no quota, since none of GitHub, Google, or xAI expose a usage API for them.
 
 ### Updates and Diagnostics
 
-Toki checks the latest public GitHub release at most once every six hours, including while the app remains open. Settings also provides a manual “Check now” action that bypasses the schedule. A newer release shows an Update button that downloads its DMG, verifies the `local.toki` bundle identity, version, and code signature, stages the app, replaces the installed bundle after Toki exits, and relaunches it. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` when developing to preview the banner without publishing a release.
+Toki checks the latest public GitHub release at most once every six hours, including while open; Settings has a manual “Check now” that bypasses the schedule. A newer release shows an Update button that downloads its DMG, verifies the `local.toki` bundle identity, version, and code signature, stages the app, and replaces the installed bundle after Toki exits, then relaunches. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` when developing to preview the banner without a release.
 
-Toki writes rotating diagnostics to `~/.toki/logs/toki.log`. These logs contain app-level error categories and status codes only; they exclude credentials, account configuration, prompts, session titles, workspace names, and full file paths. “Send debug report” in Settings creates a local text attachment and opens the macOS share picker. Toki never sends the report automatically.
+Toki writes rotating diagnostics to `~/.toki/logs/toki.log`, containing app-level error categories and status codes only - no credentials, config, prompts, session titles, workspace names, or full file paths. “Send debug report” creates a local text attachment and opens the macOS share picker; Toki never sends it automatically.
 
-The AIInsightCard picks the healthiest available account from live snapshots and can optionally surface an on-device LLM summary on macOS 26+. For Claude Code multi-account setups, it can switch to the recommended inactive account through the same configured `claude-swap --switch-to` path used by account rows.
-
-Session mode records starting quota for visible accounts, then shows a prominent red banner with a live stopwatch and per-account burn during the current coding session. It logs session warning events when quota drops sharply or crosses the configured warning threshold. The play/stop toggle lives in the header bar next to the refresh button.
+Session mode records starting quota for visible accounts, then shows a red banner with a live stopwatch and per-account burn during the run, logging warning events when quota drops sharply or crosses the configured threshold. Its play/stop toggle sits in the header next to refresh.
 
 ### Launch at Login
 
@@ -239,7 +235,7 @@ When OpenAI has a banked rate-limit reset credit for the account, the expanded C
 
 ## Pi Usage
 
-Pi needs no Toki account configuration. Toki reads only local Pi JSONL session metadata needed for usage and active-agent display: assistant token counts, Pi's estimated costs, session working directories, timestamps, and session titles. It does not access Pi authentication data or decode or retain prompt/message content. Usage from all underlying providers is combined into one Pi harness card.
+Pi needs no Toki account configuration. Toki reads only the local JSONL session metadata it needs for usage and active-agent display - assistant token counts, Pi's estimated costs, session working directories, timestamps, and titles - never Pi auth data or prompt/message content. The card shows today's spend plus this-week, this-month, and all-time estimated totals, combining every underlying provider into one harness card.
 
 Toki discovers the session root in this order:
 

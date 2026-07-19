@@ -95,7 +95,12 @@ private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarSt
         $0.provider == .codex && !$0.isError
     }
 
-    let segments = [activeClaude ?? fallbackClaude, codex].compactMap { $0 }
+    // Cost-based providers (Pi) have no quota percentage, so they're never picked as the
+    // Claude/Codex quota segments above and would otherwise be invisible in the menu bar - even
+    // for a Pi-only user, who'd be left staring at the "-- / --" placeholder. Append their
+    // compact spend value after the quota segments so they always surface.
+    let costSegments = snapshots.filter { !$0.isError && $0.remainingRatio == nil && $0.menuBarValue != nil }
+    let segments = [activeClaude ?? fallbackClaude, codex].compactMap { $0 } + costSegments
 
     return segments.map(menuBarEntry)
 }
@@ -115,7 +120,7 @@ func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
 }
 
 func menuBarEntry(for snapshot: AccountSnapshot) -> MenuBarStatusEntry {
-    let value = snapshot.remainingRatio.map(percentText) ?? "--"
+    let value = snapshot.remainingRatio.map(percentText) ?? snapshot.menuBarValue ?? "--"
     return MenuBarStatusEntry(provider: snapshot.provider, value: value)
 }
 

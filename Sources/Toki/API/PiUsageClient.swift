@@ -10,6 +10,8 @@ struct PiUsageClient {
         var todayCacheRead = 0.0
         var todayCacheWrite = 0.0
         var todayCost = 0.0
+        var weekCost = 0.0
+        var monthCost = 0.0
         var allTimeCost = 0.0
         var sessionCount = 0
     }
@@ -104,10 +106,14 @@ struct PiUsageClient {
             metrics: [
                 MetricLine(label: "Today", value: "\(formatCompact(totals.todayInput)) in / \(formatCompact(totals.todayOutput)) out"),
                 MetricLine(label: "Cache", value: "\(formatCompact(totals.todayCacheRead)) read / \(formatCompact(totals.todayCacheWrite)) write"),
+                MetricLine(label: "This week", value: formatUSD(totals.weekCost)),
+                MetricLine(label: "This month", value: formatUSD(totals.monthCost)),
                 MetricLine(label: "Estimated total", value: formatUSD(totals.allTimeCost)),
                 MetricLine(label: "Sessions", value: "\(totals.sessionCount)")
             ],
-            isError: false
+            isError: false,
+            // Cost-only provider: surfaces today's spend in the menu bar instead of a percentage.
+            menuBarValue: formatUSD(totals.todayCost)
         )
     }
 
@@ -136,43 +142,124 @@ struct PiUsageClient {
         var seen: Set<String> = []
         let startOfDay = calendar.startOfDay(for: now)
         guard let nextDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return totals }
+        let week = calendar.dateInterval(of: .weekOfYear, for: now)
+        let month = calendar.dateInterval(of: .month, for: now)
 
         for path in candidates {
-            guard try sessionHeader(path: path) != nil else { continue }
+            let file = try fileAggregate(path: path)
+            guard file.hasSession else { continue }
             totals.sessionCount += 1
-            try forEachEntry(path: path) { entry in
-                guard entry.type == "message", let message = entry.message,
-                      message.role == "assistant", let usage = message.usage else { return true }
-
-                let input = number(usage.input)
-                let output = number(usage.output)
-                let cacheRead = number(usage.cacheRead)
-                let cacheWrite = number(usage.cacheWrite)
-                let totalTokens = number(usage.totalTokens)
-                let cost = number(usage.cost?.total)
-                let messageTimestamp = positiveNumber(message.timestamp)
-                let date = messageTimestamp.map { Date(timeIntervalSince1970: $0 / 1000) }
-                    ?? date(from: entry.timestamp)
-                let key = [
-                    entry.id ?? "", entry.timestamp?.key ?? "", messageTimestamp.map(canonical) ?? "",
-                    message.provider ?? "", message.api ?? "", message.model ?? "",
-                    canonical(input), canonical(output), canonical(cacheRead), canonical(cacheWrite),
-                    canonical(totalTokens), canonical(cost)
-                ].joined(separator: "\u{1f}")
-                guard seen.insert(key).inserted else { return true }
-
-                totals.allTimeCost += cost
-                if let date, date >= startOfDay, date < nextDay {
-                    totals.todayInput += input
-                    totals.todayOutput += output
-                    totals.todayCacheRead += cacheRead
-                    totals.todayCacheWrite += cacheWrite
-                    totals.todayCost += cost
+            for contribution in file.contributions {
+                guard seen.insert(contribution.dedupKey).inserted else { continue }
+                totals.allTimeCost += contribution.cost
+                guard let date = contribution.date else { continue }
+                if date >= startOfDay, date < nextDay {
+                    totals.todayInput += contribution.input
+                    totals.todayOutput += contribution.output
+                    totals.todayCacheRead += contribution.cacheRead
+                    totals.todayCacheWrite += contribution.cacheWrite
+                    totals.todayCost += contribution.cost
                 }
-                return true
+                // Half-open ranges, matching the day window above, so an instant on a week or
+                // month boundary lands in exactly one bucket rather than being double-counted.
+                if let week, date >= week.start, date < week.end { totals.weekCost += contribution.cost }
+                if let month, date >= month.start, date < month.end { totals.monthCost += contribution.cost }
             }
         }
         return totals
+    }
+
+    // One assistant message's usage, already parsed and deduped-keyed. Retained per file so the
+    // sliding today/week/month windows can be re-bucketed against a fresh `now` each poll without
+    // re-reading or re-decoding any file whose bytes haven't changed.
+    private struct Contribution {
+        let date: Date?
+        let input: Double
+        let output: Double
+        let cacheRead: Double
+        let cacheWrite: Double
+        let cost: Double
+        let dedupKey: String
+    }
+
+    private struct FileAggregate {
+        let modified: Date?
+        let size: Int
+        let hasSession: Bool
+        let contributions: [Contribution]
+    }
+
+    private final class FileAggregateCache: @unchecked Sendable {
+        let lock = NSLock()
+        var byPath: [String: FileAggregate] = [:]
+    }
+
+    private static let fileAggregateCache = FileAggregateCache()
+
+    // Parses a session file into its per-message contributions, caching the result keyed by the
+    // file's size and modification date. Session logs are append-only, so an unchanged (size,
+    // mtime) pair means the parsed contributions are still valid and the expensive read+decode is
+    // skipped. Only the cheap dedup/date-bucketing in aggregate() re-runs every poll.
+    private static func fileAggregate(path: String) throws -> FileAggregate {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+        let modified = attributes?[.modificationDate] as? Date
+        let size = (attributes?[.size] as? NSNumber)?.intValue ?? -1
+
+        fileAggregateCache.lock.lock()
+        if let cached = fileAggregateCache.byPath[path], cached.size == size, sameInstant(cached.modified, modified) {
+            fileAggregateCache.lock.unlock()
+            return cached
+        }
+        fileAggregateCache.lock.unlock()
+
+        var hasSession = false
+        var contributions: [Contribution] = []
+        try forEachEntry(path: path) { entry in
+            if !hasSession, entry.type == "session",
+               entry.id.flatMap(nonEmpty) != nil, entry.cwd.flatMap(nonEmpty) != nil {
+                hasSession = true
+            }
+            guard entry.type == "message", let message = entry.message,
+                  message.role == "assistant", let usage = message.usage else { return true }
+            contributions.append(contribution(entry: entry, message: message, usage: usage))
+            return true
+        }
+
+        let aggregate = FileAggregate(modified: modified, size: size, hasSession: hasSession, contributions: contributions)
+        fileAggregateCache.lock.lock()
+        fileAggregateCache.byPath[path] = aggregate
+        fileAggregateCache.lock.unlock()
+        return aggregate
+    }
+
+    private static func contribution(entry: Entry, message: Message, usage: Usage) -> Contribution {
+        let input = number(usage.input)
+        let output = number(usage.output)
+        let cacheRead = number(usage.cacheRead)
+        let cacheWrite = number(usage.cacheWrite)
+        let totalTokens = number(usage.totalTokens)
+        let cost = number(usage.cost?.total)
+        let messageTimestamp = positiveNumber(message.timestamp)
+        let date = messageTimestamp.map { Date(timeIntervalSince1970: $0 / 1000) }
+            ?? date(from: entry.timestamp)
+        let key = [
+            entry.id ?? "", entry.timestamp?.key ?? "", messageTimestamp.map(canonical) ?? "",
+            message.provider ?? "", message.api ?? "", message.model ?? "",
+            canonical(input), canonical(output), canonical(cacheRead), canonical(cacheWrite),
+            canonical(totalTokens), canonical(cost)
+        ].joined(separator: "\u{1f}")
+        return Contribution(
+            date: date, input: input, output: output, cacheRead: cacheRead,
+            cacheWrite: cacheWrite, cost: cost, dedupKey: key
+        )
+    }
+
+    private static func sameInstant(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (lhs?, rhs?): return abs(lhs.timeIntervalSince(rhs)) < 0.000_001
+        default: return false
+        }
     }
 
     static func sessionRoot(environment: [String: String] = ProcessInfo.processInfo.environment,

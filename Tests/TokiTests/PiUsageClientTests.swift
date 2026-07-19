@@ -19,6 +19,58 @@ final class PiUsageClientTests: XCTestCase {
         XCTAssertEqual(totals.sessionCount, 2)
     }
 
+    func testWeekAndMonthCostBucketsAccumulateBeyondToday() throws {
+        let root = try temporaryDirectory()
+        let file = (root as NSString).appendingPathComponent("windows.jsonl")
+        // now = 2026-07-18 (Sat). Earlier-this-week (2026-07-14, Tue), earlier-this-month
+        // (2026-07-03), and last-month (2026-06-20) entries exercise each bucket boundary.
+        let jsonl = """
+        {"type":"session","id":"windows-session","cwd":"/tmp/windows","timestamp":"2026-06-01T00:00:00Z"}
+        {"type":"message","id":"today","timestamp":"2026-07-18T09:00:00Z","message":{"role":"assistant","provider":"p","api":"a","model":"m","usage":{"input":1,"output":1,"cost":{"total":0.10}}}}
+        {"type":"message","id":"this-week","timestamp":"2026-07-14T09:00:00Z","message":{"role":"assistant","provider":"p","api":"a","model":"m","usage":{"input":1,"output":1,"cost":{"total":0.20}}}}
+        {"type":"message","id":"this-month","timestamp":"2026-07-03T09:00:00Z","message":{"role":"assistant","provider":"p","api":"a","model":"m","usage":{"input":1,"output":1,"cost":{"total":0.30}}}}
+        {"type":"message","id":"last-month","timestamp":"2026-06-20T09:00:00Z","message":{"role":"assistant","provider":"p","api":"a","model":"m","usage":{"input":1,"output":1,"cost":{"total":0.40}}}}
+        """
+        try jsonl.write(toFile: file, atomically: true, encoding: .utf8)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        // Sunday-based weeks: 2026-07-18 is a Saturday, so the week runs 2026-07-12..07-18.
+        let now = ISO8601DateFormatter().date(from: "2026-07-18T18:00:00Z")!
+
+        let totals = try PiUsageClient.aggregate(root: root, now: now, calendar: calendar)
+
+        XCTAssertEqual(totals.todayCost, 0.10, accuracy: 0.000_001)
+        XCTAssertEqual(totals.weekCost, 0.30, accuracy: 0.000_001)   // today + this-week
+        XCTAssertEqual(totals.monthCost, 0.60, accuracy: 0.000_001)  // today + this-week + this-month
+        XCTAssertEqual(totals.allTimeCost, 1.00, accuracy: 0.000_001)
+    }
+
+    func testAggregateReflectsFileChangesAcrossCalls() throws {
+        let root = try temporaryDirectory()
+        let file = (root as NSString).appendingPathComponent("changing.jsonl")
+        let base = """
+        {"type":"session","id":"changing-session","cwd":"/tmp/changing","timestamp":"2026-07-18T00:00:00Z"}
+        {"type":"message","id":"first","timestamp":"2026-07-18T09:00:00Z","message":{"role":"assistant","provider":"p","api":"a","model":"m","usage":{"input":1,"output":1,"cost":{"total":0.10}}}}
+        """
+        try base.write(toFile: file, atomically: true, encoding: .utf8)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = ISO8601DateFormatter().date(from: "2026-07-18T18:00:00Z")!
+
+        let first = try PiUsageClient.aggregate(root: root, now: now, calendar: calendar)
+        XCTAssertEqual(first.allTimeCost, 0.10, accuracy: 0.000_001)
+        // A repeated call over unchanged bytes must be stable (cache serves the same result).
+        XCTAssertEqual(try PiUsageClient.aggregate(root: root, now: now, calendar: calendar), first)
+
+        // Appending a new turn changes size+mtime, so the cache must re-read and pick it up.
+        try (base + "\n" + #"{"type":"message","id":"second","timestamp":"2026-07-18T10:00:00Z","message":{"role":"assistant","provider":"p","api":"a","model":"m","usage":{"input":1,"output":1,"cost":{"total":0.25}}}}"#)
+            .write(toFile: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: file)
+
+        let updated = try PiUsageClient.aggregate(root: root, now: now, calendar: calendar)
+        XCTAssertEqual(updated.allTimeCost, 0.35, accuracy: 0.000_001)
+    }
+
     func testAssistantTimestampTakesPrecedenceOverOuterTimestamp() throws {
         let root = try temporaryDirectory()
         let file = (root as NSString).appendingPathComponent("timestamp.jsonl")
