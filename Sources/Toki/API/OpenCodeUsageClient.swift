@@ -5,6 +5,13 @@ import Foundation
 // all-time total, read via the system sqlite3 CLI (matching how the app shells out to
 // ps/lsof rather than linking a new dependency).
 struct OpenCodeUsageClient {
+    struct Totals: Equatable {
+        var todayCost = 0.0
+        var weekCost = 0.0
+        var monthCost = 0.0
+        var allTimeCost = 0.0
+    }
+
     let account: AccountConfig
 
     func snapshot() async throws -> AccountSnapshot {
@@ -81,6 +88,47 @@ struct OpenCodeUsageClient {
         }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return "\(home)/.local/share/opencode/opencode.db"
+    }
+
+    // Aggregated cost across all sessions, bucketed by time period. Uses the same
+    // calendar boundaries as PiUsageClient.aggregate() so the Analytics tab can sum them.
+    static func aggregate(db dbPath: String? = nil, now: Date = Date(), calendar: Calendar = .current) throws -> Totals {
+        let db = dbPath ?? databasePath()
+        guard FileManager.default.fileExists(atPath: db) else {
+            throw LocalizedErrorMessage("OpenCode database not found")
+        }
+
+        let startOfDay = calendar.startOfDay(for: now)
+        let dayStart = Int(startOfDay.timeIntervalSince1970)
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now).map { Int($0.start.timeIntervalSince1970) } ?? 0
+        let monthStart = calendar.dateInterval(of: .month, for: now).map { Int($0.start.timeIntervalSince1970) } ?? 0
+
+        let row = try Self.staticQuery(
+            db: db,
+            sql: """
+            SELECT \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(dayStart) THEN cost END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN cost END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN cost END),0), \
+            IFNULL(SUM(cost),0) FROM session;
+            """
+        )
+
+        return Totals(
+            todayCost: row.value(0),
+            weekCost: row.value(1),
+            monthCost: row.value(2),
+            allTimeCost: row.value(3)
+        )
+    }
+
+    private static func staticQuery(db: String, sql: String) throws -> Row {
+        let output = try sqliteOutput(db: db, sql: sql)
+        let columns = output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { optionalNumber(String($0).trimmingCharacters(in: .whitespaces)) ?? 0 }
+        return Row(columns: columns)
     }
 
     private static func sqliteOutput(db: String, sql: String) throws -> String {

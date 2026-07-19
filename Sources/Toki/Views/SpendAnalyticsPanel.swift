@@ -4,6 +4,7 @@ import SwiftUI
 struct SpendAnalyticsPanel: View {
     @ObservedObject var store: UsageStore
     @State private var piTotals: PiUsageClient.Totals?
+    @State private var openCodeTotals: OpenCodeUsageClient.Totals?
     @State private var selectedRange: TimeRange = .day
     @State private var selectedAgentID: Int32?
 
@@ -103,13 +104,17 @@ struct SpendAnalyticsPanel: View {
                 }
             }
 
-            // Pi spend breakdown
-            if let totals = piTotals {
+            // Combined spend breakdown across all cost providers
+            let today = (piTotals?.todayCost ?? 0) + (openCodeTotals?.todayCost ?? 0)
+            let week = (piTotals?.weekCost ?? 0) + (openCodeTotals?.weekCost ?? 0)
+            let month = (piTotals?.monthCost ?? 0) + (openCodeTotals?.monthCost ?? 0)
+            let allTime = (piTotals?.allTimeCost ?? 0) + (openCodeTotals?.allTimeCost ?? 0)
+            if piTotals != nil || openCodeTotals != nil {
                 HStack(spacing: 4) {
-                    spendBlock(label: "Today", cost: totals.todayCost)
-                    spendBlock(label: "Week", cost: totals.weekCost)
-                    spendBlock(label: "Month", cost: totals.monthCost)
-                    spendBlock(label: "All Time", cost: totals.allTimeCost)
+                    spendBlock(label: "Today", cost: today)
+                    spendBlock(label: "Week", cost: week)
+                    spendBlock(label: "Month", cost: month)
+                    spendBlock(label: "All Time", cost: allTime)
                 }
             }
 
@@ -196,7 +201,7 @@ struct SpendAnalyticsPanel: View {
                 }
             }
 
-            if costProviders.isEmpty && piTotals == nil && costAgents.isEmpty {
+            if costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && costAgents.isEmpty {
                 emptyState(icon: "dollarsign.circle", text: "No spend data yet")
             }
         }
@@ -362,8 +367,12 @@ struct SpendAnalyticsPanel: View {
     }
 
     private func loadPiTotals() async {
-        guard store.snapshots.contains(where: { $0.provider == .pi }) else { return }
-        piTotals = try? PiUsageClient.aggregate()
+        if store.snapshots.contains(where: { $0.provider == .pi }) {
+            piTotals = try? PiUsageClient.aggregate()
+        }
+        if store.snapshots.contains(where: { $0.provider == .openCode }) {
+            openCodeTotals = try? OpenCodeUsageClient.aggregate()
+        }
     }
 }
 
