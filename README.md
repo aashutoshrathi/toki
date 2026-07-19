@@ -19,18 +19,10 @@
   <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away.
 </p>
 
-<table>
-  <tr><th>Menu bar</th><th>CLI</th></tr>
-  <tr>
-    <td><img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="420"></td>
-    <td>
-      <pre lang="text">Claude San: 85% left
-Codex: 0% left
-OpenCode: No usage today
-Pi: $0.01 today</pre>
-    </td>
-  </tr>
-</table>
+| Menu bar | CLI |
+|----------|------|
+| <img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="420"> | <pre>            @@@@ @@@@             <br>   @@@@@@@@@@@     @@@@@@@        <br>   @@@@@@@@@@@     @@@@@@@        <br>            @@@@@@@@@             <br>              @@@@@               <br>               @@@                  /toki<br>               @@@    @@@           v2.3.2<br>               @@@   @@@@           github.com/aashutoshrathi/toki<br>               @@@@@@@@@          <br>               @@@@@@@            <br>               @@@@@              <br>               @@@@               <br>               @@@@@              <br>                @@@@@@@@@@        <br><br>Claude San: 85% left<br>Codex: 0% left<br>OpenCode: No usage today<br>Pi: $0.01 today</pre> |
+
 
 ## Why Toki
 
