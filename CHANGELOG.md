@@ -7,9 +7,6 @@
 - Pi spend is now broken out into this-week and this-month estimated totals alongside today and all-time, so the card reads as a proper spend tracker rather than just a daily figure. Week and month use half-open calendar ranges (matching the existing day window), so a turn on a week or month boundary lands in exactly one bucket.
 - Pi now shows its today-spend directly in the menu bar. Cost-based providers have no quota percentage, so they were never chosen for the Claude/Codex quota segments and stayed invisible there - a Pi-only user was left staring at the "-- / --" placeholder. Pi's compact spend value ("$1.20") fills a menu-bar slot in Smart mode when one is free. Smart mode is hard-capped at two segments so the status item never grows wide enough for macOS to drop it entirely on a crowded or notched menu bar; quota providers take priority and a cost provider only fills a remaining slot, so a Pi-only user still sees Pi while a Claude+Codex+Pi user stays at two.
 - CLI grew several scriptable options. `Toki status <filter>` narrows output to a provider (`pi`, `codex`, `claude`, ...) or account name; `Toki status --watch[=secs]` redraws live every few seconds; `Toki status --exit-code` exits 2 when the matching tracked quota is exhausted (so `Toki status codex --exit-code || notify` works without parsing text); and `Toki status --help` lists it all. A new `Toki pi [--json]` prints Pi's today/this-week/this-month/all-time spend breakdown - computed directly from local session history, so unlike `Toki status` it needs no running app or cache.
-
-### Added
-
 - Active agent cards now show session-wise cost and token usage when available - OpenCode (cost + tokens), Pi (cost + tokens), and Claude Code (token counts only) all display their per-session figures directly on the card, so you can see what each running session has burned at a glance without switching to the account overview.
 
 ### Changed
@@ -17,6 +14,9 @@
 - Pi usage aggregation no longer re-reads and re-parses every session file on every poll. Each file's parsed per-message contributions are cached and keyed by the file's size and modification date; since session logs are append-only, an unchanged file is served from cache and only the cheap dedup/date-bucketing re-runs. The sliding today/week/month windows are still recomputed against a fresh clock each poll, so the cache never staleness-skews the totals. This also collapses what were two reads per file (session header, then messages) into one.
 - Trimmed the README again - condensed the auto-detection, AI insight, updates, and Pi sections, and removed a paragraph that restated recommendation behavior already covered elsewhere.
 - The save icon on the Config JSON editor and AI instructions editor was replaced from `square.and.arrow.down` to `arrow.down.doc` for a less ambiguous document-oriented save affordance.
+- Update check interval reduced from 6 hours to 5 minutes for faster discovery of new releases, with rate-limit (429) responses handled silently without error messages.
+- The Config JSON and AI instructions editors now properly respond to Cmd+A (select all) by routing `selectAll:` through the coordinator, and the account alias TextField auto-focuses when entering edit mode.
+- Added 12 new tests covering `AgentSessionUsage` display formatting, Claude Code JSONL token parsing, and session usage dispatch. CI workflow runs tests on every PR.
 
 ### Fixed
 

@@ -240,6 +240,12 @@ enum AgentSessionResolver {
     private static func claudeSessionUsage(command: String, cwd: String?) -> AgentSessionUsage? {
         guard let file = newestClaudeSession(command: command, cwd: cwd)?.path,
               let data = try? Data(contentsOf: URL(fileURLWithPath: file)) else { return nil }
+        return claudeUsage(fromJSONLData: data)
+    }
+
+    // Extracted for testing — parses assistant-message token counts from a Claude Code
+    // JSONL session file (each line is a JSON object, assistant messages carry usage).
+    static func claudeUsage(fromJSONLData data: Data) -> AgentSessionUsage? {
         var totalInput = 0
         var totalOutput = 0
         for lineBytes in data.split(separator: 0x0A) {
