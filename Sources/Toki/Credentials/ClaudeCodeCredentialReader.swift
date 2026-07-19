@@ -86,22 +86,9 @@ enum ClaudeCodeCredentialReader {
 
     static func readKeychain(service: String, account: String) throws -> String {
         #if os(macOS)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data, !data.isEmpty else {
-            if status == errSecItemNotFound {
-                throw LocalizedErrorMessage("Keychain item not found for \(service)")
-            }
-            throw LocalizedErrorMessage("Keychain lookup failed (OSStatus \(status))")
-        }
-        guard let credentials = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !credentials.isEmpty else {
+        let command = "security find-generic-password -s '\(shellEscaped(service))' -a '\(shellEscaped(account))' -w"
+        let credentials = try SecretResolver.runShell(command).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !credentials.isEmpty else {
             throw LocalizedErrorMessage("Keychain item is empty")
         }
         return credentials
