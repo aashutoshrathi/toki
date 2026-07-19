@@ -57,6 +57,7 @@ enum StatusCommand {
         }
 
         var exitCode: Int32 = 0
+        if format == .text { printTokiBanner() }
         switch format {
         case .json:
             if !printJSON(filteredCache(cache, accounts: accounts)) { exitCode = 1 }

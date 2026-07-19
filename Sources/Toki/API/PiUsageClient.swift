@@ -100,7 +100,7 @@ struct PiUsageClient {
             id: account.id,
             name: account.name,
             provider: .pi,
-            primary: totals.todayCost > 0 ? "\(formatUSD(totals.todayCost)) today" : "No usage today",
+            primary: "\(formatUSD(totals.todayCost)) / \(formatCompact(totals.todayInput)) in / \(formatCompact(totals.todayOutput)) out today",
             subtitle: "Pi - local usage (estimated)",
             remainingRatio: nil,
             metrics: [

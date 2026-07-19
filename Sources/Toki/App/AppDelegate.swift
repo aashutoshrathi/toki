@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         DiagnosticLogger.shared.record(.info, component: "app", code: "launched", detail: "version=\(appVersion)")
         NSApp.setActivationPolicy(.accessory)
+        installCLISymlink()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateStatusItem(entries: menuBarPlaceholderEntries())
@@ -37,6 +38,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             for await entries in store.$statusEntries.values {
                 updateStatusItem(entries: entries.isEmpty ? menuBarPlaceholderEntries() : entries)
             }
+        }
+    }
+
+    private func installCLISymlink() {
+        guard let executableURL = Bundle.main.executableURL else { return }
+        let symlinkPath = "/usr/local/bin/toki"
+        let symlinkURL = URL(fileURLWithPath: symlinkPath)
+        guard (try? symlinkURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true
+                || (try? FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath)) != executableURL.path else { return }
+        try? FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: executableURL)
+        if FileManager.default.fileExists(atPath: symlinkPath) {
+            DiagnosticLogger.shared.record(.info, component: "cli", code: "symlink_installed", detail: symlinkPath)
         }
     }
 

@@ -42,7 +42,7 @@ struct OpenCodeUsageClient {
             id: account.id,
             name: account.name,
             provider: .openCode,
-            primary: todayCost > 0 ? "\(formatUSD(todayCost)) today" : "No usage today",
+            primary: "\(formatUSD(todayCost)) / \(formatCompact(todayIn)) in / \(formatCompact(todayOut)) out today",
             subtitle: "OpenCode - local usage",
             remainingRatio: nil,
             metrics: metrics,

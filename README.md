@@ -183,18 +183,18 @@ Settings has a "Launch at login" toggle backed by `SMAppService`. It reflects wh
 ### Command Line Status
 
 ```sh
-Toki status                    # one line per account, e.g. "Work: 82% left" (configured name, not provider name)
-Toki status pi                 # filter to a provider (pi, codex, claude, ...) or account name
-Toki status --compact          # single line matching the menu bar icon, for prompts/status bars
-Toki status --json             # full snapshot as JSON
-Toki status --watch            # redraw live every 5s (--watch=N for other intervals); Ctrl-C to stop
-Toki status codex --exit-code  # exit 2 when the matching tracked quota is exhausted, for scripts
-Toki status --help             # full option list
+toki status                    # one line per account, e.g. "Work: 82% left" (configured name, not provider name)
+toki status pi                 # filter to a provider (pi, codex, claude, ...) or account name
+toki status --compact          # single line matching the menu bar icon, for prompts/status bars
+toki status --json             # full snapshot as JSON
+toki status --watch            # redraw live every 5s (--watch=N for other intervals); Ctrl-C to stop
+toki status codex --exit-code  # exit 2 when the matching tracked quota is exhausted, for scripts
+toki status --help             # full option list
 
-Toki pi                        # Pi spend breakdown: today / this week / this month / all time (--json too)
+toki pi                        # Pi spend breakdown: today / this week / this month / all time (--json too)
 ```
 
-Run the installed app's binary directly, e.g. `/Applications/Toki.app/Contents/MacOS/Toki status`. `status` reads a cache the running app writes after every refresh at `~/.toki/status.json` (override with `TOKI_STATUS_CACHE`) - it never launches the menu bar app or makes a live network/Keychain call, so it's safe to call on every shell prompt render. If Toki hasn't run yet, or the cache is more than 15 minutes old, it says so on stderr. `pi` is independent of the cache: it computes the breakdown directly from local Pi session history, so it works even when the app has never run.
+Run `toki status` or `toki pi` from your terminal. Toki automatically symlinks itself to `/usr/local/bin/toki` on launch so it's on your PATH without any setup. `status` reads a cache the running app writes after every refresh at `~/.toki/status.json` (override with `TOKI_STATUS_CACHE`) - it never launches the menu bar app or makes a live network/Keychain call, so it's safe to call on every shell prompt render. If Toki hasn't run yet, or the cache is more than 15 minutes old, it says so on stderr. `pi` is independent of the cache: it computes the breakdown directly from local Pi session history, so it works even when the app has never run.
 
 ### Environment Overrides
 

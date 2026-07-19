@@ -37,6 +37,7 @@ enum PiCommand {
         if tokens.contains("--json") {
             return printJSON(totals) ? 0 : 1
         }
+        printTokiBanner()
         printText(totals)
         return 0
     }
