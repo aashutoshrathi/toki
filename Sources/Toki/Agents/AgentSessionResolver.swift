@@ -81,14 +81,25 @@ enum AgentSessionResolver {
               let contents = try? String(contentsOfFile: file, encoding: .utf8) else {
             return nil
         }
-        // aiTitle is rewritten as the conversation evolves; the last one is current.
-        var latest: String?
+        return claudeTitle(fromSessionContents: contents)
+    }
+
+    // A user's explicit /rename (written as customTitle) always wins over the AI-inferred
+    // aiTitle; the inferred title is only shown when the chat was never explicitly named. Both
+    // fields are rewritten as the conversation evolves, so the last of each is the current one.
+    static func claudeTitle(fromSessionContents contents: String) -> String? {
+        var latestAI: String?
+        var latestCustom: String?
         for line in contents.split(separator: "\n") {
-            if let title = firstMatch(in: String(line), pattern: #""aiTitle"\s*:\s*"([^"]+)""#) {
-                latest = title
+            let text = String(line)
+            if let custom = firstMatch(in: text, pattern: #""customTitle"\s*:\s*"([^"]+)""#) {
+                latestCustom = custom
+            }
+            if let ai = firstMatch(in: text, pattern: #""aiTitle"\s*:\s*"([^"]+)""#) {
+                latestAI = ai
             }
         }
-        return latest
+        return latestCustom ?? latestAI
     }
 
     // Resolves the session file once (path + mtime) so chatTitle and lastActivity share it.
