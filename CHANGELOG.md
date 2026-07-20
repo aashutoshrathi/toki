@@ -11,6 +11,9 @@
 
 - The daily usage heatmap resolves into 64 shades instead of 4, interpolated through the same measured anchor colours. The legend is now a continuous bar.
 - Hovering a day with no activity says "No usage" rather than showing a bare date.
+- Both refresh buttons show a spinner and disable while a refresh runs.
+- The README keeps what you need to decide whether to install Toki; the reference material moves to `docs/`.
+- Comments that restated the code are gone. What survives explains why something is the way it is.
 
 ### Fixed
 
@@ -19,6 +22,8 @@
 - The agent scan re-walked each agent's process tree every tick, bypassing the cache meant to prevent it.
 - Quota chart x-axis labels collided and truncated; they now scale to the selected range. Its legend showed the internal account key rather than the account name.
 - Compact figures gained a billions step, so a heavy month reads "1B" instead of "1,023M".
+- A day whose history could not be read looked identical to a day with no work. The two are now distinct, and the failure says which provider it was.
+- Empty heatmap cells were dark enough in dark mode to read as activity, making a busy day look idle.
 
 
 ## 2.4.0 - 2026-07-21
