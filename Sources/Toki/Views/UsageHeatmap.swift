@@ -163,16 +163,22 @@ struct UsageHeatmap: View {
             if let day = hoveredDay {
                 hoverDetail(for: day)
             } else {
-                HStack(spacing: 3) {
+                HStack(spacing: 5) {
                     Spacer()
                     Text("Less")
                         .font(.system(size: 8))
                         .foregroundStyle(.tertiary)
-                    ForEach(0..<ramp.count, id: \.self) { step in
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(ramp[step])
-                            .frame(width: 10, height: 10)
-                    }
+                    // A continuous bar rather than discrete swatches: with 64 shades, drawing
+                    // one chip per step would be illegible, and the scale is no longer a set of
+                    // buckets to match a cell against.
+                    LinearGradient(
+                        colors: (0..<Self.shadeCount).map { shade(at: Double($0) / Double(Self.shadeCount - 1)) },
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 72, height: 8)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.18), lineWidth: 0.5))
                     Text("More")
                         .font(.system(size: 8))
                         .foregroundStyle(.tertiary)
@@ -187,11 +193,11 @@ struct UsageHeatmap: View {
             HStack(spacing: 5) {
                 Text(day.headline)
                     .font(.system(size: 10, weight: .semibold))
-                if day.level != nil {
-                    Text(day.figures)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
+                // Shown for quiet days too. Hovering a day and getting only a date reads as the
+                // panel having failed to load something, rather than as the answer.
+                Text(day.figures)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(day.level == nil ? .tertiary : .secondary)
                 Spacer()
             }
             if !day.breakdown.isEmpty {
@@ -228,20 +234,52 @@ struct UsageHeatmap: View {
     // Dark mode previously ran the other way, so "more" meant near-white there and deep blue in
     // light mode - the same grid read as inverted depending on the theme. The measured spacing
     // is unaffected by the order; only the mapping of step to intensity changes.
-    private var ramp: [Color] {
+    /// Number of shades the ramp is resolved into.
+    ///
+    /// Four steps quantised too coarsely to read: a busy day and a much busier one landed on the
+    /// same swatch. Sixty-four is effectively continuous at this cell size while still being a
+    /// fixed, reproducible set rather than a free gradient.
+    ///
+    /// The trade-off is real and worth stating: adjacent shades in a 64-step ramp are NOT
+    /// separately identifiable - that is the point of a spectrum, and it is why the exact
+    /// figures live in the hover line and the accessibility label rather than in the colour.
+    /// The measured separation still holds where it matters, between the four anchors below,
+    /// which is what keeps the two ends of the scale far apart.
+    nonisolated static let shadeCount = 64
+
+    /// The measured anchors the spectrum is interpolated through. Keeping these fixed means the
+    /// endpoints and quartiles retain the contrast that was validated for them; only the shades
+    /// between are generated.
+    private var anchors: [(r: Double, g: Double, b: Double)] {
         colorScheme == .dark
             ? [
-                Color(red: 0.918, green: 0.961, blue: 1.000),
-                Color(red: 0.584, green: 0.788, blue: 0.980),
-                Color(red: 0.294, green: 0.604, blue: 0.918),
-                Color(red: 0.102, green: 0.373, blue: 0.659),
+                (0.918, 0.961, 1.000),
+                (0.584, 0.788, 0.980),
+                (0.294, 0.604, 0.918),
+                (0.102, 0.373, 0.659),
             ]
             : [
-                Color(red: 0.812, green: 0.902, blue: 0.984),
-                Color(red: 0.475, green: 0.706, blue: 0.937),
-                Color(red: 0.204, green: 0.502, blue: 0.812),
-                Color(red: 0.055, green: 0.306, blue: 0.576),
+                (0.812, 0.902, 0.984),
+                (0.475, 0.706, 0.937),
+                (0.204, 0.502, 0.812),
+                (0.055, 0.306, 0.576),
             ]
+    }
+
+    /// Colour at `fraction` (0...1) along the ramp, interpolated between the surrounding anchors.
+    private func shade(at fraction: Double) -> Color {
+        let stops = anchors
+        let clamped = min(max(fraction, 0), 1)
+        let scaled = clamped * Double(stops.count - 1)
+        let lower = min(Int(scaled), stops.count - 2)
+        let t = scaled - Double(lower)
+        let from = stops[lower]
+        let to = stops[lower + 1]
+        return Color(
+            red: from.r + (to.r - from.r) * t,
+            green: from.g + (to.g - from.g) * t,
+            blue: from.b + (to.b - from.b) * t
+        )
     }
 
     /// The no-data step, deliberately a neutral rather than a lighter tint of the ramp hue -
@@ -252,7 +290,7 @@ struct UsageHeatmap: View {
 
     private func color(for level: Int?) -> Color {
         guard let level else { return emptyColor }
-        return ramp[min(max(level, 0), ramp.count - 1)]
+        return shade(at: Double(level) / Double(Self.shadeCount - 1))
     }
 
     // MARK: - Data
@@ -336,13 +374,14 @@ struct UsageHeatmap: View {
         }
     }
 
-    /// Maps a day onto 0...3 by its rank among the distinct active-day totals, so the quietest
-    /// active day is always the lowest step and the busiest always the highest.
+    /// Maps a day onto 0..<shadeCount by its rank among the distinct active-day totals, so the
+    /// quietest active day is always the lowest shade and the busiest always the highest.
     nonisolated static func rankLevel(tokens: Int, among distinct: [Int]) -> Int {
-        // A single active day is by definition the busiest one; showing it at the lowest step
+        let top = shadeCount - 1
+        // A single active day is by definition the busiest one; showing it at the lowest shade
         // would read as "barely anything happened".
-        guard distinct.count > 1, let index = distinct.firstIndex(of: tokens) else { return 3 }
-        return index * 3 / (distinct.count - 1)
+        guard distinct.count > 1, let index = distinct.firstIndex(of: tokens) else { return top }
+        return index * top / (distinct.count - 1)
     }
 }
 
@@ -397,7 +436,7 @@ struct HeatmapDay: Identifiable {
     /// Absolute totals for the day. The colour already carries the relative standing, so
     /// repeating that as a percentage would add nothing and invites being read as a quota share.
     var figures: String {
-        guard level != nil else { return "no activity" }
+        guard level != nil else { return "No usage" }
         var text = "\(formatCompact(Double(tokens))) tokens"
         if cost > 0 { text += "  \(formatUSD(cost))" }
         return text

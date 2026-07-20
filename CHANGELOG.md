@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.1 - 2026-07-21
+
+### Changed
+
+- The daily usage heatmap resolves into 64 shades instead of 4. Four steps quantised too coarsely to read - a busy day and a considerably busier one landed on the same swatch, so the grid showed far less than the data contained. The shades are interpolated through the same four measured anchor colours, so the ends of the scale keep the contrast that was validated for them and only the shades between are generated. Adjacent shades in a 64-step ramp are deliberately not separately identifiable, which is what a spectrum is for; the exact figures remain in the hover line and the accessibility label. The legend is now a continuous bar rather than a row of swatches, since the scale is no longer a set of buckets to match a cell against.
+- Hovering a day with no activity says "No usage" instead of showing a bare date, which read as the panel having failed to load something rather than as the answer.
+
 ## 2.4.0 - 2026-07-21
 
 ### Added
