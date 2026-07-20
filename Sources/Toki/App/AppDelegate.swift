@@ -123,11 +123,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         hostingView.layoutSubtreeIfNeeded()
         let fittingSize = hostingView.fittingSize
         let width = max(54, ceil(fittingSize.width) + 6)
+
+        // Resizing the status item while the popover is open drags the popover with it.
+        //
+        // The popover is anchored to this button, so any width change moves the anchor and
+        // macOS re-positions the whole popover under the cursor mid-read - which happens
+        // exactly when something interesting occurs, since that is when the waiting-agent
+        // badge appears or a quota segment drops out. The content is still refreshed live;
+        // only the geometry is held until the popover closes, and popoverDidClose applies
+        // whatever the final size should be.
+        guard !popover.isShown else {
+            hasDeferredStatusResize = hasDeferredStatusResize || width != statusItem.length
+            return
+        }
+
+        hasDeferredStatusResize = false
         statusItem.length = width
         statusItem.button?.title = ""
         statusItem.button?.image = nil
         hostingView.frame = NSRect(x: 3, y: 0, width: width - 6, height: button.bounds.height)
     }
+
+    private var hasDeferredStatusResize = false
 
     @objc private func togglePopover() {
         guard statusItem.button != nil else { return }
@@ -223,5 +240,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // invisibly on screen. Harmless on the normal path, where the window was never ordered in.
     func popoverDidClose(_ notification: Notification) {
         fallbackAnchorWindow.orderOut(nil)
+        // Apply any resize that was held back while the popover was anchored to the button.
+        if hasDeferredStatusResize {
+            updateStatusItem()
+        }
     }
 }
