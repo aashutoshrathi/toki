@@ -32,7 +32,7 @@ struct ClaudeCodeUsageClient {
             DiagnosticLogger.shared.record(.error, component: "usage", code: "claude_account_failed", detail: diagnosticErrorDetail(error))
             return AccountSnapshot(
                 id: record.id,
-                name: record.label?.nickname ?? record.name,
+                name: record.displayName,
                 provider: .claudeCode,
                 primary: "Unavailable",
                 subtitle: record.email ?? error.localizedDescription,
@@ -77,7 +77,7 @@ struct ClaudeCodeUsageClient {
 
         return AccountSnapshot(
             id: record.id,
-            name: record.label?.nickname ?? record.name,
+            name: record.displayName,
             provider: .claudeCode,
             primary: primary,
             subtitle: email ?? "Claude Code OAuth usage",

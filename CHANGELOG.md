@@ -2,6 +2,10 @@
 
 ## 2.4.0 - 2026-07-20
 
+### Changed
+
+- claude-swap accounts now read as "Claude - user@example.com" instead of the registry's internal `claude-1-user@example.com` key. An explicit nickname still wins, and an account with no email falls back to plain "Claude". The underlying account id is unchanged, so existing aliases, usage adjustments, and cached state stay attached.
+
 ### Fixed
 
 - Menu bar status text no longer disappears against a dark menu bar. The status view pinned its appearance to the app's (which follows the system light/dark setting) rather than inheriting the menu bar's own, so in full-screen - where the bar renders dark even in light mode - the text was drawn in the light-mode label color on a dark background and became invisible. It now inherits from the status item's button, which carries the real menu-bar appearance.
