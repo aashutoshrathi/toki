@@ -74,8 +74,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     onClick: { [weak self] in self?.togglePopover() }
                 )
             }
-            notchController?.show()
-            statusItem.isVisible = false
+            // Only give up the status item once the replacement is confirmed on screen.
+            // Hiding it first and trusting the panel to appear is how enabling notch mode
+            // could leave the app with no visible surface at all.
+            if notchController?.show() == true {
+                statusItem.isVisible = false
+                return
+            }
+            notchController = nil
+            statusItem.isVisible = true
+            DiagnosticLogger.shared.record(.warning, component: "notch", code: "fell_back_to_menu_bar")
         } else {
             notchController?.hide()
             notchController = nil
@@ -173,7 +181,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // transient top-of-screen window instead of the corner.
     private func presentPopover(retriesRemaining: Int) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let button = self.statusItem.button else { return }
+            guard let self else { return }
+            // In notch mode the status item is hidden and cannot anchor anything, so the panel
+            // itself is the anchor - otherwise the popover falls back to the screen corner,
+            // detached from the thing that was clicked.
+            if let anchor = self.notchController?.anchorView, anchor.window != nil {
+                self.popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+                self.popover.contentViewController?.view.window?.makeKey()
+                return
+            }
+            guard let button = self.statusItem.button else { return }
             if self.hasValidScreenPosition(button) {
                 self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 self.popover.contentViewController?.view.window?.makeKey()

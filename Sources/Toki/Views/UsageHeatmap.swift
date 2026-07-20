@@ -224,13 +224,17 @@ struct UsageHeatmap: View {
     //
     // Light: #CFE6FB #79B4EF #3480CF #0E4E93 (worst adjacent deltaE 16.5 normal / 15.8 CVD)
     // Dark:  #1A5FA8 #4B9AEA #95C9FA #EAF5FF (worst adjacent deltaE 15.4 normal / 14.3 CVD)
+    // Both modes run the same direction: palest for the quietest day, deepest for the busiest.
+    // Dark mode previously ran the other way, so "more" meant near-white there and deep blue in
+    // light mode - the same grid read as inverted depending on the theme. The measured spacing
+    // is unaffected by the order; only the mapping of step to intensity changes.
     private var ramp: [Color] {
         colorScheme == .dark
             ? [
-                Color(red: 0.102, green: 0.373, blue: 0.659),
-                Color(red: 0.294, green: 0.604, blue: 0.918),
-                Color(red: 0.584, green: 0.788, blue: 0.980),
                 Color(red: 0.918, green: 0.961, blue: 1.000),
+                Color(red: 0.584, green: 0.788, blue: 0.980),
+                Color(red: 0.294, green: 0.604, blue: 0.918),
+                Color(red: 0.102, green: 0.373, blue: 0.659),
             ]
             : [
                 Color(red: 0.812, green: 0.902, blue: 0.984),
