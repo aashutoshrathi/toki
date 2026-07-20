@@ -21,21 +21,52 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertTrue(result[0].date < result[29].date)
     }
 
-    // Shading is relative to the busiest day in the window: there is no fixed ceiling on daily
-    // tokens, so an absolute scale would bottom out for a light user and saturate for a heavy one.
-    func testBusiestDayIsFullIntensityAndOthersScaleAgainstIt() {
+    func testQuietestActiveDayIsLowestStepAndBusiestIsHighest() {
         let result = days([
-            activity(daysAgo: 1, tokens: 1_000_000),
-            activity(daysAgo: 0, tokens: 250_000),
+            activity(daysAgo: 3, tokens: 100),
+            activity(daysAgo: 2, tokens: 5_000),
+            activity(daysAgo: 1, tokens: 50_000),
+            activity(daysAgo: 0, tokens: 900_000),
         ])
-        XCTAssertEqual(try XCTUnwrap(result[result.count - 2].intensity), 1.0, accuracy: 0.0001)
-        XCTAssertEqual(try XCTUnwrap(result.last?.intensity), 0.25, accuracy: 0.0001)
+        let levels = result.compactMap(\.level)
+        XCTAssertEqual(levels, [0, 1, 2, 3])
+    }
+
+    // The reason ranking exists: one outlier day used to crush every other day into the lowest
+    // step, rendering the grid as a single bright cell in a field of near-empty ones.
+    func testAnOutlierDayDoesNotFlattenTheRest() {
+        let result = days([
+            activity(daysAgo: 2, tokens: 1_000),
+            activity(daysAgo: 1, tokens: 2_000),
+            activity(daysAgo: 0, tokens: 100_000_000),
+        ])
+        let levels = result.compactMap(\.level)
+        XCTAssertEqual(Set(levels).count, 3, "each distinct day gets its own step despite the outlier")
+        XCTAssertEqual(levels.first, 0)
+        XCTAssertEqual(levels.last, 3)
+    }
+
+    // A lone active day is by definition the busiest; the lowest step would read as "nothing
+    // much happened".
+    func testASingleActiveDayIsTheHighestStep() {
+        XCTAssertEqual(days([activity(daysAgo: 0, tokens: 500)]).last?.level, 3)
+    }
+
+    func testEqualDaysShareAStep() {
+        let result = days([activity(daysAgo: 1, tokens: 700), activity(daysAgo: 0, tokens: 700)])
+        XCTAssertEqual(result.compactMap(\.level), [3, 3])
     }
 
     func testDaysWithoutActivityAreNil() {
         let result = days([activity(daysAgo: 0, tokens: 500)])
-        XCTAssertNotNil(result.last?.intensity)
-        XCTAssertNil(result.first?.intensity, "a day with no activity must be distinguishable from a quiet day")
+        XCTAssertNotNil(result.last?.level)
+        XCTAssertNil(result.first?.level, "a day with no activity must be distinguishable from a quiet day")
+    }
+
+    func testRankLevelSpansTheFullRamp() {
+        let distinct = [10, 20, 30, 40, 50]
+        XCTAssertEqual(UsageHeatmap.rankLevel(tokens: 10, among: distinct), 0)
+        XCTAssertEqual(UsageHeatmap.rankLevel(tokens: 50, among: distinct), 3)
     }
 
     func testProvidersAreSummedPerDay() {
@@ -69,13 +100,13 @@ final class UsageHeatmapTests: XCTestCase {
 
     func testActivityOlderThanTheWindowIsExcluded() {
         let result = days([activity(daysAgo: 40, tokens: 10_000)], count: 30)
-        XCTAssertTrue(result.allSatisfy { $0.intensity == nil })
+        XCTAssertTrue(result.allSatisfy { $0.level == nil })
     }
 
     func testTooltipReportsAbsoluteFiguresNotTheRelativeShade() {
         let day = HeatmapDay(
             date: now,
-            intensity: 0.5,
+            level: 2,
             accounts: [AccountUsage(name: "Claude Code", tokens: 1_500_000, cost: 2)],
             tokens: 1_500_000,
             cost: 2
@@ -85,7 +116,7 @@ final class UsageHeatmapTests: XCTestCase {
     }
 
     func testTooltipDistinguishesNoActivity() {
-        XCTAssertTrue(HeatmapDay(date: now, intensity: nil).tooltip.contains("no activity"))
+        XCTAssertTrue(HeatmapDay(date: now, level: nil).tooltip.contains("no activity"))
     }
 }
 

@@ -21,7 +21,7 @@ struct UsageHeatmap: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if days.allSatisfy({ $0.intensity == nil }) {
+            if days.allSatisfy({ $0.level == nil }) {
                 Text("No agent activity found in the last \(dayCount) days")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
@@ -77,7 +77,7 @@ struct UsageHeatmap: View {
     @ViewBuilder
     private func cell(for day: HeatmapDay) -> some View {
         RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(color(for: day.intensity))
+            .fill(color(for: day.level))
             .frame(height: 18)
             .frame(maxWidth: .infinity)
             // The palest steps fall below 3:1 against the surface, which obliges visible
@@ -114,34 +114,35 @@ struct UsageHeatmap: View {
 
     // MARK: - Colour
 
-    // A single-hue sequential ramp, light to dark. Sequential data gets one hue - a
-    // multi-hue/rainbow ramp implies categories where there is only magnitude.
+    // A single-hue sequential ramp. Sequential data gets one hue - a multi-hue/rainbow ramp
+    // implies categories where there is only magnitude. The dark-mode steps are chosen against
+    // the dark surface rather than derived by inverting the light ones: on a dark background
+    // the ramp has to run dark-to-bright for intensity to read as "more".
     //
-    // The dark-mode steps are chosen against the dark surface rather than derived by
-    // inverting the light ones: on a dark background the ramp has to run dark-to-bright to
-    // keep intensity reading as "more", and a flipped light ramp would put its most saturated
-    // step at the wrong end.
-    // Steps are spaced so that every adjacent pair clears ΔE 15 for normal vision and stays
-    // above the CVD floor under protanopia, deuteranopia, and tritanopia - measured, not
-    // eyeballed. An earlier, prettier ramp sat at ΔE 11 between its first two steps, which is
-    // hard to separate even with full colour vision, and its lightest step was 1.34:1 against
-    // the surface, effectively invisible.
+    // Green rather than blue, for two reasons beyond taste. The blue ramp's darkest step sat
+    // close enough to the neutral empty cell to be mistaken for it, and blue is already the
+    // app's accent - the tab count badge is blue - so an activity grid in the same hue read as
+    // if it were part of the same signal.
     //
-    // Light: #B4D3F1 #69A0E5 #2A5FB4 #0A2E5C (worst adjacent ΔE 17.0 normal / 15.9 CVD)
-    // Dark:  #24466E #2E6FBF #57A0F5 #B3D6FD (worst adjacent ΔE 15.5 normal / 15.6 CVD)
+    // Both ramps are measured, not copied. GitHub's own contribution greens fail the
+    // normal-vision separation floor (deltaE 13.0 dark, 10.2 light, against a floor of 15), so
+    // these are re-spaced versions rather than the originals.
+    //
+    // Light: #B7E9BF #52C878 #1F8A4C #0B4A26 (worst adjacent deltaE 16.3 normal / 13.1 CVD)
+    // Dark:  #0A4526 #0F8A50 #35D073 #B6F5CE (worst adjacent deltaE 18.8 normal / 15.3 CVD)
     private var ramp: [Color] {
         colorScheme == .dark
             ? [
-                Color(red: 0.141, green: 0.275, blue: 0.431),
-                Color(red: 0.180, green: 0.435, blue: 0.749),
-                Color(red: 0.341, green: 0.627, blue: 0.961),
-                Color(red: 0.702, green: 0.839, blue: 0.992),
+                Color(red: 0.039, green: 0.271, blue: 0.149),
+                Color(red: 0.059, green: 0.541, blue: 0.314),
+                Color(red: 0.208, green: 0.816, blue: 0.451),
+                Color(red: 0.714, green: 0.961, blue: 0.808),
             ]
             : [
-                Color(red: 0.706, green: 0.827, blue: 0.945),
-                Color(red: 0.412, green: 0.627, blue: 0.898),
-                Color(red: 0.165, green: 0.373, blue: 0.706),
-                Color(red: 0.039, green: 0.180, blue: 0.361),
+                Color(red: 0.718, green: 0.914, blue: 0.749),
+                Color(red: 0.322, green: 0.784, blue: 0.471),
+                Color(red: 0.122, green: 0.541, blue: 0.298),
+                Color(red: 0.043, green: 0.290, blue: 0.149),
             ]
     }
 
@@ -151,14 +152,9 @@ struct UsageHeatmap: View {
         Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.07)
     }
 
-    private func color(for intensity: Double?) -> Color {
-        guard let intensity else { return emptyColor }
-        switch intensity {
-        case ..<0.25: return ramp[0]
-        case ..<0.50: return ramp[1]
-        case ..<0.75: return ramp[2]
-        default: return ramp[3]
-        }
+    private func color(for level: Int?) -> Color {
+        guard let level else { return emptyColor }
+        return ramp[min(max(level, 0), ramp.count - 1)]
     }
 
     // MARK: - Data
@@ -210,16 +206,22 @@ struct UsageHeatmap: View {
             byDay[calendar.startOfDay(for: entry.day), default: []].append(entry)
         }
 
-        // Shading is relative to the busiest day in the window rather than to an absolute token
-        // count. There is no meaningful fixed ceiling on daily tokens, and the useful question
-        // is "how did this day compare to my others" - an absolute scale would leave every cell
-        // at the bottom of the ramp for a light user and saturated for a heavy one.
-        let busiest = byDay.values.map { day in day.reduce(0) { $0 + $1.tokens } }.max() ?? 0
+        // Shading is by RANK among active days, not by share of the busiest day.
+        //
+        // Daily token counts are heavily skewed - one long session can be an order of magnitude
+        // above a normal day. Scaling linearly against the maximum then crushes every other day
+        // into the lowest step: the grid renders as one bright cell in a field of near-empty
+        // ones and conveys nothing about the pattern of work. Ranking active days across the
+        // ramp guarantees the whole scale is used and the relative shape stays readable.
+        //
+        // The trade-off is that a shade means "busy compared to your other days", not an
+        // absolute amount - which is why the tooltip carries the real token and cost figures.
+        let distinct = Set(byDay.values.map { day in day.reduce(0) { $0 + $1.tokens } }).sorted()
 
         return (0..<dayCount).reversed().compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
             guard let entries = byDay[date], !entries.isEmpty else {
-                return HeatmapDay(date: date, intensity: nil, accounts: [], tokens: 0, cost: 0)
+                return HeatmapDay(date: date, level: nil, accounts: [], tokens: 0, cost: 0)
             }
             let tokens = entries.reduce(0) { $0 + $1.tokens }
             let cost = entries.reduce(0) { $0 + $1.cost }
@@ -228,12 +230,21 @@ struct UsageHeatmap: View {
                 .map { AccountUsage(name: $0.provider.displayName, tokens: $0.tokens, cost: $0.cost) }
             return HeatmapDay(
                 date: date,
-                intensity: busiest > 0 ? Double(tokens) / Double(busiest) : nil,
+                level: rankLevel(tokens: tokens, among: distinct),
                 accounts: accounts,
                 tokens: tokens,
                 cost: cost
             )
         }
+    }
+
+    /// Maps a day onto 0...3 by its rank among the distinct active-day totals, so the quietest
+    /// active day is always the lowest step and the busiest always the highest.
+    nonisolated static func rankLevel(tokens: Int, among distinct: [Int]) -> Int {
+        // A single active day is by definition the busiest one; showing it at the lowest step
+        // would read as "barely anything happened".
+        guard distinct.count > 1, let index = distinct.firstIndex(of: tokens) else { return 3 }
+        return index * 3 / (distinct.count - 1)
     }
 }
 
@@ -246,17 +257,17 @@ struct AccountUsage: Hashable {
 struct HeatmapDay: Identifiable {
     let id: String
     let date: Date
-    let intensity: Double?
+    let level: Int?
     let isPlaceholder: Bool
     /// Per-provider breakdown for the day, heaviest first.
     let accounts: [AccountUsage]
     let tokens: Int
     let cost: Double
 
-    init(date: Date, intensity: Double?, accounts: [AccountUsage] = [], tokens: Int = 0, cost: Double = 0) {
+    init(date: Date, level: Int?, accounts: [AccountUsage] = [], tokens: Int = 0, cost: Double = 0) {
         self.id = ISO8601DateFormatter().string(from: date)
         self.date = date
-        self.intensity = intensity
+        self.level = level
         self.isPlaceholder = false
         self.accounts = accounts
         self.tokens = tokens
@@ -266,7 +277,7 @@ struct HeatmapDay: Identifiable {
     private init(placeholderIndex: Int) {
         self.id = "placeholder-\(placeholderIndex)"
         self.date = .distantPast
-        self.intensity = nil
+        self.level = nil
         self.isPlaceholder = true
         self.accounts = []
         self.tokens = 0
@@ -286,7 +297,7 @@ struct HeatmapDay: Identifiable {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE, MMM d"
         let day = formatter.string(from: date)
-        guard intensity != nil else { return "\(day) - no activity" }
+        guard level != nil else { return "\(day) - no activity" }
 
         // Absolute figures, not the relative shade: the colour already conveys "compared to
         // your other days", so repeating it as a percentage would say nothing new, and a
