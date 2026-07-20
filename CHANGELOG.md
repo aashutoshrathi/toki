@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Update checks no longer stop after an update is found, so a release that lands while an earlier one is still pending is now picked up. Checks were driven by a chain of one-shot timers, each scheduling its successor from inside its own fire handler - any single missed or invalidated firing ended the chain permanently, leaving the app parked on a stale version. The timer is now a repeating one registered in the common run loop modes, so it also keeps firing while the popover or a menu is open, and a skipped firing is no longer fatal.
 - Menu bar status text no longer disappears against a dark menu bar. The status view pinned its appearance to the app's (which follows the system light/dark setting) rather than inheriting the menu bar's own, so in full-screen - where the bar renders dark even in light mode - the text was drawn in the light-mode label color on a dark background and became invisible. It now inherits from the status item's button, which carries the real menu-bar appearance.
 
 ## 2.3.3 - 2026-07-19

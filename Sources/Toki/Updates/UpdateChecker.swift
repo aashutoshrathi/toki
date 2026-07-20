@@ -124,13 +124,28 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
+    // A repeating timer in the common run loop modes, deliberately.
+    //
+    // The previous version chained one-shot timers, each scheduling the next from inside its
+    // own fire handler. That makes the chain a single point of failure: if any one firing is
+    // missed or the timer is invalidated without a successor being scheduled, checking stops
+    // permanently and the app sits on a stale update forever - which is exactly the reported
+    // symptom of "an update is available and it never notices the newer ones behind it".
+    //
+    // It was also scheduled in the default run loop mode only, so it could not fire while the
+    // popover or a menu was tracking. A repeating timer added to .common survives both: a
+    // missed firing is skipped, not fatal, because the next one is already scheduled.
     private func scheduleNextCheck() {
-        checkTimer?.invalidate()
-        let elapsed = Date().timeIntervalSince(lastCheckedAt ?? .distantPast)
-        let delay = max(updateCheckInterval - elapsed, 1)
-        checkTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        guard checkTimer == nil else { return }
+        let timer = Timer(timeInterval: updateCheckInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.runCheck() }
         }
+        // Honour time already elapsed since the last check so a relaunch doesn't restart the
+        // full interval; subsequent firings then settle onto the regular cadence.
+        let elapsed = Date().timeIntervalSince(lastCheckedAt ?? .distantPast)
+        timer.fireDate = Date().addingTimeInterval(max(updateCheckInterval - elapsed, 1))
+        RunLoop.main.add(timer, forMode: .common)
+        checkTimer = timer
     }
 
     private func checkForUpdates() async {
