@@ -17,12 +17,14 @@ final class NotchWindowController {
     private var window: NSWindow?
     private var hostingView: NotchHostingView<NotchPanel>?
     private let onClick: () -> Void
-    private var content: MenuBarStatusView
+    private var entries: [MenuBarStatusEntry]
+    private var awaitingInput: Int
     private var isExpanded = false
     private var placement: NotchPlacement
 
-    init(content: MenuBarStatusView, placement: NotchPlacement, onClick: @escaping () -> Void) {
-        self.content = content
+    init(entries: [MenuBarStatusEntry], awaitingInput: Int, placement: NotchPlacement, onClick: @escaping () -> Void) {
+        self.entries = entries
+        self.awaitingInput = awaitingInput
         self.placement = placement
         self.onClick = onClick
     }
@@ -106,6 +108,17 @@ final class NotchWindowController {
         switch placement {
         case .sideways:
             collapsed = NSRect(x: notch.maxX, y: screenTop - bandHeight, width: 108, height: bandHeight)
+        case .around:
+            // Wraps the housing: a band on each side, with the housing's own width between
+            // them. Nothing is drawn in that middle span - there are no pixels there - so the
+            // two halves read as a single strip interrupted by the camera.
+            let side: CGFloat = 96
+            collapsed = NSRect(
+                x: notch.minX - side,
+                y: screenTop - bandHeight,
+                width: notchWidth + side * 2,
+                height: bandHeight
+            )
         case .hanging:
             // Matches the housing's width and drops below it, so the two read as one shape.
             let drop: CGFloat = 24
@@ -133,8 +146,9 @@ final class NotchWindowController {
         NSScreen.main?.safeAreaInsets.top ?? 32
     }
 
-    func update(content: MenuBarStatusView) {
-        self.content = content
+    func update(entries: [MenuBarStatusEntry], awaitingInput: Int) {
+        self.entries = entries
+        self.awaitingInput = awaitingInput
         render()
     }
 
@@ -178,10 +192,12 @@ final class NotchWindowController {
     private func render() {
         guard let geometry = Self.geometry(for: NSScreen.main, placement: placement) else { return }
         let panel = NotchPanel(
-            content: content,
+            entries: entries,
+            awaitingInput: awaitingInput,
             isExpanded: isExpanded,
             placement: placement,
             bandHeight: Self.bandHeight,
+            notchWidth: geometry.notch.width,
             pillRect: geometry.pillInView(expanded: isExpanded),
             onClick: onClick,
             onHoverChange: { [weak self] hovering in self?.setExpanded(hovering) }
@@ -249,12 +265,15 @@ private final class NotchHostingView<Content: View>: NSHostingView<Content> {
 // against is the black camera housing, which does not change with light mode, so inheriting
 // would paint dark text on black.
 private struct NotchPanel: View {
-    let content: MenuBarStatusView
+    let entries: [MenuBarStatusEntry]
+    let awaitingInput: Int
     let isExpanded: Bool
     let placement: NotchPlacement
     /// Height of the menu bar band. Anything drawn in the band's own vertical range and inside
     /// the housing's x range is behind hardware, so content has to clear it.
     let bandHeight: CGFloat
+    /// Width of the camera housing, used to leave a matching gap when straddling it.
+    let notchWidth: CGFloat
     /// Where the pill goes inside the window, top-left origin, already computed for the
     /// current placement and expansion.
     let pillRect: CGRect
@@ -264,6 +283,7 @@ private struct NotchPanel: View {
     /// Sideways rests inside the band, so its content is centred in the band rather than pushed
     /// below it - it sits beside the housing, not under it.
     private var clearsHousing: Bool { isExpanded || placement == .hanging }
+
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -276,9 +296,32 @@ private struct NotchPanel: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isExpanded)
     }
 
+    /// Straddling splits the readout across the two bands. Entries divide between them, and the
+    /// waiting-agent badge goes right, next to where menu bar extras normally live.
+    private var straddles: Bool { placement == .around && !isExpanded }
+
+    private var splitPoint: Int { (entries.count + 1) / 2 }
+
+    @ViewBuilder
+    private var readout: some View {
+        if straddles {
+            HStack(spacing: 0) {
+                MenuBarStatusView(entries: Array(entries.prefix(splitPoint)))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                // Matches the housing exactly. Nothing is drawn here - there are no pixels
+                // behind the camera - so the two halves read as one strip it interrupts.
+                Color.clear.frame(width: notchWidth)
+                MenuBarStatusView(entries: Array(entries.dropFirst(splitPoint)), awaitingInput: awaitingInput)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            MenuBarStatusView(entries: entries, awaitingInput: awaitingInput)
+        }
+    }
+
     private var pill: some View {
         VStack(spacing: isExpanded ? 6 : 0) {
-            content
+            readout
                 .frame(height: 22)
             if isExpanded {
                 Text("Click to open Toki")

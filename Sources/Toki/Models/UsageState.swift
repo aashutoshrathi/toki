@@ -82,6 +82,8 @@ enum NotchPlacement: String, Codable, CaseIterable, Identifiable, Sendable {
     case hanging
     /// Sits in the menu bar band beside the housing, reading as a wider notch.
     case sideways
+    /// Splits across both bands, wrapping the housing on the left and right.
+    case around
 
     var id: String { rawValue }
 
@@ -89,6 +91,7 @@ enum NotchPlacement: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .hanging: return "Hanging"
         case .sideways: return "Sideways"
+        case .around: return "Around"
         }
     }
 }

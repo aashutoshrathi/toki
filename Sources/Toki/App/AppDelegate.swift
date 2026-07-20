@@ -71,7 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if active {
             if notchController == nil {
                 notchController = NotchWindowController(
-                    content: MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput),
+                    entries: latestEntries,
+                    awaitingInput: agentsAwaitingInput,
                     placement: store.preferences.notchPlacement,
                     onClick: { [weak self] in self?.togglePopover() }
                 )
@@ -108,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func updateStatusItem() {
         let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput)
-        notchController?.update(content: content)
+        notchController?.update(entries: latestEntries, awaitingInput: agentsAwaitingInput)
         guard let button = statusItem.button else { return }
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {
