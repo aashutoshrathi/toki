@@ -63,7 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         } else {
             hostingView = PassthroughHostingView(rootView: content)
             hostingView.translatesAutoresizingMaskIntoConstraints = false
-            hostingView.appearance = NSApp.effectiveAppearance
+            // Deliberately NOT pinning `appearance` here. The app's effective appearance
+            // follows the system light/dark setting, but the menu bar has an appearance of
+            // its own that does not always agree with it - most visibly in full-screen,
+            // where the bar renders dark even while the system is in light mode. Pinning to
+            // NSApp.effectiveAppearance painted the status text in the *app's* light-mode
+            // label color on that dark bar, i.e. black on black, making it vanish entirely.
+            // Leaving `appearance` nil lets the view inherit from the status item's button,
+            // whose window carries the real menu-bar appearance, so `.primary` resolves
+            // against the surface the text is actually drawn on.
             button.addSubview(hostingView)
             statusHostingView = hostingView
         }

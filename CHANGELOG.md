@@ -2,6 +2,10 @@
 
 ## 2.4.0 - 2026-07-20
 
+### Fixed
+
+- Menu bar status text no longer disappears against a dark menu bar. The status view pinned its appearance to the app's (which follows the system light/dark setting) rather than inheriting the menu bar's own, so in full-screen - where the bar renders dark even in light mode - the text was drawn in the light-mode label color on a dark background and became invisible. It now inherits from the status item's button, which carries the real menu-bar appearance.
+
 ## 2.3.3 - 2026-07-19
 
 ### Added
