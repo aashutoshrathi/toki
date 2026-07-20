@@ -119,30 +119,31 @@ struct UsageHeatmap: View {
     // the dark surface rather than derived by inverting the light ones: on a dark background
     // the ramp has to run dark-to-bright for intensity to read as "more".
     //
-    // Green rather than blue, for two reasons beyond taste. The blue ramp's darkest step sat
-    // close enough to the neutral empty cell to be mistaken for it, and blue is already the
-    // app's accent - the tab count badge is blue - so an activity grid in the same hue read as
-    // if it were part of the same signal.
+    // Light, airy blues. The dark ramp deliberately starts at a true blue rather than the navy
+    // an earlier version used: navy sat close enough to the neutral empty cell to be mistaken
+    // for it, so the lightest end of the family is also the most legible one here.
     //
-    // Both ramps are measured, not copied. GitHub's own contribution greens fail the
-    // normal-vision separation floor (deltaE 13.0 dark, 10.2 light, against a floor of 15), so
-    // these are re-spaced versions rather than the originals.
+    // Spacing is the constraint that fights "lighter". Compressing four steps into the light
+    // end of a hue leaves too little lightness between them, and several plausible-looking
+    // pale ramps measured at deltaE 12-14 - under the 15 floor, meaning adjacent steps are hard
+    // to separate even with full colour vision. These span from a mid blue to near-white to buy
+    // that separation back while keeping the overall impression light.
     //
-    // Light: #B7E9BF #52C878 #1F8A4C #0B4A26 (worst adjacent deltaE 16.3 normal / 13.1 CVD)
-    // Dark:  #0A4526 #0F8A50 #35D073 #B6F5CE (worst adjacent deltaE 18.8 normal / 15.3 CVD)
+    // Light: #CFE6FB #79B4EF #3480CF #0E4E93 (worst adjacent deltaE 16.5 normal / 15.8 CVD)
+    // Dark:  #1A5FA8 #4B9AEA #95C9FA #EAF5FF (worst adjacent deltaE 15.4 normal / 14.3 CVD)
     private var ramp: [Color] {
         colorScheme == .dark
             ? [
-                Color(red: 0.039, green: 0.271, blue: 0.149),
-                Color(red: 0.059, green: 0.541, blue: 0.314),
-                Color(red: 0.208, green: 0.816, blue: 0.451),
-                Color(red: 0.714, green: 0.961, blue: 0.808),
+                Color(red: 0.102, green: 0.373, blue: 0.659),
+                Color(red: 0.294, green: 0.604, blue: 0.918),
+                Color(red: 0.584, green: 0.788, blue: 0.980),
+                Color(red: 0.918, green: 0.961, blue: 1.000),
             ]
             : [
-                Color(red: 0.718, green: 0.914, blue: 0.749),
-                Color(red: 0.322, green: 0.784, blue: 0.471),
-                Color(red: 0.122, green: 0.541, blue: 0.298),
-                Color(red: 0.043, green: 0.290, blue: 0.149),
+                Color(red: 0.812, green: 0.902, blue: 0.984),
+                Color(red: 0.475, green: 0.706, blue: 0.937),
+                Color(red: 0.204, green: 0.502, blue: 0.812),
+                Color(red: 0.055, green: 0.306, blue: 0.576),
             ]
     }
 
