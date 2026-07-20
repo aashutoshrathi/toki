@@ -48,21 +48,32 @@ func resetDescription(for resetDate: Date) -> String {
 }
 
 func formatCompact(_ value: Double) -> String {
+    let absValue = abs(value)
+    let scaled: Double
+    let suffix: String
+    if absValue >= 1_000_000 {
+        (scaled, suffix) = (value / 1_000_000, "M")
+    } else if absValue >= 1_000 {
+        (scaled, suffix) = (value / 1_000, "K")
+    } else {
+        (scaled, suffix) = (value, "")
+    }
+
     let formatter = NumberFormatter()
     formatter.numberStyle = .decimal
-    formatter.maximumFractionDigits = value >= 100 ? 0 : 1
-
-    let absValue = abs(value)
-    if absValue >= 1_000_000 {
-        return "\(formatter.string(from: NSNumber(value: value / 1_000_000)) ?? "0")M"
-    }
-    if absValue >= 1_000 {
-        return "\(formatter.string(from: NSNumber(value: value / 1_000)) ?? "0")K"
-    }
-    return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
+    // Precision is chosen from the SCALED magnitude, not the original. Deciding from the
+    // original meant anything over 100 got zero decimals *after* scaling too, so 1,500,000
+    // printed as "2M" - the decimal that carries all the meaning at this size was rounded away.
+    formatter.maximumFractionDigits = abs(scaled) >= 100 ? 0 : 1
+    return (formatter.string(from: NSNumber(value: scaled)) ?? "0") + suffix
 }
 
 func formatUSD(_ value: Double) -> String {
+    // A non-zero spend below a cent would round to "$0.00", which reads as free rather than
+    // as small - surface it as a floor instead so a just-started session never looks costless.
+    if value > 0, value < 0.01 {
+        return "<$0.01"
+    }
     let formatter = NumberFormatter()
     formatter.numberStyle = .currency
     formatter.currencyCode = "USD"

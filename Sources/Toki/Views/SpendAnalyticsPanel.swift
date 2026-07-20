@@ -27,7 +27,8 @@ struct SpendAnalyticsPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                summarySection
+                UsageHeatmap(store: store)
+                Divider()
                 spendSection
                 Divider()
                 quotaSection
@@ -143,6 +144,32 @@ struct SpendAnalyticsPanel: View {
                 }
                 .chartLegend(position: .bottom, spacing: 8)
                 .frame(height: 160)
+                // The chart itself was inert - only the legend rows below responded to hover,
+                // so pointing at a slice did nothing, which is the first thing anyone tries.
+                //
+                // Hit testing is done by hand rather than with chartAngleSelection because that
+                // requires macOS 15 and this app targets 14. SectorMark lays slices out
+                // clockwise from twelve o'clock, so the pointer's angle about the centre maps
+                // directly onto the cumulative cost fractions.
+                .chartOverlay { _ in
+                    GeometryReader { geometry in
+                        Rectangle()
+                            .fill(.clear)
+                            .contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let location):
+                                    selectedAgentID = Self.agentID(
+                                        at: location,
+                                        in: geometry.size,
+                                        agents: costAgents
+                                    )
+                                case .ended:
+                                    selectedAgentID = nil
+                                }
+                            }
+                    }
+                }
 
                 // Hover detail / total line
                 if let selID = selectedAgentID,
@@ -225,6 +252,46 @@ struct SpendAnalyticsPanel: View {
     }
 
     // MARK: - Quota (%)
+
+    /// Which slice sits under a point, or nil when the pointer is outside the ring.
+    ///
+    /// Extracted and made static so the geometry can be tested without a rendered chart.
+    /// Returns nil inside the donut hole and outside the outer edge, so the empty middle does
+    /// not select whichever slice happens to be nearest.
+    ///
+    /// nonisolated: pure geometry over values, with no view state. Without it the method
+    /// inherits the View's MainActor isolation and cannot be called from a synchronous test -
+    /// which builds locally but fails under CI's stricter concurrency checking.
+    nonisolated static func agentID(at point: CGPoint, in size: CGSize, agents: [ActiveAgent]) -> Int32? {
+        let costs = agents.compactMap { agent -> (id: Int32, cost: Double)? in
+            guard let cost = agent.sessionUsage?.cost, cost > 0 else { return nil }
+            return (agent.id, cost)
+        }
+        let total = costs.reduce(0) { $0 + $1.cost }
+        guard total > 0 else { return nil }
+
+        // The chart is centred in its frame; the legend occupies the lower portion, so the
+        // ring is centred on the square that the plot area actually occupies.
+        let outerRadius = min(size.width, size.height) / 2
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        let distance = (dx * dx + dy * dy).squareRoot()
+        // innerRadius is .ratio(0.62) on the mark.
+        guard distance >= outerRadius * 0.62, distance <= outerRadius else { return nil }
+
+        // Clockwise from twelve o'clock. SwiftUI's y grows downward, hence -dy.
+        var angle = atan2(dx, -dy)
+        if angle < 0 { angle += 2 * .pi }
+        let fraction = angle / (2 * .pi)
+
+        var cumulative = 0.0
+        for entry in costs {
+            cumulative += entry.cost / total
+            if fraction <= cumulative { return entry.id }
+        }
+        return costs.last?.id
+    }
 
     private var quotaSection: some View {
         VStack(alignment: .leading, spacing: 8) {

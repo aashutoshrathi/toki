@@ -28,7 +28,22 @@ enum StateLoader {
             return try JSONDecoder.toki.decode(UsageState.self, from: data)
         } catch {
             DiagnosticLogger.shared.record(.error, component: "state", code: "load_failed", detail: diagnosticErrorDetail(error))
+            // Falling back to an empty state means the next save overwrites whatever could not
+            // be read - silently destroying accumulated history over what may be a single
+            // unrecognized field. Set the unreadable file aside first so it is recoverable.
+            preserveUnreadableState(at: path)
             return UsageState()
+        }
+    }
+
+    private static func preserveUnreadableState(at path: String) {
+        let backup = path + ".unreadable"
+        try? FileManager.default.removeItem(atPath: backup)
+        do {
+            try FileManager.default.copyItem(atPath: path, toPath: backup)
+            DiagnosticLogger.shared.record(.warning, component: "state", code: "state_preserved", detail: backup)
+        } catch {
+            DiagnosticLogger.shared.record(.error, component: "state", code: "state_preserve_failed", detail: diagnosticErrorDetail(error))
         }
     }
 

@@ -129,6 +129,13 @@ struct SettingsPanel: View {
                     }
                 }
 
+                // Sits directly under the menu bar picker: it decides where the readout lives,
+                // so it belongs with the other placement settings rather than below the
+                // notification thresholds it had nothing to do with.
+                if NotchWindowController.isSupported {
+                    notchModeRow
+                }
+
                 Divider()
                 sectionHeader("Notifications")
 
@@ -287,6 +294,53 @@ struct SettingsPanel: View {
                 store.updatePreferences(next)
             }
         )
+    }
+
+    // Given its own row rather than a plain checkbox line: it is the one setting that visibly
+    // relocates the whole app, and it is unfinished, so it needs room to say both.
+    @ViewBuilder
+    private var notchModeRow: some View {
+        Toggle(isOn: binding(\.notchModeEnabled)) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text("Live in the notch")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("BETA")
+                        .font(.system(size: 8, weight: .heavy))
+                        .tracking(0.4)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            LinearGradient(
+                                colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                         Color(red: 0.85, green: 0.35, blue: 0.65)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            in: Capsule()
+                        )
+                }
+                Text(store.preferences.notchModeEnabled
+                     ? "Toki is hanging out up there. Hover it for more."
+                     : "Move Toki into the notch, Dynamic Island style.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .help("Replaces the menu bar item with a panel that hangs from the display notch")
+        .pointerOnHover()
+
+        if store.preferences.notchModeEnabled {
+            Picker("Rests", selection: binding(\.notchPlacement)) {
+                ForEach(NotchPlacement.allCases) { placement in
+                    Text(placement.label).tag(placement)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.leading, 18)
+            .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
+        }
     }
 
     private func sectionHeader(_ title: String) -> some View {

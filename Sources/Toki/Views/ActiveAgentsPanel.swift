@@ -36,10 +36,28 @@ struct ActiveAgentsPanel: View {
                                 } label: {
                                     HStack(spacing: 8) {
                                         ProviderLogo(provider: agent.provider, size: 18)
+                                            // Dot rides on the provider logo so the row's layout
+                                            // doesn't shift when an agent starts or stops waiting.
+                                            .overlay(alignment: .topTrailing) {
+                                                if agent.needsInput {
+                                                    Circle()
+                                                        .fill(Color.red)
+                                                        .frame(width: 7, height: 7)
+                                                        .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
+                                                        .offset(x: 2, y: -2)
+                                                }
+                                            }
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(agent.title)
                                                 .font(.system(size: 12, weight: .semibold))
                                                 .lineLimit(1)
+                                            if let attention = agent.attention {
+                                                Text(attention.summary)
+                                                    .font(.system(size: 10, weight: .medium))
+                                                    .foregroundStyle(Color.red)
+                                                    .lineLimit(2)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
                                             if let dir = agent.directoryDisplay {
                                                 Text(dir)
                                                     .font(.system(size: 10))
@@ -68,7 +86,8 @@ struct ActiveAgentsPanel: View {
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .help(agent.hasTerminalTarget ? "Go to this terminal session" : "Open the likely host app")
+                                .help(agent.attention.map { "\($0.summary) - click to go answer" }
+                                    ?? (agent.hasTerminalTarget ? "Go to this terminal session" : "Open the likely host app"))
 
                                 // Quit button, folded inside the card next to the open affordance
                                 // (a sibling of the navigate button, not nested in it, so clicking

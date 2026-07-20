@@ -76,14 +76,40 @@ enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Where the notch panel rests when it is not expanded.
+enum NotchPlacement: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Hangs below the housing, matching its width.
+    case hanging
+    /// Sits in the menu bar band beside the housing, reading as a wider notch.
+    case sideways
+    /// Splits across both bands, wrapping the housing on the left and right.
+    case around
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .hanging: return "Hanging"
+        case .sideways: return "Sideways"
+        case .around: return "Around"
+        }
+    }
+}
+
 struct AppPreferences: Codable, Equatable {
     var notificationsEnabled = true
     var dndEnabled = false
     var lowQuotaThreshold = 0.20
     var notificationCooldownMinutes = 90
     var menuBarMode = MenuBarDisplayMode.smart
-    var historyRetentionDays = 14
+    // 30 days by default so the usage heatmap can fill its full window; it renders
+    // min(30, retention), so a shorter retention silently shortens the chart.
+    var historyRetentionDays = 30
     var sessionWarningThreshold = 0.15
+    /// Experimental: render the status readout at the display notch instead of the menu bar.
+    /// Off by default - it relocates the whole app, so it is opt-in.
+    var notchModeEnabled = false
+    var notchPlacement = NotchPlacement.hanging
 
     enum CodingKeys: String, CodingKey {
         case notificationsEnabled
@@ -93,6 +119,34 @@ struct AppPreferences: Codable, Equatable {
         case menuBarMode
         case historyRetentionDays
         case sessionWarningThreshold
+        case notchModeEnabled
+        case notchPlacement
+    }
+
+    init() {}
+
+    // Decoded field by field with decodeIfPresent so that every key is optional and a missing
+    // one falls back to its default.
+    //
+    // The synthesized decoder does NOT do this: it calls decode() for each non-optional
+    // property and throws keyNotFound when a key is absent, and a property's default value is
+    // never consulted. That makes adding a single preference a breaking change for every
+    // existing state file - the decode throws, StateLoader falls back to an empty state, and
+    // the next save overwrites the user's accumulated history with it. That is exactly what
+    // adding notchModeEnabled did, so this decoder exists to make the whole struct additive
+    // by construction rather than relying on remembering the hazard next time.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = AppPreferences()
+        notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? defaults.notificationsEnabled
+        dndEnabled = try container.decodeIfPresent(Bool.self, forKey: .dndEnabled) ?? defaults.dndEnabled
+        lowQuotaThreshold = try container.decodeIfPresent(Double.self, forKey: .lowQuotaThreshold) ?? defaults.lowQuotaThreshold
+        notificationCooldownMinutes = try container.decodeIfPresent(Int.self, forKey: .notificationCooldownMinutes) ?? defaults.notificationCooldownMinutes
+        menuBarMode = try container.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarMode) ?? defaults.menuBarMode
+        historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
+        sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
+        notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled
+        notchPlacement = try container.decodeIfPresent(NotchPlacement.self, forKey: .notchPlacement) ?? defaults.notchPlacement
     }
 }
 

@@ -13,6 +13,7 @@ final class UsageStore: ObservableObject {
     @Published var history: [UsageHistoryEntry] = []
     @Published var session: SessionState?
     @Published var activeAgents: [ActiveAgent] = []
+    @Published var dailyActivity: [DailyActivity] = []
     @Published var aiInsight: UsageInsight?
     @Published var isGeneratingInsight = false
     @Published var recommendation = SmartRecommendation(
@@ -39,6 +40,9 @@ final class UsageStore: ObservableObject {
     var timer: Timer?
     var isRefreshing = false
     var isScanningAgents = false
+    // Published: the heatmap shows a loading state off this, so the view has to observe it.
+    @Published var isScanningActivity = false
+    var dailyActivityScannedAt: Date?
     var eventGeneration = 0
     var insightGeneration = 0
     var notificationAuthorization: Bool?

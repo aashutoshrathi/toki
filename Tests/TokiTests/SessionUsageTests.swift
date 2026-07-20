@@ -7,17 +7,17 @@ final class SessionUsageTests: XCTestCase {
     func testDisplayLineWithCostAndTokens() {
         let usage = AgentSessionUsage(cost: 0.05, tokensInput: 1200, tokensOutput: 500)
         XCTAssertEqual(usage.displayCost, "$0.05")
-        XCTAssertTrue(usage.displayTokens.contains("1K in"))
+        XCTAssertTrue(usage.displayTokens.contains("1.2K in"))
         XCTAssertTrue(usage.displayTokens.contains("500 out"))
         XCTAssertTrue(usage.displayLine?.contains("$0.05") == true)
-        XCTAssertTrue(usage.displayLine?.contains("1K in") == true)
+        XCTAssertTrue(usage.displayLine?.contains("1.2K in") == true)
     }
 
     func testDisplayLineWithTokensOnly() {
         let usage = AgentSessionUsage(cost: nil, tokensInput: 3400, tokensOutput: 1200)
         XCTAssertNil(usage.displayCost)
-        XCTAssertTrue(usage.displayLine?.contains("3K in") == true)
-        XCTAssertTrue(usage.displayLine?.contains("1K out") == true)
+        XCTAssertTrue(usage.displayLine?.contains("3.4K in") == true)
+        XCTAssertTrue(usage.displayLine?.contains("1.2K out") == true)
     }
 
     func testDisplayLineWithCostOnly() {
@@ -33,7 +33,7 @@ final class SessionUsageTests: XCTestCase {
 
     func testDisplayLineWithLargeTokenCounts() {
         let usage = AgentSessionUsage(cost: 1.23, tokensInput: 1_500_000, tokensOutput: 500_000)
-        XCTAssertTrue(usage.displayLine?.contains("2M in") == true, "got \(usage.displayLine ?? "nil")")
+        XCTAssertTrue(usage.displayLine?.contains("1.5M in") == true, "got \(usage.displayLine ?? "nil")")
         XCTAssertTrue(usage.displayLine?.contains("500K out") == true, "got \(usage.displayLine ?? "nil")")
         XCTAssertTrue(usage.displayLine?.contains("$1.23") == true)
     }

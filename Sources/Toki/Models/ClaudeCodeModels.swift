@@ -12,6 +12,22 @@ struct ClaudeCodeAccountRecord: Hashable {
     var credentials: String?
     var loadError: String?
     var label: AccountPresentation?
+
+    // The human-facing label for this account.
+    //
+    // `name` carries whatever the registry recorded, which for claude-swap is the bare
+    // email, while `id` is a machine key ("claude-1-user@example.com") built from the
+    // registry's own account numbering. Neither reads as a name. An explicit nickname
+    // always wins; otherwise "Claude - <email>" keeps a multi-account setup
+    // distinguishable without leaking the internal numbering into the UI.
+    //
+    // `id` is deliberately left alone - it keys aliases, adjustments, and cached state,
+    // so renaming it would orphan any of those a user has already set.
+    var displayName: String {
+        if let nickname = label?.nickname, !nickname.isEmpty { return nickname }
+        guard let email, !email.isEmpty else { return "Claude" }
+        return "Claude - \(email)"
+    }
 }
 
 struct AccountPresentation: Hashable {

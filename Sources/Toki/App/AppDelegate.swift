@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         installCLISymlink()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        updateStatusItem(entries: menuBarPlaceholderEntries())
+        updateStatusItem()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
 
@@ -34,11 +34,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         updateChecker.startAutomaticChecks()
 
+        // Quota entries and the waiting-agent count arrive from two independent publishers, so
+        // each is cached and the status item rebuilt from both - otherwise whichever updated
+        // last would clobber the other's contribution.
         Task { @MainActor in
             for await entries in store.$statusEntries.values {
-                updateStatusItem(entries: entries.isEmpty ? menuBarPlaceholderEntries() : entries)
+                latestEntries = entries.isEmpty ? menuBarPlaceholderEntries() : entries
+                updateStatusItem()
             }
         }
+
+        Task { @MainActor in
+            for await agents in store.$activeAgents.values {
+                agentsAwaitingInput = agents.filter(\.needsInput).count
+                updateStatusItem()
+            }
+        }
+
+        Task { @MainActor in
+            for await preferences in store.$preferences.values {
+                notchController?.update(placement: preferences.notchPlacement)
+                applyNotchMode(enabled: preferences.notchModeEnabled)
+            }
+        }
+    }
+
+    private var latestEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
+    private var agentsAwaitingInput = 0
+    private var latestContentWidth: CGFloat = 0
+    private var notchController: NotchWindowController?
+
+    // Notch mode replaces the status item rather than duplicating it - two copies of the same
+    // readout on one menu bar is just clutter. If the display has no notch the toggle is a
+    // no-op and the status item stays, so the app can never end up with no visible surface.
+    private func applyNotchMode(enabled: Bool) {
+        let active = enabled && NotchWindowController.isSupported
+        if active {
+            if notchController == nil {
+                notchController = NotchWindowController(
+                    entries: latestEntries,
+                    awaitingInput: agentsAwaitingInput,
+                    contentWidth: latestContentWidth,
+                    placement: store.preferences.notchPlacement,
+                    onClick: { [weak self] in self?.togglePopover() }
+                )
+            }
+            // Only give up the status item once the replacement is confirmed on screen.
+            // Hiding it first and trusting the panel to appear is how enabling notch mode
+            // could leave the app with no visible surface at all.
+            if notchController?.show() == true {
+                statusItem.isVisible = false
+                return
+            }
+            notchController = nil
+            statusItem.isVisible = true
+            DiagnosticLogger.shared.record(.warning, component: "notch", code: "fell_back_to_menu_bar")
+        } else {
+            notchController?.hide()
+            notchController = nil
+            statusItem.isVisible = true
+        }
+        updateStatusItem()
     }
 
     private func installCLISymlink() {
@@ -53,9 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    private func updateStatusItem(entries: [MenuBarStatusEntry]) {
+    private func updateStatusItem() {
+        let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput)
         guard let button = statusItem.button else { return }
-        let content = MenuBarStatusView(entries: entries)
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {
             existing.rootView = content
@@ -63,7 +119,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         } else {
             hostingView = PassthroughHostingView(rootView: content)
             hostingView.translatesAutoresizingMaskIntoConstraints = false
-            hostingView.appearance = NSApp.effectiveAppearance
+            // Deliberately NOT pinning `appearance` here. The app's effective appearance
+            // follows the system light/dark setting, but the menu bar has an appearance of
+            // its own that does not always agree with it - most visibly in full-screen,
+            // where the bar renders dark even while the system is in light mode. Pinning to
+            // NSApp.effectiveAppearance painted the status text in the *app's* light-mode
+            // label color on that dark bar, i.e. black on black, making it vanish entirely.
+            // Leaving `appearance` nil lets the view inherit from the status item's button,
+            // whose window carries the real menu-bar appearance, so `.primary` resolves
+            // against the surface the text is actually drawn on.
             button.addSubview(hostingView)
             statusHostingView = hostingView
         }
@@ -71,11 +135,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         hostingView.layoutSubtreeIfNeeded()
         let fittingSize = hostingView.fittingSize
         let width = max(54, ceil(fittingSize.width) + 6)
+
+        // The notch panel shows the same readout, so it reuses this measurement rather than
+        // guessing a width - a fixed one truncated the readout as providers were added.
+        latestContentWidth = ceil(fittingSize.width)
+        notchController?.update(
+            entries: latestEntries,
+            awaitingInput: agentsAwaitingInput,
+            contentWidth: latestContentWidth
+        )
+
+        // Resizing the status item while the popover is open drags the popover with it.
+        //
+        // The popover is anchored to this button, so any width change moves the anchor and
+        // macOS re-positions the whole popover under the cursor mid-read - which happens
+        // exactly when something interesting occurs, since that is when the waiting-agent
+        // badge appears or a quota segment drops out. The content is still refreshed live;
+        // only the geometry is held until the popover closes, and popoverDidClose applies
+        // whatever the final size should be.
+        guard !popover.isShown else {
+            hasDeferredStatusResize = hasDeferredStatusResize || width != statusItem.length
+            return
+        }
+
+        hasDeferredStatusResize = false
         statusItem.length = width
         statusItem.button?.title = ""
         statusItem.button?.image = nil
         hostingView.frame = NSRect(x: 3, y: 0, width: width - 6, height: button.bounds.height)
     }
+
+    private var hasDeferredStatusResize = false
 
     @objc private func togglePopover() {
         guard statusItem.button != nil else { return }
@@ -104,7 +194,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // transient top-of-screen window instead of the corner.
     private func presentPopover(retriesRemaining: Int) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let button = self.statusItem.button else { return }
+            guard let self else { return }
+            // In notch mode the status item is hidden and cannot anchor anything, so the panel
+            // itself is the anchor - otherwise the popover falls back to the screen corner,
+            // detached from the thing that was clicked.
+            if let controller = self.notchController, let anchor = controller.anchorView, anchor.window != nil {
+                // Anchored to the pill, not the window: the resting pill can sit to one side of
+                // the notch, so anchoring to the full window would open the popover away from
+                // whatever was actually clicked.
+                self.popover.show(relativeTo: controller.anchorRect, of: anchor, preferredEdge: .minY)
+                self.popover.contentViewController?.view.window?.makeKey()
+                return
+            }
+            guard let button = self.statusItem.button else { return }
             if self.hasValidScreenPosition(button) {
                 self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 self.popover.contentViewController?.view.window?.makeKey()
@@ -171,5 +273,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // invisibly on screen. Harmless on the normal path, where the window was never ordered in.
     func popoverDidClose(_ notification: Notification) {
         fallbackAnchorWindow.orderOut(nil)
+        // Apply any resize that was held back while the popover was anchored to the button.
+        if hasDeferredStatusResize {
+            updateStatusItem()
+        }
     }
 }

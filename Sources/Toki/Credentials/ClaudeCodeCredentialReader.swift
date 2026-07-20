@@ -87,7 +87,22 @@ enum ClaudeCodeCredentialReader {
     static func readKeychain(service: String, account: String) throws -> String {
         #if os(macOS)
         let command = "security find-generic-password -s '\(shellEscaped(service))' -a '\(shellEscaped(account))' -w"
-        let credentials = try SecretResolver.runShell(command).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Deliberately a long timeout, not the default.
+        //
+        // The first read on a machine puts up the system's Keychain access prompt, and
+        // `security` blocks until it is answered. Under the default 15 seconds that clock is
+        // really measuring how quickly the user notices a dialog - miss it and the read is
+        // killed, the account reports as not connected, and nothing indicates that a prompt was
+        // the reason. A generous ceiling still guards against a genuinely wedged process.
+        let credentials: String
+        do {
+            credentials = try SecretResolver.runShell(command, timeout: 120)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            throw LocalizedErrorMessage(
+                "Couldn't read the Claude Code credentials from your Keychain. If macOS asked for Keychain access, choose Allow and refresh."
+            )
+        }
         guard !credentials.isEmpty else {
             throw LocalizedErrorMessage("Keychain item is empty")
         }

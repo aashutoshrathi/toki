@@ -35,6 +35,175 @@ enum AgentSessionResolver {
         }
     }
 
+    // Whether the session is parked waiting on the user, and what it's waiting for.
+    static func attention(provider: Provider, command: String, cwd: String?) -> AgentAttention? {
+        switch provider {
+        case .claudeCode, .claude, .anthropic:
+            guard let session = newestClaudeSession(command: command, cwd: cwd),
+                  let parsed = claudeSession(at: session.path, modified: session.modified) else { return nil }
+            return attention(from: parsed, modified: session.modified, now: Date())
+        case .openCode:
+            return openCodeAttention(cwd: cwd, now: Date())
+        default:
+            return nil
+        }
+    }
+
+    // Everything derived from one pass over a Claude session file.
+    struct ParsedClaudeSession: Sendable {
+        var usage: AgentSessionUsage?
+        /// The tool call still awaiting a result, if any. Whether that counts as "blocked"
+        /// depends on elapsed time, so the decision is deferred to the caller rather than
+        /// baked in here - otherwise the cached value would expire every second.
+        var pendingTool: (name: String, question: String?)?
+    }
+
+    // Session files reach tens of megabytes, and both usage and attention need the same parse.
+    // Reading and decoding twice per agent per scan - which is what separate implementations
+    // did - was enough JSON work to keep the agent list churning. Cached on path plus
+    // modification date and size, so an unchanged file is never re-read at all.
+    private struct ClaudeCacheEntry {
+        let modified: Date?
+        let size: Int
+        let parsed: ParsedClaudeSession
+    }
+    private nonisolated(unsafe) static var claudeCache: [String: ClaudeCacheEntry] = [:]
+
+    static func claudeSession(at path: String, modified: Date?) -> ParsedClaudeSession? {
+        let size = ((try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? Int) ?? 0
+        if let cached = claudeCache[path], cached.modified == modified, cached.size == size {
+            return cached.parsed
+        }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        let parsed = parseClaudeSession(data: data)
+        claudeCache[path] = ClaudeCacheEntry(modified: modified, size: size, parsed: parsed)
+        // Keep the cache from growing without bound as projects come and go.
+        if claudeCache.count > 64 {
+            claudeCache = claudeCache.filter { FileManager.default.fileExists(atPath: $0.key) }
+        }
+        return parsed
+    }
+
+    // OpenCode records each tool invocation as a `part` row whose JSON carries a
+    // state.status of running / completed / error. A part left in `running` is the same
+    // signal as Claude's unresolved tool_use: the tool was invoked and nothing has come back.
+    //
+    // The `permission` table is not the signal it looks like - it is the persisted allow-list
+    // of previously granted permissions, not a queue of pending prompts, and it stays empty
+    // on a machine that has never granted one.
+    private static func openCodeAttention(cwd: String?, now: Date) -> AgentAttention? {
+        guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
+        let query = """
+        SELECT json_extract(data,'$.tool'), time_updated FROM part \
+        WHERE session_id = (SELECT id FROM session WHERE directory='\(safe)' ORDER BY time_updated DESC LIMIT 1) \
+        AND json_extract(data,'$.state.status') = 'running' \
+        ORDER BY time_updated DESC LIMIT 1;
+        """
+        guard let raw = OpenCodeUsageClient.queryValue(query), !raw.isEmpty else { return nil }
+        let parts = raw.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2, let milliseconds = Double(parts[1].trimmingCharacters(in: .whitespaces)) else { return nil }
+
+        // Same quiet-period reasoning as Claude: a tool that is genuinely executing updates
+        // its row promptly, so only a stale `running` row means "stopped, waiting on you".
+        let updated = Date(timeIntervalSince1970: milliseconds / 1000)
+        guard now.timeIntervalSince(updated) >= attentionQuietPeriod else { return nil }
+
+        let tool = parts[0].trimmingCharacters(in: .whitespaces)
+        return AgentAttention(kind: .permission, prompt: tool.isEmpty ? nil : "Allow \(tool)?")
+    }
+
+    // How long a tool call must sit unanswered before we call it "blocked". A tool that's
+    // merely executing writes its result within a moment, whereas a permission prompt or an
+    // open question sits indefinitely - so quiet time is what separates the two. Without this
+    // the indicator would strobe on every normal tool call.
+    private static let attentionQuietPeriod: TimeInterval = 10
+
+    // Claude Code writes a tool_use block when it calls a tool and a matching tool_result once
+    // the call completes. A tool_use with no result is therefore the signal for "stopped and
+    // waiting": either the user is staring at a permission prompt, or the agent asked a
+    // question via AskUserQuestion/ExitPlanMode and is blocked on the answer. Neither writes
+    // anything further to the file until the user acts.
+    //
+    // Extracted for testing - `now` and `modified` are injected so the quiet-period gate can
+    // be exercised without touching the clock.
+    static func claudeAttention(fromJSONLData data: Data, modified: Date?, now: Date) -> AgentAttention? {
+        attention(from: parseClaudeSession(data: data), modified: modified, now: now)
+    }
+
+    static func attention(from parsed: ParsedClaudeSession, modified: Date?, now: Date) -> AgentAttention? {
+        // A file still being written to is an agent that's working, not one that's waiting.
+        guard let modified, now.timeIntervalSince(modified) >= attentionQuietPeriod else { return nil }
+        guard let pending = parsed.pendingTool else { return nil }
+
+        switch pending.name {
+        case "AskUserQuestion":
+            return AgentAttention(kind: .question, prompt: pending.question)
+        case "ExitPlanMode", "EnterPlanMode":
+            return AgentAttention(kind: .question, prompt: "Waiting on plan approval")
+        default:
+            // Any other unanswered tool call is a pending permission prompt.
+            return AgentAttention(kind: .permission, prompt: "Allow \(pending.name)?")
+        }
+    }
+
+    // One pass produces both the token/cost totals and the unresolved tool call.
+    static func parseClaudeSession(data: Data) -> ParsedClaudeSession {
+        var totalInput = 0
+        var totalOutput = 0
+        var totalCost: Double?
+        var pending: [String: (name: String, question: String?)] = [:]
+        var pendingOrder: [String] = []
+
+        for lineBytes in data.split(separator: 0x0A) {
+            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
+                  let message = json["message"] as? [String: Any] else { continue }
+
+            if json["type"] as? String == "assistant", let usage = message["usage"] as? [String: Any] {
+                let input = (usage["input_tokens"] as? Int) ?? 0
+                let output = (usage["output_tokens"] as? Int) ?? 0
+                totalInput += input
+                totalOutput += output
+                if let model = message["model"] as? String,
+                   let cost = ModelPricing.costUSD(
+                       model: model,
+                       inputTokens: input,
+                       outputTokens: output,
+                       cacheWriteTokens: (usage["cache_creation_input_tokens"] as? Int) ?? 0,
+                       cacheReadTokens: (usage["cache_read_input_tokens"] as? Int) ?? 0
+                   ) {
+                    totalCost = (totalCost ?? 0) + cost
+                }
+            }
+
+            guard let blocks = message["content"] as? [[String: Any]] else { continue }
+            for block in blocks {
+                switch block["type"] as? String {
+                case "tool_use":
+                    guard let id = block["id"] as? String, let name = block["name"] as? String else { continue }
+                    let input = (block["input"] as? [String: Any]) ?? [:]
+                    let question = (input["questions"] as? [[String: Any]])?.first?["question"] as? String
+                    pending[id] = (name, question)
+                    pendingOrder.append(id)
+                case "tool_result":
+                    // Resolved - drop it from the pending set.
+                    if let id = block["tool_use_id"] as? String { pending.removeValue(forKey: id) }
+                default:
+                    continue
+                }
+            }
+        }
+
+        var session = ParsedClaudeSession()
+        if totalInput > 0 || totalOutput > 0 {
+            session.usage = AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
+        }
+        // The most recent unresolved call is the one the user is actually looking at.
+        if let id = pendingOrder.last(where: { pending[$0] != nil }) {
+            session.pendingTool = pending[id]
+        }
+        return session
+    }
+
     // When the agent's session was last written - used to sort most-recent first.
     static func lastActivity(provider: Provider, command: String, cwd: String?) -> Date? {
         switch provider {
@@ -143,14 +312,21 @@ enum AgentSessionResolver {
     }
 
     // Walks the process's ancestry to find the app hosting it (editor or terminal).
-    static func hostApp(ofPID pid: Int32) -> HostApp? {
+    //
+    // Returns the host's PID alongside its identity, because the identity alone is not enough
+    // to focus it: two builds of the same terminal share a bundle identifier, so looking the
+    // app up by identifier can raise the wrong copy - the one without this agent's window.
+    // The PID names exactly one process.
+    static func hostApp(ofPID pid: Int32) -> (app: HostApp, processID: Int32)? {
         var current = pid
         for _ in 0..<8 {
             guard let output = Shell.output("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
             let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
                 .split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
-            if let app = HostApp.match(comm: String(parts[1]).lowercased()) { return app }
+            if let app = HostApp.match(comm: String(parts[1]).lowercased()) {
+                return (app, current)
+            }
             if ppid <= 1 { return nil }
             current = ppid
         }
@@ -239,26 +415,17 @@ enum AgentSessionResolver {
     }
 
     private static func claudeSessionUsage(command: String, cwd: String?) -> AgentSessionUsage? {
-        guard let file = newestClaudeSession(command: command, cwd: cwd)?.path,
-              let data = try? Data(contentsOf: URL(fileURLWithPath: file)) else { return nil }
-        return claudeUsage(fromJSONLData: data)
+        guard let session = newestClaudeSession(command: command, cwd: cwd) else { return nil }
+        // Shares the cached parse with attention() - same file, same pass.
+        return claudeSession(at: session.path, modified: session.modified)?.usage
     }
 
     // Extracted for testing — parses assistant-message token counts from a Claude Code
     // JSONL session file (each line is a JSON object, assistant messages carry usage).
+    // Retained as the documented entry point for token/cost totals; the parse itself lives in
+    // parseClaudeSession so attention and usage share a single pass over the file.
     static func claudeUsage(fromJSONLData data: Data) -> AgentSessionUsage? {
-        var totalInput = 0
-        var totalOutput = 0
-        for lineBytes in data.split(separator: 0x0A) {
-            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
-                  json["type"] as? String == "assistant",
-                  let message = json["message"] as? [String: Any],
-                  let usage = message["usage"] as? [String: Any] else { continue }
-            totalInput += (usage["input_tokens"] as? Int) ?? 0
-            totalOutput += (usage["output_tokens"] as? Int) ?? 0
-        }
-        guard totalInput > 0 || totalOutput > 0 else { return nil }
-        return AgentSessionUsage(cost: nil, tokensInput: totalInput, tokensOutput: totalOutput)
+        parseClaudeSession(data: data).usage
     }
 
     private static func optionalNumber(_ raw: String) -> Double? {

@@ -169,6 +169,44 @@ struct PiUsageClient {
         return totals
     }
 
+    // Per-calendar-day cost and token totals, for the usage heatmap.
+    //
+    // Shares aggregate()'s file cache and dedup set rather than re-implementing them: the same
+    // message can appear in more than one session file, and counting it once per day is the
+    // same requirement the sliding windows already have.
+    static func dailyTotals(root: String? = nil,
+                            environment: [String: String] = ProcessInfo.processInfo.environment,
+                            home: String = FileManager.default.homeDirectoryForCurrentUser.path,
+                            calendar: Calendar = .current) throws -> [Date: DayTotal] {
+        let resolvedRoot = try root ?? sessionRoot(environment: environment, home: home)
+        guard FileManager.default.fileExists(atPath: resolvedRoot) else {
+            throw LocalizedErrorMessage("Pi session history not found")
+        }
+
+        var byDay: [Date: DayTotal] = [:]
+        var seen: Set<String> = []
+        for path in try sessionFiles(root: resolvedRoot) {
+            let file = try fileAggregate(path: path)
+            guard file.hasSession else { continue }
+            for contribution in file.contributions {
+                guard seen.insert(contribution.dedupKey).inserted else { continue }
+                guard let date = contribution.date else { continue }
+                let day = calendar.startOfDay(for: date)
+                var total = byDay[day] ?? DayTotal()
+                total.cost += contribution.cost
+                total.tokens += Int(contribution.input + contribution.output
+                    + contribution.cacheRead + contribution.cacheWrite)
+                byDay[day] = total
+            }
+        }
+        return byDay
+    }
+
+    struct DayTotal: Equatable {
+        var cost: Double = 0
+        var tokens: Int = 0
+    }
+
     // One assistant message's usage, already parsed and deduped-keyed. Retained per file so the
     // sliding today/week/month windows can be re-bucketed against a fresh `now` each poll without
     // re-reading or re-decoding any file whose bytes haven't changed.

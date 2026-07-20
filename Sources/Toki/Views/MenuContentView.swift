@@ -220,12 +220,16 @@ struct MenuContentView: View {
                     Image(systemName: tab.systemImage)
                         .overlay(alignment: .topTrailing) {
                             if tab == .agents, !store.activeAgents.isEmpty {
-                                Text("\(store.activeAgents.count)")
+                                // The badge turns red - and counts only the blocked agents -
+                                // when any session is waiting on the user, so "needs you" is
+                                // distinguishable from "just running" without opening the tab.
+                                let blocked = store.activeAgents.filter(\.needsInput).count
+                                Text("\(blocked > 0 ? blocked : store.activeAgents.count)")
                                     .font(.system(size: 8, weight: .bold))
                                     .foregroundStyle(.white)
                                     .padding(2)
                                     .frame(minWidth: 12, minHeight: 12)
-                                    .background(Color.blue, in: Circle())
+                                    .background(blocked > 0 ? Color.red : Color.blue, in: Circle())
                                     .offset(x: 9, y: -7)
                             }
                         }
