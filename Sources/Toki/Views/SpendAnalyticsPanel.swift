@@ -258,7 +258,11 @@ struct SpendAnalyticsPanel: View {
     /// Extracted and made static so the geometry can be tested without a rendered chart.
     /// Returns nil inside the donut hole and outside the outer edge, so the empty middle does
     /// not select whichever slice happens to be nearest.
-    static func agentID(at point: CGPoint, in size: CGSize, agents: [ActiveAgent]) -> Int32? {
+    ///
+    /// nonisolated: pure geometry over values, with no view state. Without it the method
+    /// inherits the View's MainActor isolation and cannot be called from a synchronous test -
+    /// which builds locally but fails under CI's stricter concurrency checking.
+    nonisolated static func agentID(at point: CGPoint, in size: CGSize, agents: [ActiveAgent]) -> Int32? {
         let costs = agents.compactMap { agent -> (id: Int32, cost: Double)? in
             guard let cost = agent.sessionUsage?.cost, cost > 0 else { return nil }
             return (agent.id, cost)
