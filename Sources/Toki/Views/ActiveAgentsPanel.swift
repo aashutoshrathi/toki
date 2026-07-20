@@ -10,14 +10,29 @@ struct ActiveAgentsPanel: View {
                 Text("Active agents")
                     .font(.system(size: 11, weight: .semibold))
                 Spacer()
+                // Shows that it is working and refuses a second press while it is.
+                //
+                // The scan is not instant, and the button previously looked identical before,
+                // during and after a refresh - so a press that was already running read as a
+                // press that had done nothing, and invited another. The store drops overlapping
+                // scans anyway, so those extra presses were silently discarded.
                 Button {
                     store.refreshActiveAgents()
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    if store.isScanningAgents {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
                 .buttonStyle(.plain)
-                .help("Refresh active agents")
-                .accessibilityLabel("Refresh active agents")
+                .disabled(store.isScanningAgents)
+                .frame(width: 16, height: 16)
+                .pointerOnHover()
+                .help(store.isScanningAgents ? "Scanning for agents…" : "Refresh active agents")
+                .accessibilityLabel(store.isScanningAgents ? "Scanning for agents" : "Refresh active agents")
             }
 
             ScrollView {

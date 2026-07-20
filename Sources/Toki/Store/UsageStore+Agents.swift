@@ -21,8 +21,16 @@ extension UsageStore {
         if !force, let scanned = dailyActivityScannedAt, Date().timeIntervalSince(scanned) < 300 { return }
         isScanningActivity = true
         Task {
-            dailyActivity = await DailyActivityScanner.scan(dayCount: window)
-            dailyActivityScannedAt = Date()
+            let outcome = await DailyActivityScanner.scan(dayCount: window)
+            unreadableActivityProviders = outcome.unreadable
+            // A scan that read nothing at all leaves the previous data in place rather than
+            // replacing it with an empty chart. Clobbering it would turn a transient read
+            // failure into "you have no history", and the throttle below would then pin that
+            // wrong answer on screen for five minutes.
+            if !outcome.isCompleteFailure {
+                dailyActivity = outcome.activities
+                dailyActivityScannedAt = Date()
+            }
             isScanningActivity = false
         }
     }

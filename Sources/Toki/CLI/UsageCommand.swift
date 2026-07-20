@@ -5,10 +5,12 @@ import Foundation
 private final class ActivityBox: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [DailyActivity] = []
+    private var storedUnreadable: [Provider] = []
 
-    func store(_ activity: [DailyActivity]) {
+    func store(_ activity: [DailyActivity], unreadable providers: [Provider]) {
         lock.lock()
         stored = activity
+        storedUnreadable = providers
         lock.unlock()
     }
 
@@ -16,6 +18,12 @@ private final class ActivityBox: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return stored
+    }
+
+    var unreadable: [Provider] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedUnreadable
     }
 }
 
@@ -46,11 +54,17 @@ enum UsageCommand {
         let box = ActivityBox()
         Task {
             let scanned = await DailyActivityScanner.scan(dayCount: days)
-            box.store(scanned)
+            box.store(scanned.activities, unreadable: scanned.unreadable)
             gate.signal()
         }
         gate.wait()
         let activity = box.value
+        // Reported on stderr so it never contaminates --json or a piped chart, and exits
+        // non-zero: a script must be able to tell "no work" from "could not read".
+        if !box.unreadable.isEmpty {
+            let names = box.unreadable.map { $0.displayName }.joined(separator: ", ")
+            FileHandle.standardError.write(Data("warning: couldn't read session history for \(names)\n".utf8))
+        }
 
         // Resolved against the providers actually present, not against every case in the enum.
         // Matching the enum meant "claude" resolved to `.claude` - a provider the scanner never

@@ -18,15 +18,41 @@ struct DailyActivity: Hashable, Sendable {
 // its state being cleared, and cover cost-based providers that have no quota percentage to
 // sample, which is what kept OpenCode and Pi out of the chart.
 enum DailyActivityScanner {
-    static func scan(dayCount: Int, now: Date = Date(), calendar: Calendar = .current) async -> [DailyActivity] {
+    /// A scan's outcome, with read failures reported separately from an absence of work.
+    ///
+    /// Returning a bare array conflated the two: every failure path produced `[]`, and the view
+    /// rendered that as "No agent activity found" - a claim about the user's week rather than
+    /// about Toki's ability to read it. Someone who had been coding all month was told they had
+    /// not been.
+    struct Outcome: Sendable {
+        var activities: [DailyActivity] = []
+        /// Providers whose history could not be read at all. Empty is the healthy case.
+        var unreadable: [Provider] = []
+
+        var isCompleteFailure: Bool { activities.isEmpty && !unreadable.isEmpty }
+    }
+
+    static func scan(dayCount: Int, now: Date = Date(), calendar: Calendar = .current) async -> Outcome {
         await Task.detached(priority: .utility) {
             let earliest = calendar.date(byAdding: .day, value: -(dayCount - 1), to: calendar.startOfDay(for: now))
                 ?? calendar.startOfDay(for: now)
-            var results: [DailyActivity] = []
-            results.append(contentsOf: claudeActivity(since: earliest, calendar: calendar))
-            results.append(contentsOf: openCodeActivity(since: earliest, calendar: calendar))
-            results.append(contentsOf: piActivity(since: earliest, calendar: calendar))
-            return results
+            var outcome = Outcome()
+            for (provider, activity) in [
+                (Provider.claudeCode, claudeActivity(since: earliest, calendar: calendar)),
+                (Provider.openCode, openCodeActivity(since: earliest, calendar: calendar)),
+                (Provider.pi, piActivity(since: earliest, calendar: calendar)),
+            ] {
+                guard let activity else {
+                    outcome.unreadable.append(provider)
+                    DiagnosticLogger.shared.record(
+                        .warning, component: "activity", code: "provider_unreadable",
+                        detail: provider.displayName
+                    )
+                    continue
+                }
+                outcome.activities.append(contentsOf: activity)
+            }
+            return outcome
         }.value
     }
 
@@ -35,9 +61,12 @@ enum DailyActivityScanner {
     // Walks ~/.claude/projects/<encoded-cwd>/*.jsonl, summing each assistant message's usage
     // into the day of its timestamp. Cost is priced from the recorded model, so a session that
     // switched models is billed at each model's own rate.
-    private static func claudeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity] {
+    /// nil means the store could not be read; an empty array means it was read and held nothing.
+    private static func claudeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
         let root = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.claude/projects"
-        guard let projects = try? FileManager.default.contentsOfDirectory(atPath: root) else { return [] }
+        // A missing directory is a legitimate "Claude Code was never used here", not a failure.
+        guard FileManager.default.fileExists(atPath: root) else { return [] }
+        guard let projects = try? FileManager.default.contentsOfDirectory(atPath: root) else { return nil }
 
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
         // Shared across every file in the scan, not per file: a resumed conversation can carry
@@ -112,14 +141,17 @@ enum DailyActivityScanner {
 
     // Grouped in SQL rather than in Swift: the database already indexes the timestamp, and this
     // avoids pulling every session row across the process boundary just to bucket it.
-    private static func openCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity] {
+    private static func openCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
         let cutoff = Int(earliest.timeIntervalSince1970 * 1000)
         let query = """
         SELECT strftime('%Y-%m-%d', time_updated/1000, 'unixepoch', 'localtime') AS day, \
         SUM(COALESCE(cost,0)), SUM(COALESCE(tokens_input,0) + COALESCE(tokens_output,0)) \
         FROM session WHERE time_updated >= \(cutoff) GROUP BY day;
         """
-        guard let raw = OpenCodeUsageClient.queryValue(query), !raw.isEmpty else { return [] }
+        // No database at all is "not installed"; a database that refuses to answer is a failure.
+        guard FileManager.default.fileExists(atPath: OpenCodeUsageClient.databasePath()) else { return [] }
+        guard let raw = OpenCodeUsageClient.queryValue(query) else { return nil }
+        guard !raw.isEmpty else { return [] }
 
         return raw.split(separator: "\n").compactMap { line in
             let columns = line.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
@@ -136,8 +168,10 @@ enum DailyActivityScanner {
 
     // MARK: - Pi
 
-    private static func piActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity] {
-        guard let totals = try? PiUsageClient.dailyTotals(calendar: calendar) else { return [] }
+    private static func piActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
+        // Pi reports "no session history" by throwing, which is absence rather than failure.
+        guard (try? PiUsageClient.sessionRoot()) != nil else { return [] }
+        guard let totals = try? PiUsageClient.dailyTotals(calendar: calendar) else { return nil }
         return totals
             .filter { $0.key >= earliest }
             .map { DailyActivity(day: $0.key, provider: .pi, tokens: $0.value.tokens, cost: $0.value.cost) }

@@ -4,62 +4,47 @@
 
 ### Added
 
-- `Toki usage` charts daily agent activity in the terminal, covering Claude Code, OpenCode and Pi. It reads the session stores directly rather than the status cache, so it works with the app closed and includes history from before Toki was installed. Shading uses block weights rather than colour alone, so it stays readable piped to a file or in a terminal without colour, and colour is suppressed automatically when stdout is not a terminal or `NO_COLOR` is set. Supports `--days=N`, a provider filter, and `--json` for scripting.
-- The update banner can be snoozed for six hours instead of only skipped. Closing it previously meant skipping that version for good, which is a heavier commitment than an X implies - anyone who wanted the update but not right now had to leave the banner up or silently opt out of the release. The snooze is recorded against the version, so a newer release still surfaces immediately.
-
-### Fixed
-
-- Token and cost figures were inflated by roughly 78%. Claude Code writes one session-file line per content block - thinking, text, tool_use - and every line of the same assistant turn repeats the same message id and the same already-cumulative usage figures. Both parsers added every line, so a turn written as three blocks counted three times. Measured on a real session file, 962 assistant lines collapse to 529 actual messages and 525.5M tokens to 294.4M. Cost is derived from those tokens, so every dollar figure on every agent card, heatmap cell and tooltip was wrong by the same factor. Messages are now counted once.
-- Clicks on the notch panel landed in empty space. The hit-test and popover-anchor rects were flipped to bottom-left origin, but `NSHostingView` is already top-left, so the flip mirrored them about the window's midline - every point over the visible pill was rejected. Hover kept working because tracking areas do not route through hit testing, which is what made it read as a dead click rather than a geometry bug.
-- The agent scan walked each agent's process tree on every tick. The host-app lookup, which shells out to `ps` up to eight times per agent, ran before its cache was consulted and its result was then discarded whenever the cache had an answer.
-- The quota history chart's x-axis produced labels like "Jul 20 at 10 PM", wide enough to collide and truncate to "Jul 21 at 1…". Labels are now scaled to the selected range - clock times for a day, dates for a month. Its legend also showed the registry's internal account key rather than the account name.
-- Compact figures gained a billions step; a heavy month runs past 1e9 tokens and rendered as "1,023M".
+- `Toki usage` charts daily agent activity in the terminal for Claude Code, OpenCode and Pi. Reads session files directly, so it works with the app closed. Supports `--days=N`, a provider filter, and `--json`.
+- The update banner can be snoozed for six hours instead of only skipped for good.
 
 ### Changed
 
-- The daily usage heatmap resolves into 64 shades instead of 4. Four steps quantised too coarsely to read - a busy day and a considerably busier one landed on the same swatch, so the grid showed far less than the data contained. The shades are interpolated through the same four measured anchor colours, so the ends of the scale keep the contrast that was validated for them and only the shades between are generated. Adjacent shades in a 64-step ramp are deliberately not separately identifiable, which is what a spectrum is for; the exact figures remain in the hover line and the accessibility label. The legend is now a continuous bar rather than a row of swatches, since the scale is no longer a set of buckets to match a cell against.
-- Hovering a day with no activity says "No usage" instead of showing a bare date, which read as the panel having failed to load something rather than as the answer.
+- The daily usage heatmap resolves into 64 shades instead of 4, interpolated through the same measured anchor colours. The legend is now a continuous bar.
+- Hovering a day with no activity says "No usage" rather than showing a bare date.
+
+### Fixed
+
+- Token and cost figures were inflated by ~78%. Claude Code writes one session line per content block, each repeating the same cumulative usage, and every line was counted. Messages are now counted once.
+- Clicks on the notch panel landed in empty space: the hit-test rect was flipped to bottom-left, but `NSHostingView` is already top-left.
+- The agent scan re-walked each agent's process tree every tick, bypassing the cache meant to prevent it.
+- Quota chart x-axis labels collided and truncated; they now scale to the selected range. Its legend showed the internal account key rather than the account name.
+- Compact figures gained a billions step, so a heavy month reads "1B" instead of "1,023M".
+
 
 ## 2.4.0 - 2026-07-21
 
 ### Added
 
-- Experimental "live in the notch" mode, off by default, replaces the menu bar item with a Dynamic Island style panel at the display notch, and expands it on hover.
-
-  The camera housing itself cannot be drawn on - it is hardware, with no pixels behind it - but the menu bar band either side of it is ordinary display. The panel uses that band, and where it needs to appear continuous with the housing it simply lets the hardware mask the part behind it. Three resting positions are offered: Hanging drops below the housing matching its width, Sideways sits in the band against its right edge, and Around splits the readout across both bands so it wraps the housing, with a gap sized to the housing exactly so the two halves read as one interrupted strip.
-
-  The resting pill is sized from the same measurement the menu bar item uses, so the readout is never truncated as providers are added. The status item is only hidden once the panel is confirmed on screen; if the geometry is unavailable it stays in the menu bar rather than leaving nothing visible. Clicking opens the popover anchored to the pill itself, wherever it is resting.
-- OpenCode sessions waiting on input are now detected alongside Claude Code ones, using the same idea: a tool invocation whose recorded state is still `running` after a quiet period has stopped and is waiting on you.
-- Spend Analytics gained a daily-usage heatmap covering the last 30 days, filterable by provider and including Claude Code, OpenCode and Pi.
-
-  Activity is read from each tool's own session store rather than from Toki's recorded quota samples. Those samples only exist for days Toki was running, so the chart would be empty for any period before install and could be lost entirely if local state were reset; and they cannot represent cost-based providers at all, since OpenCode and Pi have no quota percentage to sample. Session files are durable, predate Toki, and cover every provider. Claude Code usage is priced per message via published model rates, so a session that switched models bills each stretch at its own rate.
-
-  Days are shaded by rank among your active days rather than as a share of the busiest one. Daily token counts are heavily skewed - a single long session can run an order of magnitude above a normal day - and scaling linearly against that outlier crushes every other day into the lowest step, leaving a grid that shows no pattern. Ranking guarantees the full scale is used. The shade therefore means "busy compared to your other days", which is why hovering gives the real token and cost figures, broken down by provider.
-
-  Colours were validated rather than eyeballed: every adjacent pair of steps clears the normal-vision separation floor and holds above the floor for all three common forms of colour blindness. "No data" is a neutral grey rather than a pale tint of the ramp, so it cannot be misread as a very light day, and cell borders carry the palest steps, which fall below the 3:1 contrast bar on their own.
-- The menu bar carries a badge with the number of agent sessions waiting on you, so a blocked session is visible without opening the popover. The count is knocked out of a filled dot rather than drawn in a fixed colour, so it stays readable against a light or dark menu bar alike.
-- Agents waiting on you are now called out with a red dot. A Claude Code session that has asked a question or is sitting on a permission prompt shows a red dot on its card, the question text (or the tool awaiting approval) right underneath, and turns the Agents tab badge red with a count of just the blocked sessions. Clicking the card jumps straight to the terminal that's asking. Detection keys off a tool call with no matching result, gated on ten seconds of quiet in the session file - a tool that is merely running writes its result almost immediately, so the quiet period is what separates "working" from "waiting". The list is deliberately not re-ordered to put blocked agents first: rows that move while you are looking at them cancel the click you were making.
-- Claude Code sessions now show an estimated dollar cost alongside their token counts. Claude Code records no cost figure in its session files, so the tokens are priced against published per-model rates. Cache tokens are priced at their own rates (writes 1.25x input, reads 0.1x) rather than as plain input - a long session is mostly cache reads, so pricing them as input would overstate cost several-fold. Cost accumulates per message, so a `/model` switch mid-session bills each half at its own rate; an unrecognized model shows tokens without a cost rather than a guessed figure.
+- Agents waiting on you are flagged with a red dot and the question they asked, on the card, the Agents tab and the menu bar. Claude Code and OpenCode.
+- Daily usage heatmap in Spend Analytics: 30 days, filterable by provider, covering Claude Code, OpenCode and Pi. Read from each tool's own session history, so it includes work done before Toki was installed.
+- Per-session dollar cost for Claude Code, priced from recorded token counts. Cache tokens are priced at their own rates, and an unrecognized model shows tokens without a cost rather than a guess.
+- Experimental "live in the notch" mode, off by default and notched Macs only, with three resting positions and hover expansion.
 
 ### Changed
 
-- The session-cost donut in Spend Analytics responds to the pointer directly. Selection previously came only from hovering the legend rows beneath it, so pointing at a slice did nothing. The donut hole and the area outside the ring select nothing, rather than snapping to whichever slice happens to be nearest.
-- Heatmap figures are shown in a detail line under the grid instead of a tooltip. System tooltips wait out a delay and often never appear inside a popover at all, so reading a value was a gamble; the line updates the instant the pointer moves, and the hovered cell is ringed so it is clear which day the figures belong to.
-- Daily usage shows a loading skeleton while session files are read. That scan takes a moment on a machine with real history, and without it the empty grid rendered first - indistinguishable from having no activity at all.
-- The Tracked / Oldest data / Active agents summary cards have been removed from Spend Analytics.
-- Default history retention raised from 14 to 30 days so the usage heatmap can fill its full window; at the old default the chart silently rendered half as many days.
-- claude-swap accounts now read as "Claude - user@example.com" instead of the registry's internal `claude-1-user@example.com` key. An explicit nickname still wins, and an account with no email falls back to plain "Claude". The underlying account id is unchanged, so existing aliases, usage adjustments, and cached state stay attached.
+- claude-swap accounts read as "Claude - user@example.com" instead of the registry's internal `claude-1-…` key. Account ids are unchanged, so aliases and cached state stay attached.
+- Default history retention raised from 14 to 30 days so the heatmap can fill its window.
 
 ### Fixed
 
-- Claude Code accounts could fail to connect on a machine that had never granted Keychain access. Credentials are read with the `security` CLI, and the first read puts up the system's Keychain access prompt, which blocks the command until it is answered. That read shared a 15-second timeout intended for non-interactive key-fetching commands, so the clock was really measuring how quickly the user noticed a dialog - miss it and the read was killed, the account reported as not connected, and nothing indicated a prompt had been the reason. The Keychain read now gets a far longer ceiling, and failing it says to allow the prompt and refresh. Introduced in 2.3.2.
-- An account that fails to connect now shows the actual reason when its card is opened, in full and selectable, instead of the word "Unavailable" - which only repeated what the collapsed card's "not connected" badge already said, in the one place with room for the detail.
-- Clicking an agent card now reliably focuses its terminal. Navigation identified the host app by name and by bundle identifier, both ambiguous when two builds of the same terminal are running - as iTerm and iTermAI are, sharing an identifier prefix - so it could raise a copy holding none of the agent's windows. The agent's own host process is now activated by PID, which names exactly one process. The AppleScript also no longer runs on the main actor: it was waited on synchronously, so anything that made it hang froze the app, which reads as a dead click rather than a hang.
-- The popover no longer jumps while it is open. It is anchored to the status item's button, so any change to that item's width moved the anchor and macOS repositioned the whole popover - and the width changes exactly when something noteworthy happens, such as the waiting-agent badge appearing or a quota segment dropping out, so it slid away precisely while being read. Width changes are now held until the popover closes; content still refreshes live throughout.
-- Compact token counts no longer lose their decimal. `formatCompact` chose its precision from the unscaled value, so anything above 100 also got zero decimals after scaling - 1,500,000 rendered as "2M", rounding away the digit that carries the meaning at that size. It now reads 1.5M.
-- Saved preferences and history are no longer discarded when a new preference is added. `AppPreferences` relied on the synthesized decoder, which requires every field to be present and never falls back to a property's default, so a state file written before a newly added field existed failed to decode outright. The loader treats that as an unreadable state and starts fresh, and the next save overwrites the file - meaning a single added preference wiped accumulated usage history. Preferences are now decoded field by field with per-field defaults, so adding one is additive by construction, and a state file that still cannot be read is copied aside as `.unreadable` rather than being silently replaced.
-- Update checks no longer stop after an update is found, so a release that lands while an earlier one is still pending is now picked up. Checks were driven by a chain of one-shot timers, each scheduling its successor from inside its own fire handler - any single missed or invalidated firing ended the chain permanently, leaving the app parked on a stale version. The timer is now a repeating one registered in the common run loop modes, so it also keeps firing while the popover or a menu is open, and a skipped firing is no longer fatal.
-- Menu bar status text no longer disappears against a dark menu bar. The status view pinned its appearance to the app's (which follows the system light/dark setting) rather than inheriting the menu bar's own, so in full-screen - where the bar renders dark even in light mode - the text was drawn in the light-mode label color on a dark background and became invisible. It now inherits from the status item's button, which carries the real menu-bar appearance.
+- Adding a preference wiped saved history. `AppPreferences` used the synthesized decoder, which rejects any file missing a key, so the loader discarded the state and overwrote it. Preferences now decode field by field, and an unreadable file is kept as `.unreadable`.
+- Menu bar text was invisible in full screen: the view followed the app's light/dark setting rather than the menu bar's own.
+- Agent cards were not reliably clickable. Rows re-ordered under the pointer, and terminal lookup could raise the wrong build when two iTerms were running.
+- The popover jumped while open whenever the status item resized. Width changes are now deferred until it closes.
+- Update checks stopped after finding one update, so releases behind it went unnoticed.
+- Keychain reads shared a 15-second timeout meant for non-interactive commands, so a missed access prompt looked like an account that would not connect.
+- A failed account shows the real error on its card instead of the word "Unavailable".
+
 
 ## 2.3.3 - 2026-07-19
 

@@ -14,6 +14,8 @@ final class UsageStore: ObservableObject {
     @Published var session: SessionState?
     @Published var activeAgents: [ActiveAgent] = []
     @Published var dailyActivity: [DailyActivity] = []
+    /// Providers whose session history could not be read on the last scan.
+    @Published var unreadableActivityProviders: [Provider] = []
     @Published var aiInsight: UsageInsight?
     @Published var isGeneratingInsight = false
     @Published var recommendation = SmartRecommendation(
@@ -39,7 +41,8 @@ final class UsageStore: ObservableObject {
     var usageState = UsageState()
     var timer: Timer?
     var isRefreshing = false
-    var isScanningAgents = false
+    // Published: the refresh button shows a spinner and disables itself off this.
+    @Published var isScanningAgents = false
     // Published: the heatmap shows a loading state off this, so the view has to observe it.
     @Published var isScanningActivity = false
     var dailyActivityScannedAt: Date?

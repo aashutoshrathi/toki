@@ -30,9 +30,15 @@ struct UsageHeatmap: View {
             if store.isScanningActivity, store.dailyActivity.isEmpty {
                 loadingGrid
             } else if days.allSatisfy({ $0.level == nil }) {
-                Text("No agent activity found in the last \(dayCount) days")
+                // "Couldn't read" and "nothing happened" are different facts. Reporting a read
+                // failure as an absence of work tells someone who has been coding all month
+                // that they haven't been.
+                let unreadable = store.unreadableActivityProviders
+                Text(unreadable.isEmpty
+                     ? "No agent activity found in the last \(dayCount) days"
+                     : "Couldn't read session history for \(unreadable.map(\.displayName).joined(separator: ", "))")
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(unreadable.isEmpty ? .tertiary : .secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 12)
             } else {
@@ -284,8 +290,13 @@ struct UsageHeatmap: View {
 
     /// The no-data step, deliberately a neutral rather than a lighter tint of the ramp hue -
     /// "nothing recorded" is a different fact from "a very small amount".
+    ///
+    /// Kept fainter in dark mode than the ramp's deepest step. Both modes run palest-to-deepest,
+    /// so the busiest day is the darkest cell; at the previous 0.10 it sat at roughly the same
+    /// luminance as an empty cell, which made a heavy day read as no heavier than an idle one.
+    /// Dropping the empty step restores the ordering without inverting the scale.
     private var emptyColor: Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.07)
+        Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.07)
     }
 
     private func color(for level: Int?) -> Color {
