@@ -153,12 +153,19 @@ enum AgentSessionResolver {
         var totalCost: Double?
         var pending: [String: (name: String, question: String?)] = [:]
         var pendingOrder: [String] = []
+        // One assistant turn is written as several lines - one per content block - each
+        // repeating the same message id and the same already-cumulative usage. Counting every
+        // line inflated this session's tokens and cost by roughly 78%.
+        var seenMessages: Set<String> = []
 
         for lineBytes in data.split(separator: 0x0A) {
             guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
                   let message = json["message"] as? [String: Any] else { continue }
 
-            if json["type"] as? String == "assistant", let usage = message["usage"] as? [String: Any] {
+            if json["type"] as? String == "assistant",
+               let usage = message["usage"] as? [String: Any],
+               DailyActivityScanner.messageIdentity(json: json, message: message)
+                   .map({ seenMessages.insert($0).inserted }) ?? true {
                 let input = (usage["input_tokens"] as? Int) ?? 0
                 let output = (usage["output_tokens"] as? Int) ?? 0
                 totalInput += input

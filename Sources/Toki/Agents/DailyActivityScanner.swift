@@ -40,6 +40,9 @@ enum DailyActivityScanner {
         guard let projects = try? FileManager.default.contentsOfDirectory(atPath: root) else { return [] }
 
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        // Shared across every file in the scan, not per file: a resumed conversation can carry
+        // the same assistant message into more than one session file.
+        var seen: Set<String> = []
         for project in projects {
             let directory = "\(root)/\(project)"
             guard let files = try? FileManager.default.contentsOfDirectory(atPath: directory) else { continue }
@@ -52,7 +55,7 @@ enum DailyActivityScanner {
                     continue
                 }
                 guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { continue }
-                accumulateClaude(data: data, since: earliest, calendar: calendar, into: &byDay)
+                accumulateClaude(data: data, since: earliest, calendar: calendar, seen: &seen, into: &byDay)
             }
         }
         return byDay.map { DailyActivity(day: $0.key, provider: .claudeCode, tokens: $0.value.tokens, cost: $0.value.cost) }
@@ -63,6 +66,7 @@ enum DailyActivityScanner {
         data: Data,
         since earliest: Date,
         calendar: Calendar,
+        seen: inout Set<String>,
         into byDay: inout [Date: (tokens: Int, cost: Double)]
     ) {
         for lineBytes in data.split(separator: 0x0A) {
@@ -72,6 +76,15 @@ enum DailyActivityScanner {
                   timestamp >= earliest,
                   let message = json["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else { continue }
+
+            // One assistant turn is written as several lines - one per content block (thinking,
+            // text, tool_use) - and every one of them repeats the SAME message id and the SAME
+            // already-cumulative usage object. Adding each line counted the same tokens two or
+            // three times: measured at +78% on a real session file, and the cost figure is
+            // derived from those tokens, so it inflated identically. Count each message once.
+            if let identity = Self.messageIdentity(json: json, message: message) {
+                guard seen.insert(identity).inserted else { continue }
+            }
 
             let input = (usage["input_tokens"] as? Int) ?? 0
             let output = (usage["output_tokens"] as? Int) ?? 0
@@ -131,6 +144,18 @@ enum DailyActivityScanner {
     }
 
     // MARK: - Parsing
+
+    /// Identity of one assistant API response, used to count it once however many content-block
+    /// lines it was written across. Returns nil when neither id is present, in which case the
+    /// caller counts the line rather than dropping it - under-counting would be the worse error,
+    /// and a format change that removed both ids should degrade to the old behaviour, not to
+    /// silence.
+    static func messageIdentity(json: [String: Any], message: [String: Any]) -> String? {
+        let messageID = message["id"] as? String
+        let requestID = json["requestId"] as? String
+        guard messageID != nil || requestID != nil else { return nil }
+        return "\(messageID ?? "")\u{1F}\(requestID ?? "")"
+    }
 
     private static func parseDay(_ value: String, calendar: Calendar) -> Date? {
         let formatter = DateFormatter()

@@ -145,8 +145,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"assistant","timestamp":"2026-07-19T18:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":200,"output_tokens":25}}}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertEqual(byDay.count, 1, "both messages fall on the same day")
         XCTAssertEqual(byDay.values.first?.tokens, 375)
@@ -158,8 +159,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":10,"cache_creation_input_tokens":500,"cache_read_input_tokens":1000}}}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertEqual(byDay.values.first?.tokens, 1520)
     }
@@ -169,8 +171,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"assistant","timestamp":"2020-01-01T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: Date(), calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: Date(), calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertTrue(byDay.isEmpty)
     }
@@ -181,8 +184,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"summary","aiTitle":"x"}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertTrue(byDay.isEmpty)
     }
@@ -276,5 +280,75 @@ final class SpendChartHitTestTests: XCTestCase {
 
     func testNoCostsAtAllSelectsNothing() {
         XCTAssertNil(SpendAnalyticsPanel.agentID(at: CGPoint(x: 190, y: 100), in: size, agents: [agent(pid: 1, cost: nil)]))
+    }
+}
+
+// Claude Code writes one JSONL line per content block - thinking, text, tool_use - and every
+// line of the same assistant turn repeats the SAME message id and the SAME already-cumulative
+// usage object. Counting each line inflated tokens and cost by ~78% on a real session file.
+final class ClaudeMessageDeduplicationTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    private func accumulate(_ jsonl: String) -> (tokens: Int, cost: Double) {
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
+        DailyActivityScanner.accumulateClaude(
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
+        )
+        return byDay.values.reduce(into: (0, 0.0)) { $0.0 += $1.tokens; $0.1 += $1.cost }
+    }
+
+    /// Three content blocks of one turn, all carrying the same id and the same cumulative usage.
+    private let oneTurnAsThreeLines = """
+    {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+    {"type":"assistant","timestamp":"2026-07-19T10:00:01Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+    {"type":"assistant","timestamp":"2026-07-19T10:00:02Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+    """
+
+    func testOneTurnSpreadOverSeveralLinesCountsOnce() {
+        XCTAssertEqual(accumulate(oneTurnAsThreeLines).tokens, 150, "150, not 450")
+    }
+
+    func testCostIsNotInflatedByTheSameDuplication() {
+        // 100 in + 50 out on Opus 4.8: 100/1M*5 + 50/1M*25 = 0.00175
+        XCTAssertEqual(accumulate(oneTurnAsThreeLines).cost, 0.00175, accuracy: 0.0000001)
+    }
+
+    func testDistinctTurnsStillAccumulate() {
+        let jsonl = """
+        {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":0}}}
+        {"type":"assistant","timestamp":"2026-07-19T10:00:05Z","requestId":"req_2","message":{"id":"msg_2","model":"claude-opus-4-8","usage":{"input_tokens":200,"output_tokens":0}}}
+        """
+        XCTAssertEqual(accumulate(jsonl).tokens, 300)
+    }
+
+    // Under-counting would be worse than the bug being fixed, so a line with neither id is
+    // still counted rather than silently dropped.
+    func testLinesWithNoIdentityAreStillCounted() {
+        let jsonl = """
+        {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":0}}}
+        {"type":"assistant","timestamp":"2026-07-19T10:00:01Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":0}}}
+        """
+        XCTAssertEqual(accumulate(jsonl).tokens, 20)
+    }
+
+    func testDeduplicationSpansFilesWithinOneScan() {
+        // The same turn resumed into a second session file must not be counted twice.
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
+        for _ in 0..<2 {
+            DailyActivityScanner.accumulateClaude(
+                data: Data(oneTurnAsThreeLines.utf8), since: .distantPast,
+                calendar: calendar, seen: &seen, into: &byDay
+            )
+        }
+        XCTAssertEqual(byDay.values.reduce(0) { $0 + $1.tokens }, 150)
+    }
+
+    // The per-session parser behind the agent card had the identical bug.
+    func testSessionParserAlsoCountsATurnOnce() {
+        let usage = AgentSessionResolver.claudeUsage(fromJSONLData: Data(oneTurnAsThreeLines.utf8))
+        XCTAssertEqual(usage?.tokensInput, 100, "100, not 300")
+        XCTAssertEqual(usage?.tokensOutput, 50, "50, not 150")
     }
 }

@@ -225,7 +225,11 @@ enum ActiveAgentScanner {
         let cwd = reusable?.directory
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
-        let resolvedHost = AgentSessionResolver.hostApp(ofPID: c.pid)
+        // Only walked when the cache can't answer. hostApp(ofPID:) shells out to /bin/ps up to
+        // eight times per agent, and calling it unconditionally here - then discarding the
+        // result whenever the cache had one - made it the most expensive thing in the scan
+        // while the cache claimed to have eliminated it.
+        let resolvedHost = reusable == nil ? AgentSessionResolver.hostApp(ofPID: c.pid) : nil
         let hostApp = reusable?.hostApp ?? resolvedHost?.app
         let hostProcessID = reusable?.hostProcessID ?? resolvedHost?.processID
         let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)

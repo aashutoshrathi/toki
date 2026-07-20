@@ -45,15 +45,13 @@ final class NotchWindowController {
     /// popover on the notch, but the resting pill sits off to one side of it, so the popover
     /// would open away from what was actually clicked.
     var anchorRect: CGRect {
-        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement, contentWidth: contentWidth), let contentView = window?.contentView else { return .zero }
-        let inView = geometry.pillInView(expanded: isExpanded)
-        // NSView is bottom-left origin; the layout above is top-left.
-        return CGRect(
-            x: inView.minX,
-            y: contentView.bounds.height - inView.maxY,
-            width: inView.width,
-            height: inView.height
-        )
+        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement, contentWidth: contentWidth),
+              window?.contentView != nil else { return .zero }
+        // No flip. NSHostingView overrides isFlipped to true, so it is already top-left origin -
+        // the same space pillInView and the SwiftUI .offset that draws the pill both use.
+        // Flipping here mirrored the rect about the window's midline, anchoring the popover to
+        // empty space instead of to the pill.
+        return geometry.pillInView(expanded: isExpanded)
     }
 
     private struct Geometry {
@@ -234,14 +232,13 @@ final class NotchWindowController {
     // Hit testing is limited to the pill, so the transparent area around it stays click-through.
     private func updateInteractiveRect(geometry: Geometry) {
         guard let hostingView else { return }
-        let inView = geometry.pillInView(expanded: isExpanded)
-        // View coordinates are bottom-left origin; the layout above is top-left.
-        hostingView.interactiveRect = CGRect(
-            x: inView.minX,
-            y: geometry.window.height - inView.maxY,
-            width: inView.width,
-            height: inView.height
-        )
+        // No flip: NSHostingView is isFlipped, so this is the same top-left space the pill is
+        // drawn in. The previous flip put the hit region in the mirror-image position, so
+        // hitTest rejected every point over the visible pill and accepted only empty space -
+        // clicks passed through to whatever was behind. Hover still worked, because tracking
+        // areas do not route through hitTest, which is what made it look like a dead click
+        // rather than a geometry bug.
+        hostingView.interactiveRect = geometry.pillInView(expanded: isExpanded)
     }
 
     private func setExpanded(_ expanded: Bool) {
