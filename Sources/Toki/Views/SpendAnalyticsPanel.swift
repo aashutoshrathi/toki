@@ -28,6 +28,8 @@ struct SpendAnalyticsPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 summarySection
+                UsageHeatmap(store: store)
+                Divider()
                 spendSection
                 Divider()
                 quotaSection
