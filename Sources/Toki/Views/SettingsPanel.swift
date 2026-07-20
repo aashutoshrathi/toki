@@ -129,6 +129,13 @@ struct SettingsPanel: View {
                     }
                 }
 
+                // Sits directly under the menu bar picker: it decides where the readout lives,
+                // so it belongs with the other placement settings rather than below the
+                // notification thresholds it had nothing to do with.
+                if NotchWindowController.isSupported {
+                    notchModeRow
+                }
+
                 Divider()
                 sectionHeader("Notifications")
 
@@ -158,10 +165,6 @@ struct SettingsPanel: View {
                 Stepper("Cooldown \(store.preferences.notificationCooldownMinutes)m", value: intBinding(\.notificationCooldownMinutes), in: 5...360, step: 5)
 
                 Stepper("History \(store.preferences.historyRetentionDays)d", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
-
-                if NotchWindowController.isSupported {
-                    notchModeRow
-                }
 
                 Divider()
                 sectionHeader("Updates")
