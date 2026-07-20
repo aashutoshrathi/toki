@@ -191,7 +191,10 @@ struct UsageHeatmap: View {
     // Extracted for testing. Intensity is the peak share of quota consumed that day - the
     // deepest the account got into its allowance - which is the figure a user recognises as
     // "how heavy was that day", and is derivable from the remaining-ratio samples on hand.
-    static func days(
+    // nonisolated: this is pure computation over values with no view state, and marking it so
+    // keeps it callable from tests and background contexts. Without it the method inherits the
+    // View's MainActor isolation, which builds locally but fails under CI's stricter checking.
+    nonisolated static func days(
         from history: [UsageHistoryEntry],
         provider: Provider?,
         dayCount: Int,
@@ -201,23 +204,34 @@ struct UsageHeatmap: View {
         let today = calendar.startOfDay(for: now)
         let relevant = provider.map { wanted in history.filter { $0.provider == wanted } } ?? history
 
-        // Peak per account per day, so the tooltip can break the day down by who burned what
-        // rather than only reporting a single headline number.
-        var byDay: [Date: [String: (peak: Double, provider: Provider)]] = [:]
+        // Consumption is measured as how far the remaining quota FELL during the day, not from
+        // the standing remaining figure.
+        //
+        // Using the standing figure conflates state with activity: an account sitting at 0%
+        // remaining reports "100% used" every single day until its quota resets, so idle days
+        // paint as fully saturated and the chart says nothing about when work happened. Summing
+        // the drops between consecutive readings measures what was actually spent that day.
+        // Increases are ignored - a rise in remaining quota is a reset, not negative usage.
+        var byDay: [Date: [String: (consumed: Double, provider: Provider)]] = [:]
         var samplesByDay: [Date: Int] = [:]
-        for entry in relevant {
-            guard let ratio = entry.remainingRatio else { continue }
-            let day = calendar.startOfDay(for: entry.timestamp)
-            let used = min(max(1 - ratio, 0), 1)
-            samplesByDay[day, default: 0] += 1
-            let existing = byDay[day]?[entry.accountName]?.peak ?? 0
-            byDay[day, default: [:]][entry.accountName] = (max(existing, used), entry.provider)
+
+        for (_, entries) in Dictionary(grouping: relevant, by: \.accountID) {
+            var previous: Double?
+            for entry in entries.sorted(by: { $0.timestamp < $1.timestamp }) {
+                guard let ratio = entry.remainingRatio else { continue }
+                let day = calendar.startOfDay(for: entry.timestamp)
+                samplesByDay[day, default: 0] += 1
+                defer { previous = ratio }
+                guard let last = previous, last - ratio > 0 else { continue }
+                let existing = byDay[day]?[entry.accountName]?.consumed ?? 0
+                byDay[day, default: [:]][entry.accountName] = (min(existing + (last - ratio), 1), entry.provider)
+            }
         }
 
         return (0..<dayCount).reversed().compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
             let accounts = (byDay[date] ?? [:])
-                .map { AccountUsage(name: $0.key, peak: $0.value.peak, provider: $0.value.provider) }
+                .map { AccountUsage(name: $0.key, peak: $0.value.consumed, provider: $0.value.provider) }
                 .sorted { $0.peak > $1.peak }
             return HeatmapDay(
                 date: date,
@@ -278,7 +292,7 @@ struct HeatmapDay: Identifiable {
         let day = formatter.string(from: date)
         guard let intensity else { return "\(day) - no usage recorded" }
 
-        var lines = ["\(day) - \(percent(intensity)) peak quota used"]
+        var lines = ["\(day) - \(percent(intensity)) of quota consumed"]
         for account in accounts.prefix(4) {
             lines.append("\(account.name): \(percent(account.peak))")
         }
