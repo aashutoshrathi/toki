@@ -8,22 +8,12 @@ struct DailyActivity: Hashable, Sendable {
     let cost: Double
 }
 
-// Rebuilds daily activity from each tool's own session store rather than from Toki's recorded
-// quota samples.
-//
-// The heatmap originally derived usage from UsageHistoryEntry, which only exists for days Toki
-// itself was running and recording. That made the chart empty for any period before the app was
-// installed, and destroyable by anything that resets local state - the history really was lost
-// that way once. The tools' own session files are the durable record: they predate Toki, survive
-// its state being cleared, and cover cost-based providers that have no quota percentage to
-// sample, which is what kept OpenCode and Pi out of the chart.
+// Daily activity from each tool's own session store, not from Toki's recorded quota samples.
+// Session files predate Toki's install, survive its state being cleared, and cover cost-based
+// providers that have no quota percentage to sample.
 enum DailyActivityScanner {
-    /// A scan's outcome, with read failures reported separately from an absence of work.
-    ///
-    /// Returning a bare array conflated the two: every failure path produced `[]`, and the view
-    /// rendered that as "No agent activity found" - a claim about the user's week rather than
-    /// about Toki's ability to read it. Someone who had been coding all month was told they had
-    /// not been.
+    /// Read failures are reported separately from an absence of work; a bare array conflated
+    /// them and made a failed read render as "no activity".
     struct Outcome: Sendable {
         var activities: [DailyActivity] = []
         /// Providers whose history could not be read at all. Empty is the healthy case.
@@ -58,9 +48,7 @@ enum DailyActivityScanner {
 
     // MARK: - Claude Code
 
-    // Walks ~/.claude/projects/<encoded-cwd>/*.jsonl, summing each assistant message's usage
-    // into the day of its timestamp. Cost is priced from the recorded model, so a session that
-    // switched models is billed at each model's own rate.
+    // Priced from each message's own model, so a mid-session model switch bills correctly.
     /// nil means the store could not be read; an empty array means it was read and held nothing.
     private static func claudeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
         let root = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.claude/projects"
@@ -69,16 +57,14 @@ enum DailyActivityScanner {
         guard let projects = try? FileManager.default.contentsOfDirectory(atPath: root) else { return nil }
 
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
-        // Shared across every file in the scan, not per file: a resumed conversation can carry
-        // the same assistant message into more than one session file.
+        // Scan-wide: a resumed conversation repeats messages across session files.
         var seen: Set<String> = []
         for project in projects {
             let directory = "\(root)/\(project)"
             guard let files = try? FileManager.default.contentsOfDirectory(atPath: directory) else { continue }
             for file in files where file.hasSuffix(".jsonl") {
                 let path = "\(directory)/\(file)"
-                // Skip whole files last written before the window - the cheapest possible filter
-                // on what is otherwise a lot of JSON parsing.
+                // Cheapest filter available before a lot of JSON parsing.
                 if let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date,
                    modified < earliest {
                     continue
@@ -106,11 +92,8 @@ enum DailyActivityScanner {
                   let message = json["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else { continue }
 
-            // One assistant turn is written as several lines - one per content block (thinking,
-            // text, tool_use) - and every one of them repeats the SAME message id and the SAME
-            // already-cumulative usage object. Adding each line counted the same tokens two or
-            // three times: measured at +78% on a real session file, and the cost figure is
-            // derived from those tokens, so it inflated identically. Count each message once.
+            // One turn is written as several lines, one per content block, each repeating the
+            // same id and the same cumulative usage. Counting every line inflated totals ~78%.
             if let identity = Self.messageIdentity(json: json, message: message) {
                 guard seen.insert(identity).inserted else { continue }
             }
@@ -139,8 +122,7 @@ enum DailyActivityScanner {
 
     // MARK: - OpenCode
 
-    // Grouped in SQL rather than in Swift: the database already indexes the timestamp, and this
-    // avoids pulling every session row across the process boundary just to bucket it.
+    // Grouped in SQL: the timestamp is indexed, and this avoids moving every row.
     private static func openCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
         let cutoff = Int(earliest.timeIntervalSince1970 * 1000)
         let query = """
@@ -179,11 +161,8 @@ enum DailyActivityScanner {
 
     // MARK: - Parsing
 
-    /// Identity of one assistant API response, used to count it once however many content-block
-    /// lines it was written across. Returns nil when neither id is present, in which case the
-    /// caller counts the line rather than dropping it - under-counting would be the worse error,
-    /// and a format change that removed both ids should degrade to the old behaviour, not to
-    /// silence.
+    /// nil when neither id is present, in which case the caller counts the line: under-counting
+    /// is the worse error.
     static func messageIdentity(json: [String: Any], message: [String: Any]) -> String? {
         let messageID = message["id"] as? String
         let requestID = json["requestId"] as? String

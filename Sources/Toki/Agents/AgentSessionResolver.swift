@@ -1,9 +1,7 @@
 import Foundation
 
-// Derives a human-friendly agent name from a process command line by recovering
-// the working directory it runs in. The project name (last path component of the
-// cwd) is the reliable distinguishing signal across Claude Code sessions - session
-// files carry no dependable conversation title.
+// Per-provider resolution of title, usage, attention and last activity from local session
+// stores.
 enum AgentSessionResolver {
     // The human/AI-assigned conversation title, if the provider records one.
     static func chatTitle(provider: Provider, command: String, cwd: String?) -> String? {
@@ -49,19 +47,15 @@ enum AgentSessionResolver {
         }
     }
 
-    // Everything derived from one pass over a Claude session file.
     struct ParsedClaudeSession: Sendable {
         var usage: AgentSessionUsage?
-        /// The tool call still awaiting a result, if any. Whether that counts as "blocked"
-        /// depends on elapsed time, so the decision is deferred to the caller rather than
-        /// baked in here - otherwise the cached value would expire every second.
+        /// Whether this counts as "blocked" depends on elapsed time, so that is left to the
+        /// caller - baking it in here would expire the cache every second.
         var pendingTool: (name: String, question: String?)?
     }
 
-    // Session files reach tens of megabytes, and both usage and attention need the same parse.
-    // Reading and decoding twice per agent per scan - which is what separate implementations
-    // did - was enough JSON work to keep the agent list churning. Cached on path plus
-    // modification date and size, so an unchanged file is never re-read at all.
+    // Session files reach tens of megabytes and both usage and attention need the same parse.
+    // Cached on path, mtime and size, so an unchanged file is never re-read.
     private struct ClaudeCacheEntry {
         let modified: Date?
         let size: Int
@@ -77,20 +71,15 @@ enum AgentSessionResolver {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
         let parsed = parseClaudeSession(data: data)
         claudeCache[path] = ClaudeCacheEntry(modified: modified, size: size, parsed: parsed)
-        // Keep the cache from growing without bound as projects come and go.
+        // Drop entries whose session file no longer exists.
         if claudeCache.count > 64 {
             claudeCache = claudeCache.filter { FileManager.default.fileExists(atPath: $0.key) }
         }
         return parsed
     }
 
-    // OpenCode records each tool invocation as a `part` row whose JSON carries a
-    // state.status of running / completed / error. A part left in `running` is the same
-    // signal as Claude's unresolved tool_use: the tool was invoked and nothing has come back.
-    //
-    // The `permission` table is not the signal it looks like - it is the persisted allow-list
-    // of previously granted permissions, not a queue of pending prompts, and it stays empty
-    // on a machine that has never granted one.
+    // A `part` row left in state.status "running" is OpenCode's equivalent of an unresolved
+    // tool_use. The `permission` table is a persisted allow-list, not a queue of prompts.
     private static func openCodeAttention(cwd: String?, now: Date) -> AgentAttention? {
         guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
         let query = """
@@ -112,20 +101,12 @@ enum AgentSessionResolver {
         return AgentAttention(kind: .permission, prompt: tool.isEmpty ? nil : "Allow \(tool)?")
     }
 
-    // How long a tool call must sit unanswered before we call it "blocked". A tool that's
-    // merely executing writes its result within a moment, whereas a permission prompt or an
-    // open question sits indefinitely - so quiet time is what separates the two. Without this
-    // the indicator would strobe on every normal tool call.
+    // A running tool writes its result within moments; a prompt sits indefinitely. Quiet time
+    // is what separates them.
     private static let attentionQuietPeriod: TimeInterval = 10
 
-    // Claude Code writes a tool_use block when it calls a tool and a matching tool_result once
-    // the call completes. A tool_use with no result is therefore the signal for "stopped and
-    // waiting": either the user is staring at a permission prompt, or the agent asked a
-    // question via AskUserQuestion/ExitPlanMode and is blocked on the answer. Neither writes
-    // anything further to the file until the user acts.
-    //
-    // Extracted for testing - `now` and `modified` are injected so the quiet-period gate can
-    // be exercised without touching the clock.
+    // A tool_use with no matching tool_result means the session stopped and is waiting.
+    // `now` and `modified` are injected so the quiet-period gate is testable.
     static func claudeAttention(fromJSONLData data: Data, modified: Date?, now: Date) -> AgentAttention? {
         attention(from: parseClaudeSession(data: data), modified: modified, now: now)
     }
@@ -146,16 +127,14 @@ enum AgentSessionResolver {
         }
     }
 
-    // One pass produces both the token/cost totals and the unresolved tool call.
     static func parseClaudeSession(data: Data) -> ParsedClaudeSession {
         var totalInput = 0
         var totalOutput = 0
         var totalCost: Double?
         var pending: [String: (name: String, question: String?)] = [:]
         var pendingOrder: [String] = []
-        // One assistant turn is written as several lines - one per content block - each
-        // repeating the same message id and the same already-cumulative usage. Counting every
-        // line inflated this session's tokens and cost by roughly 78%.
+        // One turn spans several content-block lines that repeat the same cumulative usage;
+        // counting each inflated totals ~78%.
         var seenMessages: Set<String> = []
 
         for lineBytes in data.split(separator: 0x0A) {
@@ -204,7 +183,7 @@ enum AgentSessionResolver {
         if totalInput > 0 || totalOutput > 0 {
             session.usage = AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
         }
-        // The most recent unresolved call is the one the user is actually looking at.
+
         if let id = pendingOrder.last(where: { pending[$0] != nil }) {
             session.pendingTool = pending[id]
         }
@@ -227,10 +206,7 @@ enum AgentSessionResolver {
         }
     }
 
-    // ~/.grok/sessions/<percent-encoded-cwd>/<session-uuid>/summary.json - generated_title
-    // is the grok CLI's own auto-generated conversation summary (rewritten as the session
-    // evolves, same idea as Claude's aiTitle), and last_active_at sorts multiple sessions
-    // in the same project so the most recent one wins.
+    // ~/.grok/sessions/<encoded-cwd>/<uuid>/summary.json; last_active_at picks the newest.
     private static func newestGrokSession(cwd: String?) -> (title: String?, lastActiveAt: Date?)? {
         guard let cwd else { return nil }
         let encoded = cwd.replacingOccurrences(of: "/", with: "%2F")
@@ -249,9 +225,7 @@ enum AgentSessionResolver {
         return sessions.max { ($0.lastActiveAt ?? .distantPast) < ($1.lastActiveAt ?? .distantPast) }
     }
 
-    // Truncates the fractional-seconds portion before parsing - the CLI writes microsecond
-    // precision, which ISO8601DateFormatter's fixed 3-digit fractional-seconds mode rejects,
-    // and whole-second precision is all sorting/relative display needs anyway.
+    // ISO8601DateFormatter rejects fractional seconds, which the CLI writes.
     private static func parseGrokTimestamp(_ raw: String) -> Date? {
         guard let dotIndex = raw.firstIndex(of: ".") else {
             return ISO8601DateFormatter().date(from: raw)
@@ -274,9 +248,8 @@ enum AgentSessionResolver {
         return claudeTitle(fromSessionContents: contents)
     }
 
-    // A user's explicit /rename (written as customTitle) always wins over the AI-inferred
-    // aiTitle; the inferred title is only shown when the chat was never explicitly named. Both
-    // fields are rewritten as the conversation evolves, so the last of each is the current one.
+    // An explicit /rename (customTitle) wins over the inferred aiTitle; both are rewritten as
+    // the conversation evolves, so the last of each is current.
     static func claudeTitle(fromSessionContents contents: String) -> String? {
         var latestAI: String?
         var latestCustom: String?
@@ -292,7 +265,7 @@ enum AgentSessionResolver {
         return latestCustom ?? latestAI
     }
 
-    // Resolves the session file once (path + mtime) so chatTitle and lastActivity share it.
+    // Newest .jsonl in the project dir, unless the command names one explicitly.
     private static func newestClaudeSession(command: String, cwd: String?) -> (path: String, modified: Date?)? {
         // An explicit --resume path wins; otherwise pick the newest file in the project dir.
         if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
@@ -318,12 +291,8 @@ enum AgentSessionResolver {
         return OpenCodeUsageClient.queryValue(query)
     }
 
-    // Walks the process's ancestry to find the app hosting it (editor or terminal).
-    //
-    // Returns the host's PID alongside its identity, because the identity alone is not enough
-    // to focus it: two builds of the same terminal share a bundle identifier, so looking the
-    // app up by identifier can raise the wrong copy - the one without this agent's window.
-    // The PID names exactly one process.
+    // Walks the process ancestry for the hosting app. Returns the PID too: two builds of a
+    // terminal share a bundle identifier, so identity alone cannot pick the right copy.
     static func hostApp(ofPID pid: Int32) -> (app: HostApp, processID: Int32)? {
         var current = pid
         for _ in 0..<8 {
@@ -423,14 +392,13 @@ enum AgentSessionResolver {
 
     private static func claudeSessionUsage(command: String, cwd: String?) -> AgentSessionUsage? {
         guard let session = newestClaudeSession(command: command, cwd: cwd) else { return nil }
-        // Shares the cached parse with attention() - same file, same pass.
+
         return claudeSession(at: session.path, modified: session.modified)?.usage
     }
 
     // Extracted for testing — parses assistant-message token counts from a Claude Code
     // JSONL session file (each line is a JSON object, assistant messages carry usage).
-    // Retained as the documented entry point for token/cost totals; the parse itself lives in
-    // parseClaudeSession so attention and usage share a single pass over the file.
+    // Extracted for testing; the parse lives in parseClaudeSession.
     static func claudeUsage(fromJSONLData data: Data) -> AgentSessionUsage? {
         parseClaudeSession(data: data).usage
     }

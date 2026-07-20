@@ -1,17 +1,11 @@
 import AppKit
 import SwiftUI
 
-// Experimental: a Dynamic Island style panel hanging off the display notch.
+// Experimental Dynamic Island style panel at the display notch.
 //
-// The notch itself is not a drawing surface. The gap between NSScreen's
-// auxiliaryTopLeftArea and auxiliaryTopRightArea is the camera housing - physical hardware
-// with no pixels behind it - so a window placed there is not clipped or mispositioned, it is
-// simply invisible. The illusion works the way it does on iPhone: draw in the display area
-// *immediately below* the housing, in black, with only the bottom corners rounded, so the
-// panel reads as the notch having grown downward.
-//
-// Collapsed it matches the housing's width exactly, which is what sells the join. On hover it
-// expands wider and taller to show detail, then settles back.
+// The gap between auxiliaryTopLeftArea and auxiliaryTopRightArea is the camera housing - no
+// pixels behind it, so a window placed there is invisible rather than misplaced. The panel
+// draws in the band beside and below the housing instead.
 @MainActor
 final class NotchWindowController {
     private var window: NSWindow?
@@ -21,8 +15,7 @@ final class NotchWindowController {
     private var awaitingInput: Int
     private var isExpanded = false
     private var placement: NotchPlacement
-    /// Measured width of the readout, so the resting pill is sized to its contents rather than
-    /// to a guess. A fixed width truncated the readout as soon as a third provider appeared.
+    /// Measured, not guessed: a fixed width truncated once a third provider appeared.
     private var contentWidth: CGFloat
 
     init(entries: [MenuBarStatusEntry], awaitingInput: Int, contentWidth: CGFloat, placement: NotchPlacement, onClick: @escaping () -> Void) {
@@ -37,20 +30,14 @@ final class NotchWindowController {
         geometry(for: NSScreen.main, placement: .hanging, contentWidth: 0) != nil
     }
 
-    /// The anchor the popover should attach to, so it opens under the panel rather than at the
-    /// screen corner - the status item is hidden in this mode and cannot anchor anything.
+    /// The status item is hidden in this mode, so the panel anchors the popover.
     var anchorView: NSView? { window?.contentView }
 
-    /// The pill's own rect within that view. Anchoring to the whole window would centre the
-    /// popover on the notch, but the resting pill sits off to one side of it, so the popover
-    /// would open away from what was actually clicked.
+    /// The pill's rect, not the window's - the pill can rest off to one side of the notch.
     var anchorRect: CGRect {
         guard let geometry = Self.geometry(for: NSScreen.main, placement: placement, contentWidth: contentWidth),
               window?.contentView != nil else { return .zero }
-        // No flip. NSHostingView overrides isFlipped to true, so it is already top-left origin -
-        // the same space pillInView and the SwiftUI .offset that draws the pill both use.
-        // Flipping here mirrored the rect about the window's midline, anchoring the popover to
-        // empty space instead of to the pill.
+        // No flip: NSHostingView is isFlipped, so this is already the space the pill is drawn in.
         return geometry.pillInView(expanded: isExpanded)
     }
 
@@ -73,17 +60,9 @@ final class NotchWindowController {
         }
     }
 
-    // The window starts at the very top of the screen and extends DOWN past the menu bar band,
-    // rather than starting below the band.
-    //
-    // Drawing only below the band produces two separate black shapes with the menu bar line
-    // between them - it reads as a second notch bolted underneath the real one, not as the
-    // notch expanding. The housing is opaque hardware, so the part of the window behind it is
-    // simply never seen; what matters is that the black is continuous either side of it. When
-    // collapsed the window is exactly the housing's width, so only the strip below shows and
-    // the two read as one shape. When expanded it grows wider than the housing and its upper
-    // portion covers the band on both sides, which is what makes the island look like it grew
-    // out of the notch rather than appearing beneath it.
+    // The window starts at the screen top and extends down past the band. Drawing only below
+    // the band leaves two separate black shapes with the menu bar line between them, which
+    // reads as a second notch rather than as the real one expanding.
     private static func geometry(for screen: NSScreen?, placement: NotchPlacement, contentWidth: CGFloat) -> Geometry? {
         guard let screen,
               let left = screen.auxiliaryTopLeftArea,
@@ -98,14 +77,8 @@ final class NotchWindowController {
         let bandHeight = screen.safeAreaInsets.top
         let notch = NSRect(x: left.maxX, y: screenTop - bandHeight, width: notchWidth, height: bandHeight)
 
-        // At rest the pill sits IN the band, flush against the right edge of the housing, so
-        // the black reads as the notch simply being wider rather than as something hanging
-        // below it. The band either side of the housing is real display - only the housing
-        // itself has no pixels - so this is the one part of "the notch area" that is usable.
-        //
-        // Right side specifically: on a notched Mac the menu bar extras start there, and in
-        // this mode Toki's own status item is hidden, so it is broadly reclaiming its own space
-        // rather than covering an app's menus on the left.
+        // Sideways rests in the band beside the housing - real display, unlike the housing
+        // itself. Right side, where menu bar extras live and the hidden status item was.
         let collapsed: NSRect
         switch placement {
         case .sideways:
@@ -114,13 +87,8 @@ final class NotchWindowController {
             let width = min(max(contentWidth + 20, 90), right.width)
             collapsed = NSRect(x: notch.maxX, y: screenTop - bandHeight, width: width, height: bandHeight)
         case .around:
-            // Wraps the housing: a band on each side, with the housing's own width between
-            // them. Nothing is drawn in that middle span - there are no pixels there - so the
-            // two halves read as a single strip interrupted by the camera.
-            // Not half the width: the split rounds up, so an odd number of entries puts the
-            // extra one on the left - three entries divide 2/1, and the busier half needs about
-            // two thirds. Sizing both sides for the larger half keeps them symmetric about the
-            // housing without truncating either.
+            // Wraps the housing; the gap matches its width so the halves read as one strip.
+            // Sized for the larger half: the split rounds up, so 3 entries divide 2/1.
             let side = min(max(contentWidth * 0.68 + 16, 70), min(left.width, right.width))
             collapsed = NSRect(
                 x: notch.minX - side,
@@ -158,8 +126,7 @@ final class NotchWindowController {
     func update(entries: [MenuBarStatusEntry], awaitingInput: Int, contentWidth: CGFloat) {
         self.entries = entries
         self.awaitingInput = awaitingInput
-        // A change in measured width moves the resting pill's edges, so the frame is recomputed
-        // rather than only the content redrawn.
+        // Width moves the pill's edges, so recompute the frame.
         let resized = abs(contentWidth - self.contentWidth) > 0.5
         self.contentWidth = contentWidth
         if resized, window != nil {
@@ -169,21 +136,15 @@ final class NotchWindowController {
         }
     }
 
-    /// Switching placement moves the resting pill, which changes the window's footprint, so the
-    /// frame is recomputed rather than only the content redrawn.
+    /// Placement changes the window's footprint, so the frame is recomputed.
     func update(placement: NotchPlacement) {
         guard placement != self.placement else { return }
         self.placement = placement
         show()
     }
 
-    // The window is always the EXPANDED size and never resizes; only the pill inside it grows.
-    //
-    // Resizing the window on hover is a feedback loop: changing the frame re-lays-out the
-    // tracking area, which emits spurious exit/enter events, which toggle the expansion, which
-    // resizes again - the panel visibly shook. Holding the frame fixed removes the loop
-    // entirely, and hit testing is narrowed to the pill so the transparent remainder does not
-    // swallow clicks meant for whatever is underneath.
+    // The frame never changes on hover; only the pill inside animates. Resizing the window
+    // re-laid the tracking area, which emitted spurious enter/exit events and made it shake.
     @discardableResult
     func show() -> Bool {
         guard let geometry = Self.geometry(for: NSScreen.main, placement: placement, contentWidth: contentWidth) else {
@@ -229,15 +190,11 @@ final class NotchWindowController {
         updateInteractiveRect(geometry: geometry)
     }
 
-    // Hit testing is limited to the pill, so the transparent area around it stays click-through.
+    // Limited to the pill so the transparent remainder stays click-through.
     private func updateInteractiveRect(geometry: Geometry) {
         guard let hostingView else { return }
-        // No flip: NSHostingView is isFlipped, so this is the same top-left space the pill is
-        // drawn in. The previous flip put the hit region in the mirror-image position, so
-        // hitTest rejected every point over the visible pill and accepted only empty space -
-        // clicks passed through to whatever was behind. Hover still worked, because tracking
-        // areas do not route through hitTest, which is what made it look like a dead click
-        // rather than a geometry bug.
+        // No flip: NSHostingView is isFlipped. Flipping put the hit region in the mirror
+        // position, so clicks over the pill were rejected while hover still worked.
         hostingView.interactiveRect = geometry.pillInView(expanded: isExpanded)
     }
 
@@ -255,8 +212,7 @@ final class NotchWindowController {
             defer: true
         )
         window.isReleasedWhenClosed = false
-        // Above the menu bar so the panel is not clipped by it, and present on every Space -
-        // including full screen, which is where the notch is most visible.
+        // Above the menu bar, and on every Space including full screen.
         window.level = .statusBar + 1
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.backgroundColor = .clear
@@ -266,8 +222,7 @@ final class NotchWindowController {
     }
 }
 
-// Passes through clicks that land outside the pill. Without this the window's full expanded
-// footprint would swallow events over the menu bar and desktop even while collapsed.
+// Without this the full expanded footprint swallows clicks meant for the menu bar or desktop.
 private final class NotchHostingView<Content: View>: NSHostingView<Content> {
     var interactiveRect: CGRect = .zero
 
@@ -277,16 +232,13 @@ private final class NotchHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-// Pinned to a dark appearance rather than following the system theme: the surface this sits
-// against is the black camera housing, which does not change with light mode, so inheriting
-// would paint dark text on black.
+// Pinned dark: it sits against the black housing, which doesn't follow the system theme.
 private struct NotchPanel: View {
     let entries: [MenuBarStatusEntry]
     let awaitingInput: Int
     let isExpanded: Bool
     let placement: NotchPlacement
-    /// Height of the menu bar band. Anything drawn in the band's own vertical range and inside
-    /// the housing's x range is behind hardware, so content has to clear it.
+    /// Content inside the housing's x range and the band's y range is behind hardware.
     let bandHeight: CGFloat
     /// Width of the camera housing, used to leave a matching gap when straddling it.
     let notchWidth: CGFloat
@@ -296,8 +248,7 @@ private struct NotchPanel: View {
     let onClick: () -> Void
     let onHoverChange: (Bool) -> Void
 
-    /// Sideways rests inside the band, so its content is centred in the band rather than pushed
-    /// below it - it sits beside the housing, not under it.
+    /// Sideways sits beside the housing, so its content centres in the band.
     private var clearsHousing: Bool { isExpanded || placement == .hanging }
 
 
@@ -312,8 +263,7 @@ private struct NotchPanel: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isExpanded)
     }
 
-    /// Straddling splits the readout across the two bands. Entries divide between them, and the
-    /// waiting-agent badge goes right, next to where menu bar extras normally live.
+    /// Around splits the readout across both bands; the badge goes right.
     private var straddles: Bool { placement == .around && !isExpanded }
 
     private var splitPoint: Int { (entries.count + 1) / 2 }
@@ -324,8 +274,7 @@ private struct NotchPanel: View {
             HStack(spacing: 0) {
                 MenuBarStatusView(entries: Array(entries.prefix(splitPoint)))
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                // Matches the housing exactly. Nothing is drawn here - there are no pixels
-                // behind the camera - so the two halves read as one strip it interrupts.
+                // Matches the housing width; nothing renders here.
                 Color.clear.frame(width: notchWidth)
                 MenuBarStatusView(entries: Array(entries.dropFirst(splitPoint)), awaitingInput: awaitingInput)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -347,14 +296,11 @@ private struct NotchPanel: View {
         }
         .padding(.top, clearsHousing ? bandHeight : 0)
         .padding(.horizontal, isExpanded ? 14 : 6)
-        // The hint sat flush against the rounded bottom edge, which cramped it against the
-        // curve. Only applies when expanded - collapsed has no second line to space away.
+        // Only when expanded; collapsed has no second line.
         .padding(.bottom, isExpanded ? 12 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: clearsHousing ? .top : .center)
         .background(Color.black)
-        // Square top corners: the top edge is flush with the screen edge, behind the housing,
-        // so rounding it would carve a visible gap out of the black beside the hardware and
-        // break the continuity that makes this read as one shape with the notch.
+        // Square top corners: the top edge is behind the housing, so rounding shows a gap.
         .clipShape(BottomRoundedShape(cornerRadius: isExpanded ? 18 : 12))
         .environment(\.colorScheme, .dark)
         .contentShape(Rectangle())
