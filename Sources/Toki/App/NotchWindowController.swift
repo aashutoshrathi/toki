@@ -21,16 +21,20 @@ final class NotchWindowController {
     private var awaitingInput: Int
     private var isExpanded = false
     private var placement: NotchPlacement
+    /// Measured width of the readout, so the resting pill is sized to its contents rather than
+    /// to a guess. A fixed width truncated the readout as soon as a third provider appeared.
+    private var contentWidth: CGFloat
 
-    init(entries: [MenuBarStatusEntry], awaitingInput: Int, placement: NotchPlacement, onClick: @escaping () -> Void) {
+    init(entries: [MenuBarStatusEntry], awaitingInput: Int, contentWidth: CGFloat, placement: NotchPlacement, onClick: @escaping () -> Void) {
         self.entries = entries
         self.awaitingInput = awaitingInput
+        self.contentWidth = contentWidth
         self.placement = placement
         self.onClick = onClick
     }
 
     static var isSupported: Bool {
-        geometry(for: NSScreen.main, placement: .hanging) != nil
+        geometry(for: NSScreen.main, placement: .hanging, contentWidth: 0) != nil
     }
 
     /// The anchor the popover should attach to, so it opens under the panel rather than at the
@@ -41,7 +45,7 @@ final class NotchWindowController {
     /// popover on the notch, but the resting pill sits off to one side of it, so the popover
     /// would open away from what was actually clicked.
     var anchorRect: CGRect {
-        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement), let contentView = window?.contentView else { return .zero }
+        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement, contentWidth: contentWidth), let contentView = window?.contentView else { return .zero }
         let inView = geometry.pillInView(expanded: isExpanded)
         // NSView is bottom-left origin; the layout above is top-left.
         return CGRect(
@@ -82,7 +86,7 @@ final class NotchWindowController {
     // the two read as one shape. When expanded it grows wider than the housing and its upper
     // portion covers the band on both sides, which is what makes the island look like it grew
     // out of the notch rather than appearing beneath it.
-    private static func geometry(for screen: NSScreen?, placement: NotchPlacement) -> Geometry? {
+    private static func geometry(for screen: NSScreen?, placement: NotchPlacement, contentWidth: CGFloat) -> Geometry? {
         guard let screen,
               let left = screen.auxiliaryTopLeftArea,
               let right = screen.auxiliaryTopRightArea else { return nil }
@@ -107,12 +111,16 @@ final class NotchWindowController {
         let collapsed: NSRect
         switch placement {
         case .sideways:
-            collapsed = NSRect(x: notch.maxX, y: screenTop - bandHeight, width: 108, height: bandHeight)
+            // Sized to the measured readout plus breathing room, and clamped so it can never
+            // run off the display or overlap the housing.
+            let width = min(max(contentWidth + 20, 90), right.width)
+            collapsed = NSRect(x: notch.maxX, y: screenTop - bandHeight, width: width, height: bandHeight)
         case .around:
             // Wraps the housing: a band on each side, with the housing's own width between
             // them. Nothing is drawn in that middle span - there are no pixels there - so the
             // two halves read as a single strip interrupted by the camera.
-            let side: CGFloat = 96
+            // Each half carries roughly half the entries, so each needs about half the width.
+            let side = min(max(contentWidth / 2 + 16, 70), min(left.width, right.width))
             collapsed = NSRect(
                 x: notch.minX - side,
                 y: screenTop - bandHeight,
@@ -146,10 +154,18 @@ final class NotchWindowController {
         NSScreen.main?.safeAreaInsets.top ?? 32
     }
 
-    func update(entries: [MenuBarStatusEntry], awaitingInput: Int) {
+    func update(entries: [MenuBarStatusEntry], awaitingInput: Int, contentWidth: CGFloat) {
         self.entries = entries
         self.awaitingInput = awaitingInput
-        render()
+        // A change in measured width moves the resting pill's edges, so the frame is recomputed
+        // rather than only the content redrawn.
+        let resized = abs(contentWidth - self.contentWidth) > 0.5
+        self.contentWidth = contentWidth
+        if resized, window != nil {
+            show()
+        } else {
+            render()
+        }
     }
 
     /// Switching placement moves the resting pill, which changes the window's footprint, so the
@@ -169,7 +185,7 @@ final class NotchWindowController {
     // swallow clicks meant for whatever is underneath.
     @discardableResult
     func show() -> Bool {
-        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement) else {
+        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement, contentWidth: contentWidth) else {
             DiagnosticLogger.shared.record(.warning, component: "notch", code: "no_notch_on_display")
             return false
         }
@@ -190,7 +206,7 @@ final class NotchWindowController {
     }
 
     private func render() {
-        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement) else { return }
+        guard let geometry = Self.geometry(for: NSScreen.main, placement: placement, contentWidth: contentWidth) else { return }
         let panel = NotchPanel(
             entries: entries,
             awaitingInput: awaitingInput,

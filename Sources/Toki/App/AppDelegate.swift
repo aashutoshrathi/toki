@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var latestEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
     private var agentsAwaitingInput = 0
+    private var latestContentWidth: CGFloat = 0
     private var notchController: NotchWindowController?
 
     // Notch mode replaces the status item rather than duplicating it - two copies of the same
@@ -73,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 notchController = NotchWindowController(
                     entries: latestEntries,
                     awaitingInput: agentsAwaitingInput,
+                    contentWidth: latestContentWidth,
                     placement: store.preferences.notchPlacement,
                     onClick: { [weak self] in self?.togglePopover() }
                 )
@@ -109,7 +111,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func updateStatusItem() {
         let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput)
-        notchController?.update(entries: latestEntries, awaitingInput: agentsAwaitingInput)
         guard let button = statusItem.button else { return }
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {
@@ -134,6 +135,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         hostingView.layoutSubtreeIfNeeded()
         let fittingSize = hostingView.fittingSize
         let width = max(54, ceil(fittingSize.width) + 6)
+
+        // The notch panel shows the same readout, so it reuses this measurement rather than
+        // guessing a width - a fixed one truncated the readout as providers were added.
+        latestContentWidth = ceil(fittingSize.width)
+        notchController?.update(
+            entries: latestEntries,
+            awaitingInput: agentsAwaitingInput,
+            contentWidth: latestContentWidth
+        )
 
         // Resizing the status item while the popover is open drags the popover with it.
         //
