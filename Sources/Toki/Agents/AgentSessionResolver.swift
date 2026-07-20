@@ -249,16 +249,34 @@ enum AgentSessionResolver {
     static func claudeUsage(fromJSONLData data: Data) -> AgentSessionUsage? {
         var totalInput = 0
         var totalOutput = 0
+        // Cost is accumulated per line rather than from the session totals: a single session can
+        // span several models (a /model switch mid-conversation), and each line's tokens must be
+        // priced at the rate of the model that actually produced them.
+        var totalCost: Double?
         for lineBytes in data.split(separator: 0x0A) {
             guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
                   json["type"] as? String == "assistant",
                   let message = json["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else { continue }
-            totalInput += (usage["input_tokens"] as? Int) ?? 0
-            totalOutput += (usage["output_tokens"] as? Int) ?? 0
+            let input = (usage["input_tokens"] as? Int) ?? 0
+            let output = (usage["output_tokens"] as? Int) ?? 0
+            totalInput += input
+            totalOutput += output
+
+            // Only priceable when the line names a model we have a rate for. Sessions that
+            // predate the model field, or run a model we don't know, still report tokens.
+            guard let model = message["model"] as? String,
+                  let cost = ModelPricing.costUSD(
+                      model: model,
+                      inputTokens: input,
+                      outputTokens: output,
+                      cacheWriteTokens: (usage["cache_creation_input_tokens"] as? Int) ?? 0,
+                      cacheReadTokens: (usage["cache_read_input_tokens"] as? Int) ?? 0
+                  ) else { continue }
+            totalCost = (totalCost ?? 0) + cost
         }
         guard totalInput > 0 || totalOutput > 0 else { return nil }
-        return AgentSessionUsage(cost: nil, tokensInput: totalInput, tokensOutput: totalOutput)
+        return AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
     }
 
     private static func optionalNumber(_ raw: String) -> Double? {

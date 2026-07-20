@@ -2,6 +2,10 @@
 
 ## 2.4.0 - 2026-07-20
 
+### Added
+
+- Claude Code sessions now show an estimated dollar cost alongside their token counts. Claude Code records no cost figure in its session files, so the tokens are priced against published per-model rates. Cache tokens are priced at their own rates (writes 1.25x input, reads 0.1x) rather than as plain input - a long session is mostly cache reads, so pricing them as input would overstate cost several-fold. Cost accumulates per message, so a `/model` switch mid-session bills each half at its own rate; an unrecognized model shows tokens without a cost rather than a guessed figure.
+
 ### Changed
 
 - claude-swap accounts now read as "Claude - user@example.com" instead of the registry's internal `claude-1-user@example.com` key. An explicit nickname still wins, and an account with no email falls back to plain "Claude". The underlying account id is unchanged, so existing aliases, usage adjustments, and cached state stay attached.

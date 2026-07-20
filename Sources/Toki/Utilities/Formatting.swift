@@ -63,6 +63,11 @@ func formatCompact(_ value: Double) -> String {
 }
 
 func formatUSD(_ value: Double) -> String {
+    // A non-zero spend below a cent would round to "$0.00", which reads as free rather than
+    // as small - surface it as a floor instead so a just-started session never looks costless.
+    if value > 0, value < 0.01 {
+        return "<$0.01"
+    }
     let formatter = NumberFormatter()
     formatter.numberStyle = .currency
     formatter.currencyCode = "USD"
