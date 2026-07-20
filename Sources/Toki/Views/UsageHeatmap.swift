@@ -22,7 +22,7 @@ struct UsageHeatmap: View {
         VStack(alignment: .leading, spacing: 6) {
             header
             if days.allSatisfy({ $0.intensity == nil }) {
-                Text("No usage recorded in the last \(dayCount) days")
+                Text("No agent activity found in the last \(dayCount) days")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -32,6 +32,7 @@ struct UsageHeatmap: View {
                 legend
             }
         }
+        .task { store.refreshDailyActivity() }
     }
 
     private var header: some View {
@@ -163,11 +164,11 @@ struct UsageHeatmap: View {
     // MARK: - Data
 
     private var availableProviders: [Provider] {
-        Array(Set(store.history.map(\.provider))).sorted { $0.displayName < $1.displayName }
+        Array(Set(store.dailyActivity.map(\.provider))).sorted { $0.displayName < $1.displayName }
     }
 
     private var days: [HeatmapDay] {
-        UsageHeatmap.days(from: store.history, provider: provider, dayCount: dayCount, now: Date())
+        UsageHeatmap.days(from: store.dailyActivity, provider: provider, dayCount: dayCount, now: Date())
     }
 
     // Padded to whole weeks so the calendar rows line up under the weekday headers. Leading
@@ -195,49 +196,42 @@ struct UsageHeatmap: View {
     // keeps it callable from tests and background contexts. Without it the method inherits the
     // View's MainActor isolation, which builds locally but fails under CI's stricter checking.
     nonisolated static func days(
-        from history: [UsageHistoryEntry],
+        from activity: [DailyActivity],
         provider: Provider?,
         dayCount: Int,
         now: Date
     ) -> [HeatmapDay] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
-        let relevant = provider.map { wanted in history.filter { $0.provider == wanted } } ?? history
+        let relevant = provider.map { wanted in activity.filter { $0.provider == wanted } } ?? activity
 
-        // Consumption is measured as how far the remaining quota FELL during the day, not from
-        // the standing remaining figure.
-        //
-        // Using the standing figure conflates state with activity: an account sitting at 0%
-        // remaining reports "100% used" every single day until its quota resets, so idle days
-        // paint as fully saturated and the chart says nothing about when work happened. Summing
-        // the drops between consecutive readings measures what was actually spent that day.
-        // Increases are ignored - a rise in remaining quota is a reset, not negative usage.
-        var byDay: [Date: [String: (consumed: Double, provider: Provider)]] = [:]
-        var samplesByDay: [Date: Int] = [:]
-
-        for (_, entries) in Dictionary(grouping: relevant, by: \.accountID) {
-            var previous: Double?
-            for entry in entries.sorted(by: { $0.timestamp < $1.timestamp }) {
-                guard let ratio = entry.remainingRatio else { continue }
-                let day = calendar.startOfDay(for: entry.timestamp)
-                samplesByDay[day, default: 0] += 1
-                defer { previous = ratio }
-                guard let last = previous, last - ratio > 0 else { continue }
-                let existing = byDay[day]?[entry.accountName]?.consumed ?? 0
-                byDay[day, default: [:]][entry.accountName] = (min(existing + (last - ratio), 1), entry.provider)
-            }
+        var byDay: [Date: [DailyActivity]] = [:]
+        for entry in relevant {
+            byDay[calendar.startOfDay(for: entry.day), default: []].append(entry)
         }
+
+        // Shading is relative to the busiest day in the window rather than to an absolute token
+        // count. There is no meaningful fixed ceiling on daily tokens, and the useful question
+        // is "how did this day compare to my others" - an absolute scale would leave every cell
+        // at the bottom of the ramp for a light user and saturated for a heavy one.
+        let busiest = byDay.values.map { day in day.reduce(0) { $0 + $1.tokens } }.max() ?? 0
 
         return (0..<dayCount).reversed().compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
-            let accounts = (byDay[date] ?? [:])
-                .map { AccountUsage(name: $0.key, peak: $0.value.consumed, provider: $0.value.provider) }
-                .sorted { $0.peak > $1.peak }
+            guard let entries = byDay[date], !entries.isEmpty else {
+                return HeatmapDay(date: date, intensity: nil, accounts: [], tokens: 0, cost: 0)
+            }
+            let tokens = entries.reduce(0) { $0 + $1.tokens }
+            let cost = entries.reduce(0) { $0 + $1.cost }
+            let accounts = entries
+                .sorted { $0.tokens > $1.tokens }
+                .map { AccountUsage(name: $0.provider.displayName, tokens: $0.tokens, cost: $0.cost) }
             return HeatmapDay(
                 date: date,
-                intensity: accounts.map(\.peak).max(),
+                intensity: busiest > 0 ? Double(tokens) / Double(busiest) : nil,
                 accounts: accounts,
-                sampleCount: samplesByDay[date] ?? 0
+                tokens: tokens,
+                cost: cost
             )
         }
     }
@@ -245,8 +239,8 @@ struct UsageHeatmap: View {
 
 struct AccountUsage: Hashable {
     let name: String
-    let peak: Double
-    let provider: Provider
+    let tokens: Int
+    let cost: Double
 }
 
 struct HeatmapDay: Identifiable {
@@ -254,18 +248,19 @@ struct HeatmapDay: Identifiable {
     let date: Date
     let intensity: Double?
     let isPlaceholder: Bool
-    /// Per-account peak consumption that day, heaviest first.
+    /// Per-provider breakdown for the day, heaviest first.
     let accounts: [AccountUsage]
-    /// How many readings were recorded - a rough proxy for how active the day was.
-    let sampleCount: Int
+    let tokens: Int
+    let cost: Double
 
-    init(date: Date, intensity: Double?, accounts: [AccountUsage] = [], sampleCount: Int = 0) {
+    init(date: Date, intensity: Double?, accounts: [AccountUsage] = [], tokens: Int = 0, cost: Double = 0) {
         self.id = ISO8601DateFormatter().string(from: date)
         self.date = date
         self.intensity = intensity
         self.isPlaceholder = false
         self.accounts = accounts
-        self.sampleCount = sampleCount
+        self.tokens = tokens
+        self.cost = cost
     }
 
     private init(placeholderIndex: Int) {
@@ -274,7 +269,8 @@ struct HeatmapDay: Identifiable {
         self.intensity = nil
         self.isPlaceholder = true
         self.accounts = []
-        self.sampleCount = 0
+        self.tokens = 0
+        self.cost = 0
     }
 
     static func placeholder(index: Int) -> HeatmapDay {
@@ -290,22 +286,23 @@ struct HeatmapDay: Identifiable {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE, MMM d"
         let day = formatter.string(from: date)
-        guard let intensity else { return "\(day) - no usage recorded" }
+        guard intensity != nil else { return "\(day) - no activity" }
 
-        var lines = ["\(day) - \(percent(intensity)) of quota consumed"]
+        // Absolute figures, not the relative shade: the colour already conveys "compared to
+        // your other days", so repeating it as a percentage would say nothing new, and a
+        // relative percentage is easily misread as a share of some quota.
+        var lines = ["\(day) - \(formatCompact(Double(tokens))) tokens"]
+        if cost > 0 {
+            lines[0] += " · \(formatUSD(cost))"
+        }
         for account in accounts.prefix(4) {
-            lines.append("\(account.name): \(percent(account.peak))")
+            var line = "\(account.name): \(formatCompact(Double(account.tokens)))"
+            if account.cost > 0 { line += " · \(formatUSD(account.cost))" }
+            lines.append(line)
         }
         if accounts.count > 4 {
             lines.append("+\(accounts.count - 4) more")
         }
-        if sampleCount > 0 {
-            lines.append("\(sampleCount) reading\(sampleCount == 1 ? "" : "s")")
-        }
         return lines.joined(separator: "\n")
-    }
-
-    private func percent(_ value: Double) -> String {
-        "\(Int((value * 100).rounded()))%"
     }
 }

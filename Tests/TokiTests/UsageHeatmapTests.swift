@@ -4,22 +4,15 @@ import XCTest
 final class UsageHeatmapTests: XCTestCase {
     private let now = Date()
 
-    private func entry(daysAgo: Int, remaining: Double?, provider: Provider = .claudeCode) -> UsageHistoryEntry {
-        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!
-        // Distinct per provider: consumption is tracked per account, so sharing one id across
-        // providers would interleave their readings into one bogus series.
-        return UsageHistoryEntry(
-            timestamp: date,
-            accountID: "account-\(provider)",
-            accountName: "Account \(provider)",
-            provider: provider,
-            remainingRatio: remaining,
-            primary: ""
+    private func activity(daysAgo: Int, tokens: Int, cost: Double = 0, provider: Provider = .claudeCode) -> DailyActivity {
+        let day = Calendar.current.startOfDay(
+            for: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!
         )
+        return DailyActivity(day: day, provider: provider, tokens: tokens, cost: cost)
     }
 
-    private func days(_ history: [UsageHistoryEntry], provider: Provider? = nil, count: Int = 30) -> [HeatmapDay] {
-        UsageHeatmap.days(from: history, provider: provider, dayCount: count, now: now)
+    private func days(_ activity: [DailyActivity], provider: Provider? = nil, count: Int = 30) -> [HeatmapDay] {
+        UsageHeatmap.days(from: activity, provider: provider, dayCount: count, now: now)
     }
 
     func testProducesOneCellPerRequestedDayOldestFirst() {
@@ -28,80 +21,122 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertTrue(result[0].date < result[29].date)
     }
 
-    func testIntensityIsQuotaConsumedDuringTheDay() {
-        // 90% remaining down to 30% is 60% consumed.
+    // Shading is relative to the busiest day in the window: there is no fixed ceiling on daily
+    // tokens, so an absolute scale would bottom out for a light user and saturate for a heavy one.
+    func testBusiestDayIsFullIntensityAndOthersScaleAgainstIt() {
         let result = days([
-            entry(daysAgo: 0, remaining: 0.9),
-            entry(daysAgo: 0, remaining: 0.3),
+            activity(daysAgo: 1, tokens: 1_000_000),
+            activity(daysAgo: 0, tokens: 250_000),
         ])
-        XCTAssertEqual(try XCTUnwrap(result.last?.intensity), 0.6, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(result[result.count - 2].intensity), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(result.last?.intensity), 0.25, accuracy: 0.0001)
     }
 
-    // The core correctness property. An account sitting at 0% remaining is exhausted, not
-    // busy - reading the standing figure would paint every idle day as fully saturated.
-    func testExhaustedButIdleAccountDoesNotRegisterUsage() {
-        let result = days([
-            entry(daysAgo: 2, remaining: 0.0),
-            entry(daysAgo: 1, remaining: 0.0),
-            entry(daysAgo: 0, remaining: 0.0),
-        ])
-        XCTAssertTrue(result.allSatisfy { $0.intensity == nil }, "a flat quota means no consumption")
-    }
-
-    // A quota reset raises the remaining figure; that is not negative usage, and it must not
-    // cancel out real consumption recorded earlier the same day.
-    func testResetsAreIgnoredAndDropsAccumulate() {
-        let result = days([
-            entry(daysAgo: 0, remaining: 0.9),
-            entry(daysAgo: 0, remaining: 0.6),  // 0.3 consumed
-            entry(daysAgo: 0, remaining: 1.0),  // reset, ignored
-            entry(daysAgo: 0, remaining: 0.8),  // 0.2 consumed
-        ])
-        XCTAssertEqual(try XCTUnwrap(result.last?.intensity), 0.5, accuracy: 0.0001)
-    }
-
-    func testConsumptionIsAttributedToTheDayItHappened() {
-        let result = days([
-            entry(daysAgo: 1, remaining: 0.9),
-            entry(daysAgo: 0, remaining: 0.4),
-        ])
-        XCTAssertNil(result[result.count - 2].intensity, "the first reading alone establishes a baseline")
-        XCTAssertEqual(try XCTUnwrap(result.last?.intensity), 0.5, accuracy: 0.0001)
-    }
-
-    func testDaysWithoutDataAreNilNotZero() {
-        let result = days([entry(daysAgo: 0, remaining: 0.9), entry(daysAgo: 0, remaining: 0.5)])
+    func testDaysWithoutActivityAreNil() {
+        let result = days([activity(daysAgo: 0, tokens: 500)])
         XCTAssertNotNil(result.last?.intensity)
-        XCTAssertNil(result.first?.intensity, "a day with no samples must be distinguishable from a 0%-used day")
+        XCTAssertNil(result.first?.intensity, "a day with no activity must be distinguishable from a quiet day")
+    }
+
+    func testProvidersAreSummedPerDay() {
+        let result = days([
+            activity(daysAgo: 0, tokens: 300, provider: .claudeCode),
+            activity(daysAgo: 0, tokens: 700, provider: .openCode),
+        ])
+        XCTAssertEqual(result.last?.tokens, 1000)
+        XCTAssertEqual(result.last?.accounts.count, 2)
+    }
+
+    // Cost-based providers were previously absent entirely: they have no quota percentage, so
+    // the old quota-derived metric could not represent them.
+    func testCostBasedProvidersAppear() {
+        let result = days([
+            activity(daysAgo: 0, tokens: 5_000, cost: 1.25, provider: .pi),
+            activity(daysAgo: 0, tokens: 2_000, cost: 0.5, provider: .openCode),
+        ])
+        XCTAssertEqual(try XCTUnwrap(result.last?.cost), 1.75, accuracy: 0.0001)
+        XCTAssertEqual(result.last?.accounts.first?.name, Provider.pi.displayName, "heaviest provider leads")
     }
 
     func testProviderFilterExcludesOtherProviders() {
         let history = [
-            entry(daysAgo: 0, remaining: 1.0, provider: .claudeCode),
-            entry(daysAgo: 0, remaining: 0.1, provider: .claudeCode),
-            entry(daysAgo: 0, remaining: 1.0, provider: .codex),
-            entry(daysAgo: 0, remaining: 0.8, provider: .codex),
+            activity(daysAgo: 0, tokens: 900, provider: .claudeCode),
+            activity(daysAgo: 0, tokens: 100, provider: .openCode),
         ]
-        XCTAssertEqual(try XCTUnwrap(days(history, provider: .codex).last?.intensity), 0.2, accuracy: 0.0001)
-        XCTAssertEqual(try XCTUnwrap(days(history, provider: .claudeCode).last?.intensity), 0.9, accuracy: 0.0001)
+        XCTAssertEqual(days(history, provider: .openCode).last?.tokens, 100)
+        XCTAssertEqual(days(history, provider: .claudeCode).last?.tokens, 900)
     }
 
-    func testEntriesWithoutARatioAreIgnored() {
-        XCTAssertNil(days([entry(daysAgo: 0, remaining: nil)]).last?.intensity)
-    }
-
-    func testIntensityIsClampedToUnitRange() {
-        let result = days([entry(daysAgo: 0, remaining: 1.0), entry(daysAgo: 0, remaining: -0.5)])
-        XCTAssertEqual(try XCTUnwrap(result.last?.intensity), 1.0, accuracy: 0.0001)
-    }
-
-    func testEntriesOlderThanTheWindowAreExcluded() {
-        let result = days([entry(daysAgo: 41, remaining: 0.9), entry(daysAgo: 40, remaining: 0.1)], count: 30)
+    func testActivityOlderThanTheWindowIsExcluded() {
+        let result = days([activity(daysAgo: 40, tokens: 10_000)], count: 30)
         XCTAssertTrue(result.allSatisfy { $0.intensity == nil })
     }
 
-    func testTooltipDistinguishesNoUsageFromZeroUsage() {
-        XCTAssertTrue(HeatmapDay(date: now, intensity: nil).tooltip.contains("no usage recorded"))
-        XCTAssertTrue(HeatmapDay(date: now, intensity: 0).tooltip.contains("0%"))
+    func testTooltipReportsAbsoluteFiguresNotTheRelativeShade() {
+        let day = HeatmapDay(
+            date: now,
+            intensity: 0.5,
+            accounts: [AccountUsage(name: "Claude Code", tokens: 1_500_000, cost: 2)],
+            tokens: 1_500_000,
+            cost: 2
+        )
+        XCTAssertTrue(day.tooltip.contains("1.5M"), "absolute tokens, not the relative percentage")
+        XCTAssertFalse(day.tooltip.contains("50%"), "the colour already conveys the relative figure")
+    }
+
+    func testTooltipDistinguishesNoActivity() {
+        XCTAssertTrue(HeatmapDay(date: now, intensity: nil).tooltip.contains("no activity"))
+    }
+}
+
+final class DailyActivityScannerTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    func testClaudeUsageIsBucketedByMessageTimestamp() {
+        let jsonl = """
+        {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+        {"type":"assistant","timestamp":"2026-07-19T18:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":200,"output_tokens":25}}}
+        """
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        DailyActivityScanner.accumulateClaude(
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+        )
+        XCTAssertEqual(byDay.count, 1, "both messages fall on the same day")
+        XCTAssertEqual(byDay.values.first?.tokens, 375)
+    }
+
+    // Cache tokens dominate real sessions; omitting them would understate activity heavily.
+    func testCacheTokensCountTowardDailyTotals() {
+        let jsonl = """
+        {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":10,"cache_creation_input_tokens":500,"cache_read_input_tokens":1000}}}
+        """
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        DailyActivityScanner.accumulateClaude(
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+        )
+        XCTAssertEqual(byDay.values.first?.tokens, 1520)
+    }
+
+    func testEntriesBeforeTheWindowAreSkipped() {
+        let jsonl = """
+        {"type":"assistant","timestamp":"2020-01-01T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+        """
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        DailyActivityScanner.accumulateClaude(
+            data: Data(jsonl.utf8), since: Date(), calendar: calendar, into: &byDay
+        )
+        XCTAssertTrue(byDay.isEmpty)
+    }
+
+    func testNonAssistantLinesAreIgnored() {
+        let jsonl = """
+        {"type":"user","timestamp":"2026-07-19T10:00:00Z"}
+        {"type":"summary","aiTitle":"x"}
+        """
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        DailyActivityScanner.accumulateClaude(
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+        )
+        XCTAssertTrue(byDay.isEmpty)
     }
 }
