@@ -48,6 +48,9 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let directory: String?
     let chatTitle: String?
     let hostApp: HostApp?
+    /// PID of the GUI app hosting this agent. Needed to focus the right one when two builds of
+    /// the same terminal run at once and therefore share a bundle identifier.
+    let hostProcessID: Int32?
     let lastActivity: Date?
     let processID: Int32
     let runtime: String
@@ -116,6 +119,7 @@ enum ActiveAgentScanner {
         let command: String
         let directory: String?
         let hostApp: HostApp?
+        let hostProcessID: Int32?
     }
     private nonisolated(unsafe) static var cache: [Int32: CacheEntry] = [:]
 
@@ -221,7 +225,9 @@ enum ActiveAgentScanner {
         let cwd = reusable?.directory
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
-        let hostApp = reusable?.hostApp ?? AgentSessionResolver.hostApp(ofPID: c.pid)
+        let resolvedHost = AgentSessionResolver.hostApp(ofPID: c.pid)
+        let hostApp = reusable?.hostApp ?? resolvedHost?.app
+        let hostProcessID = reusable?.hostProcessID ?? resolvedHost?.processID
         let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
         let agent = ActiveAgent(
             id: c.pid,
@@ -229,6 +235,7 @@ enum ActiveAgentScanner {
             directory: cwd,
             chatTitle: chatTitle,
             hostApp: hostApp,
+            hostProcessID: hostProcessID,
             lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd),
             processID: c.pid,
             runtime: c.runtime,
@@ -238,7 +245,7 @@ enum ActiveAgentScanner {
             sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd),
             attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd)
         )
-        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp)
+        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID)
         return agent
     }
 }
@@ -267,15 +274,43 @@ enum ActiveAgentTerminator {
 
 @MainActor
 enum ActiveAgentNavigator {
+    // The AppleScript runs off the main actor, and never blocks the UI.
+    //
+    // osascript was previously waited on synchronously here. Anything that makes it hang -
+    // an app-chooser dialog, a terminal busy servicing another Apple event, a build that
+    // stops responding - froze the whole app, which reads as "clicking the card does nothing"
+    // rather than as a hang. Scripting is inherently other-process work with no bounded
+    // response time, so it does not belong on the main actor.
     static func navigate(to agent: ActiveAgent) {
+        var device: String?
         if let tty = agent.terminalTTY, isSafeTTY(tty) {
-            let device = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
-            if runAppleScript(iTermScript(tty: device)) || runAppleScript(terminalScript(tty: device)) {
+            device = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+        }
+        let resolvedDevice = device
+
+        Task.detached(priority: .userInitiated) {
+            if let device = resolvedDevice,
+               runAppleScript(iTermScript(tty: device)) || runAppleScript(terminalScript(tty: device)) {
                 return
             }
+            await MainActor.run { activateHostApp(for: agent) }
+        }
+    }
+
+    private static func activateHostApp(for agent: ActiveAgent) {
+        // The agent's own host process, by PID, before anything identifier-based.
+        //
+        // Two builds of the same terminal report the same bundle identifier, so picking the
+        // first running app with a matching identifier can raise the copy that does not
+        // contain this agent - which looks like the click doing nothing. Walking the agent's
+        // process ancestry already told us exactly which process owns it.
+        if let hostProcessID = agent.hostProcessID,
+           let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)) {
+            running.activate(options: [.activateAllWindows])
+            return
         }
 
-        // Prefer the agent's actual resolved host app; fall back to common host apps.
+        // Fall back to identity when the ancestry walk found nothing.
         var bundleIDs: [String] = []
         if let host = agent.hostApp {
             bundleIDs.append(host.bundleID)
@@ -290,11 +325,11 @@ enum ActiveAgentNavigator {
         }
     }
 
-    private static func isSafeTTY(_ value: String) -> Bool {
+    nonisolated private static func isSafeTTY(_ value: String) -> Bool {
         value.range(of: #"^(/dev/)?[a-zA-Z0-9]+$"#, options: .regularExpression) != nil
     }
 
-    private static func runAppleScript(_ source: String) -> Bool {
+    nonisolated private static func runAppleScript(_ source: String) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", source]
@@ -302,17 +337,37 @@ enum ActiveAgentNavigator {
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
         } catch {
             return false
         }
+
+        // A hard ceiling on how long a scripted app gets to answer. Focusing a terminal tab is
+        // near-instant when it works; anything still running after this is stuck on something
+        // the user cannot see - a modal chooser, an app not servicing Apple events - and would
+        // otherwise leave the process resident indefinitely.
+        let deadline = Date().addingTimeInterval(5)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard !process.isRunning else {
+            process.terminate()
+            DiagnosticLogger.shared.record(.warning, component: "agents", code: "applescript_timeout")
+            return false
+        }
+        return process.terminationStatus == 0
     }
 
-    private static func iTermScript(tty: String) -> String {
+    // Addressed by bundle id, not by name.
+    //
+    // `tell application "iTerm2"` resolves through LaunchServices by name, which is ambiguous
+    // as soon as more than one iTerm-family bundle is installed - iTermAI ships as a separate
+    // app whose identifier shares the same prefix. A name that resolves to more than one
+    // candidate can target the wrong build, or make AppleScript put up a "Where is...?" chooser
+    // that blocks osascript until it is dismissed. A bundle id has exactly one answer.
+    nonisolated private static func iTermScript(tty: String) -> String {
         """
-        if application "iTerm2" is running then
-          tell application "iTerm2"
+        if application id "com.googlecode.iterm2" is running then
+          tell application id "com.googlecode.iterm2"
             repeat with w in windows
               repeat with t in tabs of w
                 repeat with s in sessions of t
@@ -331,10 +386,10 @@ enum ActiveAgentNavigator {
         """
     }
 
-    private static func terminalScript(tty: String) -> String {
+    nonisolated private static func terminalScript(tty: String) -> String {
         """
-        if application "Terminal" is running then
-          tell application "Terminal"
+        if application id "com.apple.Terminal" is running then
+          tell application id "com.apple.Terminal"
             repeat with w in windows
               repeat with t in tabs of w
                 if tty of t is "\(tty)" then

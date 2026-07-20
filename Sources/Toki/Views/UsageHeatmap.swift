@@ -10,6 +10,7 @@ struct UsageHeatmap: View {
     @ObservedObject var store: UsageStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var provider: Provider?
+    @State private var isPulsing = false
 
     // The window is the retention window, capped at 30 days. Rendering a full 30 when the
     // user retains fewer would show pruned days as empty cells - indistinguishable from days
@@ -21,7 +22,13 @@ struct UsageHeatmap: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if days.allSatisfy({ $0.level == nil }) {
+            // Scanning reads every session file on disk, which takes a moment on a machine with
+            // real history. Without a loading state that read looks identical to "you have no
+            // activity" - the empty grid renders first and is then replaced, which reads as a
+            // wrong answer followed by a correction.
+            if store.isScanningActivity, store.dailyActivity.isEmpty {
+                loadingGrid
+            } else if days.allSatisfy({ $0.level == nil }) {
                 Text("No agent activity found in the last \(dayCount) days")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
@@ -52,6 +59,38 @@ struct UsageHeatmap: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
+    }
+
+    // A skeleton of the real grid rather than a spinner: it occupies the same space, so the
+    // panel below doesn't jump when the data lands.
+    private var loadingGrid: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("Reading session history…")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.6)
+            }
+            .padding(.bottom, 2)
+
+            ForEach(0..<5, id: \.self) { _ in
+                HStack(spacing: 3) {
+                    ForEach(0..<7, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(emptyColor)
+                            .frame(height: 18)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .opacity(isPulsing ? 0.55 : 1)
+        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
+        .onAppear { isPulsing = true }
+        .accessibilityLabel("Loading daily usage")
     }
 
     private var grid: some View {

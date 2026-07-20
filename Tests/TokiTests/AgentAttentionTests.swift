@@ -88,7 +88,7 @@ final class AgentOrderingTests: XCTestCase {
     private func agent(pid: Int32, activity: Date, attention: AgentAttention?) -> ActiveAgent {
         ActiveAgent(
             id: pid, provider: .claudeCode, directory: nil, chatTitle: "Agent \(pid)",
-            hostApp: nil, lastActivity: activity, processID: pid, runtime: "1:00",
+            hostApp: nil, hostProcessID: nil, lastActivity: activity, processID: pid, runtime: "1:00",
             terminalTTY: nil, memoryKB: 1000, command: "claude", sessionUsage: nil,
             attention: attention
         )

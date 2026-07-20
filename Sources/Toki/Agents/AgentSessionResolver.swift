@@ -312,14 +312,21 @@ enum AgentSessionResolver {
     }
 
     // Walks the process's ancestry to find the app hosting it (editor or terminal).
-    static func hostApp(ofPID pid: Int32) -> HostApp? {
+    //
+    // Returns the host's PID alongside its identity, because the identity alone is not enough
+    // to focus it: two builds of the same terminal share a bundle identifier, so looking the
+    // app up by identifier can raise the wrong copy - the one without this agent's window.
+    // The PID names exactly one process.
+    static func hostApp(ofPID pid: Int32) -> (app: HostApp, processID: Int32)? {
         var current = pid
         for _ in 0..<8 {
             guard let output = Shell.output("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
             let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
                 .split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
-            if let app = HostApp.match(comm: String(parts[1]).lowercased()) { return app }
+            if let app = HostApp.match(comm: String(parts[1]).lowercased()) {
+                return (app, current)
+            }
             if ppid <= 1 { return nil }
             current = ppid
         }
