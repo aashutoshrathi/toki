@@ -15,7 +15,7 @@ import SwiftUI
 @MainActor
 final class NotchWindowController {
     private var window: NSWindow?
-    private var hostingView: NSHostingView<NotchPanel>?
+    private var hostingView: NotchHostingView<NotchPanel>?
     private let onClick: () -> Void
     private var content: MenuBarStatusView
     private var isExpanded = false
@@ -39,6 +39,17 @@ final class NotchWindowController {
         let expanded: NSRect
     }
 
+    // The window starts at the very top of the screen and extends DOWN past the menu bar band,
+    // rather than starting below the band.
+    //
+    // Drawing only below the band produces two separate black shapes with the menu bar line
+    // between them - it reads as a second notch bolted underneath the real one, not as the
+    // notch expanding. The housing is opaque hardware, so the part of the window behind it is
+    // simply never seen; what matters is that the black is continuous either side of it. When
+    // collapsed the window is exactly the housing's width, so only the strip below shows and
+    // the two read as one shape. When expanded it grows wider than the housing and its upper
+    // portion covers the band on both sides, which is what makes the island look like it grew
+    // out of the notch rather than appearing beneath it.
     private static func geometry(for screen: NSScreen?) -> Geometry? {
         guard let screen,
               let left = screen.auxiliaryTopLeftArea,
@@ -49,28 +60,34 @@ final class NotchWindowController {
         let notchWidth = right.minX - left.maxX
         guard notchWidth > 0 else { return nil }
 
-        let bandTop = screen.frame.maxY
-        let bandBottom = bandTop - screen.safeAreaInsets.top
-        let notch = NSRect(x: left.maxX, y: bandBottom, width: notchWidth, height: screen.safeAreaInsets.top)
+        let screenTop = screen.frame.maxY
+        let bandHeight = screen.safeAreaInsets.top
+        let notch = NSRect(x: left.maxX, y: screenTop - bandHeight, width: notchWidth, height: bandHeight)
 
-        let collapsedHeight: CGFloat = 26
+        // Height below the band, on top of which the band's own height is added so the window
+        // reaches the screen edge.
+        let collapsedDrop: CGFloat = 24
         let collapsed = NSRect(
             x: notch.minX,
-            y: bandBottom - collapsedHeight,
+            y: screenTop - bandHeight - collapsedDrop,
             width: notchWidth,
-            height: collapsedHeight
+            height: bandHeight + collapsedDrop
         )
 
-        // Expanded is centred on the notch so the growth reads as symmetric.
-        let expandedWidth = min(max(notchWidth * 2.2, 380), screen.frame.width - 40)
-        let expandedHeight: CGFloat = 108
+        let expandedDrop: CGFloat = 84
+        let expandedWidth = min(max(notchWidth * 2.1, 360), screen.frame.width - 40)
         let expanded = NSRect(
             x: notch.midX - expandedWidth / 2,
-            y: bandBottom - expandedHeight,
+            y: screenTop - bandHeight - expandedDrop,
             width: expandedWidth,
-            height: expandedHeight
+            height: bandHeight + expandedDrop
         )
         return Geometry(notch: notch, collapsed: collapsed, expanded: expanded)
+    }
+
+    /// Height of the menu bar band, so the panel can keep its content clear of the hardware.
+    private static var bandHeight: CGFloat {
+        NSScreen.main?.safeAreaInsets.top ?? 32
     }
 
     func update(content: MenuBarStatusView) {
@@ -78,6 +95,13 @@ final class NotchWindowController {
         render()
     }
 
+    // The window is always the EXPANDED size and never resizes; only the pill inside it grows.
+    //
+    // Resizing the window on hover is a feedback loop: changing the frame re-lays-out the
+    // tracking area, which emits spurious exit/enter events, which toggle the expansion, which
+    // resizes again - the panel visibly shook. Holding the frame fixed removes the loop
+    // entirely, and hit testing is narrowed to the pill so the transparent remainder does not
+    // swallow clicks meant for whatever is underneath.
     @discardableResult
     func show() -> Bool {
         guard let geometry = Self.geometry(for: NSScreen.main) else {
@@ -87,7 +111,7 @@ final class NotchWindowController {
 
         let window = self.window ?? makeWindow()
         self.window = window
-        window.setFrame(isExpanded ? geometry.expanded : geometry.collapsed, display: true)
+        window.setFrame(geometry.expanded, display: true)
         render()
         window.orderFrontRegardless()
         return window.isVisible
@@ -101,36 +125,49 @@ final class NotchWindowController {
     }
 
     private func render() {
+        guard let geometry = Self.geometry(for: NSScreen.main) else { return }
         let panel = NotchPanel(
             content: content,
             isExpanded: isExpanded,
-            notchWidth: Self.geometry(for: NSScreen.main)?.notch.width ?? 180,
-            onClick: onClick
+            bandHeight: Self.bandHeight,
+            collapsedWidth: geometry.notch.width,
+            collapsedHeight: geometry.collapsed.height,
+            onClick: onClick,
+            onHoverChange: { [weak self] hovering in self?.setExpanded(hovering) }
         )
         if let hostingView {
             hostingView.rootView = panel
         } else if let window {
-            let view = NSHostingView(rootView: panel)
+            let view = NotchHostingView(rootView: panel)
             window.contentView = view
             hostingView = view
         }
+        updateInteractiveRect(geometry: geometry)
+    }
+
+    // Hit testing is limited to the pill, so the transparent area around it stays click-through.
+    private func updateInteractiveRect(geometry: Geometry) {
+        guard let hostingView else { return }
+        let bounds = geometry.expanded
+        let width = isExpanded ? bounds.width : geometry.notch.width
+        let height = isExpanded ? bounds.height : geometry.collapsed.height
+        // View coordinates are bottom-left origin, and the pill is anchored to the top.
+        hostingView.interactiveRect = CGRect(
+            x: (bounds.width - width) / 2,
+            y: bounds.height - height,
+            width: width,
+            height: height
+        )
     }
 
     private func setExpanded(_ expanded: Bool) {
-        guard expanded != isExpanded, let window, let geometry = Self.geometry(for: NSScreen.main) else { return }
+        guard expanded != isExpanded else { return }
         isExpanded = expanded
         render()
-        // Animating the frame rather than snapping is most of what makes this read as one
-        // surface growing instead of a second window appearing.
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().setFrame(expanded ? geometry.expanded : geometry.collapsed, display: true)
-        }
     }
 
     private func makeWindow() -> NSWindow {
-        let window = NotchWindow(
+        let window = NSWindow(
             contentRect: .zero,
             styleMask: .borderless,
             backing: .buffered,
@@ -144,40 +181,19 @@ final class NotchWindowController {
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = false
-        window.onHoverChange = { [weak self] hovering in
-            self?.setExpanded(hovering)
-        }
         return window
     }
 }
 
-// Tracks pointer enter/exit for the whole panel. A tracking area on the window's content view
-// is used rather than SwiftUI's .onHover because the window itself has to resize in response,
-// and that has to be driven from AppKit.
-private final class NotchWindow: NSWindow {
-    var onHoverChange: ((Bool) -> Void)?
-    private var trackingArea: NSTrackingArea?
+// Passes through clicks that land outside the pill. Without this the window's full expanded
+// footprint would swallow events over the menu bar and desktop even while collapsed.
+private final class NotchHostingView<Content: View>: NSHostingView<Content> {
+    var interactiveRect: CGRect = .zero
 
-    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
-        super.setFrame(frameRect, display: flag)
-        refreshTrackingArea()
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = superview.map { convert(point, from: $0) } ?? point
+        return interactiveRect.contains(local) ? super.hitTest(point) : nil
     }
-
-    private func refreshTrackingArea() {
-        guard let contentView else { return }
-        if let trackingArea { contentView.removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(
-            rect: contentView.bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        contentView.addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) { onHoverChange?(true) }
-    override func mouseExited(with event: NSEvent) { onHoverChange?(false) }
 }
 
 // Pinned to a dark appearance rather than following the system theme: the surface this sits
@@ -186,11 +202,24 @@ private final class NotchWindow: NSWindow {
 private struct NotchPanel: View {
     let content: MenuBarStatusView
     let isExpanded: Bool
-    let notchWidth: CGFloat
+    /// Height of the menu bar band. The top of the window sits behind the camera housing, so
+    /// content has to start below this or hardware would hide it.
+    let bandHeight: CGFloat
+    let collapsedWidth: CGFloat
+    let collapsedHeight: CGFloat
     let onClick: () -> Void
+    let onHoverChange: (Bool) -> Void
 
     var body: some View {
-        VStack(spacing: isExpanded ? 8 : 0) {
+        VStack(spacing: 0) {
+            pill
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var pill: some View {
+        VStack(spacing: isExpanded ? 6 : 0) {
             content
                 .frame(height: 22)
             if isExpanded {
@@ -199,20 +228,27 @@ private struct NotchPanel: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
+        .padding(.top, bandHeight)
         .padding(.horizontal, isExpanded ? 14 : 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(
+            maxWidth: isExpanded ? .infinity : collapsedWidth,
+            minHeight: isExpanded ? nil : collapsedHeight,
+            alignment: .top
+        )
         .background(Color.black)
-        // Only the bottom corners are rounded. Square top corners keep the panel flush with
-        // the housing above it, which is what makes the two read as one shape rather than a
-        // floating rectangle parked under the notch.
-        .clipShape(NotchShape(cornerRadius: isExpanded ? 16 : 10))
+        // Square top corners: the top edge is flush with the screen edge, behind the housing,
+        // so rounding it would carve a visible gap out of the black beside the hardware and
+        // break the continuity that makes this read as one shape with the notch.
+        .clipShape(BottomRoundedShape(cornerRadius: isExpanded ? 18 : 12))
         .environment(\.colorScheme, .dark)
         .contentShape(Rectangle())
+        .onHover(perform: onHoverChange)
         .onTapGesture(perform: onClick)
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isExpanded)
     }
 }
 
-private struct NotchShape: Shape {
+private struct BottomRoundedShape: Shape {
     let cornerRadius: CGFloat
 
     func path(in rect: CGRect) -> Path {
