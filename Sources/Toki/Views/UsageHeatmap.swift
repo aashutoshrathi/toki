@@ -11,6 +11,7 @@ struct UsageHeatmap: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var provider: Provider?
     @State private var isPulsing = false
+    @State private var hoveredDay: HeatmapDay?
 
     // The window is the retention window, capped at 30 days. Rendering a full 30 when the
     // user retains fewer would show pruned days as empty cells - indistinguishable from days
@@ -125,30 +126,83 @@ struct UsageHeatmap: View {
             // modes, where the fills may be overridden entirely.
             .overlay(
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .stroke(Color.primary.opacity(day.isPlaceholder ? 0 : 0.18), lineWidth: 1)
+                    .stroke(
+                        // The hovered cell is ringed so it is obvious which day the figures
+                        // below belong to - without it the detail line is just text that
+                        // changes, with no anchor to the cell under the pointer.
+                        hoveredDay?.id == day.id
+                            ? Color.primary.opacity(0.85)
+                            : Color.primary.opacity(day.isPlaceholder ? 0 : 0.18),
+                        lineWidth: hoveredDay?.id == day.id ? 1.5 : 1
+                    )
             )
             .opacity(day.isPlaceholder ? 0 : 1)
-            // Identity is never color-alone: the exact figure is available on hover and to
-            // VoiceOver, so the ramp only has to convey rough magnitude.
-            .help(day.tooltip)
+            // Hover is tracked directly rather than relying on .help().
+            //
+            // The system tooltip is not dependable here: it waits out a delay before appearing,
+            // and inside a popover it frequently never shows at all - the popover's own event
+            // handling and the tooltip's timer do not cooperate. Reading a value out of the
+            // chart shouldn't be a gamble, so the figures go into a fixed detail line under the
+            // grid, which updates the instant the pointer moves.
+            .onHover { isInside in
+                guard !day.isPlaceholder else { return }
+                if isInside {
+                    hoveredDay = day
+                } else if hoveredDay?.id == day.id {
+                    hoveredDay = nil
+                }
+            }
+            // Identity is never colour-alone: the same figures reach VoiceOver directly.
             .accessibilityLabel(day.tooltip)
     }
 
+    // The detail line and the legend share one fixed-height row: swapping them in place keeps
+    // the panel from resizing as the pointer crosses the grid.
     private var legend: some View {
-        HStack(spacing: 3) {
-            Spacer()
-            Text("Less")
-                .font(.system(size: 8))
-                .foregroundStyle(.tertiary)
-            ForEach(0..<ramp.count, id: \.self) { step in
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(ramp[step])
-                    .frame(width: 10, height: 10)
+        ZStack {
+            if let day = hoveredDay {
+                hoverDetail(for: day)
+            } else {
+                HStack(spacing: 3) {
+                    Spacer()
+                    Text("Less")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tertiary)
+                    ForEach(0..<ramp.count, id: \.self) { step in
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(ramp[step])
+                            .frame(width: 10, height: 10)
+                    }
+                    Text("More")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tertiary)
+                }
             }
-            Text("More")
-                .font(.system(size: 8))
-                .foregroundStyle(.tertiary)
         }
+        .frame(height: 26, alignment: .center)
+    }
+
+    private func hoverDetail(for day: HeatmapDay) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                Text(day.headline)
+                    .font(.system(size: 10, weight: .semibold))
+                if day.level != nil {
+                    Text(day.figures)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            if !day.breakdown.isEmpty {
+                Text(day.breakdown)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Colour
@@ -326,6 +380,33 @@ struct HeatmapDay: Identifiable {
 
     static func placeholder(index: Int) -> HeatmapDay {
         HeatmapDay(placeholderIndex: index)
+    }
+
+    /// e.g. "Mon, Jul 20"
+    var headline: String {
+        guard !isPlaceholder else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter.string(from: date)
+    }
+
+    /// Absolute totals for the day. The colour already carries the relative standing, so
+    /// repeating that as a percentage would add nothing and invites being read as a quota share.
+    var figures: String {
+        guard level != nil else { return "no activity" }
+        var text = "\(formatCompact(Double(tokens))) tokens"
+        if cost > 0 { text += "  \(formatUSD(cost))" }
+        return text
+    }
+
+    /// Per-provider split, heaviest first.
+    var breakdown: String {
+        guard accounts.count > 1 || (accounts.count == 1 && level != nil) else { return "" }
+        return accounts.prefix(4).map { account in
+            var text = "\(account.name) \(formatCompact(Double(account.tokens)))"
+            if account.cost > 0 { text += " (\(formatUSD(account.cost)))" }
+            return text
+        }.joined(separator: "  ·  ")
     }
 
     // Breaks the day down rather than repeating the single number the colour already encodes:

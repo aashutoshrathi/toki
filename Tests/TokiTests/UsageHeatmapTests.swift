@@ -171,3 +171,47 @@ final class DailyActivityScannerTests: XCTestCase {
         XCTAssertTrue(byDay.isEmpty)
     }
 }
+
+// The inline hover detail replaced .help(), which was unreliable inside a popover. These
+// cover the strings that line renders.
+final class HeatmapHoverDetailTests: XCTestCase {
+    private let now = Date()
+
+    private func day(level: Int?, tokens: Int, cost: Double, accounts: [AccountUsage] = []) -> HeatmapDay {
+        HeatmapDay(date: now, level: level, accounts: accounts, tokens: tokens, cost: cost)
+    }
+
+    func testFiguresReportAbsoluteTokensAndCost() {
+        let detail = day(level: 2, tokens: 1_500_000, cost: 12.5).figures
+        XCTAssertTrue(detail.contains("1.5M tokens"))
+        XCTAssertTrue(detail.contains("$13") || detail.contains("$12"))
+    }
+
+    func testFiguresOmitCostWhenThereIsNone() {
+        XCTAssertFalse(day(level: 1, tokens: 5_000, cost: 0).figures.contains("$"))
+    }
+
+    func testFiguresSayNoActivityForAnEmptyDay() {
+        XCTAssertEqual(day(level: nil, tokens: 0, cost: 0).figures, "no activity")
+    }
+
+    func testBreakdownListsProvidersHeaviestFirst() {
+        let detail = day(
+            level: 3, tokens: 3_000, cost: 0,
+            accounts: [
+                AccountUsage(name: "Claude Code", tokens: 2_000, cost: 0),
+                AccountUsage(name: "OpenCode", tokens: 1_000, cost: 0),
+            ]
+        ).breakdown
+        XCTAssertTrue(detail.hasPrefix("Claude Code"))
+        XCTAssertTrue(detail.contains("OpenCode"))
+    }
+
+    func testBreakdownIsEmptyForADayWithNoActivity() {
+        XCTAssertEqual(day(level: nil, tokens: 0, cost: 0).breakdown, "")
+    }
+
+    func testHeadlineIsBlankForLayoutPlaceholders() {
+        XCTAssertEqual(HeatmapDay.placeholder(index: 0).headline, "")
+    }
+}
