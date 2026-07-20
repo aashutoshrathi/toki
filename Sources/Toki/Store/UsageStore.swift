@@ -40,7 +40,8 @@ final class UsageStore: ObservableObject {
     var config: AppConfig?
     var usageState = UsageState()
     var timer: Timer?
-    var isRefreshing = false
+    // Published: the header refresh button shows a spinner and disables itself off this.
+    @Published var isRefreshing = false
     // Published: the refresh button shows a spinner and disables itself off this.
     @Published var isScanningAgents = false
     // Published: the heatmap shows a loading state off this, so the view has to observe it.

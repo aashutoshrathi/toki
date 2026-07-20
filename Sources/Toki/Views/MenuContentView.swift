@@ -116,17 +116,30 @@ struct MenuContentView: View {
             .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
             .pointerOnHover()
 
+            // Same reasoning as the Agents panel's refresh: without a visible busy state the
+            // button looks identical before, during and after a refresh, so a press that is
+            // already running reads as one that did nothing and invites another - and the
+            // store drops overlapping refreshes, so those presses go nowhere.
             Button {
                 store.refresh(minimumRefreshInterval: 60)
             } label: {
-                Image(systemName: "arrow.clockwise")
-                    .frame(width: 25, height: 25)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Group {
+                    if store.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .frame(width: 25, height: 25)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(store.isRefreshing)
             .font(.system(size: 13, weight: .semibold))
-            .help("Refresh")
+            .help(store.isRefreshing ? "Refreshing…" : "Refresh")
             .pointerOnHover()
 
             Button {
