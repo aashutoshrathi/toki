@@ -215,3 +215,50 @@ final class HeatmapHoverDetailTests: XCTestCase {
         XCTAssertEqual(HeatmapDay.placeholder(index: 0).headline, "")
     }
 }
+
+// The donut chart's own hit testing. Selection previously only responded to the legend rows
+// below it, so pointing at a slice did nothing.
+final class SpendChartHitTestTests: XCTestCase {
+    private func agent(pid: Int32, cost: Double?) -> ActiveAgent {
+        ActiveAgent(
+            id: pid, provider: .claudeCode, directory: nil, chatTitle: "A\(pid)",
+            hostApp: nil, hostProcessID: nil, lastActivity: nil, processID: pid,
+            runtime: "1:00", terminalTTY: nil, memoryKB: 0, command: "claude",
+            sessionUsage: cost.map { AgentSessionUsage(cost: $0, tokensInput: 1, tokensOutput: 1) },
+            attention: nil
+        )
+    }
+
+    private let size = CGSize(width: 200, height: 200)
+
+    /// Two equal slices: the first occupies twelve o'clock round to six o'clock.
+    private var twoEqual: [ActiveAgent] { [agent(pid: 1, cost: 10), agent(pid: 2, cost: 10)] }
+
+    func testPointerOnTheRightHalfHitsTheFirstSlice() {
+        // Right of centre, within the ring.
+        XCTAssertEqual(SpendAnalyticsPanel.agentID(at: CGPoint(x: 190, y: 100), in: size, agents: twoEqual), 1)
+    }
+
+    func testPointerOnTheLeftHalfHitsTheSecondSlice() {
+        XCTAssertEqual(SpendAnalyticsPanel.agentID(at: CGPoint(x: 10, y: 100), in: size, agents: twoEqual), 2)
+    }
+
+    // The hole is not part of any slice; selecting the nearest one there would mean the centre
+    // of the chart silently picks a slice the pointer is not over.
+    func testPointerInTheDonutHoleSelectsNothing() {
+        XCTAssertNil(SpendAnalyticsPanel.agentID(at: CGPoint(x: 100, y: 100), in: size, agents: twoEqual))
+    }
+
+    func testPointerOutsideTheRingSelectsNothing() {
+        XCTAssertNil(SpendAnalyticsPanel.agentID(at: CGPoint(x: 199, y: 199), in: size, agents: twoEqual))
+    }
+
+    func testAgentsWithoutACostAreNotSelectable() {
+        let agents = [agent(pid: 1, cost: nil), agent(pid: 2, cost: 10)]
+        XCTAssertEqual(SpendAnalyticsPanel.agentID(at: CGPoint(x: 190, y: 100), in: size, agents: agents), 2)
+    }
+
+    func testNoCostsAtAllSelectsNothing() {
+        XCTAssertNil(SpendAnalyticsPanel.agentID(at: CGPoint(x: 190, y: 100), in: size, agents: [agent(pid: 1, cost: nil)]))
+    }
+}

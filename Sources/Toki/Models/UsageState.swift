@@ -76,6 +76,23 @@ enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Where the notch panel rests when it is not expanded.
+enum NotchPlacement: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Hangs below the housing, matching its width.
+    case hanging
+    /// Sits in the menu bar band beside the housing, reading as a wider notch.
+    case sideways
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .hanging: return "Hanging"
+        case .sideways: return "Sideways"
+        }
+    }
+}
+
 struct AppPreferences: Codable, Equatable {
     var notificationsEnabled = true
     var dndEnabled = false
@@ -86,8 +103,10 @@ struct AppPreferences: Codable, Equatable {
     // min(30, retention), so a shorter retention silently shortens the chart.
     var historyRetentionDays = 30
     var sessionWarningThreshold = 0.15
-    /// Experimental: render the status readout inside the display notch instead of the menu bar.
+    /// Experimental: render the status readout at the display notch instead of the menu bar.
+    /// Off by default - it relocates the whole app, so it is opt-in.
     var notchModeEnabled = false
+    var notchPlacement = NotchPlacement.hanging
 
     enum CodingKeys: String, CodingKey {
         case notificationsEnabled
@@ -98,6 +117,7 @@ struct AppPreferences: Codable, Equatable {
         case historyRetentionDays
         case sessionWarningThreshold
         case notchModeEnabled
+        case notchPlacement
     }
 
     init() {}
@@ -123,6 +143,7 @@ struct AppPreferences: Codable, Equatable {
         historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled
+        notchPlacement = try container.decodeIfPresent(NotchPlacement.self, forKey: .notchPlacement) ?? defaults.notchPlacement
     }
 }
 

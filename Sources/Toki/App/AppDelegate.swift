@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         Task { @MainActor in
             for await preferences in store.$preferences.values {
+                notchController?.update(placement: preferences.notchPlacement)
                 applyNotchMode(enabled: preferences.notchModeEnabled)
             }
         }
@@ -71,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             if notchController == nil {
                 notchController = NotchWindowController(
                     content: MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput),
+                    placement: store.preferences.notchPlacement,
                     onClick: { [weak self] in self?.togglePopover() }
                 )
             }
@@ -185,8 +187,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // In notch mode the status item is hidden and cannot anchor anything, so the panel
             // itself is the anchor - otherwise the popover falls back to the screen corner,
             // detached from the thing that was clicked.
-            if let anchor = self.notchController?.anchorView, anchor.window != nil {
-                self.popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+            if let controller = self.notchController, let anchor = controller.anchorView, anchor.window != nil {
+                // Anchored to the pill, not the window: the resting pill can sit to one side of
+                // the notch, so anchoring to the full window would open the popover away from
+                // whatever was actually clicked.
+                self.popover.show(relativeTo: controller.anchorRect, of: anchor, preferredEdge: .minY)
                 self.popover.contentViewController?.view.window?.makeKey()
                 return
             }

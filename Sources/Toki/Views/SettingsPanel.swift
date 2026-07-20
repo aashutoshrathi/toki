@@ -298,6 +298,7 @@ struct SettingsPanel: View {
 
     // Given its own row rather than a plain checkbox line: it is the one setting that visibly
     // relocates the whole app, and it is unfinished, so it needs room to say both.
+    @ViewBuilder
     private var notchModeRow: some View {
         Toggle(isOn: binding(\.notchModeEnabled)) {
             VStack(alignment: .leading, spacing: 2) {
@@ -329,6 +330,17 @@ struct SettingsPanel: View {
         }
         .help("Replaces the menu bar item with a panel that hangs from the display notch")
         .pointerOnHover()
+
+        if store.preferences.notchModeEnabled {
+            Picker("Rests", selection: binding(\.notchPlacement)) {
+                ForEach(NotchPlacement.allCases) { placement in
+                    Text(placement.label).tag(placement)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.leading, 18)
+            .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
+        }
     }
 
     private func sectionHeader(_ title: String) -> some View {
