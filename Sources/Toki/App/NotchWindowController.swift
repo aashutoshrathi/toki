@@ -230,6 +230,9 @@ private struct NotchPanel: View {
         }
         .padding(.top, bandHeight)
         .padding(.horizontal, isExpanded ? 14 : 6)
+        // The hint sat flush against the rounded bottom edge, which cramped it against the
+        // curve. Only applies when expanded - collapsed has no second line to space away.
+        .padding(.bottom, isExpanded ? 12 : 0)
         .frame(
             maxWidth: isExpanded ? .infinity : collapsedWidth,
             minHeight: isExpanded ? nil : collapsedHeight,
@@ -244,6 +247,7 @@ private struct NotchPanel: View {
         .contentShape(Rectangle())
         .onHover(perform: onHoverChange)
         .onTapGesture(perform: onClick)
+        .pointerOnHover()
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isExpanded)
     }
 }
