@@ -99,6 +99,31 @@ struct AppPreferences: Codable, Equatable {
         case sessionWarningThreshold
         case notchModeEnabled
     }
+
+    init() {}
+
+    // Decoded field by field with decodeIfPresent so that every key is optional and a missing
+    // one falls back to its default.
+    //
+    // The synthesized decoder does NOT do this: it calls decode() for each non-optional
+    // property and throws keyNotFound when a key is absent, and a property's default value is
+    // never consulted. That makes adding a single preference a breaking change for every
+    // existing state file - the decode throws, StateLoader falls back to an empty state, and
+    // the next save overwrites the user's accumulated history with it. That is exactly what
+    // adding notchModeEnabled did, so this decoder exists to make the whole struct additive
+    // by construction rather than relying on remembering the hazard next time.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = AppPreferences()
+        notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? defaults.notificationsEnabled
+        dndEnabled = try container.decodeIfPresent(Bool.self, forKey: .dndEnabled) ?? defaults.dndEnabled
+        lowQuotaThreshold = try container.decodeIfPresent(Double.self, forKey: .lowQuotaThreshold) ?? defaults.lowQuotaThreshold
+        notificationCooldownMinutes = try container.decodeIfPresent(Int.self, forKey: .notificationCooldownMinutes) ?? defaults.notificationCooldownMinutes
+        menuBarMode = try container.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarMode) ?? defaults.menuBarMode
+        historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
+        sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
+        notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled
+    }
 }
 
 enum TokiEventKind: String, Codable {
