@@ -62,3 +62,43 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder.toki.decode(AppPreferences.self, from: data), preferences)
     }
 }
+
+// The update banner can be snoozed instead of only skipped-for-good. The window is version
+// scoped so a newer release is never inherited into someone else's quiet period.
+final class UpdateSnoozeTests: XCTestCase {
+    private let now = Date()
+
+    func testVersionIsHiddenWhileTheWindowIsOpen() {
+        XCTAssertTrue(UpdateChecker.isSnoozed(
+            version: "2.5.0",
+            snoozedVersion: "2.5.0",
+            snoozedUntil: now.addingTimeInterval(3600),
+            now: now
+        ))
+    }
+
+    func testVersionReappearsOnceTheWindowHasPassed() {
+        XCTAssertFalse(UpdateChecker.isSnoozed(
+            version: "2.5.0",
+            snoozedVersion: "2.5.0",
+            snoozedUntil: now.addingTimeInterval(-1),
+            now: now
+        ))
+    }
+
+    // The important property: snoozing 2.5.0 must not also silence 2.6.0.
+    func testANewerVersionIsNotCoveredByAnEarlierSnooze() {
+        XCTAssertFalse(UpdateChecker.isSnoozed(
+            version: "2.6.0",
+            snoozedVersion: "2.5.0",
+            snoozedUntil: now.addingTimeInterval(6 * 3600),
+            now: now
+        ))
+    }
+
+    func testNothingSnoozedMeansNotSnoozed() {
+        XCTAssertFalse(UpdateChecker.isSnoozed(
+            version: "2.5.0", snoozedVersion: nil, snoozedUntil: nil, now: now
+        ))
+    }
+}

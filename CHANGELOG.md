@@ -2,6 +2,19 @@
 
 ## 2.4.1 - 2026-07-21
 
+### Added
+
+- `Toki usage` charts daily agent activity in the terminal, covering Claude Code, OpenCode and Pi. It reads the session stores directly rather than the status cache, so it works with the app closed and includes history from before Toki was installed. Shading uses block weights rather than colour alone, so it stays readable piped to a file or in a terminal without colour, and colour is suppressed automatically when stdout is not a terminal or `NO_COLOR` is set. Supports `--days=N`, a provider filter, and `--json` for scripting.
+- The update banner can be snoozed for six hours instead of only skipped. Closing it previously meant skipping that version for good, which is a heavier commitment than an X implies - anyone who wanted the update but not right now had to leave the banner up or silently opt out of the release. The snooze is recorded against the version, so a newer release still surfaces immediately.
+
+### Fixed
+
+- Token and cost figures were inflated by roughly 78%. Claude Code writes one session-file line per content block - thinking, text, tool_use - and every line of the same assistant turn repeats the same message id and the same already-cumulative usage figures. Both parsers added every line, so a turn written as three blocks counted three times. Measured on a real session file, 962 assistant lines collapse to 529 actual messages and 525.5M tokens to 294.4M. Cost is derived from those tokens, so every dollar figure on every agent card, heatmap cell and tooltip was wrong by the same factor. Messages are now counted once.
+- Clicks on the notch panel landed in empty space. The hit-test and popover-anchor rects were flipped to bottom-left origin, but `NSHostingView` is already top-left, so the flip mirrored them about the window's midline - every point over the visible pill was rejected. Hover kept working because tracking areas do not route through hit testing, which is what made it read as a dead click rather than a geometry bug.
+- The agent scan walked each agent's process tree on every tick. The host-app lookup, which shells out to `ps` up to eight times per agent, ran before its cache was consulted and its result was then discarded whenever the cache had an answer.
+- The quota history chart's x-axis produced labels like "Jul 20 at 10 PM", wide enough to collide and truncate to "Jul 21 at 1…". Labels are now scaled to the selected range - clock times for a day, dates for a month. Its legend also showed the registry's internal account key rather than the account name.
+- Compact figures gained a billions step; a heavy month runs past 1e9 tokens and rendered as "1,023M".
+
 ### Changed
 
 - The daily usage heatmap resolves into 64 shades instead of 4. Four steps quantised too coarsely to read - a busy day and a considerably busier one landed on the same swatch, so the grid showed far less than the data contained. The shades are interpolated through the same four measured anchor colours, so the ends of the scale keep the contrast that was validated for them and only the shades between are generated. Adjacent shades in a 64-step ramp are deliberately not separately identifiable, which is what a spectrum is for; the exact figures remain in the hover line and the accessibility label. The legend is now a continuous bar rather than a row of swatches, since the scale is no longer a set of buckets to match a cell against.
