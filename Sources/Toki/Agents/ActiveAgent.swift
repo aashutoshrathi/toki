@@ -138,10 +138,13 @@ enum ActiveAgentScanner {
             // Most recently active session first; agents without a known
             // activity time fall to the bottom, tie-broken by provider and PID.
             return agents.sorted { lhs, rhs in
-                // Agents waiting on the user come first. They're stale by definition - nothing
-                // has been written to their session since they blocked - so pure most-recent
-                // ordering would bury exactly the ones that need attention.
-                if lhs.needsInput != rhs.needsInput { return lhs.needsInput }
+                // Deliberately NOT sorted by whether the agent needs input.
+                //
+                // Promoting blocked agents to the top re-orders the list whenever one changes
+                // state, which happens while the user is looking at it. A row moving out from
+                // under the pointer mid-press cancels the click, so the cards silently stopped
+                // being clickable. Attention is surfaced by the dot, the row's own text, and
+                // the tab and menu bar badges - none of which move anything.
                 let l = lhs.lastActivity ?? .distantPast
                 let r = rhs.lastActivity ?? .distantPast
                 if l != r { return l > r }

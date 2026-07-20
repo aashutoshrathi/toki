@@ -80,3 +80,41 @@ final class AgentAttentionTests: XCTestCase {
         XCTAssertEqual(AgentAttention(kind: .question, prompt: "Pick one").summary, "Pick one")
     }
 }
+
+// Guards the click regression: promoting blocked agents to the top re-ordered the list while
+// the user was looking at it, and a row moving out from under the pointer mid-press cancels
+// the click - so the cards silently stopped being clickable.
+final class AgentOrderingTests: XCTestCase {
+    private func agent(pid: Int32, activity: Date, attention: AgentAttention?) -> ActiveAgent {
+        ActiveAgent(
+            id: pid, provider: .claudeCode, directory: nil, chatTitle: "Agent \(pid)",
+            hostApp: nil, lastActivity: activity, processID: pid, runtime: "1:00",
+            terminalTTY: nil, memoryKB: 1000, command: "claude", sessionUsage: nil,
+            attention: attention
+        )
+    }
+
+    func testOrderDoesNotChangeWhenAnAgentStartsWaiting() {
+        let older = Date().addingTimeInterval(-600)
+        let newer = Date()
+        let blocked = AgentAttention(kind: .question, prompt: "Which one?")
+
+        let before = [agent(pid: 1, activity: newer, attention: nil),
+                      agent(pid: 2, activity: older, attention: nil)]
+        // The older agent becomes blocked; ordering must be unchanged.
+        let after = [agent(pid: 1, activity: newer, attention: nil),
+                     agent(pid: 2, activity: older, attention: blocked)]
+
+        XCTAssertEqual(sortedIDs(before), sortedIDs(after))
+    }
+
+    /// Mirrors the scanner's ordering rule: most recent activity first.
+    private func sortedIDs(_ agents: [ActiveAgent]) -> [Int32] {
+        agents.sorted { lhs, rhs in
+            let l = lhs.lastActivity ?? .distantPast
+            let r = rhs.lastActivity ?? .distantPast
+            if l != r { return l > r }
+            return lhs.processID < rhs.processID
+        }.map(\.processID)
+    }
+}
