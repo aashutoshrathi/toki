@@ -119,8 +119,11 @@ final class NotchWindowController {
             // Wraps the housing: a band on each side, with the housing's own width between
             // them. Nothing is drawn in that middle span - there are no pixels there - so the
             // two halves read as a single strip interrupted by the camera.
-            // Each half carries roughly half the entries, so each needs about half the width.
-            let side = min(max(contentWidth / 2 + 16, 70), min(left.width, right.width))
+            // Not half the width: the split rounds up, so an odd number of entries puts the
+            // extra one on the left - three entries divide 2/1, and the busier half needs about
+            // two thirds. Sizing both sides for the larger half keeps them symmetric about the
+            // housing without truncating either.
+            let side = min(max(contentWidth * 0.68 + 16, 70), min(left.width, right.width))
             collapsed = NSRect(
                 x: notch.minX - side,
                 y: screenTop - bandHeight,
