@@ -4,6 +4,7 @@
 
 ### Added
 
+- The menu bar carries a badge with the number of agent sessions waiting on you, so a blocked session is visible without opening the popover. The count is knocked out of a filled dot rather than drawn in a fixed colour, so it stays readable against a light or dark menu bar alike.
 - Agents waiting on you are now called out with a red dot. A Claude Code session that has asked a question or is sitting on a permission prompt shows a red dot on its card, the question text (or the tool awaiting approval) right underneath, and turns the Agents tab badge red with a count of just the blocked sessions. Blocked agents sort to the top of the list, and clicking the card jumps straight to the terminal that's asking. Detection keys off a tool call with no matching result, gated on ten seconds of quiet in the session file - a tool that is merely running writes its result almost immediately, so the quiet period is what separates "working" from "waiting".
 - Claude Code sessions now show an estimated dollar cost alongside their token counts. Claude Code records no cost figure in its session files, so the tokens are priced against published per-model rates. Cache tokens are priced at their own rates (writes 1.25x input, reads 0.1x) rather than as plain input - a long session is mostly cache reads, so pricing them as input would overstate cost several-fold. Cost accumulates per message, so a `/model` switch mid-session bills each half at its own rate; an unrecognized model shows tokens without a cost rather than a guessed figure.
 

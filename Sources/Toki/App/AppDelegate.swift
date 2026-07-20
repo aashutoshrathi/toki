@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         installCLISymlink()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        updateStatusItem(entries: menuBarPlaceholderEntries())
+        updateStatusItem()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
 
@@ -34,12 +34,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         updateChecker.startAutomaticChecks()
 
+        // Quota entries and the waiting-agent count arrive from two independent publishers, so
+        // each is cached and the status item rebuilt from both - otherwise whichever updated
+        // last would clobber the other's contribution.
         Task { @MainActor in
             for await entries in store.$statusEntries.values {
-                updateStatusItem(entries: entries.isEmpty ? menuBarPlaceholderEntries() : entries)
+                latestEntries = entries.isEmpty ? menuBarPlaceholderEntries() : entries
+                updateStatusItem()
+            }
+        }
+
+        Task { @MainActor in
+            for await agents in store.$activeAgents.values {
+                agentsAwaitingInput = agents.filter(\.needsInput).count
+                updateStatusItem()
             }
         }
     }
+
+    private var latestEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
+    private var agentsAwaitingInput = 0
 
     private func installCLISymlink() {
         guard let executableURL = Bundle.main.executableURL else { return }
@@ -53,9 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    private func updateStatusItem(entries: [MenuBarStatusEntry]) {
+    private func updateStatusItem() {
         guard let button = statusItem.button else { return }
-        let content = MenuBarStatusView(entries: entries)
+        let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput)
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {
             existing.rootView = content
