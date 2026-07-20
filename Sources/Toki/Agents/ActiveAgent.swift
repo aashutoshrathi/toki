@@ -23,6 +23,25 @@ struct AgentSessionUsage: Hashable, Sendable {
     }
 }
 
+// An agent that has stopped and is waiting on the user - either because it asked a question
+// outright, or because a tool call is sitting on a permission prompt.
+struct AgentAttention: Hashable, Sendable {
+    enum Kind: Hashable, Sendable {
+        case question
+        case permission
+    }
+
+    let kind: Kind
+    // The question text when the agent asked one, or the tool awaiting approval. Shown
+    // truncated on the card so the user can tell what's blocked without switching to it.
+    let prompt: String?
+
+    var summary: String {
+        if let prompt, !prompt.isEmpty { return prompt }
+        return kind == .question ? "Waiting on your answer" : "Waiting for permission"
+    }
+}
+
 struct ActiveAgent: Identifiable, Hashable, Sendable {
     let id: Int32
     let provider: Provider
@@ -41,6 +60,10 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let command: String
     // Per-session cost and token usage, resolved from local session data when available.
     let sessionUsage: AgentSessionUsage?
+    // Set when the session is parked waiting on the user (a question or a permission prompt).
+    let attention: AgentAttention?
+
+    var needsInput: Bool { attention != nil }
 
     // Primary label: the conversation title, else the project folder, else the provider.
     var title: String {
@@ -115,6 +138,10 @@ enum ActiveAgentScanner {
             // Most recently active session first; agents without a known
             // activity time fall to the bottom, tie-broken by provider and PID.
             return agents.sorted { lhs, rhs in
+                // Agents waiting on the user come first. They're stale by definition - nothing
+                // has been written to their session since they blocked - so pure most-recent
+                // ordering would bury exactly the ones that need attention.
+                if lhs.needsInput != rhs.needsInput { return lhs.needsInput }
                 let l = lhs.lastActivity ?? .distantPast
                 let r = rhs.lastActivity ?? .distantPast
                 if l != r { return l > r }
@@ -205,7 +232,8 @@ enum ActiveAgentScanner {
             terminalTTY: c.tty,
             memoryKB: c.memoryKB,
             command: c.command,
-            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd)
+            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd),
+            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd)
         )
         cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp)
         return agent

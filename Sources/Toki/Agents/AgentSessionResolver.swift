@@ -35,6 +35,68 @@ enum AgentSessionResolver {
         }
     }
 
+    // Whether the session is parked waiting on the user, and what it's waiting for.
+    static func attention(provider: Provider, command: String, cwd: String?) -> AgentAttention? {
+        switch provider {
+        case .claudeCode, .claude, .anthropic:
+            guard let session = newestClaudeSession(command: command, cwd: cwd),
+                  let data = try? Data(contentsOf: URL(fileURLWithPath: session.path)) else { return nil }
+            return claudeAttention(fromJSONLData: data, modified: session.modified, now: Date())
+        default:
+            return nil
+        }
+    }
+
+    // How long a tool call must sit unanswered before we call it "blocked". A tool that's
+    // merely executing writes its result within a moment, whereas a permission prompt or an
+    // open question sits indefinitely - so quiet time is what separates the two. Without this
+    // the indicator would strobe on every normal tool call.
+    private static let attentionQuietPeriod: TimeInterval = 10
+
+    // Claude Code writes a tool_use block when it calls a tool and a matching tool_result once
+    // the call completes. A tool_use with no result is therefore the signal for "stopped and
+    // waiting": either the user is staring at a permission prompt, or the agent asked a
+    // question via AskUserQuestion/ExitPlanMode and is blocked on the answer. Neither writes
+    // anything further to the file until the user acts.
+    //
+    // Extracted for testing - `now` and `modified` are injected so the quiet-period gate can
+    // be exercised without touching the clock.
+    static func claudeAttention(fromJSONLData data: Data, modified: Date?, now: Date) -> AgentAttention? {
+        // A file still being written to is an agent that's working, not one that's waiting.
+        guard let modified, now.timeIntervalSince(modified) >= attentionQuietPeriod else { return nil }
+
+        var pending: [String: (name: String, input: [String: Any])] = [:]
+        for lineBytes in data.split(separator: 0x0A) {
+            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
+                  let message = json["message"] as? [String: Any],
+                  let blocks = message["content"] as? [[String: Any]] else { continue }
+            for block in blocks {
+                switch block["type"] as? String {
+                case "tool_use":
+                    guard let id = block["id"] as? String, let name = block["name"] as? String else { continue }
+                    pending[id] = (name, (block["input"] as? [String: Any]) ?? [:])
+                case "tool_result":
+                    // Resolved - drop it from the pending set.
+                    if let id = block["tool_use_id"] as? String { pending.removeValue(forKey: id) }
+                default:
+                    continue
+                }
+            }
+        }
+
+        guard let unresolved = pending.values.first else { return nil }
+        switch unresolved.name {
+        case "AskUserQuestion":
+            let questions = unresolved.input["questions"] as? [[String: Any]]
+            return AgentAttention(kind: .question, prompt: questions?.first?["question"] as? String)
+        case "ExitPlanMode", "EnterPlanMode":
+            return AgentAttention(kind: .question, prompt: "Waiting on plan approval")
+        default:
+            // Any other unanswered tool call is a pending permission prompt.
+            return AgentAttention(kind: .permission, prompt: "Allow \(unresolved.name)?")
+        }
+    }
+
     // When the agent's session was last written - used to sort most-recent first.
     static func lastActivity(provider: Provider, command: String, cwd: String?) -> Date? {
         switch provider {
