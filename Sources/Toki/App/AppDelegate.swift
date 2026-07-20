@@ -50,10 +50,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 updateStatusItem()
             }
         }
+
+        Task { @MainActor in
+            for await preferences in store.$preferences.values {
+                applyNotchMode(enabled: preferences.notchModeEnabled)
+            }
+        }
     }
 
     private var latestEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
     private var agentsAwaitingInput = 0
+    private var notchController: NotchWindowController?
+
+    // Notch mode replaces the status item rather than duplicating it - two copies of the same
+    // readout on one menu bar is just clutter. If the display has no notch the toggle is a
+    // no-op and the status item stays, so the app can never end up with no visible surface.
+    private func applyNotchMode(enabled: Bool) {
+        let active = enabled && NotchWindowController.isSupported
+        if active {
+            if notchController == nil {
+                notchController = NotchWindowController(
+                    content: MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput),
+                    onClick: { [weak self] in self?.togglePopover() }
+                )
+            }
+            notchController?.show()
+            statusItem.isVisible = false
+        } else {
+            notchController?.hide()
+            notchController = nil
+            statusItem.isVisible = true
+        }
+        updateStatusItem()
+    }
 
     private func installCLISymlink() {
         guard let executableURL = Bundle.main.executableURL else { return }
@@ -68,8 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func updateStatusItem() {
-        guard let button = statusItem.button else { return }
         let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput)
+        notchController?.update(content: content)
+        guard let button = statusItem.button else { return }
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {
             existing.rootView = content

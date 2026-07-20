@@ -159,6 +159,11 @@ struct SettingsPanel: View {
 
                 Stepper("History \(store.preferences.historyRetentionDays)d", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
 
+                if NotchWindowController.isSupported {
+                    Toggle("Live in the notch (experimental)", isOn: binding(\.notchModeEnabled))
+                        .help("Move the status readout into the display notch instead of the menu bar")
+                }
+
                 Divider()
                 sectionHeader("Updates")
 
