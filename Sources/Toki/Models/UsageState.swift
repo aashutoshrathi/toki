@@ -82,8 +82,12 @@ struct AppPreferences: Codable, Equatable {
     var lowQuotaThreshold = 0.20
     var notificationCooldownMinutes = 90
     var menuBarMode = MenuBarDisplayMode.smart
-    var historyRetentionDays = 14
+    // 30 days by default so the usage heatmap can fill its full window; it renders
+    // min(30, retention), so a shorter retention silently shortens the chart.
+    var historyRetentionDays = 30
     var sessionWarningThreshold = 0.15
+    /// Experimental: render the status readout inside the display notch instead of the menu bar.
+    var notchModeEnabled = false
 
     enum CodingKeys: String, CodingKey {
         case notificationsEnabled
@@ -93,6 +97,7 @@ struct AppPreferences: Codable, Equatable {
         case menuBarMode
         case historyRetentionDays
         case sessionWarningThreshold
+        case notchModeEnabled
     }
 }
 

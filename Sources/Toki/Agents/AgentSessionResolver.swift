@@ -42,9 +42,39 @@ enum AgentSessionResolver {
             guard let session = newestClaudeSession(command: command, cwd: cwd),
                   let data = try? Data(contentsOf: URL(fileURLWithPath: session.path)) else { return nil }
             return claudeAttention(fromJSONLData: data, modified: session.modified, now: Date())
+        case .openCode:
+            return openCodeAttention(cwd: cwd, now: Date())
         default:
             return nil
         }
+    }
+
+    // OpenCode records each tool invocation as a `part` row whose JSON carries a
+    // state.status of running / completed / error. A part left in `running` is the same
+    // signal as Claude's unresolved tool_use: the tool was invoked and nothing has come back.
+    //
+    // The `permission` table is not the signal it looks like - it is the persisted allow-list
+    // of previously granted permissions, not a queue of pending prompts, and it stays empty
+    // on a machine that has never granted one.
+    private static func openCodeAttention(cwd: String?, now: Date) -> AgentAttention? {
+        guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
+        let query = """
+        SELECT json_extract(data,'$.tool'), time_updated FROM part \
+        WHERE session_id = (SELECT id FROM session WHERE directory='\(safe)' ORDER BY time_updated DESC LIMIT 1) \
+        AND json_extract(data,'$.state.status') = 'running' \
+        ORDER BY time_updated DESC LIMIT 1;
+        """
+        guard let raw = OpenCodeUsageClient.queryValue(query), !raw.isEmpty else { return nil }
+        let parts = raw.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2, let milliseconds = Double(parts[1].trimmingCharacters(in: .whitespaces)) else { return nil }
+
+        // Same quiet-period reasoning as Claude: a tool that is genuinely executing updates
+        // its row promptly, so only a stale `running` row means "stopped, waiting on you".
+        let updated = Date(timeIntervalSince1970: milliseconds / 1000)
+        guard now.timeIntervalSince(updated) >= attentionQuietPeriod else { return nil }
+
+        let tool = parts[0].trimmingCharacters(in: .whitespaces)
+        return AgentAttention(kind: .permission, prompt: tool.isEmpty ? nil : "Allow \(tool)?")
     }
 
     // How long a tool call must sit unanswered before we call it "blocked". A tool that's

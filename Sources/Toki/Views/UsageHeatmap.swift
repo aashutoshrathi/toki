@@ -79,9 +79,13 @@ struct UsageHeatmap: View {
             .fill(color(for: day.intensity))
             .frame(height: 18)
             .frame(maxWidth: .infinity)
+            // The palest steps fall below 3:1 against the surface, which obliges visible
+            // relief rather than relying on the fill alone. A defined border keeps every cell
+            // legible as a cell - and keeps the grid readable under forced-colors/high-contrast
+            // modes, where the fills may be overridden entirely.
             .overlay(
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .stroke(Color.primary.opacity(day.isPlaceholder ? 0 : 0.06), lineWidth: 1)
+                    .stroke(Color.primary.opacity(day.isPlaceholder ? 0 : 0.18), lineWidth: 1)
             )
             .opacity(day.isPlaceholder ? 0 : 1)
             // Identity is never color-alone: the exact figure is available on hover and to
@@ -116,19 +120,27 @@ struct UsageHeatmap: View {
     // inverting the light ones: on a dark background the ramp has to run dark-to-bright to
     // keep intensity reading as "more", and a flipped light ramp would put its most saturated
     // step at the wrong end.
+    // Steps are spaced so that every adjacent pair clears ΔE 15 for normal vision and stays
+    // above the CVD floor under protanopia, deuteranopia, and tritanopia - measured, not
+    // eyeballed. An earlier, prettier ramp sat at ΔE 11 between its first two steps, which is
+    // hard to separate even with full colour vision, and its lightest step was 1.34:1 against
+    // the surface, effectively invisible.
+    //
+    // Light: #B4D3F1 #69A0E5 #2A5FB4 #0A2E5C (worst adjacent ΔE 17.0 normal / 15.9 CVD)
+    // Dark:  #24466E #2E6FBF #57A0F5 #B3D6FD (worst adjacent ΔE 15.5 normal / 15.6 CVD)
     private var ramp: [Color] {
         colorScheme == .dark
             ? [
-                Color(red: 0.09, green: 0.20, blue: 0.33),
-                Color(red: 0.12, green: 0.36, blue: 0.58),
-                Color(red: 0.18, green: 0.50, blue: 0.93),
-                Color(red: 0.50, green: 0.70, blue: 0.96),
+                Color(red: 0.141, green: 0.275, blue: 0.431),
+                Color(red: 0.180, green: 0.435, blue: 0.749),
+                Color(red: 0.341, green: 0.627, blue: 0.961),
+                Color(red: 0.702, green: 0.839, blue: 0.992),
             ]
             : [
-                Color(red: 0.78, green: 0.87, blue: 0.97),
-                Color(red: 0.56, green: 0.75, blue: 0.94),
-                Color(red: 0.29, green: 0.56, blue: 0.89),
-                Color(red: 0.11, green: 0.37, blue: 0.69),
+                Color(red: 0.706, green: 0.827, blue: 0.945),
+                Color(red: 0.412, green: 0.627, blue: 0.898),
+                Color(red: 0.165, green: 0.373, blue: 0.706),
+                Color(red: 0.039, green: 0.180, blue: 0.361),
             ]
     }
 
@@ -189,19 +201,38 @@ struct UsageHeatmap: View {
         let today = calendar.startOfDay(for: now)
         let relevant = provider.map { wanted in history.filter { $0.provider == wanted } } ?? history
 
-        var peakByDay: [Date: Double] = [:]
+        // Peak per account per day, so the tooltip can break the day down by who burned what
+        // rather than only reporting a single headline number.
+        var byDay: [Date: [String: (peak: Double, provider: Provider)]] = [:]
+        var samplesByDay: [Date: Int] = [:]
         for entry in relevant {
             guard let ratio = entry.remainingRatio else { continue }
             let day = calendar.startOfDay(for: entry.timestamp)
             let used = min(max(1 - ratio, 0), 1)
-            peakByDay[day] = max(peakByDay[day] ?? 0, used)
+            samplesByDay[day, default: 0] += 1
+            let existing = byDay[day]?[entry.accountName]?.peak ?? 0
+            byDay[day, default: [:]][entry.accountName] = (max(existing, used), entry.provider)
         }
 
         return (0..<dayCount).reversed().compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
-            return HeatmapDay(date: date, intensity: peakByDay[date])
+            let accounts = (byDay[date] ?? [:])
+                .map { AccountUsage(name: $0.key, peak: $0.value.peak, provider: $0.value.provider) }
+                .sorted { $0.peak > $1.peak }
+            return HeatmapDay(
+                date: date,
+                intensity: accounts.map(\.peak).max(),
+                accounts: accounts,
+                sampleCount: samplesByDay[date] ?? 0
+            )
         }
     }
+}
+
+struct AccountUsage: Hashable {
+    let name: String
+    let peak: Double
+    let provider: Provider
 }
 
 struct HeatmapDay: Identifiable {
@@ -209,12 +240,18 @@ struct HeatmapDay: Identifiable {
     let date: Date
     let intensity: Double?
     let isPlaceholder: Bool
+    /// Per-account peak consumption that day, heaviest first.
+    let accounts: [AccountUsage]
+    /// How many readings were recorded - a rough proxy for how active the day was.
+    let sampleCount: Int
 
-    init(date: Date, intensity: Double?) {
+    init(date: Date, intensity: Double?, accounts: [AccountUsage] = [], sampleCount: Int = 0) {
         self.id = ISO8601DateFormatter().string(from: date)
         self.date = date
         self.intensity = intensity
         self.isPlaceholder = false
+        self.accounts = accounts
+        self.sampleCount = sampleCount
     }
 
     private init(placeholderIndex: Int) {
@@ -222,18 +259,39 @@ struct HeatmapDay: Identifiable {
         self.date = .distantPast
         self.intensity = nil
         self.isPlaceholder = true
+        self.accounts = []
+        self.sampleCount = 0
     }
 
     static func placeholder(index: Int) -> HeatmapDay {
         HeatmapDay(placeholderIndex: index)
     }
 
+    // Breaks the day down rather than repeating the single number the colour already encodes:
+    // which accounts were busy and how deep each got, plus how many readings landed that day.
+    // Deliberately limited to what history actually records - it stores quota ratios, not token
+    // or cost figures, so those are not claimed here.
     var tooltip: String {
         guard !isPlaceholder else { return "" }
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
+        formatter.dateFormat = "EEE, MMM d"
         let day = formatter.string(from: date)
-        guard let intensity else { return "\(day): no usage recorded" }
-        return "\(day): \(Int((intensity * 100).rounded()))% of quota used"
+        guard let intensity else { return "\(day) - no usage recorded" }
+
+        var lines = ["\(day) - \(percent(intensity)) peak quota used"]
+        for account in accounts.prefix(4) {
+            lines.append("\(account.name): \(percent(account.peak))")
+        }
+        if accounts.count > 4 {
+            lines.append("+\(accounts.count - 4) more")
+        }
+        if sampleCount > 0 {
+            lines.append("\(sampleCount) reading\(sampleCount == 1 ? "" : "s")")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func percent(_ value: Double) -> String {
+        "\(Int((value * 100).rounded()))%"
     }
 }
