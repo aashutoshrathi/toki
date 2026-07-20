@@ -95,6 +95,9 @@ macOS may ask for Keychain access the first time Toki reads Claude Code or `clau
 - Live quota and rate-limit tracking for Claude Code (multi-account via `claude-swap`, with discovery, one-click switching, and Keychain credential lookup) and Codex, plus local token and spend tracking for OpenCode and Pi. Pi usage comes from local session history and shows tokens plus estimated costs.
 - One-click redemption of banked Codex rate-limit reset credits, gated to when the current window is mostly used.
 - Active-agent discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, and ChatGPT-hosted Codex, with best-effort navigation to the matching terminal tab or host app. Each agent card shows per-session cost and token usage when available (OpenCode, Pi, and Claude Code).
+- Agents waiting on you are called out with a red dot and the question they asked, on the card, the Agents tab, and the menu bar - so a session blocked on a prompt is visible without going looking for it. Supported for Claude Code and OpenCode.
+- Daily usage heatmap over the last 30 days, filterable by provider, covering Claude Code, OpenCode, and Pi. Activity is read from each tool's own session history, so it reflects work done before Toki was ever installed.
+- Experimental "live in the notch" mode (off by default, notched Macs only) puts the readout at the display notch instead of the menu bar, in one of three resting positions, expanding on hover.
 - AI-powered insight card with on-device Apple Intelligence summarization (macOS 26+), falling back to a deterministic recommendation with one-click smart switch. Custom instructions get their own Settings page and take priority over the default tone/format.
 - Native low-quota and session-warning notifications with cooldowns, DND mode, and local event/usage history.
 - Session mode for tracking quota burn during a focused coding run.
