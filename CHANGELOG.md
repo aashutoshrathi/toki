@@ -24,6 +24,11 @@
 - Compact figures gained a billions step, so a heavy month reads "1B" instead of "1,023M".
 - A day whose history could not be read looked identical to a day with no work. The two are now distinct, and the failure says which provider it was.
 - Empty heatmap cells were dark enough in dark mode to read as activity, making a busy day look idle.
+- Diagnostics logged the type of an error and threw away its message, so a repeat of the state-decode incident would have been just as hard to diagnose. Decode failures now name the field that broke.
+- A partial scan failure drew a normal-looking heatmap with one provider silently missing. The notice now appears above the grid, not only when every provider fails.
+- `Toki usage` documented a non-zero exit for unreadable history and always returned 0, so a cron job could ingest incomplete data indefinitely.
+- `Shell.output` returned whatever a failed subprocess had already written. A sqlite3 query dying mid-stream looked like a complete, shorter result.
+- A missing Keychain item told you to allow a prompt that never appears; it now says to sign in to Claude Code.
 
 
 ## 2.4.0 - 2026-07-21

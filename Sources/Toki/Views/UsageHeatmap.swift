@@ -22,20 +22,31 @@ struct UsageHeatmap: View {
                 loadingGrid
             } else if days.allSatisfy({ $0.level == nil }) {
                 // A read failure is not an absence of work - say which one this is.
-                let unreadable = store.unreadableActivityProviders
-                Text(unreadable.isEmpty
+                Text(store.unreadableActivityProviders.isEmpty
                      ? "No agent activity found in the last \(dayCount) days"
-                     : "Couldn't read session history for \(unreadable.map(\.displayName).joined(separator: ", "))")
+                     : unreadableNotice)
                     .font(.system(size: 10))
-                    .foregroundStyle(unreadable.isEmpty ? .tertiary : .secondary)
+                    .foregroundStyle(store.unreadableActivityProviders.isEmpty ? .tertiary : .secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 12)
             } else {
+                // A grid drawn from some of the providers looks exactly like one drawn from all
+                // of them, so a partial failure has to say so above the data it is missing from.
+                if !store.unreadableActivityProviders.isEmpty {
+                    Text(unreadableNotice)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
                 grid
                 legend
             }
         }
         .task { store.refreshDailyActivity() }
+    }
+
+    private var unreadableNotice: String {
+        let names = store.unreadableActivityProviders.map(\.displayName).joined(separator: ", ")
+        return "Couldn't read session history for \(names)"
     }
 
     private var header: some View {
@@ -316,11 +327,7 @@ struct UsageHeatmap: View {
 
     /// Rank among distinct active-day totals, mapped onto the ramp.
     nonisolated static func rankLevel(tokens: Int, among distinct: [Int]) -> Int {
-        let top = shadeCount - 1
-        // A single active day is by definition the busiest one; showing it at the lowest shade
-        // would read as "barely anything happened".
-        guard distinct.count > 1, let index = distinct.firstIndex(of: tokens) else { return top }
-        return index * top / (distinct.count - 1)
+        ActivityRank.level(tokens, among: distinct, steps: shadeCount)
     }
 }
 

@@ -251,7 +251,6 @@ private struct NotchPanel: View {
     /// Sideways sits beside the housing, so its content centres in the band.
     private var clearsHousing: Bool { isExpanded || placement == .hanging }
 
-
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear

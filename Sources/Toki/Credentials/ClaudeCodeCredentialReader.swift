@@ -99,8 +99,17 @@ enum ClaudeCodeCredentialReader {
             credentials = try SecretResolver.runShell(command, timeout: 120)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
+            // "Allow the prompt" is only the right advice when a prompt actually appeared. Telling
+            // someone with no Keychain item to click Allow sends them looking for a dialog that
+            // will never show up, so the item-not-found case gets its own answer.
+            let detail = error.localizedDescription
+            if detail.lowercased().contains("could not be found") {
+                throw LocalizedErrorMessage(
+                    "No Claude Code credentials found in your Keychain. Sign in to Claude Code, then refresh."
+                )
+            }
             throw LocalizedErrorMessage(
-                "Couldn't read the Claude Code credentials from your Keychain. If macOS asked for Keychain access, choose Allow and refresh."
+                "Couldn't read the Claude Code credentials from your Keychain: \(detail). If macOS asked for Keychain access, choose Allow and refresh."
             )
         }
         guard !credentials.isEmpty else {

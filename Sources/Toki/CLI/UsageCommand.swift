@@ -61,7 +61,8 @@ enum UsageCommand {
         let activity = box.value
         // Reported on stderr so it never contaminates --json or a piped chart, and exits
         // non-zero: a script must be able to tell "no work" from "could not read".
-        if !box.unreadable.isEmpty {
+        let incomplete = !box.unreadable.isEmpty
+        if incomplete {
             let names = box.unreadable.map { $0.displayName }.joined(separator: ", ")
             FileHandle.standardError.write(Data("warning: couldn't read session history for \(names)\n".utf8))
         }
@@ -86,10 +87,11 @@ enum UsageCommand {
 
         let filtered = resolved.map { wanted in activity.filter { $0.provider == wanted } } ?? activity
         if wantsJSON {
-            return printJSON(filtered, days: days) ? 0 : 1
+            guard printJSON(filtered, days: days) else { return 1 }
+            return incomplete ? 1 : 0
         }
         printChart(filtered, days: days, provider: resolved)
-        return 0
+        return incomplete ? 1 : 0
     }
 
     // MARK: - Rendering
@@ -153,8 +155,7 @@ enum UsageCommand {
     private static let ansiShades = [153, 111, 33, 21]
 
     private static func rank(_ value: Int, among distinct: [Int], steps: Int) -> Int {
-        guard distinct.count > 1, let index = distinct.firstIndex(of: value) else { return steps - 1 }
-        return index * (steps - 1) / (distinct.count - 1)
+        ActivityRank.level(value, among: distinct, steps: steps)
     }
 
     private static func legend() -> String {

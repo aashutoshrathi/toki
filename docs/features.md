@@ -10,7 +10,7 @@ Clicking an agent with a terminal TTY selects its tab in iTerm2 or Terminal; oth
 
 ## Daily usage heatmap
 
-Thirty days of activity, filterable by provider, covering Claude Code, OpenCode, and Pi. Read from each tool's own session history, so it reflects work done before Toki was installed. Click a day to pin its detail; hover to preview it.
+Thirty days of activity, filterable by provider, covering Claude Code, OpenCode, and Pi. Read from each tool's own session history, so it reflects work done before Toki was installed. Hover a day for its detail.
 
 The scale runs through 64 interpolated shades. Adjacent shades are deliberately *not* separately identifiable — that is what a spectrum is for — so exact figures stay in the hover line and the accessibility label. Colour carries the shape; text carries the value.
 
@@ -36,7 +36,7 @@ Backed by `SMAppService`, reflecting what System Settings → General → Login 
 
 ## Updates and diagnostics
 
-Toki checks the latest public GitHub release at most every six hours, including while open; Settings has a "Check now" that bypasses the schedule. Update banners can be snoozed for six hours.
+Toki checks the latest public GitHub release every five minutes while running; Settings has a "Check now" that bypasses the schedule. An update banner you aren't ready to act on can be snoozed for six hours.
 
 A newer release shows an Update button that downloads the DMG, verifies bundle identity, version, and code signature, stages the app, and replaces the installed bundle after Toki exits, then relaunches. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` to preview the banner while developing.
 

@@ -225,7 +225,8 @@ enum AgentSessionResolver {
         return sessions.max { ($0.lastActiveAt ?? .distantPast) < ($1.lastActiveAt ?? .distantPast) }
     }
 
-    // ISO8601DateFormatter rejects fractional seconds, which the CLI writes.
+    // The CLI writes microsecond precision, which ISO8601DateFormatter's 3-digit
+    // fractional-seconds mode rejects. Whole seconds is all sorting needs.
     private static func parseGrokTimestamp(_ raw: String) -> Date? {
         guard let dotIndex = raw.firstIndex(of: ".") else {
             return ISO8601DateFormatter().date(from: raw)
@@ -265,7 +266,6 @@ enum AgentSessionResolver {
         return latestCustom ?? latestAI
     }
 
-    // Newest .jsonl in the project dir, unless the command names one explicitly.
     private static func newestClaudeSession(command: String, cwd: String?) -> (path: String, modified: Date?)? {
         // An explicit --resume path wins; otherwise pick the newest file in the project dir.
         if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
@@ -396,8 +396,6 @@ enum AgentSessionResolver {
         return claudeSession(at: session.path, modified: session.modified)?.usage
     }
 
-    // Extracted for testing — parses assistant-message token counts from a Claude Code
-    // JSONL session file (each line is a JSON object, assistant messages carry usage).
     // Extracted for testing; the parse lives in parseClaudeSession.
     static func claudeUsage(fromJSONLData data: Data) -> AgentSessionUsage? {
         parseClaudeSession(data: data).usage
