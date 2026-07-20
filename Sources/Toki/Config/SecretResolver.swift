@@ -15,7 +15,11 @@ enum SecretResolver {
         throw LocalizedErrorMessage("No API key configured for \(account.name)")
     }
 
-    static func runShell(_ command: String) throws -> String {
+    /// - Parameter timeout: how long the command may run. The default suits a non-interactive
+    ///   key-fetching command. A command that can legitimately block on the user - a Keychain
+    ///   read, which puts up an access prompt - needs far longer, because the clock is really
+    ///   measuring how quickly someone notices a dialog.
+    static func runShell(_ command: String, timeout: TimeInterval = 15) throws -> String {
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -38,8 +42,8 @@ enum SecretResolver {
             errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
             group.leave()
         }
-        // Timeout after 15 seconds to prevent hung processes from blocking Toki.
-        let deadline = DispatchTime.now() + 15
+        // Bounded so a hung process can't block Toki indefinitely.
+        let deadline = DispatchTime.now() + timeout
         let processGroup = DispatchGroup()
         processGroup.enter()
         DispatchQueue.global().async {

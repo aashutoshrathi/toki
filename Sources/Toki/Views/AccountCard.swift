@@ -119,16 +119,29 @@ struct AccountCard: View {
                     .padding(.top, 1)
 
                 HStack(alignment: .center, spacing: 8) {
-                    Text(snapshot.primary)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(snapshot.isError ? .red : .primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                    Spacer()
-                    // Redundant with the header logo when the account is down anyway - only
-                    // useful once the card's actually showing usage, to remind you which
-                    // provider a custom alias maps to.
-                    if !snapshot.isError {
+                    if snapshot.isError {
+                        // The error itself, in full, rather than the word "Unavailable".
+                        //
+                        // That headline restated what the collapsed card already said with its
+                        // "not connected" badge, and said it in the one place with room for the
+                        // detail. Opening a card that is down is a request for the reason, so
+                        // the reason is what goes here - wrapped rather than truncated, since a
+                        // clipped error is no more useful than no error.
+                        Text(errorDetail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                        Spacer(minLength: 0)
+                    } else {
+                        Text(snapshot.primary)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        Spacer()
+                        // Redundant with the header logo when the account is down anyway - only
+                        // useful once the card's actually showing usage, to remind you which
+                        // provider a custom alias maps to.
                         ProviderPill(provider: snapshot.provider)
                     }
                 }
@@ -146,9 +159,14 @@ struct AccountCard: View {
                 }
 
                 if snapshot.isError || expandedTab == .usage {
-                    if !snapshot.metrics.isEmpty {
+                    // The Error metric is dropped here because it is now the headline above -
+                    // listing it twice in one card is just noise.
+                    let rows = snapshot.isError
+                        ? snapshot.metrics.filter { $0.label != "Error" }
+                        : snapshot.metrics
+                    if !rows.isEmpty {
                         VStack(spacing: 3) {
-                            ForEach(snapshot.metrics) { metric in
+                            ForEach(rows) { metric in
                                 MetricRow(metric: metric)
                             }
                         }
@@ -316,6 +334,22 @@ struct AccountCard: View {
 
     private var collapsedStatus: String {
         snapshot.isError ? "Not connected" : snapshot.primary
+    }
+
+    /// The failure reason, gathered from wherever the provider happened to record it.
+    ///
+    /// Claude Code puts it in an "Error" metric; the generic fetcher puts it in the subtitle.
+    /// The subtitle is only usable when it isn't an email address, since Claude fills it with
+    /// the account's address whenever it knows one.
+    private var errorDetail: String {
+        if let recorded = snapshot.metrics.first(where: { $0.label == "Error" })?.value,
+           !recorded.isEmpty {
+            return recorded
+        }
+        if !snapshot.subtitle.isEmpty, !snapshot.subtitle.contains("@") {
+            return snapshot.subtitle
+        }
+        return "Couldn't reach this account."
     }
 
     @ViewBuilder
