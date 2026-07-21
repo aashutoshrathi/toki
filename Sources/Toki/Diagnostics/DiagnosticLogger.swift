@@ -112,6 +112,14 @@ func diagnosticErrorDetail(_ error: Error) -> String {
     if let decoding = error as? DecodingError {
         return "type=DecodingError \(decodingErrorDetail(decoding))"
     }
+    // Domain and code pin down a system error even when its message is generic -
+    // NSCocoaErrorDomain 3840 is a JSON parse failure, NSOSStatusErrorDomain a Keychain
+    // refusal. Only genuine NSErrors qualify; a bridged Swift error's domain would just
+    // restate the type name.
+    if type(of: error) is NSError.Type {
+        let nsError = error as NSError
+        return "type=NSError domain=\(nsError.domain) code=\(nsError.code) detail=\(nsError.localizedDescription)"
+    }
     return "type=\(String(describing: type(of: error))) detail=\(error.localizedDescription)"
 }
 

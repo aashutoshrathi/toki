@@ -23,9 +23,13 @@ enum ClaudeCodeCredentialReader {
     }
 
     static func extractAccessToken(from credentials: String) throws -> String {
+        // try? rather than try: a parse failure must not escape as the raw Cocoa error
+        // ("The data couldn't be read..."), which names neither the data nor a remedy.
         guard let data = credentials.data(using: .utf8),
-              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let oauth = json["claudeAiOauth"] as? [String: Any],
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw LocalizedErrorMessage("Claude Code credentials are not valid JSON - the credential source returned something other than the expected JSON payload")
+        }
+        guard let oauth = json["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String,
               !token.isEmpty else {
             throw LocalizedErrorMessage("No Claude Code OAuth access token found")

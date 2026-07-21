@@ -29,7 +29,9 @@
 - `Toki usage` documented a non-zero exit for unreadable history and always returned 0, so a cron job could ingest incomplete data indefinitely.
 - `Shell.output` returned whatever a failed subprocess had already written. A sqlite3 query dying mid-stream looked like a complete, shorter result.
 - A missing Keychain item told you to allow a prompt that never appears; it now says to sign in to Claude Code.
-
+- A login shell profile that prints to stdout no longer breaks every account read through the shell. Whatever `~/.zprofile` or `~/.zshenv` emitted landed ahead of the command's own output: the Keychain credential read came back as "banner text" followed by the JSON and failed parsing - Claude reported "The data couldn't be read because it isn't in the correct format" - and the same stray line was surfaced as the Codex error, hiding the real failure. The shell now prints a sentinel after the profiles have run, and everything before it is discarded, stderr included.
+- A credential payload that still is not valid JSON now says so instead of escaping as the raw Cocoa parse error, which named neither the data nor a remedy.
+- Diagnostic entries for system errors now record domain and code (`domain=NSCocoaErrorDomain code=3840`) alongside the message, so a debug report can tell a JSON parse failure from a Keychain refusal even when the message is generic.
 
 ## 2.4.0 - 2026-07-21
 
