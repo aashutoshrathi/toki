@@ -23,8 +23,17 @@ enum SecretResolver {
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
+        // A login shell (-l) is what resolves user-managed PATH entries and tool shims, but
+        // login profiles are allowed to print (version managers, dotfile linkers, banners),
+        // and anything they emit lands ahead of the command's own output. That noise corrupts
+        // whatever the caller parses from the capture - a Keychain credential read comes back
+        // as "banner text\n{json}" and fails JSON parsing, and the noise line gets mistaken
+        // for the command's first line of output. A sentinel printed after the profiles have
+        // run marks where the command's real output begins; everything before it is discarded.
+        // stderr gets the same treatment so a profile warning can't garble a surfaced error.
+        let sentinel = "__TOKI_OUTPUT_\(UUID().uuidString)__"
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", command]
+        process.arguments = ["-lc", "printf '%s' '\(sentinel)'; printf '%s' '\(sentinel)' >&2; \(command)"]
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         try process.run()
@@ -57,12 +66,17 @@ enum SecretResolver {
             throw LocalizedErrorMessage("API key command timed out")
         }
         _ = group.wait(timeout: .now() + 2)
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        let error = String(data: errorData, encoding: .utf8) ?? ""
+        let output = discardingLoginShellNoise(String(data: outputData, encoding: .utf8) ?? "", before: sentinel)
+        let error = discardingLoginShellNoise(String(data: errorData, encoding: .utf8) ?? "", before: sentinel)
         guard process.terminationStatus == 0 else {
             let message = error.trimmingCharacters(in: .whitespacesAndNewlines)
             throw LocalizedErrorMessage(message.isEmpty ? "API key command failed" : message)
         }
         return output
+    }
+
+    static func discardingLoginShellNoise(_ text: String, before sentinel: String) -> String {
+        guard let range = text.range(of: sentinel) else { return text }
+        return String(text[range.upperBound...])
     }
 }

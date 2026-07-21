@@ -103,6 +103,15 @@ func diagnosticErrorDetail(_ error: Error) -> String {
     if let urlError = error as? URLError {
         return "type=URLError code=\(urlError.errorCode)"
     }
+    // Domain and code identify a system error (NSCocoaErrorDomain 3840 is a JSON parse
+    // failure, NSOSStatusErrorDomain a Keychain refusal, ...) without carrying the message,
+    // which is free text and may contain the user content this log deliberately excludes.
+    // Only genuine NSErrors qualify - a bridged Swift error reports its own type instead,
+    // where domain and code would just restate the type name.
+    if type(of: error) is NSError.Type {
+        let nsError = error as NSError
+        return "type=\(String(describing: type(of: error))) domain=\(nsError.domain) code=\(nsError.code)"
+    }
     return "type=\(String(describing: type(of: error)))"
 }
 

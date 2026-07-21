@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A login shell profile that prints to stdout no longer breaks every account that is read through the shell. Commands run via `/bin/zsh -l` so user-managed PATH entries resolve, but login profiles are allowed to print - version managers, dotfile linkers, greeting banners - and whatever they emit landed ahead of the command's own output. The Keychain credential read then came back as "banner text" followed by the JSON, which failed parsing and reported Claude as not connected with the raw Cocoa message ("The data couldn't be read because it isn't in the correct format"); the same stray line was surfaced as the Codex error, hiding the real failure behind the profile's noise. The shell now prints a sentinel after the profiles have run, and everything before it is discarded, on stderr as well so a profile warning cannot garble a surfaced error message.
+- A credential payload that still is not valid JSON now says so ("Claude Code credentials are not valid JSON") instead of escaping as the raw Cocoa parse error, which named neither the data nor a remedy.
+- Diagnostic log entries for system errors now record the error's domain and code (`type=NSError domain=NSCocoaErrorDomain code=3840`) instead of just `type=NSError`, which made a debug report unable to distinguish a JSON parse failure from a Keychain refusal. The error's message text is still deliberately excluded - it is free text and may contain the user content the log promises to leave out.
+
 ## 2.4.0 - 2026-07-21
 
 ### Added
