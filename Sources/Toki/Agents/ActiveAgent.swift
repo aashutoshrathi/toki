@@ -23,8 +23,7 @@ struct AgentSessionUsage: Hashable, Sendable {
     }
 }
 
-// An agent that has stopped and is waiting on the user - either because it asked a question
-// outright, or because a tool call is sitting on a permission prompt.
+// An agent stopped waiting on the user: a question, or a pending permission prompt.
 struct AgentAttention: Hashable, Sendable {
     enum Kind: Hashable, Sendable {
         case question
@@ -32,8 +31,7 @@ struct AgentAttention: Hashable, Sendable {
     }
 
     let kind: Kind
-    // The question text when the agent asked one, or the tool awaiting approval. Shown
-    // truncated on the card so the user can tell what's blocked without switching to it.
+
     let prompt: String?
 
     var summary: String {
@@ -48,18 +46,15 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let directory: String?
     let chatTitle: String?
     let hostApp: HostApp?
-    /// PID of the GUI app hosting this agent. Needed to focus the right one when two builds of
-    /// the same terminal run at once and therefore share a bundle identifier.
+    /// Needed to focus the right copy when two builds share a bundle identifier.
     let hostProcessID: Int32?
     let lastActivity: Date?
     let processID: Int32
     let runtime: String
     let terminalTTY: String?
-    // Resident set size in kilobytes, straight from `ps rss=` - the same figure Activity
-    // Monitor's "Memory" column shows.
+    // Resident set size in kB from `ps rss=`.
     let memoryKB: Int
-    // The full command line at scan time - kept only so ActiveAgentTerminator can confirm
-    // the PID still refers to this same process immediately before signalling it.
+    // Kept so termination can confirm the PID still refers to this process.
     let command: String
     // Per-session cost and token usage, resolved from local session data when available.
     let sessionUsage: AgentSessionUsage?
@@ -82,9 +77,7 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
         return mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb)
     }
 
-    // Working directory shown relative to home (~/Code/tokenbar), when meaningful.
-    // Root or app-bundle cwds (e.g. GUI-hosted agents) carry no useful project, so
-    // they're hidden rather than shown as a bare "/".
+    // Relative to home when meaningful; root and app-bundle cwds carry no useful project.
     var directoryDisplay: String? {
         guard let directory, directory != "/", !directory.contains("/.app/"), !directory.hasSuffix(".app") else { return nil }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -92,10 +85,6 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
         if directory.hasPrefix(home + "/") { return "~" + directory.dropFirst(home.count) }
         return directory
     }
-
-    // Every agent can be surfaced: TTY-backed ones focus the exact terminal tab,
-    // the rest fall back to activating the likely host app.
-    var canNavigate: Bool { true }
 
     // Whether navigation lands on an exact terminal tab (vs. a best-effort host-app focus).
     var hasTerminalTarget: Bool { terminalTTY != nil }
@@ -112,9 +101,7 @@ enum ActiveAgentScanner {
         let memoryKB: Int
     }
 
-    // Caches the immutable-per-process fields (cwd, host app) by PID so they're resolved
-    // once, not on every scan tick. `command` guards against PID reuse. Accessed only from
-    // the serialized scan task (UsageStore gates concurrent scans).
+    // Immutable-per-process fields cached by PID; `command` guards against PID reuse.
     private struct CacheEntry {
         let command: String
         let directory: String?
@@ -139,16 +126,10 @@ enum ActiveAgentScanner {
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
             cache = cache.filter { alive.contains($0.key) }
-            // Most recently active session first; agents without a known
-            // activity time fall to the bottom, tie-broken by provider and PID.
+
             return agents.sorted { lhs, rhs in
-                // Deliberately NOT sorted by whether the agent needs input.
-                //
-                // Promoting blocked agents to the top re-orders the list whenever one changes
-                // state, which happens while the user is looking at it. A row moving out from
-                // under the pointer mid-press cancels the click, so the cards silently stopped
-                // being clickable. Attention is surfaced by the dot, the row's own text, and
-                // the tab and menu bar badges - none of which move anything.
+                // Deliberately not sorted by needsInput: a row that moves while the pointer is
+                // over it cancels the click. Attention is shown by the dot and badges instead.
                 let l = lhs.lastActivity ?? .distantPast
                 let r = rhs.lastActivity ?? .distantPast
                 if l != r { return l > r }
@@ -160,8 +141,7 @@ enum ActiveAgentScanner {
         }.value
     }
 
-    // Cheap, I/O-free parse: identify the provider, tty, and lineage from the ps row.
-    // Enrichment (cwd, host, title, activity) happens later, only for root agents.
+    // I/O-free; enrichment happens later and only for root agents.
     private static func parse(line: Substring) -> Candidate? {
         let parts = line.split(maxSplits: 5, whereSeparator: { $0.isWhitespace })
         guard parts.count == 6, let pid = Int32(parts[0]), let parentPID = Int32(parts[1]) else { return nil }
@@ -172,16 +152,12 @@ enum ActiveAgentScanner {
         let executable = URL(fileURLWithPath: String(executablePath)).lastPathComponent.lowercased()
         let entrypoint = commandParts.dropFirst().first.map { String($0).lowercased() }
 
-        // Classify by executable first. A recognized agent binary is a real agent no matter
-        // where it lives (e.g. Codex inside ChatGPT.app); the bundle-helper noise filter
-        // only decides whether an UNRECOGNIZED process is worth ignoring.
+        // Classify by executable first.
         guard let provider = providerForProcess(executable: executable, entrypoint: entrypoint) else {
             return nil
         }
 
-        // Reject GUI-app helper processes (renderers, GPU, framework helpers) that live
-        // inside an .app bundle. The genuine in-bundle agent identifies itself with
-        // "app-server" (e.g. ChatGPT.app's Codex); everything else under Contents/ is noise.
+        // Reject GUI-app helper processes; a genuine in-bundle agent says "app-server".
         let normalized = command.lowercased()
         if normalized.contains(".app/contents/"), !normalized.contains("app-server") {
             return nil
@@ -215,17 +191,16 @@ enum ActiveAgentScanner {
         return nil
     }
 
-    // Resolves the expensive fields. cwd and host app are truly immutable for a live
-    // process, so they're cached by PID (validated against the command line to survive
-    // PID reuse). chatTitle and lastActivity change as the session evolves, so they're
-    // re-resolved every scan.
+    // cwd and host app are cached; title and activity change as the session evolves.
     private static func enrich(_ c: Candidate) -> ActiveAgent {
         let cached = cache[c.pid]
         let reusable = cached?.command == c.command ? cached : nil
         let cwd = reusable?.directory
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
-        let resolvedHost = AgentSessionResolver.hostApp(ofPID: c.pid)
+        // Only when the cache can't answer: this walks the process tree with up to eight
+        // `ps` calls per agent.
+        let resolvedHost = reusable == nil ? AgentSessionResolver.hostApp(ofPID: c.pid) : nil
         let hostApp = reusable?.hostApp ?? resolvedHost?.app
         let hostProcessID = reusable?.hostProcessID ?? resolvedHost?.processID
         let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
@@ -252,15 +227,8 @@ enum ActiveAgentScanner {
 
 @MainActor
 enum ActiveAgentTerminator {
-    // SIGTERM, not SIGKILL - gives the agent a chance to exit the way Ctrl-C in its own
-    // terminal would, instead of yanking it out from under any in-progress file write.
-    //
-    // Re-checks that the PID still belongs to the same process immediately before
-    // signalling it. The confirmation dialog can sit open for a while (and even without
-    // it, the scan that produced this agent may already be stale), and macOS reuses PIDs -
-    // without this, an agent that already exited could have its PID reassigned to some
-    // unrelated process by the time "Quit" is actually clicked, which would then be the
-    // one to receive the signal instead.
+    // SIGTERM, not SIGKILL, so the agent can exit cleanly. The PID is re-checked first:
+    // macOS reuses PIDs and the confirmation dialog can sit open for a while.
     static func terminate(_ agent: ActiveAgent) {
         let currentCommand = Shell.output("/bin/ps", ["-p", String(agent.processID), "-o", "command="])?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -274,13 +242,8 @@ enum ActiveAgentTerminator {
 
 @MainActor
 enum ActiveAgentNavigator {
-    // The AppleScript runs off the main actor, and never blocks the UI.
-    //
-    // osascript was previously waited on synchronously here. Anything that makes it hang -
-    // an app-chooser dialog, a terminal busy servicing another Apple event, a build that
-    // stops responding - froze the whole app, which reads as "clicking the card does nothing"
-    // rather than as a hang. Scripting is inherently other-process work with no bounded
-    // response time, so it does not belong on the main actor.
+    // Off the main actor: osascript can hang on an app-chooser dialog or an unresponsive
+    // terminal, and waiting on it synchronously froze the app.
     static func navigate(to agent: ActiveAgent) {
         var device: String?
         if let tty = agent.terminalTTY, isSafeTTY(tty) {
@@ -298,12 +261,8 @@ enum ActiveAgentNavigator {
     }
 
     private static func activateHostApp(for agent: ActiveAgent) {
-        // The agent's own host process, by PID, before anything identifier-based.
-        //
-        // Two builds of the same terminal report the same bundle identifier, so picking the
-        // first running app with a matching identifier can raise the copy that does not
-        // contain this agent - which looks like the click doing nothing. Walking the agent's
-        // process ancestry already told us exactly which process owns it.
+        // By PID first: two builds of a terminal share a bundle identifier, so an
+        // identifier lookup can raise the copy that does not hold this agent.
         if let hostProcessID = agent.hostProcessID,
            let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)) {
             running.activate(options: [.activateAllWindows])
@@ -341,10 +300,7 @@ enum ActiveAgentNavigator {
             return false
         }
 
-        // A hard ceiling on how long a scripted app gets to answer. Focusing a terminal tab is
-        // near-instant when it works; anything still running after this is stuck on something
-        // the user cannot see - a modal chooser, an app not servicing Apple events - and would
-        // otherwise leave the process resident indefinitely.
+        // Ceiling: focusing a tab is near-instant, so anything still running is stuck.
         let deadline = Date().addingTimeInterval(5)
         while process.isRunning, Date() < deadline {
             Thread.sleep(forTimeInterval: 0.05)
@@ -357,13 +313,8 @@ enum ActiveAgentNavigator {
         return process.terminationStatus == 0
     }
 
-    // Addressed by bundle id, not by name.
-    //
-    // `tell application "iTerm2"` resolves through LaunchServices by name, which is ambiguous
-    // as soon as more than one iTerm-family bundle is installed - iTermAI ships as a separate
-    // app whose identifier shares the same prefix. A name that resolves to more than one
-    // candidate can target the wrong build, or make AppleScript put up a "Where is...?" chooser
-    // that blocks osascript until it is dismissed. A bundle id has exactly one answer.
+    // By bundle id, not name: `tell application "iTerm2"` is ambiguous once iTermAI is also
+    // installed, and can raise a blocking "Where is...?" chooser.
     nonisolated private static func iTermScript(tty: String) -> String {
         """
         if application id "com.googlecode.iterm2" is running then

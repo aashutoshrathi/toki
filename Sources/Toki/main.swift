@@ -12,6 +12,10 @@ if let exitCode = PiCommand.runIfRequested(arguments: CommandLine.arguments) {
     exit(exitCode)
 }
 
+if let exitCode = UsageCommand.runIfRequested(arguments: CommandLine.arguments) {
+    exit(exitCode)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

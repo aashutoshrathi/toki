@@ -8,51 +8,69 @@ struct DailyActivity: Hashable, Sendable {
     let cost: Double
 }
 
-// Rebuilds daily activity from each tool's own session store rather than from Toki's recorded
-// quota samples.
-//
-// The heatmap originally derived usage from UsageHistoryEntry, which only exists for days Toki
-// itself was running and recording. That made the chart empty for any period before the app was
-// installed, and destroyable by anything that resets local state - the history really was lost
-// that way once. The tools' own session files are the durable record: they predate Toki, survive
-// its state being cleared, and cover cost-based providers that have no quota percentage to
-// sample, which is what kept OpenCode and Pi out of the chart.
+// Daily activity from each tool's own session store, not from Toki's recorded quota samples.
+// Session files predate Toki's install, survive its state being cleared, and cover cost-based
+// providers that have no quota percentage to sample.
 enum DailyActivityScanner {
-    static func scan(dayCount: Int, now: Date = Date(), calendar: Calendar = .current) async -> [DailyActivity] {
+    /// Read failures are reported separately from an absence of work; a bare array conflated
+    /// them and made a failed read render as "no activity".
+    struct Outcome: Sendable {
+        var activities: [DailyActivity] = []
+        /// Providers whose history could not be read at all. Empty is the healthy case.
+        var unreadable: [Provider] = []
+
+        var isCompleteFailure: Bool { activities.isEmpty && !unreadable.isEmpty }
+    }
+
+    static func scan(dayCount: Int, now: Date = Date(), calendar: Calendar = .current) async -> Outcome {
         await Task.detached(priority: .utility) {
             let earliest = calendar.date(byAdding: .day, value: -(dayCount - 1), to: calendar.startOfDay(for: now))
                 ?? calendar.startOfDay(for: now)
-            var results: [DailyActivity] = []
-            results.append(contentsOf: claudeActivity(since: earliest, calendar: calendar))
-            results.append(contentsOf: openCodeActivity(since: earliest, calendar: calendar))
-            results.append(contentsOf: piActivity(since: earliest, calendar: calendar))
-            return results
+            var outcome = Outcome()
+            for (provider, activity) in [
+                (Provider.claudeCode, claudeActivity(since: earliest, calendar: calendar)),
+                (Provider.openCode, openCodeActivity(since: earliest, calendar: calendar)),
+                (Provider.pi, piActivity(since: earliest, calendar: calendar)),
+            ] {
+                guard let activity else {
+                    outcome.unreadable.append(provider)
+                    DiagnosticLogger.shared.record(
+                        .warning, component: "activity", code: "provider_unreadable",
+                        detail: provider.displayName
+                    )
+                    continue
+                }
+                outcome.activities.append(contentsOf: activity)
+            }
+            return outcome
         }.value
     }
 
     // MARK: - Claude Code
 
-    // Walks ~/.claude/projects/<encoded-cwd>/*.jsonl, summing each assistant message's usage
-    // into the day of its timestamp. Cost is priced from the recorded model, so a session that
-    // switched models is billed at each model's own rate.
-    private static func claudeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity] {
+    // Priced from each message's own model, so a mid-session model switch bills correctly.
+    /// nil means the store could not be read; an empty array means it was read and held nothing.
+    private static func claudeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
         let root = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.claude/projects"
-        guard let projects = try? FileManager.default.contentsOfDirectory(atPath: root) else { return [] }
+        // A missing directory is a legitimate "Claude Code was never used here", not a failure.
+        guard FileManager.default.fileExists(atPath: root) else { return [] }
+        guard let projects = try? FileManager.default.contentsOfDirectory(atPath: root) else { return nil }
 
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        // Scan-wide: a resumed conversation repeats messages across session files.
+        var seen: Set<String> = []
         for project in projects {
             let directory = "\(root)/\(project)"
             guard let files = try? FileManager.default.contentsOfDirectory(atPath: directory) else { continue }
             for file in files where file.hasSuffix(".jsonl") {
                 let path = "\(directory)/\(file)"
-                // Skip whole files last written before the window - the cheapest possible filter
-                // on what is otherwise a lot of JSON parsing.
+                // Cheapest filter available before a lot of JSON parsing.
                 if let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date,
                    modified < earliest {
                     continue
                 }
                 guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { continue }
-                accumulateClaude(data: data, since: earliest, calendar: calendar, into: &byDay)
+                accumulateClaude(data: data, since: earliest, calendar: calendar, seen: &seen, into: &byDay)
             }
         }
         return byDay.map { DailyActivity(day: $0.key, provider: .claudeCode, tokens: $0.value.tokens, cost: $0.value.cost) }
@@ -63,6 +81,7 @@ enum DailyActivityScanner {
         data: Data,
         since earliest: Date,
         calendar: Calendar,
+        seen: inout Set<String>,
         into byDay: inout [Date: (tokens: Int, cost: Double)]
     ) {
         for lineBytes in data.split(separator: 0x0A) {
@@ -72,6 +91,12 @@ enum DailyActivityScanner {
                   timestamp >= earliest,
                   let message = json["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else { continue }
+
+            // One turn is written as several lines, one per content block, each repeating the
+            // same id and the same cumulative usage. Counting every line inflated totals ~78%.
+            if let identity = Self.messageIdentity(json: json, message: message) {
+                guard seen.insert(identity).inserted else { continue }
+            }
 
             let input = (usage["input_tokens"] as? Int) ?? 0
             let output = (usage["output_tokens"] as? Int) ?? 0
@@ -97,16 +122,25 @@ enum DailyActivityScanner {
 
     // MARK: - OpenCode
 
-    // Grouped in SQL rather than in Swift: the database already indexes the timestamp, and this
-    // avoids pulling every session row across the process boundary just to bucket it.
-    private static func openCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity] {
+    // Grouped in SQL: the timestamp is indexed, and this avoids moving every row.
+    private static func openCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
         let cutoff = Int(earliest.timeIntervalSince1970 * 1000)
         let query = """
         SELECT strftime('%Y-%m-%d', time_updated/1000, 'unixepoch', 'localtime') AS day, \
         SUM(COALESCE(cost,0)), SUM(COALESCE(tokens_input,0) + COALESCE(tokens_output,0)) \
         FROM session WHERE time_updated >= \(cutoff) GROUP BY day;
         """
-        guard let raw = OpenCodeUsageClient.queryValue(query), !raw.isEmpty else { return [] }
+        // No database at all is "not installed"; a database that refuses to answer is a failure;
+        // a database that answers with no rows is an idle install. queryText keeps the last two
+        // apart - queryValue would collapse the zero-row case into the failure case.
+        guard FileManager.default.fileExists(atPath: OpenCodeUsageClient.databasePath()) else { return [] }
+        let raw: String
+        do {
+            raw = try OpenCodeUsageClient.queryText(query)
+        } catch {
+            return nil
+        }
+        guard !raw.isEmpty else { return [] }
 
         return raw.split(separator: "\n").compactMap { line in
             let columns = line.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
@@ -123,14 +157,25 @@ enum DailyActivityScanner {
 
     // MARK: - Pi
 
-    private static func piActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity] {
-        guard let totals = try? PiUsageClient.dailyTotals(calendar: calendar) else { return [] }
+    private static func piActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
+        // Pi reports "no session history" by throwing, which is absence rather than failure.
+        guard (try? PiUsageClient.sessionRoot()) != nil else { return [] }
+        guard let totals = try? PiUsageClient.dailyTotals(calendar: calendar) else { return nil }
         return totals
             .filter { $0.key >= earliest }
             .map { DailyActivity(day: $0.key, provider: .pi, tokens: $0.value.tokens, cost: $0.value.cost) }
     }
 
     // MARK: - Parsing
+
+    /// nil when neither id is present, in which case the caller counts the line: under-counting
+    /// is the worse error.
+    static func messageIdentity(json: [String: Any], message: [String: Any]) -> String? {
+        let messageID = message["id"] as? String
+        let requestID = json["requestId"] as? String
+        guard messageID != nil || requestID != nil else { return nil }
+        return "\(messageID ?? "")\u{1F}\(requestID ?? "")"
+    }
 
     private static func parseDay(_ value: String, calendar: Calendar) -> Date? {
         let formatter = DateFormatter()

@@ -353,7 +353,10 @@ struct SpendAnalyticsPanel: View {
                             x: .value("Time", point.timestamp),
                             y: .value("Remaining", point.remainingRatio)
                         )
-                        .foregroundStyle(by: .value("Account", point.accountID))
+                        // Keyed on the display name, not the account id. The id is the registry's
+                        // internal key ("claude-1-user@example.com"), and Charts puts the series
+                        // value straight into the legend - so the legend was showing the raw key.
+                        .foregroundStyle(by: .value("Account", point.accountName))
                         .lineStyle(StrokeStyle(lineWidth: 2))
                     }
                 }
@@ -363,10 +366,37 @@ struct SpendAnalyticsPanel: View {
                         AxisValueLabel(format: PercentFormat())
                     }
                 }
+                .chartXAxis {
+                    // Explicit marks and a range-appropriate format. The default produced labels
+                    // like "Jul 20 at 10 PM" - long enough that they collided and truncated to
+                    // "Jul 21 at 1…", which reads as a broken label rather than a time.
+                    AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                        AxisGridLine()
+                        if let date = value.as(Date.self) {
+                            AxisValueLabel {
+                                Text(date, format: axisDateFormat)
+                                    .font(.system(size: 9))
+                            }
+                        }
+                    }
+                }
                 .chartYScale(domain: 0...1)
                 .chartLegend(position: .bottom, spacing: 8)
                 .frame(height: 180)
             }
+        }
+    }
+
+    /// Time labels scaled to the window being shown: a day of history wants clock times, a
+    /// month wants dates. Showing both at every range is what made the labels too wide to fit.
+    private var axisDateFormat: Date.FormatStyle {
+        switch selectedRange {
+        case .day:
+            return .dateTime.hour()
+        case .week:
+            return .dateTime.weekday(.abbreviated).day()
+        case .month, .all:
+            return .dateTime.month(.abbreviated).day()
         }
     }
 

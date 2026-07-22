@@ -39,15 +39,22 @@ struct UpdateAvailableBanner: View {
                 .controlSize(.small)
                 .disabled(updateChecker.isInstalling)
 
-                Button {
-                    updateChecker.dismiss()
+                // A menu rather than a bare close button. Closing used to mean "skip this
+                // version for good", which is a heavier commitment than an X implies - anyone
+                // who wanted the update just not right now had to either leave the banner up or
+                // silently opt out of the release.
+                Menu {
+                    Button("Remind me in 6 hours") { updateChecker.snooze() }
+                    Button("Skip \(update.version)") { updateChecker.dismiss() }
                 } label: {
                     Image(systemName: "xmark")
                 }
-                .buttonStyle(.plain)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 .foregroundStyle(.secondary)
-                .help("Dismiss this version")
-                .accessibilityLabel("Dismiss update notification")
+                .help("Snooze for 6 hours, or skip this version")
+                .accessibilityLabel("Snooze or skip update")
             }
 
             if let error = updateChecker.installError {

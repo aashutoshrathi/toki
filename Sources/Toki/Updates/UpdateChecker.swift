@@ -83,6 +83,33 @@ final class UpdateChecker: ObservableObject {
         self.availableUpdate = nil
     }
 
+    /// Hides this version's banner for a while rather than for good.
+    ///
+    /// Dismissing was all-or-nothing: the only way to clear the banner was to skip the version
+    /// entirely, so anyone who wanted to update later - just not now - had to either leave it on
+    /// screen or silently opt out of the release. Snoozing is recorded against the version, so a
+    /// newer release still surfaces immediately instead of inheriting the quiet period.
+    func snooze(hours: Int = 6) {
+        guard let availableUpdate else { return }
+        defaults.set(availableUpdate.version, forKey: snoozedVersionKey)
+        defaults.set(Date().addingTimeInterval(TimeInterval(hours) * 3600), forKey: snoozedUntilKey)
+        self.availableUpdate = nil
+    }
+
+    /// Extracted so the window logic is testable without waiting six hours.
+    ///
+    /// nonisolated: pure comparison over values. Without it the method inherits the class's
+    /// MainActor isolation and cannot be called from a synchronous test.
+    nonisolated static func isSnoozed(
+        version: String,
+        snoozedVersion: String?,
+        snoozedUntil: Date?,
+        now: Date = Date()
+    ) -> Bool {
+        guard snoozedVersion == version, let snoozedUntil else { return false }
+        return now < snoozedUntil
+    }
+
     func openRelease() {
         guard let url = availableUpdate?.releaseURL else { return }
         NSWorkspace.shared.open(url)
@@ -204,6 +231,18 @@ final class UpdateChecker: ObservableObject {
                 return
             }
 
+            // Still inside a snooze window for this exact version. Checks keep running - only
+            // the banner is withheld - so the moment a newer release lands it surfaces normally.
+            if Self.isSnoozed(
+                version: releaseVersion,
+                snoozedVersion: defaults.string(forKey: snoozedVersionKey),
+                snoozedUntil: defaults.object(forKey: snoozedUntilKey) as? Date
+            ) {
+                availableUpdate = nil
+                checkMessage = "Toki \(releaseVersion) is snoozed."
+                return
+            }
+
             availableUpdate = AvailableUpdate(
                 version: releaseVersion,
                 releaseURL: release.htmlURL,
@@ -219,6 +258,8 @@ final class UpdateChecker: ObservableObject {
 }
 
 private let dismissedVersionKey = "dismissedUpdateVersion"
+private let snoozedVersionKey = "snoozedUpdateVersion"
+private let snoozedUntilKey = "snoozedUpdateUntil"
 private let lastUpdateCheckKey = "lastUpdateCheckAt"
 private let updateCheckInterval: TimeInterval = 5 * 60
 

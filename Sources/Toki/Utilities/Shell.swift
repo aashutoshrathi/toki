@@ -29,9 +29,12 @@ enum SecureStore {
 // waiting on the process: ps/lsof output can exceed the ~64KB pipe buffer, and waiting
 // first would deadlock the child against a full, unread pipe.
 enum Shell {
-    // Best-effort: returns stdout regardless of exit status (nil only if launch fails).
+    // nil when the process fails to launch OR exits non-zero. Returning partial stdout from a
+    // failed run is the dangerous option: sqlite3 streams rows as it produces them, so a query
+    // that dies halfway leaves real-looking output behind. Callers treat nil as "couldn't read",
+    // which is the truth; they had no way to notice a short answer.
     static func output(_ executable: String, _ arguments: [String]) -> String? {
-        try? run(executable, arguments, throwOnFailure: false)
+        try? run(executable, arguments, throwOnFailure: true)
     }
 
     // Throws LocalizedErrorMessage(failureMessage) if the process can't launch or exits non-zero.

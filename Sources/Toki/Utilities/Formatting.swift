@@ -51,7 +51,12 @@ func formatCompact(_ value: Double) -> String {
     let absValue = abs(value)
     let scaled: Double
     let suffix: String
-    if absValue >= 1_000_000 {
+    // Billions matter here: a heavy month of agent usage runs past 1e9 tokens, and without this
+    // step it rendered as "1,023M" - a grouping separator inside a compact figure, which reads
+    // worse than the full number it was meant to shorten.
+    if absValue >= 1_000_000_000 {
+        (scaled, suffix) = (value / 1_000_000_000, "B")
+    } else if absValue >= 1_000_000 {
         (scaled, suffix) = (value / 1_000_000, "M")
     } else if absValue >= 1_000 {
         (scaled, suffix) = (value / 1_000, "K")

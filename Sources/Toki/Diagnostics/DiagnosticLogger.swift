@@ -96,14 +96,51 @@ final class DiagnosticLogger: @unchecked Sendable {
     }
 }
 
+// Every detail here goes through `redacted()` before it is written, so carrying the message
+// is safe. Dropping it is not: a decode failure logged as bare `type=DecodingError` says the
+// incident happened and nothing about which field caused it.
 func diagnosticErrorDetail(_ error: Error) -> String {
     if let http = error as? HTTPStatusError {
-        return "type=HTTPStatusError status=\(http.statusCode)"
+        let body = http.body.prefix(200)
+        return body.isEmpty
+            ? "type=HTTPStatusError status=\(http.statusCode)"
+            : "type=HTTPStatusError status=\(http.statusCode) body=\(body)"
     }
     if let urlError = error as? URLError {
-        return "type=URLError code=\(urlError.errorCode)"
+        return "type=URLError code=\(urlError.errorCode) detail=\(urlError.localizedDescription)"
     }
-    return "type=\(String(describing: type(of: error)))"
+    if let decoding = error as? DecodingError {
+        return "type=DecodingError \(decodingErrorDetail(decoding))"
+    }
+    // Domain and code pin down a system error even when its message is generic -
+    // NSCocoaErrorDomain 3840 is a JSON parse failure, NSOSStatusErrorDomain a Keychain
+    // refusal. Only genuine NSErrors qualify; a bridged Swift error's domain would just
+    // restate the type name.
+    if type(of: error) is NSError.Type {
+        let nsError = error as NSError
+        return "type=NSError domain=\(nsError.domain) code=\(nsError.code) detail=\(nsError.localizedDescription)"
+    }
+    return "type=\(String(describing: type(of: error))) detail=\(error.localizedDescription)"
+}
+
+// The coding path is the whole point: it names the field that broke.
+private func decodingErrorDetail(_ error: DecodingError) -> String {
+    func path(_ context: DecodingError.Context) -> String {
+        let keys = context.codingPath.map(\.stringValue).joined(separator: ".")
+        return keys.isEmpty ? "<root>" : keys
+    }
+    switch error {
+    case let .keyNotFound(key, context):
+        return "kind=keyNotFound key=\(key.stringValue) at=\(path(context))"
+    case let .typeMismatch(type, context):
+        return "kind=typeMismatch expected=\(type) at=\(path(context))"
+    case let .valueNotFound(type, context):
+        return "kind=valueNotFound expected=\(type) at=\(path(context))"
+    case let .dataCorrupted(context):
+        return "kind=dataCorrupted at=\(path(context)) detail=\(context.debugDescription)"
+    @unknown default:
+        return "kind=unknown"
+    }
 }
 
 enum DiagnosticsReporter {

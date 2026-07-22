@@ -1,11 +1,7 @@
 import SwiftUI
 
-// A calendar heatmap of daily quota consumption, GitHub-contribution style.
-//
-// Laid out as a calendar (weekday columns, week rows) rather than GitHub's transposed
-// weekday-rows form: capped at 30 days this is only ~5 week-columns, which reads as a narrow
-// strip in a popover, whereas the calendar form fills the available width and is easier to
-// locate a specific day in.
+// Calendar layout (weekday columns, week rows) rather than GitHub's transposed form: at 30
+// days the transposed version is only ~5 columns, too narrow to read in a popover.
 struct UsageHeatmap: View {
     @ObservedObject var store: UsageStore
     @Environment(\.colorScheme) private var colorScheme
@@ -13,9 +9,7 @@ struct UsageHeatmap: View {
     @State private var isPulsing = false
     @State private var hoveredDay: HeatmapDay?
 
-    // The window is the retention window, capped at 30 days. Rendering a full 30 when the
-    // user retains fewer would show pruned days as empty cells - indistinguishable from days
-    // with genuinely no usage, which is a different fact.
+    // Capped at retention: rendering days already pruned would show them as "no usage".
     private var dayCount: Int {
         min(30, max(store.preferences.historyRetentionDays, 1))
     }
@@ -23,24 +17,36 @@ struct UsageHeatmap: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            // Scanning reads every session file on disk, which takes a moment on a machine with
-            // real history. Without a loading state that read looks identical to "you have no
-            // activity" - the empty grid renders first and is then replaced, which reads as a
-            // wrong answer followed by a correction.
+            // Without this the empty grid renders first, which reads as "no activity".
             if store.isScanningActivity, store.dailyActivity.isEmpty {
                 loadingGrid
             } else if days.allSatisfy({ $0.level == nil }) {
-                Text("No agent activity found in the last \(dayCount) days")
+                // A read failure is not an absence of work - say which one this is.
+                Text(store.unreadableActivityProviders.isEmpty
+                     ? "No agent activity found in the last \(dayCount) days"
+                     : unreadableNotice)
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(store.unreadableActivityProviders.isEmpty ? .tertiary : .secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 12)
             } else {
+                // A grid drawn from some of the providers looks exactly like one drawn from all
+                // of them, so a partial failure has to say so above the data it is missing from.
+                if !store.unreadableActivityProviders.isEmpty {
+                    Text(unreadableNotice)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
                 grid
                 legend
             }
         }
         .task { store.refreshDailyActivity() }
+    }
+
+    private var unreadableNotice: String {
+        let names = store.unreadableActivityProviders.map(\.displayName).joined(separator: ", ")
+        return "Couldn't read session history for \(names)"
     }
 
     private var header: some View {
@@ -62,8 +68,7 @@ struct UsageHeatmap: View {
         }
     }
 
-    // A skeleton of the real grid rather than a spinner: it occupies the same space, so the
-    // panel below doesn't jump when the data lands.
+    // Skeleton rather than a spinner, so the panel doesn't jump when data lands.
     private var loadingGrid: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
@@ -120,16 +125,12 @@ struct UsageHeatmap: View {
             .fill(color(for: day.level))
             .frame(height: 18)
             .frame(maxWidth: .infinity)
-            // The palest steps fall below 3:1 against the surface, which obliges visible
-            // relief rather than relying on the fill alone. A defined border keeps every cell
-            // legible as a cell - and keeps the grid readable under forced-colors/high-contrast
-            // modes, where the fills may be overridden entirely.
+            // The palest steps fall under 3:1 against the surface, so the fill alone is not
+            // enough to delimit a cell - and forced-colors modes may drop the fill entirely.
             .overlay(
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .stroke(
-                        // The hovered cell is ringed so it is obvious which day the figures
-                        // below belong to - without it the detail line is just text that
-                        // changes, with no anchor to the cell under the pointer.
+                        // Ringed so the detail line below has a visible anchor.
                         hoveredDay?.id == day.id
                             ? Color.primary.opacity(0.85)
                             : Color.primary.opacity(day.isPlaceholder ? 0 : 0.18),
@@ -137,13 +138,8 @@ struct UsageHeatmap: View {
                     )
             )
             .opacity(day.isPlaceholder ? 0 : 1)
-            // Hover is tracked directly rather than relying on .help().
-            //
-            // The system tooltip is not dependable here: it waits out a delay before appearing,
-            // and inside a popover it frequently never shows at all - the popover's own event
-            // handling and the tooltip's timer do not cooperate. Reading a value out of the
-            // chart shouldn't be a gamble, so the figures go into a fixed detail line under the
-            // grid, which updates the instant the pointer moves.
+            // Not .help(): system tooltips are delayed and frequently never appear inside a
+            // popover. Figures go to the detail line below instead.
             .onHover { isInside in
                 guard !day.isPlaceholder else { return }
                 if isInside {
@@ -152,27 +148,30 @@ struct UsageHeatmap: View {
                     hoveredDay = nil
                 }
             }
-            // Identity is never colour-alone: the same figures reach VoiceOver directly.
+            // Not colour-alone: VoiceOver gets the same figures.
             .accessibilityLabel(day.tooltip)
     }
 
-    // The detail line and the legend share one fixed-height row: swapping them in place keeps
-    // the panel from resizing as the pointer crosses the grid.
+    // Fixed height, shared with the legend, so the panel doesn't resize on hover.
     private var legend: some View {
         ZStack {
             if let day = hoveredDay {
                 hoverDetail(for: day)
             } else {
-                HStack(spacing: 3) {
+                HStack(spacing: 5) {
                     Spacer()
                     Text("Less")
                         .font(.system(size: 8))
                         .foregroundStyle(.tertiary)
-                    ForEach(0..<ramp.count, id: \.self) { step in
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(ramp[step])
-                            .frame(width: 10, height: 10)
-                    }
+                    // A bar, not swatches: 64 chips would be illegible.
+                    LinearGradient(
+                        colors: (0..<Self.shadeCount).map { shade(at: Double($0) / Double(Self.shadeCount - 1)) },
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 72, height: 8)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.18), lineWidth: 0.5))
                     Text("More")
                         .font(.system(size: 8))
                         .foregroundStyle(.tertiary)
@@ -187,11 +186,10 @@ struct UsageHeatmap: View {
             HStack(spacing: 5) {
                 Text(day.headline)
                     .font(.system(size: 10, weight: .semibold))
-                if day.level != nil {
-                    Text(day.figures)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
+                // Shown for quiet days too - a bare date reads as a failed load.
+                Text(day.figures)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(day.level == nil ? .tertiary : .secondary)
                 Spacer()
             }
             if !day.breakdown.isEmpty {
@@ -207,52 +205,55 @@ struct UsageHeatmap: View {
 
     // MARK: - Colour
 
-    // A single-hue sequential ramp. Sequential data gets one hue - a multi-hue/rainbow ramp
-    // implies categories where there is only magnitude. The dark-mode steps are chosen against
-    // the dark surface rather than derived by inverting the light ones: on a dark background
-    // the ramp has to run dark-to-bright for intensity to read as "more".
-    //
-    // Light, airy blues. The dark ramp deliberately starts at a true blue rather than the navy
-    // an earlier version used: navy sat close enough to the neutral empty cell to be mistaken
-    // for it, so the lightest end of the family is also the most legible one here.
-    //
-    // Spacing is the constraint that fights "lighter". Compressing four steps into the light
-    // end of a hue leaves too little lightness between them, and several plausible-looking
-    // pale ramps measured at deltaE 12-14 - under the 15 floor, meaning adjacent steps are hard
-    // to separate even with full colour vision. These span from a mid blue to near-white to buy
-    // that separation back while keeping the overall impression light.
-    //
-    // Light: #CFE6FB #79B4EF #3480CF #0E4E93 (worst adjacent deltaE 16.5 normal / 15.8 CVD)
-    // Dark:  #1A5FA8 #4B9AEA #95C9FA #EAF5FF (worst adjacent deltaE 15.4 normal / 14.3 CVD)
-    // Both modes run the same direction: palest for the quietest day, deepest for the busiest.
-    // Dark mode previously ran the other way, so "more" meant near-white there and deep blue in
-    // light mode - the same grid read as inverted depending on the theme. The measured spacing
-    // is unaffected by the order; only the mapping of step to intensity changes.
-    private var ramp: [Color] {
+    /// Adjacent shades are deliberately not separately identifiable; exact figures live in the
+    /// hover line. The measured separation holds between the four anchors.
+    nonisolated static let shadeCount = 64
+
+    // Measured anchors, spaced so adjacent pairs clear the normal-vision separation floor.
+    // Listed in array order, palest first.
+    //   light #CFE6FB #79B4EF #3480CF #0E4E93
+    //   dark  #EAF5FF #95C9FA #4B9AEA #1A5FA8
+    private var anchors: [(r: Double, g: Double, b: Double)] {
         colorScheme == .dark
             ? [
-                Color(red: 0.918, green: 0.961, blue: 1.000),
-                Color(red: 0.584, green: 0.788, blue: 0.980),
-                Color(red: 0.294, green: 0.604, blue: 0.918),
-                Color(red: 0.102, green: 0.373, blue: 0.659),
+                (0.918, 0.961, 1.000),
+                (0.584, 0.788, 0.980),
+                (0.294, 0.604, 0.918),
+                (0.102, 0.373, 0.659),
             ]
             : [
-                Color(red: 0.812, green: 0.902, blue: 0.984),
-                Color(red: 0.475, green: 0.706, blue: 0.937),
-                Color(red: 0.204, green: 0.502, blue: 0.812),
-                Color(red: 0.055, green: 0.306, blue: 0.576),
+                (0.812, 0.902, 0.984),
+                (0.475, 0.706, 0.937),
+                (0.204, 0.502, 0.812),
+                (0.055, 0.306, 0.576),
             ]
     }
 
-    /// The no-data step, deliberately a neutral rather than a lighter tint of the ramp hue -
-    /// "nothing recorded" is a different fact from "a very small amount".
+    /// Colour at `fraction` (0...1) along the ramp, interpolated between the surrounding anchors.
+    private func shade(at fraction: Double) -> Color {
+        let stops = anchors
+        let clamped = min(max(fraction, 0), 1)
+        let scaled = clamped * Double(stops.count - 1)
+        let lower = min(Int(scaled), stops.count - 2)
+        let t = scaled - Double(lower)
+        let from = stops[lower]
+        let to = stops[lower + 1]
+        return Color(
+            red: from.r + (to.r - from.r) * t,
+            green: from.g + (to.g - from.g) * t,
+            blue: from.b + (to.b - from.b) * t
+        )
+    }
+
+    /// Neutral, not a tint of the ramp: "no data" is not "a very small amount". Kept fainter
+    /// than the deepest step in dark mode, or a busy day reads as no heavier than an idle one.
     private var emptyColor: Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.07)
+        Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.07)
     }
 
     private func color(for level: Int?) -> Color {
         guard let level else { return emptyColor }
-        return ramp[min(max(level, 0), ramp.count - 1)]
+        return shade(at: Double(level) / Double(Self.shadeCount - 1))
     }
 
     // MARK: - Data
@@ -265,8 +266,7 @@ struct UsageHeatmap: View {
         UsageHeatmap.days(from: store.dailyActivity, provider: provider, dayCount: dayCount, now: Date())
     }
 
-    // Padded to whole weeks so the calendar rows line up under the weekday headers. Leading
-    // placeholders render as blanks, not as zero-usage days.
+    // Padded to whole weeks; placeholders render blank, not as zero-usage days.
     private var weeks: [[HeatmapDay]] {
         let calendar = Calendar.current
         let padding = calendar.component(.weekday, from: days.first?.date ?? Date()) - 1
@@ -283,12 +283,8 @@ struct UsageHeatmap: View {
         return symbols.isEmpty ? ["S", "M", "T", "W", "T", "F", "S"] : symbols
     }
 
-    // Extracted for testing. Intensity is the peak share of quota consumed that day - the
-    // deepest the account got into its allowance - which is the figure a user recognises as
-    // "how heavy was that day", and is derivable from the remaining-ratio samples on hand.
-    // nonisolated: this is pure computation over values with no view state, and marking it so
-    // keeps it callable from tests and background contexts. Without it the method inherits the
-    // View's MainActor isolation, which builds locally but fails under CI's stricter checking.
+    // Extracted for testing.
+    // nonisolated: pure computation, and must stay callable from tests.
     nonisolated static func days(
         from activity: [DailyActivity],
         provider: Provider?,
@@ -304,16 +300,9 @@ struct UsageHeatmap: View {
             byDay[calendar.startOfDay(for: entry.day), default: []].append(entry)
         }
 
-        // Shading is by RANK among active days, not by share of the busiest day.
-        //
-        // Daily token counts are heavily skewed - one long session can be an order of magnitude
-        // above a normal day. Scaling linearly against the maximum then crushes every other day
-        // into the lowest step: the grid renders as one bright cell in a field of near-empty
-        // ones and conveys nothing about the pattern of work. Ranking active days across the
-        // ramp guarantees the whole scale is used and the relative shape stays readable.
-        //
-        // The trade-off is that a shade means "busy compared to your other days", not an
-        // absolute amount - which is why the tooltip carries the real token and cost figures.
+        // Ranked, not scaled: daily totals are skewed enough that one long session flattens
+        // every other day onto the lowest shade. A shade means "busy relative to your other
+        // days", which is why the hover line carries absolute figures.
         let distinct = Set(byDay.values.map { day in day.reduce(0) { $0 + $1.tokens } }).sorted()
 
         return (0..<dayCount).reversed().compactMap { offset in
@@ -336,13 +325,9 @@ struct UsageHeatmap: View {
         }
     }
 
-    /// Maps a day onto 0...3 by its rank among the distinct active-day totals, so the quietest
-    /// active day is always the lowest step and the busiest always the highest.
+    /// Rank among distinct active-day totals, mapped onto the ramp.
     nonisolated static func rankLevel(tokens: Int, among distinct: [Int]) -> Int {
-        // A single active day is by definition the busiest one; showing it at the lowest step
-        // would read as "barely anything happened".
-        guard distinct.count > 1, let index = distinct.firstIndex(of: tokens) else { return 3 }
-        return index * 3 / (distinct.count - 1)
+        ActivityRank.level(tokens, among: distinct, steps: shadeCount)
     }
 }
 
@@ -394,10 +379,9 @@ struct HeatmapDay: Identifiable {
         return formatter.string(from: date)
     }
 
-    /// Absolute totals for the day. The colour already carries the relative standing, so
-    /// repeating that as a percentage would add nothing and invites being read as a quota share.
+    /// Absolute totals; the colour already carries the relative standing.
     var figures: String {
-        guard level != nil else { return "no activity" }
+        guard level != nil else { return "No usage" }
         var text = "\(formatCompact(Double(tokens))) tokens"
         if cost > 0 { text += "  \(formatUSD(cost))" }
         return text
@@ -413,10 +397,7 @@ struct HeatmapDay: Identifiable {
         }.joined(separator: "  ·  ")
     }
 
-    // Breaks the day down rather than repeating the single number the colour already encodes:
-    // which accounts were busy and how deep each got, plus how many readings landed that day.
-    // Deliberately limited to what history actually records - it stores quota ratios, not token
-    // or cost figures, so those are not claimed here.
+    // Absolute tokens and cost, split per provider.
     var tooltip: String {
         guard !isPlaceholder else { return "" }
         let formatter = DateFormatter()

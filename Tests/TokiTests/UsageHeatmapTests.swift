@@ -21,7 +21,7 @@ final class UsageHeatmapTests: XCTestCase {
         XCTAssertTrue(result[0].date < result[29].date)
     }
 
-    func testQuietestActiveDayIsLowestStepAndBusiestIsHighest() {
+    func testQuietestActiveDayIsLowestShadeAndBusiestIsHighest() {
         let result = days([
             activity(daysAgo: 3, tokens: 100),
             activity(daysAgo: 2, tokens: 5_000),
@@ -29,7 +29,12 @@ final class UsageHeatmapTests: XCTestCase {
             activity(daysAgo: 0, tokens: 900_000),
         ])
         let levels = result.compactMap(\.level)
-        XCTAssertEqual(levels, [0, 1, 2, 3])
+        XCTAssertEqual(levels.first, 0)
+        XCTAssertEqual(levels.last, UsageHeatmap.shadeCount - 1)
+        // Asserted as strictly increasing rather than as fixed values: the shade count is a
+        // presentation choice, but busier must always mean further along the ramp.
+        XCTAssertEqual(levels, levels.sorted())
+        XCTAssertEqual(Set(levels).count, levels.count)
     }
 
     // The reason ranking exists: one outlier day used to crush every other day into the lowest
@@ -41,20 +46,21 @@ final class UsageHeatmapTests: XCTestCase {
             activity(daysAgo: 0, tokens: 100_000_000),
         ])
         let levels = result.compactMap(\.level)
-        XCTAssertEqual(Set(levels).count, 3, "each distinct day gets its own step despite the outlier")
+        XCTAssertEqual(Set(levels).count, 3, "each distinct day gets its own shade despite the outlier")
         XCTAssertEqual(levels.first, 0)
-        XCTAssertEqual(levels.last, 3)
+        XCTAssertEqual(levels.last, UsageHeatmap.shadeCount - 1)
     }
 
     // A lone active day is by definition the busiest; the lowest step would read as "nothing
     // much happened".
-    func testASingleActiveDayIsTheHighestStep() {
-        XCTAssertEqual(days([activity(daysAgo: 0, tokens: 500)]).last?.level, 3)
+    func testASingleActiveDayIsTheHighestShade() {
+        XCTAssertEqual(days([activity(daysAgo: 0, tokens: 500)]).last?.level, UsageHeatmap.shadeCount - 1)
     }
 
-    func testEqualDaysShareAStep() {
+    func testEqualDaysShareAShade() {
         let result = days([activity(daysAgo: 1, tokens: 700), activity(daysAgo: 0, tokens: 700)])
-        XCTAssertEqual(result.compactMap(\.level), [3, 3])
+        let top = UsageHeatmap.shadeCount - 1
+        XCTAssertEqual(result.compactMap(\.level), [top, top])
     }
 
     func testDaysWithoutActivityAreNil() {
@@ -66,7 +72,15 @@ final class UsageHeatmapTests: XCTestCase {
     func testRankLevelSpansTheFullRamp() {
         let distinct = [10, 20, 30, 40, 50]
         XCTAssertEqual(UsageHeatmap.rankLevel(tokens: 10, among: distinct), 0)
-        XCTAssertEqual(UsageHeatmap.rankLevel(tokens: 50, among: distinct), 3)
+        XCTAssertEqual(UsageHeatmap.rankLevel(tokens: 50, among: distinct), UsageHeatmap.shadeCount - 1)
+    }
+
+    // A finer ramp is only worth having if neighbouring days actually land on different shades;
+    // with four steps a busy day and a much busier one collapsed onto the same swatch.
+    func testNearbyDaysGetDistinctShades() {
+        let totals = (1...10).map { activity(daysAgo: 10 - $0, tokens: $0 * 1_000) }
+        let levels = days(totals).compactMap(\.level)
+        XCTAssertEqual(Set(levels).count, 10, "ten distinct totals must produce ten distinct shades")
     }
 
     func testProvidersAreSummedPerDay() {
@@ -117,6 +131,8 @@ final class UsageHeatmapTests: XCTestCase {
 
     func testTooltipDistinguishesNoActivity() {
         XCTAssertTrue(HeatmapDay(date: now, level: nil).tooltip.contains("no activity"))
+        // Quiet days say so in the detail line rather than showing a bare date.
+        XCTAssertEqual(HeatmapDay(date: now, level: nil).figures, "No usage")
     }
 }
 
@@ -129,8 +145,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"assistant","timestamp":"2026-07-19T18:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":200,"output_tokens":25}}}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertEqual(byDay.count, 1, "both messages fall on the same day")
         XCTAssertEqual(byDay.values.first?.tokens, 375)
@@ -142,8 +159,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":10,"cache_creation_input_tokens":500,"cache_read_input_tokens":1000}}}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertEqual(byDay.values.first?.tokens, 1520)
     }
@@ -153,8 +171,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"assistant","timestamp":"2020-01-01T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: Date(), calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: Date(), calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertTrue(byDay.isEmpty)
     }
@@ -165,8 +184,9 @@ final class DailyActivityScannerTests: XCTestCase {
         {"type":"summary","aiTitle":"x"}
         """
         var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
         DailyActivityScanner.accumulateClaude(
-            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, into: &byDay
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
         )
         XCTAssertTrue(byDay.isEmpty)
     }
@@ -192,7 +212,7 @@ final class HeatmapHoverDetailTests: XCTestCase {
     }
 
     func testFiguresSayNoActivityForAnEmptyDay() {
-        XCTAssertEqual(day(level: nil, tokens: 0, cost: 0).figures, "no activity")
+        XCTAssertEqual(day(level: nil, tokens: 0, cost: 0).figures, "No usage")
     }
 
     func testBreakdownListsProvidersHeaviestFirst() {
@@ -260,5 +280,75 @@ final class SpendChartHitTestTests: XCTestCase {
 
     func testNoCostsAtAllSelectsNothing() {
         XCTAssertNil(SpendAnalyticsPanel.agentID(at: CGPoint(x: 190, y: 100), in: size, agents: [agent(pid: 1, cost: nil)]))
+    }
+}
+
+// Claude Code writes one JSONL line per content block - thinking, text, tool_use - and every
+// line of the same assistant turn repeats the SAME message id and the SAME already-cumulative
+// usage object. Counting each line inflated tokens and cost by ~78% on a real session file.
+final class ClaudeMessageDeduplicationTests: XCTestCase {
+    private let calendar = Calendar.current
+
+    private func accumulate(_ jsonl: String) -> (tokens: Int, cost: Double) {
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
+        DailyActivityScanner.accumulateClaude(
+            data: Data(jsonl.utf8), since: .distantPast, calendar: calendar, seen: &seen, into: &byDay
+        )
+        return byDay.values.reduce(into: (0, 0.0)) { $0.0 += $1.tokens; $0.1 += $1.cost }
+    }
+
+    /// Three content blocks of one turn, all carrying the same id and the same cumulative usage.
+    private let oneTurnAsThreeLines = """
+    {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+    {"type":"assistant","timestamp":"2026-07-19T10:00:01Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+    {"type":"assistant","timestamp":"2026-07-19T10:00:02Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":50}}}
+    """
+
+    func testOneTurnSpreadOverSeveralLinesCountsOnce() {
+        XCTAssertEqual(accumulate(oneTurnAsThreeLines).tokens, 150, "150, not 450")
+    }
+
+    func testCostIsNotInflatedByTheSameDuplication() {
+        // 100 in + 50 out on Opus 4.8: 100/1M*5 + 50/1M*25 = 0.00175
+        XCTAssertEqual(accumulate(oneTurnAsThreeLines).cost, 0.00175, accuracy: 0.0000001)
+    }
+
+    func testDistinctTurnsStillAccumulate() {
+        let jsonl = """
+        {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","requestId":"req_1","message":{"id":"msg_1","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":0}}}
+        {"type":"assistant","timestamp":"2026-07-19T10:00:05Z","requestId":"req_2","message":{"id":"msg_2","model":"claude-opus-4-8","usage":{"input_tokens":200,"output_tokens":0}}}
+        """
+        XCTAssertEqual(accumulate(jsonl).tokens, 300)
+    }
+
+    // Under-counting would be worse than the bug being fixed, so a line with neither id is
+    // still counted rather than silently dropped.
+    func testLinesWithNoIdentityAreStillCounted() {
+        let jsonl = """
+        {"type":"assistant","timestamp":"2026-07-19T10:00:00Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":0}}}
+        {"type":"assistant","timestamp":"2026-07-19T10:00:01Z","message":{"model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":0}}}
+        """
+        XCTAssertEqual(accumulate(jsonl).tokens, 20)
+    }
+
+    func testDeduplicationSpansFilesWithinOneScan() {
+        // The same turn resumed into a second session file must not be counted twice.
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        var seen: Set<String> = []
+        for _ in 0..<2 {
+            DailyActivityScanner.accumulateClaude(
+                data: Data(oneTurnAsThreeLines.utf8), since: .distantPast,
+                calendar: calendar, seen: &seen, into: &byDay
+            )
+        }
+        XCTAssertEqual(byDay.values.reduce(0) { $0 + $1.tokens }, 150)
+    }
+
+    // The per-session parser behind the agent card had the identical bug.
+    func testSessionParserAlsoCountsATurnOnce() {
+        let usage = AgentSessionResolver.claudeUsage(fromJSONLData: Data(oneTurnAsThreeLines.utf8))
+        XCTAssertEqual(usage?.tokensInput, 100, "100, not 300")
+        XCTAssertEqual(usage?.tokensOutput, 50, "50, not 150")
     }
 }

@@ -23,9 +23,13 @@ enum ClaudeCodeCredentialReader {
     }
 
     static func extractAccessToken(from credentials: String) throws -> String {
+        // try? rather than try: a parse failure must not escape as the raw Cocoa error
+        // ("The data couldn't be read..."), which names neither the data nor a remedy.
         guard let data = credentials.data(using: .utf8),
-              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let oauth = json["claudeAiOauth"] as? [String: Any],
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw LocalizedErrorMessage("Claude Code credentials are not valid JSON - the credential source returned something other than the expected JSON payload")
+        }
+        guard let oauth = json["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String,
               !token.isEmpty else {
             throw LocalizedErrorMessage("No Claude Code OAuth access token found")
@@ -99,8 +103,17 @@ enum ClaudeCodeCredentialReader {
             credentials = try SecretResolver.runShell(command, timeout: 120)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
+            // "Allow the prompt" is only the right advice when a prompt actually appeared. Telling
+            // someone with no Keychain item to click Allow sends them looking for a dialog that
+            // will never show up, so the item-not-found case gets its own answer.
+            let detail = error.localizedDescription
+            if detail.lowercased().contains("could not be found") {
+                throw LocalizedErrorMessage(
+                    "No Claude Code credentials found in your Keychain. Sign in to Claude Code, then refresh."
+                )
+            }
             throw LocalizedErrorMessage(
-                "Couldn't read the Claude Code credentials from your Keychain. If macOS asked for Keychain access, choose Allow and refresh."
+                "Couldn't read the Claude Code credentials from your Keychain: \(detail). If macOS asked for Keychain access, choose Allow and refresh."
             )
         }
         guard !credentials.isEmpty else {
