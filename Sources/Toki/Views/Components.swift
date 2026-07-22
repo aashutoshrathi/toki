@@ -54,7 +54,7 @@ struct UpdateAvailableBanner: View {
                 .fixedSize()
                 .foregroundStyle(.secondary)
                 .help("Snooze for 6 hours, or skip this version")
-                .accessibilityLabel("Dismiss update notification")
+                .accessibilityLabel("Snooze or skip update")
             }
 
             if let error = updateChecker.installError {

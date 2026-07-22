@@ -130,9 +130,16 @@ enum DailyActivityScanner {
         SUM(COALESCE(cost,0)), SUM(COALESCE(tokens_input,0) + COALESCE(tokens_output,0)) \
         FROM session WHERE time_updated >= \(cutoff) GROUP BY day;
         """
-        // No database at all is "not installed"; a database that refuses to answer is a failure.
+        // No database at all is "not installed"; a database that refuses to answer is a failure;
+        // a database that answers with no rows is an idle install. queryText keeps the last two
+        // apart - queryValue would collapse the zero-row case into the failure case.
         guard FileManager.default.fileExists(atPath: OpenCodeUsageClient.databasePath()) else { return [] }
-        guard let raw = OpenCodeUsageClient.queryValue(query) else { return nil }
+        let raw: String
+        do {
+            raw = try OpenCodeUsageClient.queryText(query)
+        } catch {
+            return nil
+        }
         guard !raw.isEmpty else { return [] }
 
         return raw.split(separator: "\n").compactMap { line in

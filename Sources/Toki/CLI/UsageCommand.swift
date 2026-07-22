@@ -67,17 +67,12 @@ enum UsageCommand {
             FileHandle.standardError.write(Data("warning: couldn't read session history for \(names)\n".utf8))
         }
 
-        // Resolved against the providers actually present, not against every case in the enum.
-        // Matching the enum meant "claude" resolved to `.claude` - a provider the scanner never
-        // emits - before `.claudeCode`, so the filter silently returned nothing.
         var resolved: Provider?
         if let name = provider {
-            let present = Set(activity.map(\.provider)).sorted { $0.displayName < $1.displayName }
-            resolved = present.first { $0.rawValue.lowercased() == name }
-                ?? present.first { $0.displayName.lowercased().hasPrefix(name) }
-                ?? present.first { $0.displayName.lowercased().contains(name) }
+            let present = Set(activity.map(\.provider))
+            resolved = resolveProvider(name, among: present)
             guard resolved != nil else {
-                let available = present.map { $0.displayName }.joined(separator: ", ")
+                let available = present.map(\.displayName).sorted().joined(separator: ", ")
                 FileHandle.standardError.write(Data(
                     "No provider matching \"\(name)\". Found: \(available.isEmpty ? "none" : available)\n".utf8
                 ))
@@ -94,13 +89,28 @@ enum UsageCommand {
         return incomplete ? 1 : 0
     }
 
+    // Resolved against the providers actually present, not every case in the enum. Matching the
+    // enum meant "claude" resolved to `.claude` - which the scanner never emits - before
+    // `.claudeCode`, so the filter silently returned nothing. Exact rawValue wins, then a
+    // display-name prefix, then a substring; ties broken by display name so it is deterministic.
+    static func resolveProvider(_ name: String, among present: Set<Provider>) -> Provider? {
+        let ordered = present.sorted { $0.displayName < $1.displayName }
+        return ordered.first { $0.rawValue.lowercased() == name }
+            ?? ordered.first { $0.displayName.lowercased().hasPrefix(name) }
+            ?? ordered.first { $0.displayName.lowercased().contains(name) }
+    }
+
+    private static func dayPhrase(_ days: Int) -> String {
+        days == 1 ? "1 day" : "\(days) days"
+    }
+
     // MARK: - Rendering
 
     private static func printChart(_ activity: [DailyActivity], days: Int, provider: Provider?) {
         let calendar = Calendar.current
         let byDay = Dictionary(grouping: activity) { calendar.startOfDay(for: $0.day) }
         guard !byDay.isEmpty else {
-            print("No agent activity found in the last \(days) days.")
+            print("No agent activity found in the last \(dayPhrase(days)).")
             print("Checked Claude Code, OpenCode and Pi session history.")
             return
         }
@@ -110,7 +120,7 @@ enum UsageCommand {
         let today = calendar.startOfDay(for: Date())
 
         let scope = provider.map { "\($0.displayName) - " } ?? ""
-        print("\(scope)last \(days) days\n")
+        print("\(scope)last \(dayPhrase(days))\n")
 
         // Week rows, weekday columns, oldest first - the same shape as the app's grid so the two
         // read the same way.
@@ -169,7 +179,8 @@ enum UsageCommand {
         let busiest = totals.max { $0.value < $1.value }
 
         var lines: [String] = []
-        lines.append("  \(bold(formatCompact(Double(tokens)))) tokens across \(bold("\(totals.count)")) active days")
+        let activeDays = totals.count == 1 ? "day" : "days"
+        lines.append("  \(bold(formatCompact(Double(tokens)))) tokens across \(bold("\(totals.count)")) active \(activeDays)")
         if cost > 0 {
             lines.append("  \(bold(formatUSD(cost))) estimated")
         }

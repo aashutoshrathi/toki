@@ -145,4 +145,15 @@ struct OpenCodeUsageClient {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return (out?.isEmpty ?? true) ? nil : out
     }
+
+    // Unlike queryValue, this keeps "read succeeded, zero rows" (empty string) distinct from
+    // "read failed" (throws). The daily-activity scan needs that distinction: an idle install
+    // returns no rows and must read as no activity, not as an unreadable provider.
+    static func queryText(_ sql: String) throws -> String {
+        let db = databasePath()
+        guard FileManager.default.fileExists(atPath: db) else {
+            throw LocalizedErrorMessage("OpenCode database not found")
+        }
+        return try sqliteOutput(db: db, sql: sql).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
