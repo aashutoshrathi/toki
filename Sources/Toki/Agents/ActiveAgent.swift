@@ -60,11 +60,20 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let sessionUsage: AgentSessionUsage?
     // Set when the session is parked waiting on the user (a question or a permission prompt).
     let attention: AgentAttention?
+    // A short marker (the terminal tty) appended to the title only when another agent would
+    // otherwise show the same one - several agents in one project can resolve to the same
+    // session, and identical rows can't be told apart. Set by a post-scan pass.
+    var disambiguator: String? = nil
 
     var needsInput: Bool { attention != nil }
 
     // Primary label: the conversation title, else the project folder, else the provider.
     var title: String {
+        guard let disambiguator else { return baseTitle }
+        return "\(baseTitle) · \(disambiguator)"
+    }
+
+    private var baseTitle: String {
         if let chatTitle { return chatTitle }
         if let folder = directory.map({ ($0 as NSString).lastPathComponent }), !folder.isEmpty, folder != "/" {
             return folder
@@ -122,7 +131,7 @@ enum ActiveAgentScanner {
                     possibleParent.pid == candidate.parentPID && possibleParent.provider == candidate.provider
                 }
             }
-            let agents = roots.map(enrich)
+            let agents = disambiguate(roots.map(enrich))
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
             cache = cache.filter { alive.contains($0.key) }
@@ -191,6 +200,40 @@ enum ActiveAgentScanner {
         return nil
     }
 
+    // Appends the terminal tty to any title shared by two or more agents, so several sessions
+    // in one project folder (which can resolve to the same title) render as distinct rows that
+    // each still open their own terminal.
+    static func disambiguate(_ agents: [ActiveAgent]) -> [ActiveAgent] {
+        let collisions = Dictionary(grouping: agents, by: \.title).filter { $0.value.count > 1 }
+        guard !collisions.isEmpty else { return agents }
+        return agents.map { agent in
+            guard collisions[agent.title] != nil, let tty = agent.terminalTTY else { return agent }
+            var marked = agent
+            marked.disambiguator = tty.hasPrefix("/dev/") ? String(tty.dropFirst(5)) : tty
+            return marked
+        }
+    }
+
+    // A process's launch time, from `ps etime` ([[dd-]hh:]mm:ss) counted back from now, so a
+    // session file's creation time can be matched to the agent that opened it.
+    static func startDate(fromETime etime: String) -> Date? {
+        var rest = Substring(etime)
+        var days = 0
+        if let dash = rest.firstIndex(of: "-") {
+            days = Int(rest[..<dash]) ?? 0
+            rest = rest[rest.index(after: dash)...]
+        }
+        let parts = rest.split(separator: ":").map { Int($0) ?? 0 }
+        let hms: Int
+        switch parts.count {
+        case 3: hms = parts[0] * 3600 + parts[1] * 60 + parts[2]
+        case 2: hms = parts[0] * 60 + parts[1]
+        case 1: hms = parts[0]
+        default: return nil
+        }
+        return Date().addingTimeInterval(-TimeInterval(days * 86400 + hms))
+    }
+
     // cwd and host app are cached; title and activity change as the session evolves.
     private static func enrich(_ c: Candidate) -> ActiveAgent {
         let cached = cache[c.pid]
@@ -203,7 +246,10 @@ enum ActiveAgentScanner {
         let resolvedHost = reusable == nil ? AgentSessionResolver.hostApp(ofPID: c.pid, terminalTTY: c.tty) : nil
         let hostApp = reusable?.hostApp ?? resolvedHost?.app
         let hostProcessID = reusable?.hostProcessID ?? resolvedHost?.processID
-        let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
+        // When agents share a project folder, the session file created nearest this process's
+        // launch is the one it opened; pass the start time so each resolves its own session.
+        let startTime = startDate(fromETime: c.runtime)
+        let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
         let agent = ActiveAgent(
             id: c.pid,
             provider: c.provider,
@@ -211,14 +257,14 @@ enum ActiveAgentScanner {
             chatTitle: chatTitle,
             hostApp: hostApp,
             hostProcessID: hostProcessID,
-            lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd),
+            lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
             processID: c.pid,
             runtime: c.runtime,
             terminalTTY: c.tty,
             memoryKB: c.memoryKB,
             command: c.command,
-            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd),
-            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd)
+            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
+            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
         )
         cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID)
         return agent

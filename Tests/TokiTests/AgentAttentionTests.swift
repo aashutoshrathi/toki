@@ -113,6 +113,46 @@ final class AgentAttentionTests: XCTestCase {
     }
 }
 
+final class AgentDisambiguationTests: XCTestCase {
+    private func agent(pid: Int32, title: String, tty: String?) -> ActiveAgent {
+        ActiveAgent(
+            id: pid, provider: .claudeCode, directory: nil, chatTitle: title,
+            hostApp: nil, hostProcessID: nil, lastActivity: nil, processID: pid, runtime: "1:00",
+            terminalTTY: tty, memoryKB: 1000, command: "claude", sessionUsage: nil, attention: nil
+        )
+    }
+
+    func testSharedTitlesGetTtyMarkers() {
+        let result = ActiveAgentScanner.disambiguate([
+            agent(pid: 1, title: "Audit database", tty: "/dev/ttys004"),
+            agent(pid: 2, title: "Audit database", tty: "ttys007"),
+            agent(pid: 3, title: "Unique task", tty: "/dev/ttys009"),
+        ])
+        XCTAssertEqual(result[0].title, "Audit database · ttys004")
+        XCTAssertEqual(result[1].title, "Audit database · ttys007")
+        // A title nobody else shares is left alone.
+        XCTAssertEqual(result[2].title, "Unique task")
+    }
+
+    func testUniqueTitlesAreUnchanged() {
+        let result = ActiveAgentScanner.disambiguate([
+            agent(pid: 1, title: "A", tty: "/dev/ttys004"),
+            agent(pid: 2, title: "B", tty: "/dev/ttys007"),
+        ])
+        XCTAssertEqual(result.map(\.title), ["A", "B"])
+    }
+
+    func testStartDateParsesETimeFormats() {
+        let now = Date()
+        // mm:ss
+        XCTAssertEqual(ActiveAgentScanner.startDate(fromETime: "05:00")!.timeIntervalSince(now), -300, accuracy: 2)
+        // hh:mm:ss
+        XCTAssertEqual(ActiveAgentScanner.startDate(fromETime: "01:00:00")!.timeIntervalSince(now), -3600, accuracy: 2)
+        // dd-hh:mm:ss
+        XCTAssertEqual(ActiveAgentScanner.startDate(fromETime: "1-00:00:00")!.timeIntervalSince(now), -86400, accuracy: 2)
+    }
+}
+
 // Guards the click regression: promoting blocked agents to the top re-ordered the list while
 // the user was looking at it, and a row moving out from under the pointer mid-press cancels
 // the click - so the cards silently stopped being clickable.

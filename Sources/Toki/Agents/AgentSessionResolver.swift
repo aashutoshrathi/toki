@@ -4,10 +4,10 @@ import Foundation
 // stores.
 enum AgentSessionResolver {
     // The human/AI-assigned conversation title, if the provider records one.
-    static func chatTitle(provider: Provider, command: String, cwd: String?) -> String? {
+    static func chatTitle(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> String? {
         switch provider {
         case .claudeCode, .claude, .anthropic:
-            return claudeChatTitle(command: command, cwd: cwd)
+            return claudeChatTitle(command: command, cwd: cwd, startTime: startTime)
         case .openCode:
             return openCodeChatTitle(cwd: cwd)
         case .grok:
@@ -20,24 +20,24 @@ enum AgentSessionResolver {
     }
 
     // Per-session cost and token usage, resolved from local session data when available.
-    static func sessionUsage(provider: Provider, command: String, cwd: String?) -> AgentSessionUsage? {
+    static func sessionUsage(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> AgentSessionUsage? {
         switch provider {
         case .openCode:
             return openCodeSessionUsage(cwd: cwd)
         case .pi:
             return piSessionUsage(cwd: cwd)
         case .claudeCode, .claude, .anthropic:
-            return claudeSessionUsage(command: command, cwd: cwd)
+            return claudeSessionUsage(command: command, cwd: cwd, startTime: startTime)
         default:
             return nil
         }
     }
 
     // Whether the session is parked waiting on the user, and what it's waiting for.
-    static func attention(provider: Provider, command: String, cwd: String?) -> AgentAttention? {
+    static func attention(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> AgentAttention? {
         switch provider {
         case .claudeCode, .claude, .anthropic:
-            guard let session = newestClaudeSession(command: command, cwd: cwd),
+            guard let session = newestClaudeSession(command: command, cwd: cwd, nearStart: startTime),
                   let parsed = claudeSession(at: session.path, modified: session.modified) else { return nil }
             return attention(from: parsed, modified: session.modified, now: Date())
         case .openCode:
@@ -215,10 +215,10 @@ enum AgentSessionResolver {
     }
 
     // When the agent's session was last written - used to sort most-recent first.
-    static func lastActivity(provider: Provider, command: String, cwd: String?) -> Date? {
+    static func lastActivity(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> Date? {
         switch provider {
         case .claudeCode, .claude, .anthropic:
-            return newestClaudeSession(command: command, cwd: cwd)?.modified
+            return newestClaudeSession(command: command, cwd: cwd, nearStart: startTime)?.modified
         case .openCode:
             return openCodeLastActivity(cwd: cwd)
         case .grok:
@@ -265,8 +265,8 @@ enum AgentSessionResolver {
         return Date(timeIntervalSince1970: ms / 1000)
     }
 
-    private static func claudeChatTitle(command: String, cwd: String?) -> String? {
-        guard let file = newestClaudeSession(command: command, cwd: cwd)?.path,
+    private static func claudeChatTitle(command: String, cwd: String?, startTime: Date? = nil) -> String? {
+        guard let file = newestClaudeSession(command: command, cwd: cwd, nearStart: startTime)?.path,
               let contents = try? String(contentsOfFile: file, encoding: .utf8) else {
             return nil
         }
@@ -290,7 +290,7 @@ enum AgentSessionResolver {
         return latestCustom ?? latestAI
     }
 
-    private static func newestClaudeSession(command: String, cwd: String?) -> (path: String, modified: Date?)? {
+    private static func newestClaudeSession(command: String, cwd: String?, nearStart: Date? = nil) -> (path: String, modified: Date?)? {
         // An explicit --resume path wins; otherwise pick the newest file in the project dir.
         if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
             return (resume, modifiedDate(resume))
@@ -303,11 +303,34 @@ enum AgentSessionResolver {
         guard let cwd else { return nil }
         let dir = projectDir(cwd)
         guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
-        let newest = files.filter { $0.hasSuffix(".jsonl") }
+        let sessions = files.filter { $0.hasSuffix(".jsonl") }
             .map { (path: "\(dir)/\($0)", modified: modifiedDate("\(dir)/\($0)")) }
-            .max { ($0.modified ?? .distantPast) < ($1.modified ?? .distantPast) }
-        return newest
+
+        // When several agents share one project folder, "newest" hands them all the same file.
+        // If we know when this process launched, prefer the session file created closest to
+        // then - the one this process opened - so same-folder agents resolve distinctly. Only
+        // within a window: a resumed session's file predates the process and must not steal it.
+        if let nearStart {
+            var best: (path: String, modified: Date?)?
+            var bestDistance = sessionStartMatchWindow
+            for session in sessions {
+                guard let created = creationDate(session.path) else { continue }
+                let distance = abs(created.timeIntervalSince(nearStart))
+                if distance <= bestDistance {
+                    bestDistance = distance
+                    best = (session.path, session.modified)
+                }
+            }
+            if let best { return best }
+        }
+
+        return sessions.max { ($0.modified ?? .distantPast) < ($1.modified ?? .distantPast) }
     }
+
+    // How close a session file's creation must be to a process's launch to call it that
+    // process's session. Claude Code writes the file within moments of starting; the margin
+    // absorbs scan latency and clock coarseness without matching an unrelated older session.
+    private static let sessionStartMatchWindow: TimeInterval = 120
 
     private static func openCodeChatTitle(cwd: String?) -> String? {
         guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
@@ -435,6 +458,10 @@ enum AgentSessionResolver {
         (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
     }
 
+    private static func creationDate(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.creationDate]) as? Date
+    }
+
     private static func safeSQLPath(_ value: String) -> String? {
         guard value.hasPrefix("/"), !value.contains("'") else { return nil }
         return value
@@ -482,8 +509,8 @@ enum AgentSessionResolver {
         return PiUsageClient.sessionUsage(path: session.path)
     }
 
-    private static func claudeSessionUsage(command: String, cwd: String?) -> AgentSessionUsage? {
-        guard let session = newestClaudeSession(command: command, cwd: cwd) else { return nil }
+    private static func claudeSessionUsage(command: String, cwd: String?, startTime: Date? = nil) -> AgentSessionUsage? {
+        guard let session = newestClaudeSession(command: command, cwd: cwd, nearStart: startTime) else { return nil }
 
         return claudeSession(at: session.path, modified: session.modified)?.usage
     }
