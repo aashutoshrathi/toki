@@ -262,26 +262,38 @@ enum ActiveAgentNavigator {
 
     private static func activateHostApp(for agent: ActiveAgent) {
         // By PID first: two builds of a terminal share a bundle identifier, so an
-        // identifier lookup can raise the copy that does not hold this agent.
+        // identifier lookup can raise the copy that does not hold this agent. Only when
+        // that PID is a regular activatable app, though: VS Code's integrated terminal runs
+        // under a "Code Helper" process whose activation policy is .prohibited, so activating
+        // it silently does nothing - the click has to fall through to the real app below.
         if let hostProcessID = agent.hostProcessID,
-           let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)) {
+           let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)),
+           running.activationPolicy == .regular {
             running.activate(options: [.activateAllWindows])
             return
         }
 
-        // Fall back to identity when the ancestry walk found nothing.
-        var bundleIDs: [String] = []
-        if let host = agent.hostApp {
-            bundleIDs.append(host.bundleID)
+        // Fall back to identity: for a helper-hosted app (VS Code) this raises the real app.
+        // The host's own bundle id is matched first and exactly, so with both VS Code and VS
+        // Code Insiders running the click lands on the variant that actually holds the agent
+        // rather than whichever the system happens to list first.
+        if let host = agent.hostApp, activate(bundleID: host.bundleID) {
+            return
         }
-        bundleIDs.append(contentsOf: ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"])
-        if let application = NSWorkspace.shared.runningApplications.first(where: { app in
-            app.bundleIdentifier.map(bundleIDs.contains) == true
-        }) {
-            application.activate(options: [.activateAllWindows])
-        } else {
-            DiagnosticLogger.shared.record(.warning, component: "agents", code: "navigation_unavailable")
+        // Only when the ancestry walk named no host: raise any known terminal that's running.
+        for bundleID in ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"] where activate(bundleID: bundleID) {
+            return
         }
+        DiagnosticLogger.shared.record(.warning, component: "agents", code: "navigation_unavailable")
+    }
+
+    @discardableResult
+    private static func activate(bundleID: String) -> Bool {
+        guard let application = NSWorkspace.shared.runningApplications.first(where: {
+            $0.activationPolicy == .regular && $0.bundleIdentifier == bundleID
+        }) else { return false }
+        application.activate(options: [.activateAllWindows])
+        return true
     }
 
     nonisolated private static func isSafeTTY(_ value: String) -> Bool {

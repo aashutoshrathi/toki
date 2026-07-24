@@ -9,6 +9,7 @@
 ### Fixed
 
 - Clicking an active agent running inside tmux did nothing. tmux runs panes under a detached server, so the walk up from the agent to its terminal dead-ended; Toki now hops through tmux to the attached client and focuses the terminal hosting it.
+- Clicking an agent hosted in VS Code's integrated terminal did nothing: the walk resolved a "Code Helper" process whose activation policy is .prohibited. Toki now raises the real app instead, and picks the right one when VS Code and VS Code Insiders are both open.
 
 ## 2.4.1 - 2026-07-22
 
