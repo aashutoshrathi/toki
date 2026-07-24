@@ -35,7 +35,11 @@ struct MenuContentView: View {
                 mainContent
             }
         }
-        .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
+        // Fixed width, but only a max height: the popover shrinks to fit short content (e.g. a
+        // couple of accounts) instead of padding out to the full height, and caps + scrolls when
+        // there's more. Pairs with .preferredContentSize on the hosting controller.
+        .frame(width: popoverWidth(), alignment: .top)
+        .frame(maxHeight: popoverHeight(), alignment: .top)
         .background(.regularMaterial)
     }
 
@@ -64,7 +68,7 @@ struct MenuContentView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var header: some View {

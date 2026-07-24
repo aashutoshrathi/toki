@@ -27,9 +27,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         popover.behavior = .transient
         popover.contentSize = NSSize(width: popoverWidth(), height: popoverHeight())
-        popover.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: MenuContentView(store: store, updateChecker: updateChecker)
         )
+        // Let the popover shrink to the SwiftUI content's height (capped in the view) instead
+        // of always standing at the full popoverHeight and padding out below short content.
+        hostingController.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hostingController
         popover.delegate = self
 
         updateChecker.startAutomaticChecks()
