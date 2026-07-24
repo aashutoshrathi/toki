@@ -16,7 +16,7 @@
 
 ### Codex
 
-- A banked rate-limit reset now shows as a badge on the collapsed Codex card, so you can see one is available without expanding the card to reach the "Reset now" button. The soonest window reset also appears in the card's subtitle.
+- A banked rate-limit reset now shows as a badge on the collapsed Codex card, and the badge is itself the redeem control: clicking it confirms first, stating how much of the window is still left, so a reset is never spent by accident. The old rule that greyed the control out until the window was 80% spent is gone. The soonest window reset also appears in the card's subtitle.
 
 ## 2.4.1 - 2026-07-22
 
