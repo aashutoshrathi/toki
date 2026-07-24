@@ -100,6 +100,10 @@ struct CodexRateLimits {
     var resetCreditsAvailable: Int = 0
     var primaryWindow: RateLimitWindow?
     var secondaryWindow: RateLimitWindow?
+    // The soonest reset across all windows, tracked as a unix timestamp so the earliest wins
+    // even when the weekly window rolls over before the 5-hour one.
+    private var earliestResetAt: Double?
+    private var earliestResetText: String?
 
     var hasUsage: Bool {
         !metrics.isEmpty || primary != nil
@@ -119,7 +123,7 @@ struct CodexRateLimits {
         }
         // Surface the soonest window reset in the subtitle too, so the expanded card's header
         // states when quota returns without having to read it off a metric row.
-        if let reset = primaryWindow?.resetHint, let base = subtitle {
+        if let reset = earliestResetText, let base = subtitle {
             subtitle = "\(base) · \(reset.prefix(1).uppercased() + reset.dropFirst())"
         }
         if let resetCredits = data["rateLimitResetCredits"] as? [String: Any],
@@ -165,6 +169,14 @@ struct CodexRateLimits {
         let clampedUsed = max(0, min(100, usedPercent))
         let percentLeft = Int((100 - clampedUsed).rounded())
         let resetText = resetDescriptionFromUnix(firstValue(window, keys: ["resetsAt"])).map { "resets in \($0)" }
+
+        // Track the soonest reset across every window for the subtitle, comparing the raw
+        // timestamps rather than assuming the primary window rolls over first.
+        if let resetsAt = optionalNumber(firstValue(window, keys: ["resetsAt"])), let resetText,
+           resetsAt < (earliestResetAt ?? .greatestFiniteMagnitude) {
+            earliestResetAt = resetsAt
+            earliestResetText = resetText
+        }
 
         if primary == nil {
             primary = "\(percentLeft)% left"
