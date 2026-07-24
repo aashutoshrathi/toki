@@ -295,7 +295,10 @@ enum AgentSessionResolver {
         if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
             return (resume, modifiedDate(resume))
         }
-        if let sid = firstMatch(in: command, pattern: #"--session-id\s+([a-f0-9-]+)"#),
+        // A session id from --resume/-r/--session-id resolves to that file directly. Handling
+        // the bare-id --resume form (the common one) also keeps a resumed process out of the
+        // start-time match below, whose freshly-created sibling would otherwise steal it.
+        if let sid = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)"#),
            let cwd, case let path = "\(projectDir(cwd))/\(sid).jsonl",
            FileManager.default.fileExists(atPath: path) {
             return (path, modifiedDate(path))
@@ -306,11 +309,15 @@ enum AgentSessionResolver {
         let sessions = files.filter { $0.hasSuffix(".jsonl") }
             .map { (path: "\(dir)/\($0)", modified: modifiedDate("\(dir)/\($0)")) }
 
+        // `--continue` reopens the most recently active session, so newest-by-mtime is right and
+        // the start-time match (which hunts for a freshly created file) would mis-assign a sibling.
+        let resumesMostRecent = firstMatch(in: command, pattern: #"(?:^|\s)(--continue|-c)(?:\s|$)"#) != nil
+
         // When several agents share one project folder, "newest" hands them all the same file.
         // If we know when this process launched, prefer the session file created closest to
         // then - the one this process opened - so same-folder agents resolve distinctly. Only
         // within a window: a resumed session's file predates the process and must not steal it.
-        if let nearStart {
+        if let nearStart, !resumesMostRecent {
             var best: (path: String, modified: Date?)?
             var bestDistance = sessionStartMatchWindow
             for session in sessions {
@@ -346,7 +353,10 @@ enum AgentSessionResolver {
     // the server, `terminalTTY` (the pane's tty) lets us ask tmux which client is attached
     // to this pane's session and resume from there — that client does descend from the
     // real terminal app.
-    static func hostApp(ofPID pid: Int32, terminalTTY: String? = nil) -> (app: HostApp, processID: Int32)? {
+    // `viaTmux` marks a host reached by hopping through the tmux server. Such a host can change
+    // without the agent's PID changing (detach/reattach from another terminal), so the caller
+    // must re-resolve it rather than trust a cached value.
+    static func hostApp(ofPID pid: Int32, terminalTTY: String? = nil) -> (app: HostApp, processID: Int32, viaTmux: Bool)? {
         var current = pid
         for _ in 0..<8 {
             guard let output = Shell.output("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
@@ -355,10 +365,11 @@ enum AgentSessionResolver {
             guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
             let comm = String(parts[1]).lowercased()
             if let app = HostApp.match(comm: comm) {
-                return (app, current)
+                return (app, current, false)
             }
             if comm.contains("tmux") {
-                return tmuxClientHostApp(paneTTY: terminalTTY, serverPID: current)
+                guard let resolved = tmuxClientHostApp(paneTTY: terminalTTY, serverPID: current) else { return nil }
+                return (resolved.app, resolved.processID, true)
             }
             if ppid <= 1 { return nil }
             current = ppid
@@ -384,7 +395,7 @@ enum AgentSessionResolver {
             // The client process is itself named `tmux`, so start one level up to avoid
             // re-detecting tmux and looping; its parent chain descends from the terminal.
             guard let pid = Int32(clientPID), let parent = parentPID(ofPID: pid) else { continue }
-            if let resolved = hostApp(ofPID: parent) { return resolved }
+            if let resolved = hostApp(ofPID: parent) { return (resolved.app, resolved.processID) }
         }
         return nil
     }

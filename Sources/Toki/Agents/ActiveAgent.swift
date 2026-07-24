@@ -110,12 +110,15 @@ enum ActiveAgentScanner {
         let memoryKB: Int
     }
 
-    // Immutable-per-process fields cached by PID; `command` guards against PID reuse.
+    // Immutable-per-process fields cached by PID; `command` guards against PID reuse. A tmux
+    // host is the exception - it can change under a stable PID - so `hostViaTmux` marks entries
+    // that must be re-resolved each scan rather than reused.
     private struct CacheEntry {
         let command: String
         let directory: String?
         let hostApp: HostApp?
         let hostProcessID: Int32?
+        let hostViaTmux: Bool
     }
     private nonisolated(unsafe) static var cache: [Int32: CacheEntry] = [:]
 
@@ -242,15 +245,20 @@ enum ActiveAgentScanner {
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
         // Resolving walks the process tree with up to eight `ps` calls, so it's cached. Reuse a
-        // cached host only when it actually resolved, or when there's no tty to resolve one from
-        // (a ttyless background agent has no host, and re-walking every scan is the cost the
-        // cache exists to avoid). A cached-nil host on a tty-bearing agent is usually a detached
-        // tmux session that has no attached client yet; re-resolve those each scan so navigation
-        // starts working once the user attaches one, rather than staying nil for the PID's life.
-        let cachedHost = reusable.flatMap { $0.hostApp != nil || c.tty == nil ? $0 : nil }
+        // cached host only when it's a settled one: a resolved, non-tmux host (a stable terminal
+        // like iTerm or VS Code), or a ttyless agent that has no host to find (re-walking those
+        // every scan is the cost the cache exists to avoid). Re-resolve everything else each
+        // scan - a cached-nil host on a tty-bearing agent (a detached tmux pane awaiting a
+        // client) and any tmux host (whose client can change under a stable PID).
+        let cachedHost = reusable.flatMap { entry -> CacheEntry? in
+            if entry.hostApp != nil, !entry.hostViaTmux { return entry }
+            if entry.hostApp == nil, c.tty == nil { return entry }
+            return nil
+        }
         let resolvedHost = cachedHost == nil ? AgentSessionResolver.hostApp(ofPID: c.pid, terminalTTY: c.tty) : nil
         let hostApp = cachedHost?.hostApp ?? resolvedHost?.app
         let hostProcessID = cachedHost?.hostProcessID ?? resolvedHost?.processID
+        let hostViaTmux = cachedHost?.hostViaTmux ?? (resolvedHost?.viaTmux ?? false)
         // When agents share a project folder, the session file created nearest this process's
         // launch is the one it opened; pass the start time so each resolves its own session.
         let startTime = startDate(fromETime: c.runtime)
@@ -271,7 +279,7 @@ enum ActiveAgentScanner {
             sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
             attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
         )
-        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID)
+        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux)
         return agent
     }
 }
