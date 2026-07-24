@@ -306,7 +306,7 @@ struct AccountCard: View {
                 .help("Save alias")
                 .pointerOnHover()
             } else {
-                Text(accountIdentifier)
+                Text(displayedAccountIdentifier)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -329,6 +329,12 @@ struct AccountCard: View {
 
     private var accountIdentifier: String {
         return snapshot.name
+    }
+
+    // Default Claude records name the account "Claude - <email>", so the primary title leaks
+    // the email too. Mask it for display while leaving the real name for the alias editor.
+    private var displayedAccountIdentifier: String {
+        store.hidesSensitiveInfo ? SensitiveText.redactingEmails(accountIdentifier) : accountIdentifier
     }
 
     private var secondaryIdentifier: String? {
