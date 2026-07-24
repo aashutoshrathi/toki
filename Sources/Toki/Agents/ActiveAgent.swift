@@ -241,11 +241,16 @@ enum ActiveAgentScanner {
         let cwd = reusable?.directory
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
-        // Only when the cache can't answer: this walks the process tree with up to eight
-        // `ps` calls per agent.
-        let resolvedHost = reusable == nil ? AgentSessionResolver.hostApp(ofPID: c.pid, terminalTTY: c.tty) : nil
-        let hostApp = reusable?.hostApp ?? resolvedHost?.app
-        let hostProcessID = reusable?.hostProcessID ?? resolvedHost?.processID
+        // Resolving walks the process tree with up to eight `ps` calls, so it's cached. Reuse a
+        // cached host only when it actually resolved, or when there's no tty to resolve one from
+        // (a ttyless background agent has no host, and re-walking every scan is the cost the
+        // cache exists to avoid). A cached-nil host on a tty-bearing agent is usually a detached
+        // tmux session that has no attached client yet; re-resolve those each scan so navigation
+        // starts working once the user attaches one, rather than staying nil for the PID's life.
+        let cachedHost = reusable.flatMap { $0.hostApp != nil || c.tty == nil ? $0 : nil }
+        let resolvedHost = cachedHost == nil ? AgentSessionResolver.hostApp(ofPID: c.pid, terminalTTY: c.tty) : nil
+        let hostApp = cachedHost?.hostApp ?? resolvedHost?.app
+        let hostProcessID = cachedHost?.hostProcessID ?? resolvedHost?.processID
         // When agents share a project folder, the session file created nearest this process's
         // launch is the one it opened; pass the start time so each resolves its own session.
         let startTime = startDate(fromETime: c.runtime)
