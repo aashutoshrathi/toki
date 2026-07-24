@@ -22,9 +22,12 @@
 </p>
 
 <table>
-  <tr><th style="width:50%">Menu bar</th><th style="width:50%">CLI</th></tr>
   <tr>
-    <td><img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="100%"></td>
+    <th align="center" valign="top" width="180">Menu bar</th>
+    <td align="center"><img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="60%"></td>
+  </tr>
+  <tr>
+    <th align="center" valign="top" width="180">CLI</th>
     <td><pre>            @@@@ @@@@             <br>   @@@@@@@@@@@     @@@@@@@        <br>   @@@@@@@@@@@     @@@@@@@        <br>            @@@@@@@@@             <br>              @@@@@               <br>               @@@                  /toki<br>               @@@    @@@           v2.4.2<br>               @@@   @@@@           github.com/aashutoshrathi/toki<br>               @@@@@@@@@          <br>               @@@@@@@            <br>               @@@@@              <br>               @@@@               <br>               @@@@@              <br>                @@@@@@@@@@        <br><br>Claude San: 85% left<br>Codex: 0% left<br>OpenCode: No usage today<br>Pi: $0.01 today</pre></td>
   </tr>
 </table>
