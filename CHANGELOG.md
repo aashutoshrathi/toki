@@ -17,6 +17,7 @@
 - An agent's "in" token count showed only uncached input, reading as a few hundred tokens against a six-figure context. It now includes cache reads and writes, matching how the session cost is already computed.
 - Agents in auto-accept mode showed a false "Allow Bash?" prompt: a tool running without asking looks the same on disk as one awaiting permission. Toki now reads the session's permission mode and only flags a prompt in a mode that would actually ask.
 - Several agents in one project folder all showed the same title and token usage, because Toki could only find the folder's newest session. Each agent now prefers the session file created closest to when it launched, and any titles that still match get a terminal-tty marker so the rows stay distinct.
+- With the menu bar set to auto-hide, opening Toki could drop the popover in the top-left corner: the status item reports an unsettled far-left position mid-reveal. Toki now rejects that jump and anchors near the icon instead.
 
 ### Codex
 

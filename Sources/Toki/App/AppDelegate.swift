@@ -194,12 +194,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
+    // The status item's last settled on-screen frame, used both to reject a bad transient
+    // position and to anchor the fallback near the icon rather than the screen's centre.
+    private var lastKnownStatusFrame: NSRect?
+
     // `bounds` stays non-empty even off-screen, so convert and require a real display.
     private func hasValidScreenPosition(_ button: NSStatusBarButton) -> Bool {
         guard !button.bounds.isEmpty, let window = button.window else { return false }
         let screenRect = window.convertToScreen(button.convert(button.bounds, to: nil))
         guard screenRect.width > 0, screenRect.height > 0 else { return false }
-        return NSScreen.screens.contains { $0.frame.intersects(screenRect) }
+        guard NSScreen.screens.contains(where: { $0.frame.intersects(screenRect) }) else { return false }
+        // While an auto-hidden menu bar is revealing, the item can briefly report a far-left
+        // origin; anchoring there drops the popover in the top-left corner. A status item doesn't
+        // jump horizontally between clicks, so if this is far from where we last saw it, treat it
+        // as not-yet-settled and let the retry (then fallback) place it near the icon instead.
+        if let last = lastKnownStatusFrame, abs(screenRect.midX - last.midX) > 200 {
+            return false
+        }
+        lastKnownStatusFrame = screenRect
+        return true
     }
 
     // A 1x1 click-through window parked under the menu bar, used only when the status item
@@ -225,7 +238,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen, let anchorView = fallbackAnchorWindow.contentView else { return }
 
-        let origin = NSPoint(x: screen.frame.midX, y: screen.visibleFrame.maxY - 1)
+        // Anchor under the icon's last-known x when we have one, so a menu-bar reveal that never
+        // settles still drops the popover near the status item rather than at the screen centre.
+        let anchorX = lastKnownStatusFrame.map { min(max($0.midX, screen.frame.minX + 1), screen.frame.maxX - 1) } ?? screen.frame.midX
+        let origin = NSPoint(x: anchorX, y: screen.visibleFrame.maxY - 1)
         fallbackAnchorWindow.setFrame(NSRect(origin: origin, size: NSSize(width: 1, height: 1)), display: false)
         fallbackAnchorWindow.orderFrontRegardless()
 
