@@ -143,6 +143,21 @@ struct MenuContentView: View {
             .pointerOnHover()
 
             Button {
+                store.hidesSensitiveInfo.toggle()
+            } label: {
+                Image(systemName: store.hidesSensitiveInfo ? "eye.slash" : "eye")
+                    .frame(width: 25, height: 25)
+                    .background((store.hidesSensitiveInfo ? Color.blue : Color.primary).opacity(store.hidesSensitiveInfo ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(store.hidesSensitiveInfo ? Color.blue : Color.primary)
+            .help(store.hidesSensitiveInfo ? "Showing masked emails and org info - click to reveal" : "Hide emails and org info for screenshots")
+            .accessibilityLabel(store.hidesSensitiveInfo ? "Reveal sensitive info" : "Hide sensitive info")
+            .pointerOnHover()
+
+            Button {
                 showChangelog = true
             } label: {
                 Image(systemName: "doc.text")

@@ -2,6 +2,10 @@
 
 ## 2.4.2 - Unreleased
 
+### Added
+
+- An eye button in the header masks account emails and org info across the cards, so you can share a screenshot or demo without leaking PII. It resets on relaunch.
+
 ### Changed
 
 - Release builds now strip symbol tables from the binary before signing, cutting the shipped app bundle from 5.3MB to 2.3MB.

@@ -182,7 +182,7 @@ struct AccountCard: View {
                         .padding(.vertical, 1)
                     VStack(spacing: 3) {
                         ForEach(snapshot.accountInfo) { metric in
-                            MetricRow(metric: metric)
+                            MetricRow(metric: maskedAccountInfo(metric))
                         }
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -332,7 +332,23 @@ struct AccountCard: View {
     }
 
     private var secondaryIdentifier: String? {
-        emailAddress(in: snapshot) ?? (snapshot.subtitle.isEmpty ? nil : snapshot.subtitle)
+        let raw = emailAddress(in: snapshot) ?? (snapshot.subtitle.isEmpty ? nil : snapshot.subtitle)
+        guard let raw else { return nil }
+        return store.hidesSensitiveInfo ? SensitiveText.redactingEmails(raw) : raw
+    }
+
+    // Masks the value of an account-info row when it names something identifying (email, org),
+    // so the expanded card is safe to screenshot with sensitive info hidden.
+    private func maskedAccountInfo(_ metric: MetricLine) -> MetricLine {
+        guard store.hidesSensitiveInfo else { return metric }
+        switch metric.label {
+        case "Email":
+            return MetricLine(label: metric.label, value: SensitiveText.redactingEmails(metric.value))
+        case "Org", "Org ID":
+            return MetricLine(label: metric.label, value: SensitiveText.redactedValue(metric.value))
+        default:
+            return metric
+        }
     }
 
     private var collapsedStatus: String {
