@@ -6,6 +6,10 @@
 
 - Release builds now strip symbol tables from the binary before signing, cutting the shipped app bundle from 5.3MB to 2.3MB.
 
+### Fixed
+
+- Clicking an active agent running inside tmux did nothing. tmux runs panes under a detached server, so the walk up from the agent to its terminal dead-ended; Toki now hops through tmux to the attached client and focuses the terminal hosting it.
+
 ## 2.4.1 - 2026-07-22
 
 ### Added

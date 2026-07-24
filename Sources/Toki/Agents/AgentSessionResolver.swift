@@ -293,20 +293,88 @@ enum AgentSessionResolver {
 
     // Walks the process ancestry for the hosting app. Returns the PID too: two builds of a
     // terminal share a bundle identifier, so identity alone cannot pick the right copy.
-    static func hostApp(ofPID pid: Int32) -> (app: HostApp, processID: Int32)? {
+    //
+    // tmux breaks the ancestry: a pane's processes descend from the detached tmux *server*
+    // (parented to launchd), not from the terminal displaying them. When the walk reaches
+    // the server, `terminalTTY` (the pane's tty) lets us ask tmux which client is attached
+    // to this pane's session and resume from there — that client does descend from the
+    // real terminal app.
+    static func hostApp(ofPID pid: Int32, terminalTTY: String? = nil) -> (app: HostApp, processID: Int32)? {
         var current = pid
         for _ in 0..<8 {
             guard let output = Shell.output("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
             let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
                 .split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
-            if let app = HostApp.match(comm: String(parts[1]).lowercased()) {
+            let comm = String(parts[1]).lowercased()
+            if let app = HostApp.match(comm: comm) {
                 return (app, current)
+            }
+            if comm.contains("tmux") {
+                return tmuxClientHostApp(paneTTY: terminalTTY, serverPID: current)
             }
             if ppid <= 1 { return nil }
             current = ppid
         }
         return nil
+    }
+
+    // Resolves the terminal hosting a tmux pane by finding a client attached to the pane's
+    // session and walking up from that client's process. Best effort: it needs a client
+    // currently attached (a detached session isn't shown anywhere to focus) and the tmux
+    // binary present in a standard location.
+    private static func tmuxClientHostApp(paneTTY: String?, serverPID: Int32) -> (app: HostApp, processID: Int32)? {
+        guard let paneTTY,
+              let tmux = tmuxBinary(),
+              let socket = tmuxSocket(serverPID: serverPID) else { return nil }
+        let wantedTTY = normalizedTTY(paneTTY)
+
+        guard let session = tmuxField(tmux, socket, ["list-panes", "-a", "-F", "#{pane_tty}\t#{session_name}"])
+            .first(where: { normalizedTTY($0.0) == wantedTTY })?.1 else { return nil }
+
+        for (clientSession, clientPID) in tmuxField(tmux, socket, ["list-clients", "-F", "#{session_name}\t#{client_pid}"])
+        where clientSession == session {
+            // The client process is itself named `tmux`, so start one level up to avoid
+            // re-detecting tmux and looping; its parent chain descends from the terminal.
+            guard let pid = Int32(clientPID), let parent = parentPID(ofPID: pid) else { continue }
+            if let resolved = hostApp(ofPID: parent) { return resolved }
+        }
+        return nil
+    }
+
+    // Splits a two-column tab-separated tmux `-F` listing into pairs. The server is targeted
+    // by its own socket so a custom `-L`/`-S` server resolves like the default one.
+    private static func tmuxField(_ tmux: String, _ socket: String, _ args: [String]) -> [(String, String)] {
+        guard let output = Shell.output(tmux, ["-S", socket] + args) else { return [] }
+        return output.split(separator: "\n").compactMap { line in
+            let cols = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            return cols.count == 2 ? (cols[0], cols[1]) : nil
+        }
+    }
+
+    private static func tmuxBinary() -> String? {
+        ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/opt/local/bin/tmux", "/usr/bin/tmux"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    // The server's listening socket, read from its open unix-domain sockets so `-S` can
+    // target this exact server rather than assuming the default socket path.
+    private static func tmuxSocket(serverPID: Int32) -> String? {
+        guard let output = Shell.output("/usr/sbin/lsof", ["-a", "-p", "\(serverPID)", "-U", "-Fn"]) else { return nil }
+        for line in output.split(separator: "\n") where line.hasPrefix("n") {
+            let path = String(line.dropFirst())
+            if path.contains("/tmux-") { return path }
+        }
+        return nil
+    }
+
+    private static func parentPID(ofPID pid: Int32) -> Int32? {
+        guard let output = Shell.output("/bin/ps", ["-o", "ppid=", "-p", "\(pid)"]) else { return nil }
+        return Int32(output.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func normalizedTTY(_ tty: String) -> String {
+        tty.hasPrefix("/dev/") ? String(tty.dropFirst(5)) : tty
     }
 
     static func workingDirectory(ofPID pid: Int32) -> String? {

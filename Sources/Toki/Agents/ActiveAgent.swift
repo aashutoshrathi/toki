@@ -200,7 +200,7 @@ enum ActiveAgentScanner {
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
         // Only when the cache can't answer: this walks the process tree with up to eight
         // `ps` calls per agent.
-        let resolvedHost = reusable == nil ? AgentSessionResolver.hostApp(ofPID: c.pid) : nil
+        let resolvedHost = reusable == nil ? AgentSessionResolver.hostApp(ofPID: c.pid, terminalTTY: c.tty) : nil
         let hostApp = reusable?.hostApp ?? resolvedHost?.app
         let hostProcessID = reusable?.hostProcessID ?? resolvedHost?.processID
         let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
