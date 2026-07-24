@@ -15,6 +15,9 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 cp "$ROOT_DIR/.build/release/Toki" "$MACOS_DIR/Toki"
+# Strip symbols before signing (stripping invalidates the signature). The Swift
+# release binary carries ~3MB of symbol tables it never needs at runtime.
+strip "$MACOS_DIR/Toki"
 cp "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST

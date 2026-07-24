@@ -2,6 +2,10 @@
 
 ## 2.4.2 - Unreleased
 
+### Changed
+
+- Release builds now strip symbol tables from the binary before signing, cutting the shipped app bundle from 5.3MB to 2.3MB.
+
 ## 2.4.1 - 2026-07-22
 
 ### Added
