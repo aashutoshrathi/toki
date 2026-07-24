@@ -54,6 +54,38 @@ final class AgentAttentionTests: XCTestCase {
         XCTAssertNil(attention(jsonl, modified: nil))
     }
 
+    func testAutoModeSuppressesPermissionPrompt() {
+        // In auto mode Bash runs without asking, so a lingering tool_use is executing.
+        let jsonl = """
+        {"type":"permission-mode","permissionMode":"auto"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        """
+        XCTAssertNil(attention(jsonl, modified: quiet))
+    }
+
+    func testAutoModeStillSurfacesAskedQuestions() {
+        // A question waits on the user regardless of permission mode.
+        let jsonl = """
+        {"type":"permission-mode","permissionMode":"auto"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"Which one?"}]}}]}}
+        """
+        XCTAssertEqual(attention(jsonl, modified: quiet)?.kind, .question)
+    }
+
+    func testAcceptEditsSuppressesEditsButNotBash() {
+        let edit = """
+        {"type":"permission-mode","permissionMode":"acceptEdits"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{}}]}}
+        """
+        XCTAssertNil(attention(edit, modified: quiet))
+
+        let bash = """
+        {"type":"permission-mode","permissionMode":"acceptEdits"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        """
+        XCTAssertEqual(attention(bash, modified: quiet)?.kind, .permission)
+    }
+
     func testPlanApprovalIsAQuestion() {
         let jsonl = """
         {"message":{"content":[{"type":"tool_use","id":"t1","name":"ExitPlanMode","input":{}}]}}

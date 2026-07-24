@@ -11,6 +11,7 @@
 - Clicking an active agent running inside tmux did nothing. tmux runs panes under a detached server, so the walk up from the agent to its terminal dead-ended; Toki now hops through tmux to the attached client and focuses the terminal hosting it.
 - Clicking an agent hosted in VS Code's integrated terminal did nothing: the walk resolved a "Code Helper" process whose activation policy is .prohibited. Toki now raises the real app instead, and picks the right one when VS Code and VS Code Insiders are both open.
 - An agent's "in" token count showed only uncached input, reading as a few hundred tokens against a six-figure context. It now includes cache reads and writes, matching how the session cost is already computed.
+- Agents in auto-accept mode showed a false "Allow Bash?" prompt: a tool running without asking looks the same on disk as one awaiting permission. Toki now reads the session's permission mode and only flags a prompt in a mode that would actually ask.
 
 ## 2.4.1 - 2026-07-22
 

@@ -52,6 +52,11 @@ enum AgentSessionResolver {
         /// Whether this counts as "blocked" depends on elapsed time, so that is left to the
         /// caller - baking it in here would expire the cache every second.
         var pendingTool: (name: String, question: String?)?
+        /// The session's current permission mode ("auto", "acceptEdits", "plan", "default"),
+        /// last value wins. In auto mode tools run without a prompt, so a pending tool_use is
+        /// executing rather than waiting - the caller uses this to avoid a false permission
+        /// attention.
+        var permissionMode: String?
     }
 
     // Session files reach tens of megabytes and both usage and attention need the same parse.
@@ -122,9 +127,17 @@ enum AgentSessionResolver {
         case "ExitPlanMode", "EnterPlanMode":
             return AgentAttention(kind: .question, prompt: "Waiting on plan approval")
         default:
-            // Any other unanswered tool call is a pending permission prompt.
+            // Auto mode runs every tool without a prompt, and acceptEdits does the same for
+            // file edits, so a lingering tool_use there is a command still executing - not one
+            // waiting on you. Only a mode that would actually prompt yields a permission alert.
+            if parsed.permissionMode == "auto" { return nil }
+            if parsed.permissionMode == "acceptEdits", isAutoAcceptedEdit(pending.name) { return nil }
             return AgentAttention(kind: .permission, prompt: "Allow \(pending.name)?")
         }
+    }
+
+    private static func isAutoAcceptedEdit(_ tool: String) -> Bool {
+        ["Edit", "Write", "MultiEdit", "NotebookEdit"].contains(tool)
     }
 
     static func parseClaudeSession(data: Data) -> ParsedClaudeSession {
@@ -136,10 +149,14 @@ enum AgentSessionResolver {
         // One turn spans several content-block lines that repeat the same cumulative usage;
         // counting each inflated totals ~78%.
         var seenMessages: Set<String> = []
+        var permissionMode: String?
 
         for lineBytes in data.split(separator: 0x0A) {
-            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
-                  let message = json["message"] as? [String: Any] else { continue }
+            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any] else { continue }
+            // Mode-change events and user lines both carry this, and neither has a `message`,
+            // so read it before the guard below skips them.
+            if let mode = json["permissionMode"] as? String { permissionMode = mode }
+            guard let message = json["message"] as? [String: Any] else { continue }
 
             if json["type"] as? String == "assistant",
                let usage = message["usage"] as? [String: Any],
@@ -186,6 +203,7 @@ enum AgentSessionResolver {
         }
 
         var session = ParsedClaudeSession()
+        session.permissionMode = permissionMode
         if totalInput > 0 || totalOutput > 0 {
             session.usage = AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
         }
