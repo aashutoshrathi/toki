@@ -4,10 +4,10 @@ import Foundation
 // stores.
 enum AgentSessionResolver {
     // The human/AI-assigned conversation title, if the provider records one.
-    static func chatTitle(provider: Provider, command: String, cwd: String?) -> String? {
+    static func chatTitle(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> String? {
         switch provider {
         case .claudeCode, .claude, .anthropic:
-            return claudeChatTitle(command: command, cwd: cwd)
+            return claudeChatTitle(command: command, cwd: cwd, startTime: startTime)
         case .openCode:
             return openCodeChatTitle(cwd: cwd)
         case .grok:
@@ -20,24 +20,24 @@ enum AgentSessionResolver {
     }
 
     // Per-session cost and token usage, resolved from local session data when available.
-    static func sessionUsage(provider: Provider, command: String, cwd: String?) -> AgentSessionUsage? {
+    static func sessionUsage(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> AgentSessionUsage? {
         switch provider {
         case .openCode:
             return openCodeSessionUsage(cwd: cwd)
         case .pi:
             return piSessionUsage(cwd: cwd)
         case .claudeCode, .claude, .anthropic:
-            return claudeSessionUsage(command: command, cwd: cwd)
+            return claudeSessionUsage(command: command, cwd: cwd, startTime: startTime)
         default:
             return nil
         }
     }
 
     // Whether the session is parked waiting on the user, and what it's waiting for.
-    static func attention(provider: Provider, command: String, cwd: String?) -> AgentAttention? {
+    static func attention(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> AgentAttention? {
         switch provider {
         case .claudeCode, .claude, .anthropic:
-            guard let session = newestClaudeSession(command: command, cwd: cwd),
+            guard let session = newestClaudeSession(command: command, cwd: cwd, nearStart: startTime),
                   let parsed = claudeSession(at: session.path, modified: session.modified) else { return nil }
             return attention(from: parsed, modified: session.modified, now: Date())
         case .openCode:
@@ -52,6 +52,11 @@ enum AgentSessionResolver {
         /// Whether this counts as "blocked" depends on elapsed time, so that is left to the
         /// caller - baking it in here would expire the cache every second.
         var pendingTool: (name: String, question: String?)?
+        /// The session's current permission mode ("auto", "acceptEdits", "plan", "default"),
+        /// last value wins. In auto mode tools run without a prompt, so a pending tool_use is
+        /// executing rather than waiting - the caller uses this to avoid a false permission
+        /// attention.
+        var permissionMode: String?
     }
 
     // Session files reach tens of megabytes and both usage and attention need the same parse.
@@ -122,9 +127,17 @@ enum AgentSessionResolver {
         case "ExitPlanMode", "EnterPlanMode":
             return AgentAttention(kind: .question, prompt: "Waiting on plan approval")
         default:
-            // Any other unanswered tool call is a pending permission prompt.
+            // Auto mode runs every tool without a prompt, and acceptEdits does the same for
+            // file edits, so a lingering tool_use there is a command still executing - not one
+            // waiting on you. Only a mode that would actually prompt yields a permission alert.
+            if parsed.permissionMode == "auto" { return nil }
+            if parsed.permissionMode == "acceptEdits", isAutoAcceptedEdit(pending.name) { return nil }
             return AgentAttention(kind: .permission, prompt: "Allow \(pending.name)?")
         }
+    }
+
+    private static func isAutoAcceptedEdit(_ tool: String) -> Bool {
+        ["Edit", "Write", "MultiEdit", "NotebookEdit"].contains(tool)
     }
 
     static func parseClaudeSession(data: Data) -> ParsedClaudeSession {
@@ -136,10 +149,14 @@ enum AgentSessionResolver {
         // One turn spans several content-block lines that repeat the same cumulative usage;
         // counting each inflated totals ~78%.
         var seenMessages: Set<String> = []
+        var permissionMode: String?
 
         for lineBytes in data.split(separator: 0x0A) {
-            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
-                  let message = json["message"] as? [String: Any] else { continue }
+            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any] else { continue }
+            // Mode-change events and user lines both carry this, and neither has a `message`,
+            // so read it before the guard below skips them.
+            if let mode = json["permissionMode"] as? String { permissionMode = mode }
+            guard let message = json["message"] as? [String: Any] else { continue }
 
             if json["type"] as? String == "assistant",
                let usage = message["usage"] as? [String: Any],
@@ -147,15 +164,21 @@ enum AgentSessionResolver {
                    .map({ seenMessages.insert($0).inserted }) ?? true {
                 let input = (usage["input_tokens"] as? Int) ?? 0
                 let output = (usage["output_tokens"] as? Int) ?? 0
-                totalInput += input
+                let cacheWrite = (usage["cache_creation_input_tokens"] as? Int) ?? 0
+                let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
+                // Cache reads and writes are input the model processed, and dominate a Claude
+                // Code turn - the raw `input_tokens` alone reads as a few hundred tokens against
+                // a real six-figure context. Counting them keeps "in" honest and consistent
+                // with the cost below, which already prices all four token classes.
+                totalInput += input + cacheWrite + cacheRead
                 totalOutput += output
                 if let model = message["model"] as? String,
                    let cost = ModelPricing.costUSD(
                        model: model,
                        inputTokens: input,
                        outputTokens: output,
-                       cacheWriteTokens: (usage["cache_creation_input_tokens"] as? Int) ?? 0,
-                       cacheReadTokens: (usage["cache_read_input_tokens"] as? Int) ?? 0
+                       cacheWriteTokens: cacheWrite,
+                       cacheReadTokens: cacheRead
                    ) {
                     totalCost = (totalCost ?? 0) + cost
                 }
@@ -180,6 +203,7 @@ enum AgentSessionResolver {
         }
 
         var session = ParsedClaudeSession()
+        session.permissionMode = permissionMode
         if totalInput > 0 || totalOutput > 0 {
             session.usage = AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
         }
@@ -191,10 +215,10 @@ enum AgentSessionResolver {
     }
 
     // When the agent's session was last written - used to sort most-recent first.
-    static func lastActivity(provider: Provider, command: String, cwd: String?) -> Date? {
+    static func lastActivity(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> Date? {
         switch provider {
         case .claudeCode, .claude, .anthropic:
-            return newestClaudeSession(command: command, cwd: cwd)?.modified
+            return newestClaudeSession(command: command, cwd: cwd, nearStart: startTime)?.modified
         case .openCode:
             return openCodeLastActivity(cwd: cwd)
         case .grok:
@@ -241,8 +265,8 @@ enum AgentSessionResolver {
         return Date(timeIntervalSince1970: ms / 1000)
     }
 
-    private static func claudeChatTitle(command: String, cwd: String?) -> String? {
-        guard let file = newestClaudeSession(command: command, cwd: cwd)?.path,
+    private static func claudeChatTitle(command: String, cwd: String?, startTime: Date? = nil) -> String? {
+        guard let file = newestClaudeSession(command: command, cwd: cwd, nearStart: startTime)?.path,
               let contents = try? String(contentsOfFile: file, encoding: .utf8) else {
             return nil
         }
@@ -266,12 +290,15 @@ enum AgentSessionResolver {
         return latestCustom ?? latestAI
     }
 
-    private static func newestClaudeSession(command: String, cwd: String?) -> (path: String, modified: Date?)? {
+    private static func newestClaudeSession(command: String, cwd: String?, nearStart: Date? = nil) -> (path: String, modified: Date?)? {
         // An explicit --resume path wins; otherwise pick the newest file in the project dir.
         if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
             return (resume, modifiedDate(resume))
         }
-        if let sid = firstMatch(in: command, pattern: #"--session-id\s+([a-f0-9-]+)"#),
+        // A session id from --resume/-r/--session-id resolves to that file directly. Handling
+        // the bare-id --resume form (the common one) also keeps a resumed process out of the
+        // start-time match below, whose freshly-created sibling would otherwise steal it.
+        if let sid = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)"#),
            let cwd, case let path = "\(projectDir(cwd))/\(sid).jsonl",
            FileManager.default.fileExists(atPath: path) {
             return (path, modifiedDate(path))
@@ -279,11 +306,38 @@ enum AgentSessionResolver {
         guard let cwd else { return nil }
         let dir = projectDir(cwd)
         guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
-        let newest = files.filter { $0.hasSuffix(".jsonl") }
+        let sessions = files.filter { $0.hasSuffix(".jsonl") }
             .map { (path: "\(dir)/\($0)", modified: modifiedDate("\(dir)/\($0)")) }
-            .max { ($0.modified ?? .distantPast) < ($1.modified ?? .distantPast) }
-        return newest
+
+        // `--continue` reopens the most recently active session, so newest-by-mtime is right and
+        // the start-time match (which hunts for a freshly created file) would mis-assign a sibling.
+        let resumesMostRecent = firstMatch(in: command, pattern: #"(?:^|\s)(--continue|-c)(?:\s|$)"#) != nil
+
+        // When several agents share one project folder, "newest" hands them all the same file.
+        // If we know when this process launched, prefer the session file created closest to
+        // then - the one this process opened - so same-folder agents resolve distinctly. Only
+        // within a window: a resumed session's file predates the process and must not steal it.
+        if let nearStart, !resumesMostRecent {
+            var best: (path: String, modified: Date?)?
+            var bestDistance = sessionStartMatchWindow
+            for session in sessions {
+                guard let created = creationDate(session.path) else { continue }
+                let distance = abs(created.timeIntervalSince(nearStart))
+                if distance <= bestDistance {
+                    bestDistance = distance
+                    best = (session.path, session.modified)
+                }
+            }
+            if let best { return best }
+        }
+
+        return sessions.max { ($0.modified ?? .distantPast) < ($1.modified ?? .distantPast) }
     }
+
+    // How close a session file's creation must be to a process's launch to call it that
+    // process's session. Claude Code writes the file within moments of starting; the margin
+    // absorbs scan latency and clock coarseness without matching an unrelated older session.
+    private static let sessionStartMatchWindow: TimeInterval = 120
 
     private static func openCodeChatTitle(cwd: String?) -> String? {
         guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
@@ -293,20 +347,92 @@ enum AgentSessionResolver {
 
     // Walks the process ancestry for the hosting app. Returns the PID too: two builds of a
     // terminal share a bundle identifier, so identity alone cannot pick the right copy.
-    static func hostApp(ofPID pid: Int32) -> (app: HostApp, processID: Int32)? {
+    //
+    // tmux breaks the ancestry: a pane's processes descend from the detached tmux *server*
+    // (parented to launchd), not from the terminal displaying them. When the walk reaches
+    // the server, `terminalTTY` (the pane's tty) lets us ask tmux which client is attached
+    // to this pane's session and resume from there — that client does descend from the
+    // real terminal app.
+    // `viaTmux` marks a host reached by hopping through the tmux server. Such a host can change
+    // without the agent's PID changing (detach/reattach from another terminal), so the caller
+    // must re-resolve it rather than trust a cached value.
+    static func hostApp(ofPID pid: Int32, terminalTTY: String? = nil) -> (app: HostApp, processID: Int32, viaTmux: Bool)? {
         var current = pid
         for _ in 0..<8 {
             guard let output = Shell.output("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
             let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
                 .split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
-            if let app = HostApp.match(comm: String(parts[1]).lowercased()) {
-                return (app, current)
+            let comm = String(parts[1]).lowercased()
+            if let app = HostApp.match(comm: comm) {
+                return (app, current, false)
+            }
+            if comm.contains("tmux") {
+                guard let resolved = tmuxClientHostApp(paneTTY: terminalTTY, serverPID: current) else { return nil }
+                return (resolved.app, resolved.processID, true)
             }
             if ppid <= 1 { return nil }
             current = ppid
         }
         return nil
+    }
+
+    // Resolves the terminal hosting a tmux pane by finding a client attached to the pane's
+    // session and walking up from that client's process. Best effort: it needs a client
+    // currently attached (a detached session isn't shown anywhere to focus) and the tmux
+    // binary present in a standard location.
+    private static func tmuxClientHostApp(paneTTY: String?, serverPID: Int32) -> (app: HostApp, processID: Int32)? {
+        guard let paneTTY,
+              let tmux = tmuxBinary(),
+              let socket = tmuxSocket(serverPID: serverPID) else { return nil }
+        let wantedTTY = normalizedTTY(paneTTY)
+
+        guard let session = tmuxField(tmux, socket, ["list-panes", "-a", "-F", "#{pane_tty}\t#{session_name}"])
+            .first(where: { normalizedTTY($0.0) == wantedTTY })?.1 else { return nil }
+
+        for (clientSession, clientPID) in tmuxField(tmux, socket, ["list-clients", "-F", "#{session_name}\t#{client_pid}"])
+        where clientSession == session {
+            // The client process is itself named `tmux`, so start one level up to avoid
+            // re-detecting tmux and looping; its parent chain descends from the terminal.
+            guard let pid = Int32(clientPID), let parent = parentPID(ofPID: pid) else { continue }
+            if let resolved = hostApp(ofPID: parent) { return (resolved.app, resolved.processID) }
+        }
+        return nil
+    }
+
+    // Splits a two-column tab-separated tmux `-F` listing into pairs. The server is targeted
+    // by its own socket so a custom `-L`/`-S` server resolves like the default one.
+    private static func tmuxField(_ tmux: String, _ socket: String, _ args: [String]) -> [(String, String)] {
+        guard let output = Shell.output(tmux, ["-S", socket] + args) else { return [] }
+        return output.split(separator: "\n").compactMap { line in
+            let cols = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            return cols.count == 2 ? (cols[0], cols[1]) : nil
+        }
+    }
+
+    private static func tmuxBinary() -> String? {
+        ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/opt/local/bin/tmux", "/usr/bin/tmux"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    // The server's listening socket, read from its open unix-domain sockets so `-S` can
+    // target this exact server rather than assuming the default socket path.
+    private static func tmuxSocket(serverPID: Int32) -> String? {
+        guard let output = Shell.output("/usr/sbin/lsof", ["-a", "-p", "\(serverPID)", "-U", "-Fn"]) else { return nil }
+        for line in output.split(separator: "\n") where line.hasPrefix("n") {
+            let path = String(line.dropFirst())
+            if path.contains("/tmux-") { return path }
+        }
+        return nil
+    }
+
+    private static func parentPID(ofPID pid: Int32) -> Int32? {
+        guard let output = Shell.output("/bin/ps", ["-o", "ppid=", "-p", "\(pid)"]) else { return nil }
+        return Int32(output.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func normalizedTTY(_ tty: String) -> String {
+        tty.hasPrefix("/dev/") ? String(tty.dropFirst(5)) : tty
     }
 
     static func workingDirectory(ofPID pid: Int32) -> String? {
@@ -341,6 +467,10 @@ enum AgentSessionResolver {
 
     private static func modifiedDate(_ path: String) -> Date? {
         (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
+    }
+
+    private static func creationDate(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.creationDate]) as? Date
     }
 
     private static func safeSQLPath(_ value: String) -> String? {
@@ -390,8 +520,8 @@ enum AgentSessionResolver {
         return PiUsageClient.sessionUsage(path: session.path)
     }
 
-    private static func claudeSessionUsage(command: String, cwd: String?) -> AgentSessionUsage? {
-        guard let session = newestClaudeSession(command: command, cwd: cwd) else { return nil }
+    private static func claudeSessionUsage(command: String, cwd: String?, startTime: Date? = nil) -> AgentSessionUsage? {
+        guard let session = newestClaudeSession(command: command, cwd: cwd, nearStart: startTime) else { return nil }
 
         return claudeSession(at: session.path, modified: session.modified)?.usage
     }

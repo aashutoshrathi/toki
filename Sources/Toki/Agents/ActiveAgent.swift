@@ -60,11 +60,20 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let sessionUsage: AgentSessionUsage?
     // Set when the session is parked waiting on the user (a question or a permission prompt).
     let attention: AgentAttention?
+    // A short marker (the terminal tty) appended to the title only when another agent would
+    // otherwise show the same one - several agents in one project can resolve to the same
+    // session, and identical rows can't be told apart. Set by a post-scan pass.
+    var disambiguator: String? = nil
 
     var needsInput: Bool { attention != nil }
 
     // Primary label: the conversation title, else the project folder, else the provider.
     var title: String {
+        guard let disambiguator else { return baseTitle }
+        return "\(baseTitle) · \(disambiguator)"
+    }
+
+    private var baseTitle: String {
         if let chatTitle { return chatTitle }
         if let folder = directory.map({ ($0 as NSString).lastPathComponent }), !folder.isEmpty, folder != "/" {
             return folder
@@ -101,12 +110,15 @@ enum ActiveAgentScanner {
         let memoryKB: Int
     }
 
-    // Immutable-per-process fields cached by PID; `command` guards against PID reuse.
+    // Immutable-per-process fields cached by PID; `command` guards against PID reuse. A tmux
+    // host is the exception - it can change under a stable PID - so `hostViaTmux` marks entries
+    // that must be re-resolved each scan rather than reused.
     private struct CacheEntry {
         let command: String
         let directory: String?
         let hostApp: HostApp?
         let hostProcessID: Int32?
+        let hostViaTmux: Bool
     }
     private nonisolated(unsafe) static var cache: [Int32: CacheEntry] = [:]
 
@@ -122,7 +134,7 @@ enum ActiveAgentScanner {
                     possibleParent.pid == candidate.parentPID && possibleParent.provider == candidate.provider
                 }
             }
-            let agents = roots.map(enrich)
+            let agents = disambiguate(roots.map(enrich))
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
             cache = cache.filter { alive.contains($0.key) }
@@ -191,6 +203,40 @@ enum ActiveAgentScanner {
         return nil
     }
 
+    // Appends the terminal tty to any title shared by two or more agents, so several sessions
+    // in one project folder (which can resolve to the same title) render as distinct rows that
+    // each still open their own terminal.
+    static func disambiguate(_ agents: [ActiveAgent]) -> [ActiveAgent] {
+        let collisions = Dictionary(grouping: agents, by: \.title).filter { $0.value.count > 1 }
+        guard !collisions.isEmpty else { return agents }
+        return agents.map { agent in
+            guard collisions[agent.title] != nil, let tty = agent.terminalTTY else { return agent }
+            var marked = agent
+            marked.disambiguator = tty.hasPrefix("/dev/") ? String(tty.dropFirst(5)) : tty
+            return marked
+        }
+    }
+
+    // A process's launch time, from `ps etime` ([[dd-]hh:]mm:ss) counted back from now, so a
+    // session file's creation time can be matched to the agent that opened it.
+    static func startDate(fromETime etime: String) -> Date? {
+        var rest = Substring(etime)
+        var days = 0
+        if let dash = rest.firstIndex(of: "-") {
+            days = Int(rest[..<dash]) ?? 0
+            rest = rest[rest.index(after: dash)...]
+        }
+        let parts = rest.split(separator: ":").map { Int($0) ?? 0 }
+        let hms: Int
+        switch parts.count {
+        case 3: hms = parts[0] * 3600 + parts[1] * 60 + parts[2]
+        case 2: hms = parts[0] * 60 + parts[1]
+        case 1: hms = parts[0]
+        default: return nil
+        }
+        return Date().addingTimeInterval(-TimeInterval(days * 86400 + hms))
+    }
+
     // cwd and host app are cached; title and activity change as the session evolves.
     private static func enrich(_ c: Candidate) -> ActiveAgent {
         let cached = cache[c.pid]
@@ -198,12 +244,25 @@ enum ActiveAgentScanner {
         let cwd = reusable?.directory
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
             ?? AgentSessionResolver.workingDirectory(ofPID: c.pid)
-        // Only when the cache can't answer: this walks the process tree with up to eight
-        // `ps` calls per agent.
-        let resolvedHost = reusable == nil ? AgentSessionResolver.hostApp(ofPID: c.pid) : nil
-        let hostApp = reusable?.hostApp ?? resolvedHost?.app
-        let hostProcessID = reusable?.hostProcessID ?? resolvedHost?.processID
-        let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd)
+        // Resolving walks the process tree with up to eight `ps` calls, so it's cached. Reuse a
+        // cached host only when it's a settled one: a resolved, non-tmux host (a stable terminal
+        // like iTerm or VS Code), or a ttyless agent that has no host to find (re-walking those
+        // every scan is the cost the cache exists to avoid). Re-resolve everything else each
+        // scan - a cached-nil host on a tty-bearing agent (a detached tmux pane awaiting a
+        // client) and any tmux host (whose client can change under a stable PID).
+        let cachedHost = reusable.flatMap { entry -> CacheEntry? in
+            if entry.hostApp != nil, !entry.hostViaTmux { return entry }
+            if entry.hostApp == nil, c.tty == nil { return entry }
+            return nil
+        }
+        let resolvedHost = cachedHost == nil ? AgentSessionResolver.hostApp(ofPID: c.pid, terminalTTY: c.tty) : nil
+        let hostApp = cachedHost?.hostApp ?? resolvedHost?.app
+        let hostProcessID = cachedHost?.hostProcessID ?? resolvedHost?.processID
+        let hostViaTmux = cachedHost?.hostViaTmux ?? (resolvedHost?.viaTmux ?? false)
+        // When agents share a project folder, the session file created nearest this process's
+        // launch is the one it opened; pass the start time so each resolves its own session.
+        let startTime = startDate(fromETime: c.runtime)
+        let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
         let agent = ActiveAgent(
             id: c.pid,
             provider: c.provider,
@@ -211,16 +270,16 @@ enum ActiveAgentScanner {
             chatTitle: chatTitle,
             hostApp: hostApp,
             hostProcessID: hostProcessID,
-            lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd),
+            lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
             processID: c.pid,
             runtime: c.runtime,
             terminalTTY: c.tty,
             memoryKB: c.memoryKB,
             command: c.command,
-            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd),
-            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd)
+            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
+            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
         )
-        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID)
+        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux)
         return agent
     }
 }
@@ -262,26 +321,38 @@ enum ActiveAgentNavigator {
 
     private static func activateHostApp(for agent: ActiveAgent) {
         // By PID first: two builds of a terminal share a bundle identifier, so an
-        // identifier lookup can raise the copy that does not hold this agent.
+        // identifier lookup can raise the copy that does not hold this agent. Only when
+        // that PID is a regular activatable app, though: VS Code's integrated terminal runs
+        // under a "Code Helper" process whose activation policy is .prohibited, so activating
+        // it silently does nothing - the click has to fall through to the real app below.
         if let hostProcessID = agent.hostProcessID,
-           let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)) {
+           let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)),
+           running.activationPolicy == .regular {
             running.activate(options: [.activateAllWindows])
             return
         }
 
-        // Fall back to identity when the ancestry walk found nothing.
-        var bundleIDs: [String] = []
-        if let host = agent.hostApp {
-            bundleIDs.append(host.bundleID)
+        // Fall back to identity: for a helper-hosted app (VS Code) this raises the real app.
+        // The host's own bundle id is matched first and exactly, so with both VS Code and VS
+        // Code Insiders running the click lands on the variant that actually holds the agent
+        // rather than whichever the system happens to list first.
+        if let host = agent.hostApp, activate(bundleID: host.bundleID) {
+            return
         }
-        bundleIDs.append(contentsOf: ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"])
-        if let application = NSWorkspace.shared.runningApplications.first(where: { app in
-            app.bundleIdentifier.map(bundleIDs.contains) == true
-        }) {
-            application.activate(options: [.activateAllWindows])
-        } else {
-            DiagnosticLogger.shared.record(.warning, component: "agents", code: "navigation_unavailable")
+        // Only when the ancestry walk named no host: raise any known terminal that's running.
+        for bundleID in ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"] where activate(bundleID: bundleID) {
+            return
         }
+        DiagnosticLogger.shared.record(.warning, component: "agents", code: "navigation_unavailable")
+    }
+
+    @discardableResult
+    private static func activate(bundleID: String) -> Bool {
+        guard let application = NSWorkspace.shared.runningApplications.first(where: {
+            $0.activationPolicy == .regular && $0.bundleIdentifier == bundleID
+        }) else { return false }
+        application.activate(options: [.activateAllWindows])
+        return true
     }
 
     nonisolated private static func isSafeTTY(_ value: String) -> Bool {

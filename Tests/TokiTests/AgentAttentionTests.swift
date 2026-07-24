@@ -54,6 +54,38 @@ final class AgentAttentionTests: XCTestCase {
         XCTAssertNil(attention(jsonl, modified: nil))
     }
 
+    func testAutoModeSuppressesPermissionPrompt() {
+        // In auto mode Bash runs without asking, so a lingering tool_use is executing.
+        let jsonl = """
+        {"type":"permission-mode","permissionMode":"auto"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        """
+        XCTAssertNil(attention(jsonl, modified: quiet))
+    }
+
+    func testAutoModeStillSurfacesAskedQuestions() {
+        // A question waits on the user regardless of permission mode.
+        let jsonl = """
+        {"type":"permission-mode","permissionMode":"auto"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"Which one?"}]}}]}}
+        """
+        XCTAssertEqual(attention(jsonl, modified: quiet)?.kind, .question)
+    }
+
+    func testAcceptEditsSuppressesEditsButNotBash() {
+        let edit = """
+        {"type":"permission-mode","permissionMode":"acceptEdits"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{}}]}}
+        """
+        XCTAssertNil(attention(edit, modified: quiet))
+
+        let bash = """
+        {"type":"permission-mode","permissionMode":"acceptEdits"}
+        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        """
+        XCTAssertEqual(attention(bash, modified: quiet)?.kind, .permission)
+    }
+
     func testPlanApprovalIsAQuestion() {
         let jsonl = """
         {"message":{"content":[{"type":"tool_use","id":"t1","name":"ExitPlanMode","input":{}}]}}
@@ -78,6 +110,46 @@ final class AgentAttentionTests: XCTestCase {
         XCTAssertEqual(AgentAttention(kind: .question, prompt: nil).summary, "Waiting on your answer")
         XCTAssertEqual(AgentAttention(kind: .permission, prompt: nil).summary, "Waiting for permission")
         XCTAssertEqual(AgentAttention(kind: .question, prompt: "Pick one").summary, "Pick one")
+    }
+}
+
+final class AgentDisambiguationTests: XCTestCase {
+    private func agent(pid: Int32, title: String, tty: String?) -> ActiveAgent {
+        ActiveAgent(
+            id: pid, provider: .claudeCode, directory: nil, chatTitle: title,
+            hostApp: nil, hostProcessID: nil, lastActivity: nil, processID: pid, runtime: "1:00",
+            terminalTTY: tty, memoryKB: 1000, command: "claude", sessionUsage: nil, attention: nil
+        )
+    }
+
+    func testSharedTitlesGetTtyMarkers() {
+        let result = ActiveAgentScanner.disambiguate([
+            agent(pid: 1, title: "Audit database", tty: "/dev/ttys004"),
+            agent(pid: 2, title: "Audit database", tty: "ttys007"),
+            agent(pid: 3, title: "Unique task", tty: "/dev/ttys009"),
+        ])
+        XCTAssertEqual(result[0].title, "Audit database · ttys004")
+        XCTAssertEqual(result[1].title, "Audit database · ttys007")
+        // A title nobody else shares is left alone.
+        XCTAssertEqual(result[2].title, "Unique task")
+    }
+
+    func testUniqueTitlesAreUnchanged() {
+        let result = ActiveAgentScanner.disambiguate([
+            agent(pid: 1, title: "A", tty: "/dev/ttys004"),
+            agent(pid: 2, title: "B", tty: "/dev/ttys007"),
+        ])
+        XCTAssertEqual(result.map(\.title), ["A", "B"])
+    }
+
+    func testStartDateParsesETimeFormats() {
+        let now = Date()
+        // mm:ss
+        XCTAssertEqual(ActiveAgentScanner.startDate(fromETime: "05:00")!.timeIntervalSince(now), -300, accuracy: 2)
+        // hh:mm:ss
+        XCTAssertEqual(ActiveAgentScanner.startDate(fromETime: "01:00:00")!.timeIntervalSince(now), -3600, accuracy: 2)
+        // dd-hh:mm:ss
+        XCTAssertEqual(ActiveAgentScanner.startDate(fromETime: "1-00:00:00")!.timeIntervalSince(now), -86400, accuracy: 2)
     }
 }
 

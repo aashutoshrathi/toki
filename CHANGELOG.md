@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.4.2 - Unreleased
+
+### Added
+
+- An eye button in the header masks account emails and org info across the cards, so you can share a screenshot or demo without leaking PII. It resets on relaunch.
+
+### Changed
+
+- Release builds now strip symbol tables from the binary before signing, cutting the shipped app bundle from 5.3MB to 2.3MB.
+
+### Fixed
+
+- Clicking an active agent running inside tmux did nothing. tmux runs panes under a detached server, so the walk up from the agent to its terminal dead-ended; Toki now hops through tmux to the attached client and focuses the terminal hosting it.
+- Clicking an agent hosted in VS Code's integrated terminal did nothing: the walk resolved a "Code Helper" process whose activation policy is .prohibited. Toki now raises the real app instead, and picks the right one when VS Code and VS Code Insiders are both open.
+- An agent's "in" token count showed only uncached input, reading as a few hundred tokens against a six-figure context. It now includes cache reads and writes, matching how the session cost is already computed.
+- Agents in auto-accept mode showed a false "Allow Bash?" prompt: a tool running without asking looks the same on disk as one awaiting permission. Toki now reads the session's permission mode and only flags a prompt in a mode that would actually ask.
+- Several agents in one project folder all showed the same title and token usage, because Toki could only find the folder's newest session. Each agent now prefers the session file created closest to when it launched, and any titles that still match get a terminal-tty marker so the rows stay distinct.
+- With the menu bar set to auto-hide, opening Toki could drop the popover in the top-left corner: the status item reports an unsettled far-left position mid-reveal. Toki now rejects that jump and anchors near the icon instead.
+
+### Codex
+
+- A banked rate-limit reset now shows as a badge on the collapsed Codex card, and the badge is itself the redeem control: clicking it confirms first, stating how much of the window is still left, so a reset is never spent by accident. The old rule that greyed the control out until the window was 80% spent is gone. The soonest window reset also appears in the card's subtitle.
+
 ## 2.4.1 - 2026-07-22
 
 ### Added

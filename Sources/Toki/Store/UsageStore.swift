@@ -7,6 +7,10 @@ final class UsageStore: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var configError: String?
     @Published var debugMode = false
+    // Masks emails and org identifiers across the UI so screenshots and demos can be shared
+    // without leaking PII. Transient by design - it resets on relaunch so the app never
+    // quietly stays redacted.
+    @Published var hidesSensitiveInfo = false
     @Published var debugLog: [DebugLogEntry] = []
     @Published var preferences = AppPreferences()
     @Published var events: [TokiEvent] = []

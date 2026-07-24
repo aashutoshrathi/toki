@@ -35,7 +35,11 @@ struct MenuContentView: View {
                 mainContent
             }
         }
-        .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
+        // Fixed width, but only a max height: the popover shrinks to fit short content (e.g. a
+        // couple of accounts) instead of padding out to the full height, and caps + scrolls when
+        // there's more. Pairs with .preferredContentSize on the hosting controller.
+        .frame(width: popoverWidth(), alignment: .top)
+        .frame(maxHeight: popoverHeight(), alignment: .top)
         .background(.regularMaterial)
     }
 
@@ -64,7 +68,7 @@ struct MenuContentView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var header: some View {
@@ -140,6 +144,21 @@ struct MenuContentView: View {
             .disabled(store.isRefreshing)
             .font(.system(size: 13, weight: .semibold))
             .help(store.isRefreshing ? "Refreshing…" : "Refresh")
+            .pointerOnHover()
+
+            Button {
+                store.hidesSensitiveInfo.toggle()
+            } label: {
+                Image(systemName: store.hidesSensitiveInfo ? "eye.slash" : "eye")
+                    .frame(width: 25, height: 25)
+                    .background((store.hidesSensitiveInfo ? Color.blue : Color.primary).opacity(store.hidesSensitiveInfo ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(store.hidesSensitiveInfo ? Color.blue : Color.primary)
+            .help(store.hidesSensitiveInfo ? "Showing masked emails and org info - click to reveal" : "Hide emails and org info for screenshots")
+            .accessibilityLabel(store.hidesSensitiveInfo ? "Reveal sensitive info" : "Hide sensitive info")
             .pointerOnHover()
 
             Button {

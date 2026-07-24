@@ -29,6 +29,10 @@ lipo -create \
   "$BUILD_DIR/x86_64/release/Toki" \
   -output "$APP_DIR/Contents/MacOS/Toki"
 
+# Strip symbols from the universal binary before signing (stripping invalidates
+# the signature). Each slice carries ~3MB of symbol tables unused at runtime.
+strip "$APP_DIR/Contents/MacOS/Toki"
+
 echo "==> Copying resources"
 cp "$ROOT_DIR/Sources/Toki/Resources/"* "$APP_DIR/Contents/Resources/"
 

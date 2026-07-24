@@ -304,6 +304,33 @@ struct StatusBadge: View {
     }
 }
 
+// MARK: - ResetCreditBadge
+
+// Flags a banked Codex rate-limit reset on the collapsed card, so a redeemable reset is
+// visible at a glance rather than only inside the expanded card. The redeem button itself
+// stays in the expanded view, gated on the window being mostly spent.
+struct ResetCreditBadge: View {
+    var count: Int
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: 8, weight: .bold))
+            Text(count > 1 ? "\(count) resets" : "1 reset")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(Color.blue)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.blue.opacity(0.10), in: Capsule())
+        .overlay(Capsule().stroke(Color.blue.opacity(0.22), lineWidth: 1))
+        .fixedSize()
+        .help(count > 1 ? "\(count) rate-limit resets are banked and ready to redeem"
+                        : "A rate-limit reset is banked and ready to redeem")
+        .accessibilityLabel(count > 1 ? "\(count) resets available" : "1 reset available")
+    }
+}
+
 // MARK: - ProviderPill
 
 struct ProviderPill: View {

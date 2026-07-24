@@ -9,6 +9,7 @@ struct AccountCard: View {
     @State private var aliasDraft = ""
     @FocusState private var aliasFocused: Bool
     @State private var expandedTab: ExpandedTab
+    @State private var confirmingReset = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
@@ -181,7 +182,7 @@ struct AccountCard: View {
                         .padding(.vertical, 1)
                     VStack(spacing: 3) {
                         ForEach(snapshot.accountInfo) { metric in
-                            MetricRow(metric: metric)
+                            MetricRow(metric: maskedAccountInfo(metric))
                         }
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -190,7 +191,9 @@ struct AccountCard: View {
                 if snapshot.resetCreditsAvailable > 0 {
                     HStack(spacing: 8) {
                         Button {
-                            store.consumeCodexResetCredit(accountID: snapshot.id)
+                            // Same confirm-first flow as the collapsed-card badge; a reset is a
+                            // limited credit, so redeeming always asks first.
+                            confirmingReset = true
                         } label: {
                             if isResetting {
                                 ProgressView()
@@ -202,7 +205,7 @@ struct AccountCard: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .disabled(isResetting || !canUseResetCredit)
+                        .disabled(isResetting)
                         .help(resetButtonHelp)
                         .pointerOnHover()
                         Spacer()
@@ -303,7 +306,7 @@ struct AccountCard: View {
                 .help("Save alias")
                 .pointerOnHover()
             } else {
-                Text(accountIdentifier)
+                Text(displayedAccountIdentifier)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -328,8 +331,30 @@ struct AccountCard: View {
         return snapshot.name
     }
 
+    // Default Claude records name the account "Claude - <email>", so the primary title leaks
+    // the email too. Mask it for display while leaving the real name for the alias editor.
+    private var displayedAccountIdentifier: String {
+        store.hidesSensitiveInfo ? SensitiveText.redactingEmails(accountIdentifier) : accountIdentifier
+    }
+
     private var secondaryIdentifier: String? {
-        emailAddress(in: snapshot) ?? (snapshot.subtitle.isEmpty ? nil : snapshot.subtitle)
+        let raw = emailAddress(in: snapshot) ?? (snapshot.subtitle.isEmpty ? nil : snapshot.subtitle)
+        guard let raw else { return nil }
+        return store.hidesSensitiveInfo ? SensitiveText.redactingEmails(raw) : raw
+    }
+
+    // Masks the value of an account-info row when it names something identifying (email, org),
+    // so the expanded card is safe to screenshot with sensitive info hidden.
+    private func maskedAccountInfo(_ metric: MetricLine) -> MetricLine {
+        guard store.hidesSensitiveInfo else { return metric }
+        switch metric.label {
+        case "Email":
+            return MetricLine(label: metric.label, value: SensitiveText.redactingEmails(metric.value))
+        case "Org", "Org ID":
+            return MetricLine(label: metric.label, value: SensitiveText.redactedValue(metric.value))
+        default:
+            return metric
+        }
     }
 
     private var collapsedStatus: String {
@@ -392,6 +417,25 @@ struct AccountCard: View {
             VStack(alignment: .trailing, spacing: 3) {
                 ForEach(codexWindows) { window in
                     QuotaSummaryLine(label: window.label, value: "\(window.percentLeft)% left", resetHint: window.resetHint)
+                }
+                if snapshot.resetCreditsAvailable > 0 {
+                    Button {
+                        confirmingReset = true
+                    } label: {
+                        ResetCreditBadge(count: snapshot.resetCreditsAvailable)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isResetting)
+                    .pointerOnHover()
+                    .help("Redeem a banked reset to reset this rate-limit window now")
+                    .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
+                        Button("Redeem reset", role: .destructive) {
+                            store.consumeCodexResetCredit(accountID: snapshot.id)
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text(resetWasteWarning)
+                    }
                 }
             }
         } else {
@@ -479,27 +523,23 @@ struct AccountCard: View {
         store.resettingAccountIDs.contains(snapshot.id)
     }
 
-    // Resets are a limited, banked resource - redeeming one while plenty of quota remains
-    // just throws it away. Only allow it once the window is mostly spent. Uses the same
-    // progressRatio (used fraction) the progress bar renders, so it works whether the
-    // snapshot populated progressRatio or only remainingRatio.
-    private var canUseResetCredit: Bool {
-        guard let progressRatio else { return false }
-        return progressRatio >= 0.80
-    }
-
     private var resetButtonTitle: String {
         snapshot.resetCreditsAvailable > 1 ? "Reset now (\(snapshot.resetCreditsAvailable) available)" : "Reset now"
     }
 
     private var resetButtonHelp: String {
-        if canUseResetCredit {
-            return "Redeem a banked reset credit to reset this rate limit window now"
+        "Redeem a banked reset credit to reset this rate limit window now"
+    }
+
+    // A reset is a limited, banked resource: redeeming while quota remains discards the rest
+    // of the current window. State how much is still left so the confirmation is an informed
+    // choice rather than a bare warning.
+    private var resetWasteWarning: String {
+        let leftRatio = snapshot.remainingRatio ?? progressRatio.map { 1 - $0 }
+        guard let percentLeft = leftRatio.map({ Int(($0 * 100).rounded()) }) else {
+            return "A reset is a limited banked credit and redeeming it now discards the quota you haven't used yet. Redeem anyway?"
         }
-        if progressRatio == nil {
-            return "Current usage is unavailable, so Toki can't confirm this reset would be worth spending"
-        }
-        return "Save this reset for when you're closer to the limit (usage must be at least 80% used)"
+        return "You still have \(percentLeft)% of this window left. A reset is a limited banked credit, and redeeming it now discards that remaining quota. Redeem anyway?"
     }
 
     private var statusColor: Color {

@@ -163,3 +163,26 @@ func compactIdentifier(_ value: String) -> String {
     guard value.count > 16 else { return value }
     return "\(value.prefix(8))...\(value.suffix(6))"
 }
+
+// Redaction for sharing screenshots and demos. Masks personally identifying values while
+// keeping their shape recognizable, so a redacted card still reads as "an email" or "an org".
+enum SensitiveText {
+    private static let emailPattern = try? NSRegularExpression(
+        pattern: #"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}"#,
+        options: .caseInsensitive
+    )
+
+    // Replaces any email address inside `text` with a fixed mask, leaving surrounding text
+    // (e.g. a provider name in a subtitle) intact.
+    static func redactingEmails(_ text: String) -> String {
+        guard let emailPattern else { return text }
+        let range = NSRange(text.startIndex..., in: text)
+        return emailPattern.stringByReplacingMatches(in: text, range: range, withTemplate: "•••••@•••••")
+    }
+
+    // A generic mask for a whole value (org name, org id) - a short run of bullets rather
+    // than the real length, so the character count itself leaks nothing.
+    static func redactedValue(_ value: String) -> String {
+        String(repeating: "•", count: 6)
+    }
+}
