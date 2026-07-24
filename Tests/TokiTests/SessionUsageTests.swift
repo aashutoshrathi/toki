@@ -91,7 +91,8 @@ final class SessionUsageTests: XCTestCase {
         """
         let data = Data(jsonl.utf8)
         let usage = AgentSessionResolver.claudeUsage(fromJSONLData: data)
-        XCTAssertEqual(usage?.tokensInput, 50)
+        // input_tokens + cache_creation + cache_read = 50 + 100 + 20.
+        XCTAssertEqual(usage?.tokensInput, 170)
         XCTAssertEqual(usage?.tokensOutput, 30)
     }
 

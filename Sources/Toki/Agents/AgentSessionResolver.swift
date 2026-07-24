@@ -147,15 +147,21 @@ enum AgentSessionResolver {
                    .map({ seenMessages.insert($0).inserted }) ?? true {
                 let input = (usage["input_tokens"] as? Int) ?? 0
                 let output = (usage["output_tokens"] as? Int) ?? 0
-                totalInput += input
+                let cacheWrite = (usage["cache_creation_input_tokens"] as? Int) ?? 0
+                let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
+                // Cache reads and writes are input the model processed, and dominate a Claude
+                // Code turn - the raw `input_tokens` alone reads as a few hundred tokens against
+                // a real six-figure context. Counting them keeps "in" honest and consistent
+                // with the cost below, which already prices all four token classes.
+                totalInput += input + cacheWrite + cacheRead
                 totalOutput += output
                 if let model = message["model"] as? String,
                    let cost = ModelPricing.costUSD(
                        model: model,
                        inputTokens: input,
                        outputTokens: output,
-                       cacheWriteTokens: (usage["cache_creation_input_tokens"] as? Int) ?? 0,
-                       cacheReadTokens: (usage["cache_read_input_tokens"] as? Int) ?? 0
+                       cacheWriteTokens: cacheWrite,
+                       cacheReadTokens: cacheRead
                    ) {
                     totalCost = (totalCost ?? 0) + cost
                 }
