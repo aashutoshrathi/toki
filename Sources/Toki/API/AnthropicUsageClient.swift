@@ -10,37 +10,17 @@ struct AnthropicUsageClient {
         async let rateLimits = fetchRateLimits(apiKey: key)
         let (tokenUsage, monthlyCost, tokenLimitPerMinute) = try await (usage, costs, rateLimits)
 
-        let tokenBudget = account.dailyTokenBudget
-        let tokenRemaining = tokenBudget.map { max($0 - tokenUsage.totalTokens, 0) }
-        let tokenRatio: Double?
-        if let tokenBudget, tokenBudget > 0, let tokenRemaining {
-            tokenRatio = tokenRemaining / tokenBudget
-        } else {
-            tokenRatio = nil
-        }
-
-        var metrics = [
-            MetricLine(label: "Today", value: "\(formatCompact(tokenUsage.totalTokens)) tokens"),
-            MetricLine(label: "Input", value: formatCompact(tokenUsage.inputTokens)),
-            MetricLine(label: "Output", value: formatCompact(tokenUsage.outputTokens)),
-            MetricLine(label: "Month", value: formatUSD(monthlyCost))
-        ]
-
+        var extraMetrics: [MetricLine] = []
         if tokenLimitPerMinute > 0 {
-            metrics.append(MetricLine(label: "Rate limit", value: "\(formatCompact(tokenLimitPerMinute)) tok/min"))
-        }
-        if let budget = account.monthlyUsdBudget {
-            metrics.append(MetricLine(label: "Budget", value: "\(formatUSD(max(budget - monthlyCost, 0))) left"))
+            extraMetrics.append(MetricLine(label: "Rate limit", value: "\(formatCompact(tokenLimitPerMinute)) tok/min"))
         }
 
-        return AccountSnapshot(
-            id: account.id,
-            name: account.name,
+        return account.tokenBudgetSnapshot(
             provider: .anthropic,
-            primary: tokenRemaining.map { "\(formatCompact($0)) tokens left" } ?? "\(formatCompact(tokenUsage.totalTokens)) today",
-            subtitle: tokenRatio.map { "\(Int(($0 * 100).rounded()))% of daily token budget" } ?? "Usage from Anthropic Admin API",
-            remainingRatio: tokenRatio,
-            metrics: metrics
+            usage: tokenUsage,
+            monthlyCost: monthlyCost,
+            subtitleFallback: "Usage from Anthropic Admin API",
+            extraMetrics: extraMetrics
         )
     }
 
