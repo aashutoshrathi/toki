@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.3 - Unreleased
+
+### Fixed
+
+- Switching between tabs with different content heights could resize the entire popover and make AppKit re-anchor it at the left edge when the menu bar auto-hides. The popover now keeps a stable frame while it is open.
+
 ## 2.4.2 - 2026-07-25
 
 ### Added

@@ -35,11 +35,10 @@ struct MenuContentView: View {
                 mainContent
             }
         }
-        // Fixed width, but only a max height: the popover shrinks to fit short content (e.g. a
-        // couple of accounts) instead of padding out to the full height, and caps + scrolls when
-        // there's more. Pairs with .preferredContentSize on the hosting controller.
-        .frame(width: popoverWidth(), alignment: .top)
-        .frame(maxHeight: popoverHeight(), alignment: .top)
+        // Keep the popover frame stable while switching tabs. Allowing the hosting controller to
+        // follow each tab's preferred height makes AppKit re-anchor the panel while the menu bar
+        // auto-hides, which can move the entire popover to the left edge of the screen.
+        .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
         .background(.regularMaterial)
     }
 
@@ -68,7 +67,7 @@ struct MenuContentView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var header: some View {
