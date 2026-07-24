@@ -14,6 +14,10 @@
 - Agents in auto-accept mode showed a false "Allow Bash?" prompt: a tool running without asking looks the same on disk as one awaiting permission. Toki now reads the session's permission mode and only flags a prompt in a mode that would actually ask.
 - Several agents in one project folder all showed the same title and token usage, because Toki could only find the folder's newest session. Each agent now prefers the session file created closest to when it launched, and any titles that still match get a terminal-tty marker so the rows stay distinct.
 
+### Codex
+
+- A banked rate-limit reset now shows as a badge on the collapsed Codex card, so you can see one is available without expanding the card to reach the "Reset now" button. The soonest window reset also appears in the card's subtitle.
+
 ## 2.4.1 - 2026-07-22
 
 ### Added

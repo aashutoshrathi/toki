@@ -117,6 +117,11 @@ struct CodexRateLimits {
         if let secondaryData = limits["secondary"] as? [String: Any] {
             appendWindow(secondaryData, slot: .secondary)
         }
+        // Surface the soonest window reset in the subtitle too, so the expanded card's header
+        // states when quota returns without having to read it off a metric row.
+        if let reset = primaryWindow?.resetHint, let base = subtitle {
+            subtitle = "\(base) · \(reset.prefix(1).uppercased() + reset.dropFirst())"
+        }
         if let resetCredits = data["rateLimitResetCredits"] as? [String: Any],
            let count = optionalNumber(firstValue(resetCredits, keys: ["availableCount"])) {
             resetCreditsAvailable = Int(count)

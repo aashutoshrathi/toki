@@ -393,6 +393,9 @@ struct AccountCard: View {
                 ForEach(codexWindows) { window in
                     QuotaSummaryLine(label: window.label, value: "\(window.percentLeft)% left", resetHint: window.resetHint)
                 }
+                if snapshot.resetCreditsAvailable > 0 {
+                    ResetCreditBadge(count: snapshot.resetCreditsAvailable)
+                }
             }
         } else {
             QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
