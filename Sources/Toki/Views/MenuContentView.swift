@@ -109,20 +109,6 @@ struct MenuContentView: View {
 
     private var headerControls: some View {
         HStack(spacing: 5) {
-            Button {
-                store.session == nil ? store.startSession() : store.endSession()
-            } label: {
-                Image(systemName: store.session == nil ? "play.fill" : "stop.fill")
-                    .frame(width: 25, height: 25)
-                    .background((store.session == nil ? Color.primary : Color.blue).opacity(store.session == nil ? 0.06 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(store.session == nil ? Color.primary : Color.blue)
-            .help(store.session == nil ? "Start session tracking" : "End session tracking")
-            .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
-            .pointerOnHover()
 
             // Same reasoning as the Agents panel's refresh: without a visible busy state the
             // button looks identical before, during and after a refresh, so a press that is
