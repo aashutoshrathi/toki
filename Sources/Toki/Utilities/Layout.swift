@@ -10,7 +10,3 @@ func popoverWidth() -> CGFloat {
 func popoverHeight() -> CGFloat {
     min(500, max(340, (NSScreen.main?.visibleFrame.height ?? 500) - 96))
 }
-
-func accountListHeight() -> CGFloat {
-    max(170, popoverHeight() - 202)
-}

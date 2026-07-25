@@ -276,23 +276,25 @@ struct MenuContentView: View {
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    @ViewBuilder
     private var tabContent: some View {
-        switch selectedTab {
-        case .accounts:
-            VStack(spacing: 10) {
-                if showsQuotaRings {
-                    QuotaRingsPanel(snapshots: store.snapshots)
+        Group {
+            switch selectedTab {
+            case .accounts:
+                VStack(spacing: 10) {
+                    if showsQuotaRings {
+                        QuotaRingsPanel(snapshots: store.snapshots)
+                    }
+                    accountList
                 }
-                accountList
+            case .agents:
+                ActiveAgentsPanel(store: store)
+            case .analytics:
+                SpendAnalyticsPanel(store: store)
+            case .events:
+                EventPanel(store: store)
             }
-        case .agents:
-            ActiveAgentsPanel(store: store)
-        case .analytics:
-            SpendAnalyticsPanel(store: store)
-        case .events:
-            EventPanel(store: store)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // Active accounts first, then exhausted (0% remaining), then errored/not connected.
@@ -330,7 +332,7 @@ struct MenuContentView: View {
                 .padding(.trailing, 2)
                 .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.snapshots.map(\.id))
             }
-            .frame(maxHeight: accountListMaxHeight)
+            .frame(maxHeight: .infinity)
         }
     }
 
@@ -338,12 +340,6 @@ struct MenuContentView: View {
         store.preferences.quotaRingsEnabled
             && selectedTab == .accounts
             && store.snapshots.contains(where: { !$0.isError && $0.remainingRatio != nil })
-    }
-
-    private var accountListMaxHeight: CGFloat {
-        let ringSpace: CGFloat = showsQuotaRings ? 158 : 0
-        let reclaimedInsightSpace: CGFloat = store.preferences.aiInsightEnabled ? 0 : 72
-        return max(100, accountListHeight() - ringSpace + reclaimedInsightSpace)
     }
 
     private var debugPanel: some View {

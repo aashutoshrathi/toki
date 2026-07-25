@@ -77,7 +77,7 @@ struct EventPanel: View {
                 .padding(.trailing, 2)
             }
         }
-        .frame(maxHeight: accountListHeight())
+        .frame(maxHeight: .infinity)
     }
 
     private func icon(for event: TokiEvent) -> String {

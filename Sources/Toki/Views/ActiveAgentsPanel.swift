@@ -132,7 +132,7 @@ struct ActiveAgentsPanel: View {
                 .padding(.trailing, 2)
             }
         }
-        .frame(maxHeight: accountListHeight())
+        .frame(maxHeight: .infinity)
         .confirmationDialog(
             "Quit \(pendingTermination?.title ?? "this agent")?",
             isPresented: Binding(
