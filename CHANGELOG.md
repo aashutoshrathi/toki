@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.4 - 2026-07-26
+
+### Added
+
+- Update channels. Settings > Updates now has a Stable/Beta picker: Beta offers GitHub pre-releases (tags like `v2.5.0-beta.1`) so upcoming builds can be tested before they ship, while Stable keeps ignoring them. Once the stable version is published, beta testers are offered it automatically and graduate back onto the production build.
+
+### Fixed
+
+- Update version comparison is now semver-aware. The old numeric string compare ranked `2.5.0-beta.1` above `2.5.0`, which would have kept re-offering a beta over its own final release.
+
 ## 2.4.3 - 2026-07-25
 
 ### Fixed

@@ -38,6 +38,8 @@ Backed by `SMAppService`, reflecting what System Settings → General → Login 
 
 Toki checks the latest public GitHub release every five minutes while running; Settings has a "Check now" that bypasses the schedule. An update banner you aren't ready to act on can be snoozed for six hours.
 
+Settings > Updates also has a channel picker. Stable (the default) only ever offers full releases. Beta additionally offers GitHub pre-releases — early builds of the next version, published for testing before they ship. When a beta version is finalized as a stable release, beta users are offered that release like everyone else, so staying on the Beta channel never strands you on an abandoned build.
+
 A newer release shows an Update button that downloads the DMG, verifies bundle identity, version, and code signature, stages the app, and replaces the installed bundle after Toki exits, then relaunches. Set `TOKI_MOCK_UPDATE_VERSION=9.9.9` to preview the banner while developing.
 
 Rotating diagnostics go to `~/.toki/logs/toki.log` — error categories and status codes only, never credentials, config, prompts, session titles, workspace names, or full paths. "Send debug report" creates a local attachment and opens the share picker; nothing is sent automatically.

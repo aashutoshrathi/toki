@@ -25,6 +25,22 @@ scripts/build-app.sh
 plutil -p .build/Toki.app/Contents/Info.plist
 ```
 
+## Releases and update channels
+
+Every release starts from a tag push; `.github/workflows/release.yml` builds the DMG and publishes the GitHub release. The tag decides the channel:
+
+- **Stable** — tag `vX.Y.Z` (e.g. `v2.5.0`). Published as a full GitHub release, offered to everyone, and the Homebrew cask is updated.
+- **Beta** — tag with a prerelease suffix (e.g. `v2.5.0-beta.1`). Published as a GitHub prerelease, offered only to users who picked the Beta channel in Settings > Updates. The Homebrew cask is not touched.
+
+Set `appVersion` in `Sources/Toki/Config/Constants.swift` to match the tag (without the `v`) before tagging — the packaging script, the in-app updater's version check, and the DMG verification all read it.
+
+To graduate a beta to production:
+
+1. Tag `v2.5.0-beta.1` (with `appVersion = "2.5.0-beta.1"`) and test on the Beta channel. Iterate with `-beta.2`, `-beta.3`, … as needed.
+2. When it's ready, set `appVersion = "2.5.0"` and tag `v2.5.0`. That build ships to everyone: stable users see it as a normal update, and beta users are offered it too, because `2.5.0` outranks `2.5.0-beta.N` — so testers land back on the production build without touching their channel setting.
+
+Version ordering is semver-aware (`2.4.3` < `2.5.0-beta.1` < `2.5.0-beta.2` < `2.5.0`); the logic and its tests live in `UpdateChecker.compareVersions` and `Tests/TokiTests/UpdateChannelTests.swift`.
+
 ## Concurrency checking
 
 CI builds with stricter concurrency than a plain `swift build`, and the difference has broken this project's CI more than once — a pure static helper on a `@MainActor` type needs `nonisolated`, which only the stricter mode catches. Reproduce it locally before pushing:

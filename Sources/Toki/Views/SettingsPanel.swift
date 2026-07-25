@@ -207,6 +207,40 @@ struct SettingsPanel: View {
                     .pointerOnHover()
                 }
 
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Channel")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(updateChecker.channel == .beta
+                            ? "Includes pre-releases for early testing."
+                            : "Stable releases only.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Picker("Update channel", selection: Binding(
+                        get: { updateChecker.channel },
+                        set: { updateChecker.setChannel($0) }
+                    )) {
+                        ForEach(UpdateChannel.allCases) { channel in
+                            Text(channel.displayName).tag(channel)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .fixedSize()
+                    .pointerOnHover()
+                }
+                .padding(10)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+
                 if let update = updateChecker.availableUpdate {
                     UpdateAvailableBanner(update: update, updateChecker: updateChecker)
                 }
