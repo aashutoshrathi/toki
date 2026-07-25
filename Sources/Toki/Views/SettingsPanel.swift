@@ -374,51 +374,75 @@ struct SettingsPanel: View {
         )
     }
 
-    // Given its own row rather than a plain checkbox line: it is the one setting that visibly
-    // relocates the whole app, and it is unfinished, so it needs room to say both.
+    // A proper card rather than a plain checkbox line: it is the one setting that visibly
+    // relocates the whole app, and it is unfinished, so it needs room to say both. The switch
+    // sits right-aligned to match the "Show AI insight" / "Show quota health rings" cards, and
+    // when enabled the placement picker drops in as an aligned sub-row inside the same card.
     @ViewBuilder
     private var notchModeRow: some View {
-        Toggle(isOn: binding(\.notchModeEnabled)) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text("Live in the notch")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("BETA")
-                        .font(.system(size: 8, weight: .heavy))
-                        .tracking(0.4)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(
-                            LinearGradient(
-                                colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
-                                         Color(red: 0.85, green: 0.35, blue: 0.65)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            in: Capsule()
-                        )
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text("Live in the notch")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("BETA")
+                            .font(.system(size: 8, weight: .heavy))
+                            .tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                             Color(red: 0.85, green: 0.35, blue: 0.65)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                in: Capsule()
+                            )
+                    }
+                    Text(store.preferences.notchModeEnabled
+                         ? "Toki is hanging out up there. Hover it for more."
+                         : "Move Toki into the notch, Dynamic Island style.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
                 }
-                Text(store.preferences.notchModeEnabled
-                     ? "Toki is hanging out up there. Hover it for more."
-                     : "Move Toki into the notch, Dynamic Island style.")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 8)
+                Toggle("", isOn: binding(\.notchModeEnabled))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            .padding(8)
+
+            if store.preferences.notchModeEnabled {
+                Divider()
+                    .padding(.horizontal, 8)
+                HStack(spacing: 8) {
+                    Text("Rests")
+                        .font(.system(size: 11, weight: .semibold))
+                    Spacer(minLength: 8)
+                    Picker("Rests", selection: binding(\.notchPlacement)) {
+                        ForEach(NotchPlacement.allCases) { placement in
+                            Text(placement.label).tag(placement)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
+                }
+                .padding(8)
             }
         }
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
         .help("Replaces the menu bar item with a panel that hangs from the display notch")
         .pointerOnHover()
-
-        if store.preferences.notchModeEnabled {
-            Picker("Rests", selection: binding(\.notchPlacement)) {
-                ForEach(NotchPlacement.allCases) { placement in
-                    Text(placement.label).tag(placement)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.leading, 18)
-            .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
-        }
     }
 
     private func sectionHeader(_ title: String) -> some View {
