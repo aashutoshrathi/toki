@@ -21,16 +21,9 @@
   <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away.
 </p>
 
-<table>
-  <tr>
-    <th align="center" valign="top" width="180">Menu bar</th>
-    <td align="center"><img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="60%"></td>
-  </tr>
-  <tr>
-    <th align="center" valign="top" width="180">Widgets</th>
-    <td align="center"><img src="https://files.aashutosh.dev/toki-widgets.png" alt="Toki macOS widgets preview" width="60%"></td>
-  </tr>
-</table>
+| Menu bar | Widget |
+|:---:|:---:|
+| ![Toki menu bar popover preview](https://files.aashutosh.dev/toki-preview.png) | ![Toki macOS widgets preview](https://files.aashutosh.dev/toki-widgets.png) |
 
 
 ## Why Toki
