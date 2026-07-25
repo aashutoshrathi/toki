@@ -22,9 +22,9 @@ private struct TokiTimelineProvider: TimelineProvider {
         let data = loadSnapshot()
         let entry = TokiTimelineEntry(date: now, data: data)
         let regularRefresh = now.addingTimeInterval(15 * 60)
-        let staleRefresh = data?.updatedAt.addingTimeInterval(5 * 60) ?? regularRefresh
-        // Never ask WidgetKit to refresh in the past, but do schedule a near-term refresh when
-        // a snapshot is about to cross the five-minute stale boundary.
+        let staleRefresh = data?.updatedAt.addingTimeInterval(tokiWidgetStaleAfter) ?? regularRefresh
+        // Never ask WidgetKit to refresh in the past, but do schedule a re-render for when a
+        // snapshot is about to cross the stale boundary and fall back to the empty state.
         let nextRefresh = max(now.addingTimeInterval(60), min(regularRefresh, staleRefresh))
         completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
     }
