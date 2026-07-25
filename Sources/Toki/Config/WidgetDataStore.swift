@@ -92,6 +92,14 @@ enum WidgetDataStore {
             updatedAt: updatedAt
         )
 
+        // WidgetKit throttles timeline reloads against a daily budget, so requesting one on every
+        // 5-minute refresh and every agent-attention change exhausts it and the widget freezes.
+        // Compare only what the widget renders (timestamp zeroed) and reload just when that
+        // changes; the file itself is still rewritten every time, keeping it fresh for the next
+        // scheduled read and below the 30-minute stale cutoff.
+        let contentSignature = try? JSONEncoder.toki.encode(contentSignatureSnapshot(snapshot))
+        let contentChanged = contentSignature == nil || contentSignature != lastReloadedContent
+
         let data: Data
         do {
             data = try JSONEncoder.toki.encode(snapshot)
@@ -121,8 +129,11 @@ enum WidgetDataStore {
         }
 
         if didWrite {
-            WidgetCenter.shared.reloadTimelines(ofKind: tokiWidgetKind)
-            WidgetCenter.shared.reloadTimelines(ofKind: tokiQuotaRingsWidgetKind)
+            if contentChanged {
+                lastReloadedContent = contentSignature
+                WidgetCenter.shared.reloadTimelines(ofKind: tokiWidgetKind)
+                WidgetCenter.shared.reloadTimelines(ofKind: tokiQuotaRingsWidgetKind)
+            }
         } else if let lastError {
             DiagnosticLogger.shared.record(
                 .error,
@@ -131,6 +142,16 @@ enum WidgetDataStore {
                 detail: diagnosticErrorDetail(lastError)
             )
         }
+    }
+
+    // Signature of the content last reloaded for. A pure timestamp change leaves it untouched, so
+    // an unchanged snapshot doesn't spend a reload. Written only from MainActor refresh paths.
+    nonisolated(unsafe) private static var lastReloadedContent: Data?
+
+    private static func contentSignatureSnapshot(_ snapshot: WidgetDataSnapshot) -> WidgetDataSnapshot {
+        var copy = snapshot
+        copy.updatedAt = Date(timeIntervalSince1970: 0)
+        return copy
     }
 
     private static func widgetValue(for snapshot: AccountSnapshot) -> String {
