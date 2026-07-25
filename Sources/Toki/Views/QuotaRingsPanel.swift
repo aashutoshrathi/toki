@@ -2,27 +2,43 @@ import SwiftUI
 
 struct QuotaRingsPanel: View {
     let snapshots: [AccountSnapshot]
+    var onHide: () -> Void = {}
     @State private var hoveredSnapshotID: String?
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(spacing: 6) {
-                ForEach(ringSnapshots) { snapshot in
-                    card(snapshot)
-                }
-                Spacer(minLength: 0)
+        // A header row ("QUOTA" left, Hide right) keeps those two clear of the ring below, so
+        // nothing crowds. Cards and ring sit in the row underneath and are vertically centered,
+        // so the card's height follows its content instead of a fixed, oversized ring.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Quota")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 8)
+                hideButton
             }
-            .frame(width: 150, alignment: .leading)
 
-            Spacer(minLength: 8)
+            HStack(alignment: .center, spacing: 12) {
+                VStack(spacing: 6) {
+                    ForEach(ringSnapshots) { snapshot in
+                        card(snapshot)
+                    }
+                }
+                .frame(width: 150, alignment: .leading)
 
-            QuotaRingsView(
-                snapshots: ringSnapshots,
-                size: 140,
-                hoveredSnapshotID: $hoveredSnapshotID
-            )
+                Spacer(minLength: 8)
+
+                QuotaRingsView(
+                    snapshots: ringSnapshots,
+                    size: 84,
+                    hoveredSnapshotID: $hoveredSnapshotID
+                )
+                .padding(.trailing, 8)
+            }
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(
             RadialGradient(
                 colors: [panelAccent.opacity(0.11), Color.primary.opacity(0.035)],
@@ -39,6 +55,26 @@ struct QuotaRingsPanel: View {
         .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
     }
 
+    private var hideButton: some View {
+        Button(action: onHide) {
+            HStack(spacing: 3) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 9, weight: .semibold))
+                Text("Hide")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Hide the quota rings — turn them back on in Settings")
+        .accessibilityLabel("Hide quota rings")
+        .pointerOnHover()
+    }
+
     private func card(_ snapshot: AccountSnapshot) -> some View {
         let isHovered = hoveredSnapshotID == snapshot.id
         let color = ringColor(snapshot)
@@ -49,9 +85,16 @@ struct QuotaRingsPanel: View {
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(percentText(snapshot.remainingRatio ?? 0))
+                Text("\(percentText(snapshot.remainingRatio ?? 0)) left")
                     .font(.system(size: 9, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
+                if let resetHint = snapshot.primaryWindow?.resetHint {
+                    Text(resetHint)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
             Spacer(minLength: 0)
         }
