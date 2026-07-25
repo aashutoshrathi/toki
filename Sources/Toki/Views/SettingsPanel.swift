@@ -41,31 +41,49 @@ struct SettingsPanel: View {
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     @State private var launchAtLoginError: String?
+    @State private var isEditingPrompt = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Toggle(isOn: binding(\.aiInsightEnabled)) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "sparkles")
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.purple)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show AI insight")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.purple)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Show AI insight")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text("Show the insight card in the panel, and steer what it says below.")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text("Show the insight card at the top of the main panel.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
                         }
+                        Spacer(minLength: 8)
+                        Button {
+                            isEditingPrompt.toggle()
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(isEditingPrompt ? Color.purple : Color.secondary)
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    (isEditingPrompt ? Color.purple : Color.primary).opacity(isEditingPrompt ? 0.16 : 0.06),
+                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                )
+                                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit the AI prompt")
+                        .accessibilityLabel("Edit the AI prompt")
+                        .pointerOnHover()
+                        Toggle("", isOn: binding(\.aiInsightEnabled))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
                     }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
 
-                    if store.preferences.aiInsightEnabled {
+                    if isEditingPrompt {
                         AIInstructionsEditor(store: store)
                             .padding(.horizontal, 8)
                             .padding(.bottom, 8)
@@ -77,7 +95,7 @@ struct SettingsPanel: View {
                         .stroke(Color.purple.opacity(0.14), lineWidth: 1)
                 )
 
-                Toggle(isOn: binding(\.quotaRingsEnabled)) {
+                HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Show quota health rings")
                             .font(.system(size: 12, weight: .semibold))
@@ -85,10 +103,12 @@ struct SettingsPanel: View {
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                     }
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: binding(\.quotaRingsEnabled))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
                 .background(Color.blue.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
@@ -164,9 +184,31 @@ struct SettingsPanel: View {
                     Slider(value: binding(\.sessionWarningThreshold), in: 0.05...0.40, step: 0.05)
                 }
 
-                Stepper("Cooldown \(store.preferences.notificationCooldownMinutes)m", value: intBinding(\.notificationCooldownMinutes), in: 5...360, step: 5)
-
-                Stepper("History \(store.preferences.historyRetentionDays)d", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
+                VStack(spacing: 10) {
+                    steppedSetting(
+                        title: "Cooldown",
+                        explanation: "Minimum time between repeat notifications.",
+                        value: "\(store.preferences.notificationCooldownMinutes)m"
+                    ) {
+                        Stepper("", value: intBinding(\.notificationCooldownMinutes), in: 5...360, step: 5)
+                            .labelsHidden()
+                    }
+                    Divider()
+                    steppedSetting(
+                        title: "History",
+                        explanation: "Days of usage history kept for the heatmap.",
+                        value: "\(store.preferences.historyRetentionDays)d"
+                    ) {
+                        Stepper("", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
+                            .labelsHidden()
+                    }
+                }
+                .padding(10)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                )
 
                 Divider()
                 sectionHeader("Updates")
@@ -384,6 +426,27 @@ struct SettingsPanel: View {
             .font(.system(size: 9, weight: .bold))
             .foregroundStyle(.tertiary)
             .tracking(0.5)
+    }
+
+    private func steppedSetting<Control: View>(
+        title: String,
+        explanation: String,
+        value: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(explanation)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            control()
+        }
     }
 
     private func intBinding(_ keyPath: WritableKeyPath<AppPreferences, Int>) -> Binding<Int> {
