@@ -49,6 +49,44 @@ struct SettingsPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: binding(\.aiInsightEnabled)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show AI insight")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Display the insight card at the top of the main panel.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.purple.opacity(0.14), lineWidth: 1)
+                )
+
+                Toggle(isOn: binding(\.quotaRingsEnabled)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show quota health rings")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Display provider availability rings in the Accounts panel.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Color.blue.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.blue.opacity(0.13), lineWidth: 1)
+                )
+
                 // Surfaced first, above the plain toggles below - it's the one setting that
                 // changes what the AI actually says about your usage, so it shouldn't require
                 // scrolling past half the page to find. Shown regardless of

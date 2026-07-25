@@ -10,6 +10,18 @@
 
 - Update version comparison is now semver-aware. The old numeric string compare ranked `2.5.0-beta.1` above `2.5.0`, which would have kept re-offering a beta over its own final release.
 
+### Added
+
+- A macOS WidgetKit widget shows account quota, agents awaiting input, and break suggestions in small and medium sizes. Toki shares a compact snapshot through its App Group and pushes timeline reloads after usage or attention changes.
+- Provider-colored quota rings visualize remaining percentage at a glance in the Toki panel and in a separate small or medium macOS widget, with lighter strokes and provider details on hover.
+- Settings can hide the AI insight card at the top of the main panel and stop its background generation.
+- Quota health rings are opt-in in Settings and now use a polished, provider-tinted treatment with the Toki mark at their center in both the panel and macOS widget.
+
+### Fixed
+
+- Redeeming a Codex rate-limit reset updates its quota and reset badge immediately, then bypasses the normal five-minute API cache to confirm the new server state.
+- Local builds no longer write widget snapshots directly into the extension sandbox, avoiding repeated macOS prompts to access data from other apps.
+
 ## 2.4.3 - 2026-07-25
 
 ### Fixed

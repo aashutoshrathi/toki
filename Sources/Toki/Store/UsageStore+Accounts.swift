@@ -39,10 +39,44 @@ extension UsageStore {
             switch result {
             case .success(let outcome):
                 appendEvent(kind: .reset, title: "Codex reset", detail: resetOutcomeDescription(outcome), deliveredNotification: false)
-                refresh(keepsExistingSnapshots: true)
+                applyCodexResetOutcome(outcome, accountID: accountID)
+                refreshCodexAfterReset(accountID: accountID)
             case .failure(let error):
                 DiagnosticLogger.shared.record(.error, component: "codex_reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
                 appendEvent(kind: .reset, title: "Codex reset failed", detail: error.localizedDescription, deliveredNotification: false)
+            }
+        }
+    }
+
+    private func applyCodexResetOutcome(_ outcome: String, accountID: String) {
+        guard outcome == "reset" || outcome == "alreadyRedeemed" || outcome == "noCredit" else {
+            return
+        }
+        snapshots = snapshots.map { snapshot in
+            guard snapshot.id == accountID else { return snapshot }
+            return codexSnapshotAfterReset(snapshot, resetsQuota: outcome != "noCredit")
+        }
+        lastUpdated = Date()
+        updateDerivedState(for: snapshots)
+    }
+
+    private func refreshCodexAfterReset(accountID: String) {
+        // A normal refresh is allowed to reuse Codex data for five minutes. Redemption is a
+        // mutation, so that cache is known-stale and must not survive the confirming read.
+        usageState.apiLastCalledAt.removeValue(forKey: "codex:\(accountID)")
+        if !isRefreshing {
+            refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
+            return
+        }
+
+        Task { [weak self] in
+            for _ in 0..<100 {
+                guard let self else { return }
+                if !self.isRefreshing {
+                    self.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
             }
         }
     }
@@ -100,4 +134,38 @@ extension UsageStore {
             configError = "Could not save alias: \(error.localizedDescription)"
         }
     }
+}
+
+func codexSnapshotAfterReset(_ snapshot: AccountSnapshot, resetsQuota: Bool) -> AccountSnapshot {
+    guard snapshot.provider == .codex else { return snapshot }
+    var updated = snapshot
+    updated.resetCreditsAvailable = max(0, snapshot.resetCreditsAvailable - 1)
+
+    let windowLabels = Set([snapshot.primaryWindow?.label, snapshot.secondaryWindow?.label].compactMap { $0 })
+    updated.metrics = snapshot.metrics.compactMap { metric in
+        if metric.label == "Resets" {
+            return updated.resetCreditsAvailable > 0
+                ? MetricLine(label: "Resets", value: "\(updated.resetCreditsAvailable) available")
+                : nil
+        }
+        if resetsQuota, windowLabels.contains(metric.label) {
+            return MetricLine(label: metric.label, value: "0% used")
+        }
+        if resetsQuota, metric.label == "Limit" {
+            return nil
+        }
+        return metric
+    }
+
+    guard resetsQuota else { return updated }
+    updated.primary = "100% left"
+    updated.remainingRatio = 1
+    updated.progressRatio = 0
+    updated.primaryWindow = snapshot.primaryWindow.map {
+        RateLimitWindow(label: $0.label, percentLeft: 100, resetHint: nil)
+    }
+    updated.secondaryWindow = snapshot.secondaryWindow.map {
+        RateLimitWindow(label: $0.label, percentLeft: 100, resetHint: nil)
+    }
+    return updated
 }

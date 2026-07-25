@@ -1,0 +1,542 @@
+import AppKit
+import SwiftUI
+import TokiWidgetShared
+import WidgetKit
+
+private struct TokiTimelineEntry: TimelineEntry {
+    let date: Date
+    let data: WidgetDataSnapshot?
+}
+
+private struct TokiTimelineProvider: TimelineProvider {
+    func placeholder(in context: Context) -> TokiTimelineEntry {
+        TokiTimelineEntry(date: Date(), data: .placeholder)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TokiTimelineEntry) -> Void) {
+        completion(TokiTimelineEntry(date: Date(), data: context.isPreview ? .placeholder : loadSnapshot()))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TokiTimelineEntry>) -> Void) {
+        let now = Date()
+        let data = loadSnapshot()
+        let entry = TokiTimelineEntry(date: now, data: data)
+        let regularRefresh = now.addingTimeInterval(15 * 60)
+        let staleRefresh = data?.updatedAt.addingTimeInterval(5 * 60) ?? regularRefresh
+        // Never ask WidgetKit to refresh in the past, but do schedule a near-term refresh when
+        // a snapshot is about to cross the five-minute stale boundary.
+        let nextRefresh = max(now.addingTimeInterval(60), min(regularRefresh, staleRefresh))
+        completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+    }
+
+    private func loadSnapshot() -> WidgetDataSnapshot? {
+        let dataURL: URL?
+        if tokiUsesLocalWidgetData() {
+            dataURL = tokiLocalWidgetDataURL()
+        } else {
+            dataURL = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: tokiAppGroupIdentifier)?
+                .appendingPathComponent(tokiWidgetDataFilename)
+        }
+        for url in [dataURL].compactMap({ $0 }) {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let snapshot = try? decoder.decode(WidgetDataSnapshot.self, from: data) {
+                return snapshot
+            }
+        }
+        return nil
+    }
+}
+
+private extension WidgetDataSnapshot {
+    static var placeholder: WidgetDataSnapshot {
+        WidgetDataSnapshot(
+            updatedAt: Date(),
+            entries: [
+                WidgetEntry(
+                    id: "claude",
+                    provider: "claudeCode",
+                    displayName: "Claude Code",
+                    value: "82%",
+                    remainingRatio: 0.82,
+                    leadingText: nil,
+                    colorHex: "#D97757"
+                ),
+                WidgetEntry(
+                    id: "codex",
+                    provider: "codex",
+                    displayName: "Codex",
+                    value: "64%",
+                    remainingRatio: 0.64,
+                    leadingText: nil,
+                    colorHex: "#7A9CFF"
+                )
+            ],
+            awaitingInputCount: 1,
+            allExhausted: false,
+            breakSuggestion: nil
+        )
+    }
+}
+
+private struct TokiWidgetEntryView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TokiTimelineEntry
+
+    var body: some View {
+        Group {
+            if let data = entry.data, !data.entries.isEmpty, !data.isStale(at: entry.date) {
+                content(data)
+            } else {
+                emptyState
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    @ViewBuilder
+    private func content(_ data: WidgetDataSnapshot) -> some View {
+        if data.allExhausted {
+            VStack(alignment: .leading, spacing: 8) {
+                widgetHeader
+                Text(data.breakSuggestion ?? "Take a break")
+                    .font(family == .systemSmall ? .title3 : .title2)
+                    .fontWeight(.semibold)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+                updatedText(data.updatedAt)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay(alignment: .topTrailing) {
+                attentionBadge(data.awaitingInputCount)
+            }
+        } else if family == .systemMedium {
+            mediumContent(data)
+        } else {
+            smallContent(data)
+        }
+    }
+
+    private func smallContent(_ data: WidgetDataSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                widgetHeader
+                Spacer()
+                attentionBadge(data.awaitingInputCount)
+            }
+            ForEach(Array(data.entries.prefix(2))) { item in
+                ProviderRow(item: item)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func mediumContent(_ data: WidgetDataSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                widgetHeader
+                Spacer()
+                attentionBadge(data.awaitingInputCount)
+            }
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(Array(data.entries.prefix(4))) { item in
+                    ProviderColumn(item: item)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            Spacer(minLength: 0)
+            updatedText(data.updatedAt)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WidgetTokiLogo(size: 32)
+            Text("Open Toki")
+                .font(.headline)
+            Text("Refresh usage to enable this widget.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var widgetHeader: some View {
+        HStack(spacing: 6) {
+            WidgetTokiLogo(size: 20)
+            Text("/toki")
+                .font(.headline)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func attentionBadge(_ count: Int) -> some View {
+        if count > 0 {
+            Text("\(count)")
+                .font(.caption2.monospacedDigit().bold())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.red, in: Capsule())
+                .accessibilityLabel("\(count) agents awaiting input")
+        }
+    }
+
+    private func updatedText(_ date: Date) -> some View {
+        Text("Updated \(date, style: .relative)")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+    }
+}
+
+private struct ProviderRow: View {
+    let item: WidgetEntry
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProviderGlyph(item: item, size: 18)
+            Text(item.displayName)
+                .font(.caption)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(item.value)
+                .font(.body.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct ProviderColumn: View {
+    let item: WidgetEntry
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ProviderGlyph(item: item, size: 22)
+            Text(item.value)
+                .font(.title3.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(item.displayName)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct QuotaRings: View {
+    let entries: [WidgetEntry]
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            ForEach(Array(ringEntries.enumerated()), id: \.element.id) { index, item in
+                let diameter = size - CGFloat(index) * ringSpacing * 2
+                let color = providerColor(item.provider)
+
+                ZStack {
+                    Circle()
+                        .stroke(color.opacity(0.16), lineWidth: lineWidth)
+                    Circle()
+                        .trim(from: 0, to: clamped(item.remainingRatio))
+                        .stroke(
+                            color,
+                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: diameter, height: diameter)
+                .help("\(item.displayName) · \(item.value)")
+            }
+
+            WidgetTokiLogo(size: centerBadgeSize * 0.56)
+                .frame(width: centerBadgeSize, height: centerBadgeSize)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var ringEntries: [WidgetEntry] {
+        uniqueProviders(entries.filter { $0.remainingRatio != nil })
+    }
+
+    private var lineWidth: CGFloat {
+        size / (CGFloat(max(ringEntries.count, 1)) * 5)
+    }
+
+    private var ringSpacing: CGFloat { lineWidth * 1.75 }
+
+    private var centerBadgeSize: CGFloat {
+        let innermostDiameter = size - CGFloat(max(ringEntries.count - 1, 0)) * ringSpacing * 2
+        return max(24, min(38, innermostDiameter - lineWidth * 2 - 7))
+    }
+
+    private func clamped(_ ratio: Double?) -> Double {
+        min(1, max(0, ratio ?? 0))
+    }
+
+    private var accessibilitySummary: String {
+        ringEntries.map { "\($0.displayName), \($0.value) remaining" }.joined(separator: "; ")
+    }
+}
+
+private func providerColor(_ provider: String) -> Color {
+    switch provider {
+    case "claude", "claudeCode", "anthropic":
+        return Color(red: 0.85, green: 0.47, blue: 0.34)
+    case "codex", "openai", "chatgpt":
+        return Color(red: 0.48, green: 0.61, blue: 1)
+    case "openCode":
+        return Color(red: 0.20, green: 0.72, blue: 0.48)
+    case "gemini":
+        return Color(red: 0.66, green: 0.33, blue: 0.97)
+    case "copilot":
+        return Color(red: 0.55, green: 0.45, blue: 0.95)
+    case "pi":
+        return Color(red: 0.94, green: 0.36, blue: 0.55)
+    case "grok":
+        return Color(red: 0.66, green: 0.68, blue: 0.72)
+    default:
+        return Color(red: 0.93, green: 0.39, blue: 0.58)
+    }
+}
+
+private struct TokiQuotaRingsEntryView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TokiTimelineEntry
+
+    var body: some View {
+        Group {
+            if let data = entry.data,
+               !data.isStale(at: entry.date),
+               !ringEntries(data).isEmpty {
+                content(data)
+            } else {
+                emptyState
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    private func content(_ data: WidgetDataSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                HStack(spacing: 6) {
+                    WidgetTokiLogo(size: 20)
+                    Text("/toki")
+                        .font(.headline)
+                }
+                Spacer()
+                if data.awaitingInputCount > 0 {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("\(data.awaitingInputCount) agents awaiting input")
+                }
+            }
+
+            if family == .systemMedium {
+                HStack(spacing: 22) {
+                    QuotaRings(entries: data.entries, size: 104)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(ringEntries(data)) { item in
+                            HStack(spacing: 7) {
+                                Circle()
+                                    .fill(providerColor(item.provider))
+                                    .frame(width: 8, height: 8)
+                                Text(item.displayName)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(item.value)
+                                    .font(.caption.monospacedDigit().weight(.semibold))
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Spacer(minLength: 6)
+                QuotaRings(entries: data.entries, size: 94)
+                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 6)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WidgetTokiLogo(size: 32)
+            Text("Open Toki")
+                .font(.headline)
+            Text("Refresh percentage-based usage to draw your quota rings.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func ringEntries(_ data: WidgetDataSnapshot) -> [WidgetEntry] {
+        uniqueProviders(data.entries.filter { $0.remainingRatio != nil })
+    }
+}
+
+private func uniqueProviders(_ entries: [WidgetEntry]) -> [WidgetEntry] {
+    var seen = Set<String>()
+    return entries.filter { seen.insert($0.provider).inserted }
+}
+
+private struct ProviderGlyph: View {
+    let item: WidgetEntry
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let assetName {
+                WidgetSVGLogo(asset: assetName, size: size)
+            } else if let leadingText = item.leadingText, !leadingText.isEmpty {
+                Text(leadingText)
+            } else {
+                Image(systemName: symbolName)
+                    .foregroundStyle(Color(hex: item.colorHex) ?? fallbackColor)
+            }
+        }
+        .font(.system(size: size, weight: .semibold))
+        .frame(width: size + 2, height: size + 2)
+    }
+
+    private var assetName: String? {
+        switch item.provider {
+        case "claude", "claudeCode", "anthropic": return "claude-logo"
+        case "codex", "openai", "chatgpt": return "codex-logo"
+        case "openCode": return "opencode-logo"
+        case "gemini": return "gemini-logo"
+        case "grok": return "grok-logo"
+        case "pi": return "pi-logo"
+        default: return nil
+        }
+    }
+
+    private var symbolName: String {
+        switch item.provider {
+        case "claude", "claudeCode", "anthropic": return "sparkle"
+        case "codex", "openai", "chatgpt": return "hexagon"
+        case "copilot": return "chevron.left.forwardslash.chevron.right"
+        case "gemini": return "sparkles"
+        case "grok": return "asterisk"
+        default: return "terminal"
+        }
+    }
+
+    private var fallbackColor: Color {
+        switch item.provider {
+        case "claude", "claudeCode", "anthropic": return Color(red: 0.85, green: 0.47, blue: 0.34)
+        case "codex", "openai", "chatgpt": return Color(red: 0.48, green: 0.61, blue: 1)
+        default: return .primary
+        }
+    }
+}
+
+private enum WidgetSVGAsset {
+    @MainActor private static var cache: [String: NSImage] = [:]
+
+    @MainActor static func image(named name: String) -> NSImage? {
+        if let cached = cache[name] { return cached }
+        guard let url = Bundle.main.url(forResource: name, withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        cache[name] = image
+        return image
+    }
+}
+
+private struct WidgetSVGLogo: View {
+    let asset: String
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let image = WidgetSVGAsset.image(named: asset) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Image(systemName: "app.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+private struct WidgetTokiLogo: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let size: CGFloat
+
+    var body: some View {
+        WidgetSVGLogo(
+            asset: colorScheme == .dark
+                ? "toki-router-glyph-dark"
+                : "toki-router-glyph-light",
+            size: size
+        )
+        .accessibilityLabel("/toki")
+    }
+}
+
+private extension Color {
+    init?(hex: String?) {
+        guard let hex else { return nil }
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard cleaned.count == 6, let value = UInt64(cleaned, radix: 16) else { return nil }
+        self.init(
+            red: Double((value >> 16) & 0xff) / 255,
+            green: Double((value >> 8) & 0xff) / 255,
+            blue: Double(value & 0xff) / 255
+        )
+    }
+}
+
+private struct TokiWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: tokiWidgetKind, provider: TokiTimelineProvider()) { entry in
+            TokiWidgetEntryView(entry: entry)
+        }
+        .configurationDisplayName("Toki Usage")
+        .description("Your AI coding account quota at a glance.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+private struct TokiQuotaRingsWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: tokiQuotaRingsWidgetKind, provider: TokiTimelineProvider()) { entry in
+            TokiQuotaRingsEntryView(entry: entry)
+        }
+        .configurationDisplayName("Toki Quota Rings")
+        .description("Three live quota rings for your percentage-based AI accounts.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+@main
+struct TokiWidgets: WidgetBundle {
+    var body: some Widget {
+        TokiWidget()
+        TokiQuotaRingsWidget()
+    }
+}
