@@ -79,7 +79,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 **Desktop widgets.** Small and medium macOS WidgetKit widgets put account quota, agents awaiting input, and break suggestions on your desktop or in Notification Center — plus a separate quota-rings widget for percentage-based accounts. They refresh from Toki's live data while it runs.
 
-**Quota health rings.** Opt-in, provider-colored rings that show remaining percentage at a glance, in the Accounts panel and as the standalone macOS widget, with provider details on hover.
+**Quota rings.** Provider-colored rings that show remaining percentage at a glance, in the Accounts panel and as the standalone macOS widget, with provider details on hover. On by default; hide them from the panel or Settings.
 
 **Experimental notch mode.** Off by default, notched Macs only — moves the readout into the display notch, expanding on hover.
 

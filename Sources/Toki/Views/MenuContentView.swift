@@ -282,7 +282,11 @@ struct MenuContentView: View {
             case .accounts:
                 VStack(spacing: 10) {
                     if showsQuotaRings {
-                        QuotaRingsPanel(snapshots: store.snapshots)
+                        QuotaRingsPanel(snapshots: store.snapshots) {
+                            var next = store.preferences
+                            next.quotaRingsEnabled = false
+                            store.updatePreferences(next)
+                        }
                     }
                     accountList
                 }

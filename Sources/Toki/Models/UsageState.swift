@@ -110,7 +110,7 @@ struct AppPreferences: Codable, Equatable {
     var aiInsightEnabled = true
     /// Shows the provider availability rings in the Accounts panel. The standalone macOS
     /// widget is independently opt-in through the system widget gallery.
-    var quotaRingsEnabled = false
+    var quotaRingsEnabled = true
     /// Experimental: render the status readout at the display notch instead of the menu bar.
     /// Off by default - it relocates the whole app, so it is opt-in.
     var notchModeEnabled = false

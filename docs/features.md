@@ -25,9 +25,9 @@ Two macOS WidgetKit widgets, each in small and medium sizes, live on the desktop
 
 Toki writes a compact, privacy-safe snapshot (provider labels and percentages only — never account names or emails) and asks WidgetKit to reload after usage or attention changes. A widget whose snapshot is older than five minutes falls back to an "Open Toki" prompt, so the readout is never silently stale. Properly signed release builds share the snapshot through the App Group; ad-hoc local builds route it through Toki's Application Support folder instead, which the extension reads with narrowly scoped read-only access.
 
-## Quota health rings
+## Quota rings
 
-Opt-in from Settings. The same provider-colored rings render inside the Accounts panel, showing remaining percentage at a glance and revealing the provider and live percentage on hover. The standalone macOS widget above is enabled independently through the system widget gallery.
+On by default. The same provider-colored rings render inside the Accounts panel, showing remaining percentage at a glance and revealing the provider and live percentage on hover. Hide them with the button on the panel or the toggle in Settings. The standalone macOS widget above is enabled independently through the system widget gallery.
 
 ## Live in the notch (experimental)
 

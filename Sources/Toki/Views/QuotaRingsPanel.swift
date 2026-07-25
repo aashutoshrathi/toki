@@ -2,6 +2,7 @@ import SwiftUI
 
 struct QuotaRingsPanel: View {
     let snapshots: [AccountSnapshot]
+    var onHide: () -> Void = {}
     @State private var hoveredSnapshotID: String?
 
     var body: some View {
@@ -18,13 +19,17 @@ struct QuotaRingsPanel: View {
 
             QuotaRingsView(
                 snapshots: ringSnapshots,
-                size: 118,
+                size: 100,
                 hoveredSnapshotID: $hoveredSnapshotID
             )
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            // Extra trailing space nudges the ring in from the edge so it isn't jammed
+            // against the panel border and the hide button has room in the corner.
+            .padding(.leading, 6)
+            .padding(.trailing, 22)
+            .padding(.vertical, 2)
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(
             RadialGradient(
                 colors: [panelAccent.opacity(0.11), Color.primary.opacity(0.035)],
@@ -38,7 +43,31 @@ struct QuotaRingsPanel: View {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .stroke(Color.primary.opacity(0.085), lineWidth: 1)
         }
+        .overlay(alignment: .topTrailing) {
+            hideButton
+                .padding(8)
+        }
         .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
+    }
+
+    private var hideButton: some View {
+        Button(action: onHide) {
+            HStack(spacing: 3) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 9, weight: .semibold))
+                Text("Hide")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Hide the quota rings — turn them back on in Settings")
+        .accessibilityLabel("Hide quota rings")
+        .pointerOnHover()
     }
 
     private func card(_ snapshot: AccountSnapshot) -> some View {

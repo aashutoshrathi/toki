@@ -338,23 +338,12 @@ struct SettingsPanel: View {
                 ConfigEditor(store: store)
 
                 HStack(spacing: 8) {
-                    Button {
+                    advancedButton("Send debug report", icon: "paperclip") {
                         DiagnosticsReporter.presentSharePicker()
-                    } label: {
-                        Label("Send debug report", systemImage: "paperclip")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .pointerOnHover()
-
-                    Button {
+                    advancedButton("Logs", icon: "folder") {
                         DiagnosticsReporter.openLogFolder()
-                    } label: {
-                        Label("Logs", systemImage: "folder")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .pointerOnHover()
                 }
             }
             .font(.system(size: 12))
@@ -540,6 +529,30 @@ struct SettingsPanel: View {
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
             control()
         }
+    }
+
+    // Advanced actions are buttons, not settings, so they get a lighter treatment than the
+    // cards above: equal-width, subtly bordered, so the pair reads as one tidy row.
+    private func advancedButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Color.primary.opacity(0.09), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .pointerOnHover()
     }
 
     private func intBinding(_ keyPath: WritableKeyPath<AppPreferences, Int>) -> Binding<Int> {
