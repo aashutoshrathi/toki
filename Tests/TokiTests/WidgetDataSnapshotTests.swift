@@ -67,8 +67,6 @@ final class WidgetDataSnapshotTests: XCTestCase {
             breakSuggestion: nil
         )
 
-        // Well past the 5-minute refresh cadence, the widget must still show the last snapshot
-        // rather than blanking in the gap between refreshes.
         XCTAssertFalse(snapshot.isStale(at: updatedAt.addingTimeInterval(10 * 60)))
         XCTAssertFalse(snapshot.isStale(at: updatedAt.addingTimeInterval(tokiWidgetStaleAfter - 1)))
         XCTAssertTrue(snapshot.isStale(at: updatedAt.addingTimeInterval(tokiWidgetStaleAfter + 1)))

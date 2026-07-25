@@ -45,9 +45,6 @@ struct SettingsPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                // The toggle and the prompt editor live in one card: the instructions only
-                // matter when the insight is shown, so they stay hidden until it's enabled -
-                // which also keeps the page short when the feature is off.
                 VStack(alignment: .leading, spacing: 0) {
                     Toggle(isOn: binding(\.aiInsightEnabled)) {
                         HStack(spacing: 8) {
