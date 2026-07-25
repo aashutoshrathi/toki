@@ -57,9 +57,6 @@ struct MenuContentView: View {
                 if store.preferences.aiInsightEnabled {
                     overview
                 }
-                if showsQuotaRings {
-                    QuotaRingsPanel(snapshots: store.snapshots)
-                }
                 tabBar
                 if let configError = store.configError {
                     ErrorBanner(message: configError)
@@ -283,7 +280,12 @@ struct MenuContentView: View {
     private var tabContent: some View {
         switch selectedTab {
         case .accounts:
-            accountList
+            VStack(spacing: 10) {
+                if showsQuotaRings {
+                    QuotaRingsPanel(snapshots: store.snapshots)
+                }
+                accountList
+            }
         case .agents:
             ActiveAgentsPanel(store: store)
         case .analytics:
