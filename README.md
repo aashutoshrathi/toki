@@ -51,7 +51,13 @@ brew trust --cask aashutoshrathi/tap/toki
 brew install --cask toki
 ```
 
-The cask installs the latest release DMG. Toki is ad-hoc signed and not notarized, so on first launch macOS may block it - right-click Toki in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Toki.app`.
+The cask installs the latest release DMG. Toki is ad-hoc signed and not notarized, so macOS quarantines it. Clear the quarantine with:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Toki.app
+```
+
+The `-r` (recursive) is important: it also clears the bundled widget extension. Right-clicking Toki and choosing **Open** unblocks the app itself but leaves the nested extension quarantined, so macOS refuses to load it and the widgets stay blank — the recursive `xattr` is what makes the widgets work.
 
 ### Direct download
 

@@ -74,6 +74,7 @@ struct SettingsPanel: View {
                         .accessibilityLabel("Edit the AI prompt")
                         .pointerOnHover()
                         Toggle("", isOn: binding(\.aiInsightEnabled))
+                            .accessibilityLabel("Show AI insight")
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .controlSize(.small)
@@ -97,6 +98,7 @@ struct SettingsPanel: View {
                     )
                     Spacer(minLength: 8)
                     Toggle("", isOn: binding(\.quotaRingsEnabled))
+                        .accessibilityLabel("Show quota rings")
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
@@ -116,6 +118,7 @@ struct SettingsPanel: View {
                         )
                         Spacer(minLength: 8)
                         Toggle("", isOn: launchAtLoginBinding)
+                            .accessibilityLabel("Launch at login")
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .controlSize(.small)
@@ -187,6 +190,7 @@ struct SettingsPanel: View {
                     )
                     Spacer(minLength: 8)
                     Toggle("", isOn: binding(\.notificationsEnabled))
+                        .accessibilityLabel("Notifications")
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
@@ -206,6 +210,7 @@ struct SettingsPanel: View {
                         get: { store.preferences.dndEnabled },
                         set: { store.setDND($0) }
                     ))
+                    .accessibilityLabel("Do not disturb")
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
@@ -456,6 +461,7 @@ struct SettingsPanel: View {
                 }
                 Spacer(minLength: 8)
                 Toggle("", isOn: binding(\.notchModeEnabled))
+                    .accessibilityLabel("Live in the notch")
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
