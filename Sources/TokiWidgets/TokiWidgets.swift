@@ -255,11 +255,6 @@ private struct QuotaRings: View {
                 .frame(width: diameter, height: diameter)
                 .help("\(item.displayName) · \(item.value)")
             }
-
-            WidgetTokiLogo(size: centerBadgeSize * 0.56)
-                .frame(width: centerBadgeSize, height: centerBadgeSize)
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
@@ -275,11 +270,6 @@ private struct QuotaRings: View {
     }
 
     private var ringSpacing: CGFloat { lineWidth * 1.75 }
-
-    private var centerBadgeSize: CGFloat {
-        let innermostDiameter = size - CGFloat(max(ringEntries.count - 1, 0)) * ringSpacing * 2
-        return max(24, min(38, innermostDiameter - lineWidth * 2 - 7))
-    }
 
     private func clamped(_ ratio: Double?) -> Double {
         min(1, max(0, ratio ?? 0))
