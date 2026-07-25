@@ -39,19 +39,18 @@ struct QuotaRingsPanel: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(
-            RadialGradient(
+        .glassSurface(
+            cornerRadius: 11,
+            tint: panelAccent,
+            fallbackFill: RadialGradient(
                 colors: [panelAccent.opacity(0.11), Color.primary.opacity(0.035)],
                 center: .trailing,
                 startRadius: 8,
                 endRadius: 220
             ),
-            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            fallbackStroke: .primary,
+            fallbackStrokeOpacity: 0.085
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color.primary.opacity(0.085), lineWidth: 1)
-        }
         .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
     }
 

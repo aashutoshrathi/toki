@@ -75,7 +75,7 @@ struct OnboardingView: View {
             .pointerOnHover()
         }
         .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .glassSurface(fallbackFill: .ultraThinMaterial)
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)

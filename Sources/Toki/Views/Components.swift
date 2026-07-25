@@ -137,7 +137,7 @@ struct StatBlock: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .glassSurface(fallbackFill: .ultraThinMaterial)
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
@@ -499,7 +499,7 @@ struct EmptyPanel: View {
         }
         .frame(maxWidth: .infinity)
         .padding(18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .glassSurface(fallbackFill: .ultraThinMaterial)
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
