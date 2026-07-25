@@ -18,7 +18,7 @@ struct QuotaRingsPanel: View {
 
             QuotaRingsView(
                 snapshots: ringSnapshots,
-                size: 118,
+                size: 140,
                 hoveredSnapshotID: $hoveredSnapshotID
             )
         }
