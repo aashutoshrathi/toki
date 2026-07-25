@@ -26,6 +26,16 @@ struct UpdateAvailableBanner: View {
                 Spacer()
 
                 Button {
+                    updateChecker.openRelease()
+                } label: {
+                    Text("What's New")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Open this release's notes on GitHub")
+                .accessibilityLabel("What's new in Toki \(update.version)")
+
+                Button {
                     updateChecker.installUpdate()
                 } label: {
                     if updateChecker.isInstalling {
