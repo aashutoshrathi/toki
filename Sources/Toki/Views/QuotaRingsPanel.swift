@@ -5,50 +5,75 @@ struct QuotaRingsPanel: View {
     @State private var hoveredSnapshotID: String?
 
     var body: some View {
-        QuotaRingsView(
-            snapshots: ringSnapshots,
-            size: 124,
-            hoveredSnapshotID: $hoveredSnapshotID
-        )
-            .frame(maxWidth: .infinity)
-            .overlay(alignment: .topLeading) {
-                if let hoveredSnapshot {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(ringColor(hoveredSnapshot))
-                            .frame(width: 7, height: 7)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(hoveredSnapshot.provider.displayName)
-                                .font(.system(size: 10, weight: .semibold))
-                            Text(percentText(hoveredSnapshot.remainingRatio ?? 0))
-                                .font(.system(size: 9, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(.regularMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(Color.primary.opacity(0.09), lineWidth: 1))
-                    .padding(7)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+        HStack(alignment: .center, spacing: 12) {
+            VStack(spacing: 6) {
+                ForEach(ringSnapshots) { snapshot in
+                    card(snapshot)
                 }
+                Spacer(minLength: 0)
             }
-            .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
-            .padding(.vertical, 12)
-            .background(
-                RadialGradient(
-                    colors: [panelAccent.opacity(0.11), Color.primary.opacity(0.035)],
-                    center: .center,
-                    startRadius: 8,
-                    endRadius: 180
-                ),
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .frame(width: 150, alignment: .leading)
+
+            Spacer(minLength: 8)
+
+            QuotaRingsView(
+                snapshots: ringSnapshots,
+                size: 118,
+                hoveredSnapshotID: $hoveredSnapshotID
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(Color.primary.opacity(0.085), lineWidth: 1)
+        }
+        .padding(12)
+        .background(
+            RadialGradient(
+                colors: [panelAccent.opacity(0.11), Color.primary.opacity(0.035)],
+                center: .trailing,
+                startRadius: 8,
+                endRadius: 220
+            ),
+            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(Color.primary.opacity(0.085), lineWidth: 1)
+        }
+        .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
+    }
+
+    private func card(_ snapshot: AccountSnapshot) -> some View {
+        let isHovered = hoveredSnapshotID == snapshot.id
+        let color = ringColor(snapshot)
+        return HStack(spacing: 8) {
+            ProviderLogo(provider: snapshot.provider, size: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(snapshot.provider.displayName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(percentText(snapshot.remainingRatio ?? 0))
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
             }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            isHovered ? color.opacity(0.18) : Color.primary.opacity(0.04),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(isHovered ? color.opacity(0.55) : Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { hovering in
+            if hovering {
+                hoveredSnapshotID = snapshot.id
+            } else if hoveredSnapshotID == snapshot.id {
+                hoveredSnapshotID = nil
+            }
+        }
+        .pointerOnHover()
     }
 
     private var ringSnapshots: [AccountSnapshot] {
@@ -59,10 +84,6 @@ struct QuotaRingsPanel: View {
                 && $0.remainingRatio != nil
                 && seen.insert($0.provider).inserted
         }
-    }
-
-    private var hoveredSnapshot: AccountSnapshot? {
-        ringSnapshots.first { $0.id == hoveredSnapshotID }
     }
 
     private var panelAccent: Color {
@@ -101,17 +122,14 @@ private struct QuotaRingsView: View {
                     .pointerOnHover()
             }
 
-            Group {
-                if let centerProvider {
-                    ProviderLogo(provider: centerProvider, size: centerBadgeSize * 0.6)
-                } else {
-                    TokiLogoMark(size: centerBadgeSize * 0.56)
-                }
+            if let centerProvider {
+                ProviderLogo(provider: centerProvider, size: centerBadgeSize * 0.6)
+                    .frame(width: centerBadgeSize, height: centerBadgeSize)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
-                .frame(width: centerBadgeSize, height: centerBadgeSize)
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
-                .allowsHitTesting(false)
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
@@ -123,7 +141,7 @@ private struct QuotaRingsView: View {
     }
 
     private var centerProvider: Provider? {
-        (snapshots.first { $0.id == hoveredSnapshotID } ?? snapshots.first)?.provider
+        snapshots.first { $0.id == hoveredSnapshotID }?.provider
     }
 
     private var lineWidth: CGFloat {
