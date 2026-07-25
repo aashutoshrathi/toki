@@ -129,10 +129,18 @@ enum UpdateInstaller {
     private static func verify(app: URL, expectedVersion: String) throws {
         guard let bundle = Bundle(url: app),
               bundle.bundleIdentifier == "local.toki",
-              bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == expectedVersion else {
+              let bundleVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              versionMatchesRelease(bundleVersion: bundleVersion, releaseVersion: expectedVersion) else {
             throw LocalizedErrorMessage("The downloaded app identity or version does not match the release.")
         }
         _ = try run("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", app.path])
+    }
+
+    // A prerelease tag (`2.5.0-beta.1`) carries a suffix the app's `CFBundleShortVersionString`
+    // (`2.5.0`) never does, so compare against the base version. Stable tags match exactly.
+    static func versionMatchesRelease(bundleVersion: String, releaseVersion: String) -> Bool {
+        let base = releaseVersion.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? releaseVersion
+        return bundleVersion == base
     }
 
     private static func mount(_ dmgURL: URL) throws -> URL {
