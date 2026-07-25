@@ -25,6 +25,20 @@ scripts/build-app.sh
 plutil -p .build/Toki.app/Contents/Info.plist
 ```
 
+## Widgets
+
+The `TokiWidgets.appex` extension is embedded under `Contents/PlugIns` by both build scripts. Toki and the extension are separate sandboxed processes, so they share a snapshot (`widget-data.json`) through one of two channels, chosen at package time by `TokiWidgetDataMode` in each `Info.plist`:
+
+- **`app-group`** — used only when `APPLE_SIGNING_IDENTITY` is set. The snapshot lives in the `group.com.aashutoshrathi.toki` App Group container. This requires the App Group to be enabled for **both** the app and the widget-extension signing identifiers in your Apple Developer configuration. If it isn't provisioned, the extension can't read the container and every widget stays empty — there is no runtime fallback.
+- **`local`** — used for ad-hoc/unsigned builds (no `APPLE_SIGNING_IDENTITY`). The snapshot goes to `~/Library/Application Support/Toki/widget-data.json`, and the extension is signed with `Config/TokiWidgets.local.entitlements`, a scoped read-only exception to that one folder. No Team ID or App Group provisioning is needed, so this mode is self-contained and portable.
+
+Because the public DMG is ad-hoc signed (not notarized), released builds ship in **`local`** mode. The one caveat that carries to another Mac is Gatekeeper: the appex inherits the same "unidentified developer" friction as the app, so the quarantine flag must be cleared from the **whole bundle** for the extension to load and register — `xattr -dr com.apple.quarantine` (note `-r`, recursive) does this; clearing only the top level leaves the appex quarantined and the widget absent from the gallery. Test on a second Mac or a fresh user account before relying on it, since WidgetKit registration for ad-hoc extensions is not something Apple formally supports.
+
+When a widget looks wrong:
+
+- **Empty "Open Toki"** — the app hasn't written a snapshot in the last 30 minutes (`tokiWidgetStaleAfter`), or `widget-data.json` is missing/unreadable. Launch Toki and let it refresh once.
+- **Widget missing from the gallery** — confirm registration with `pluginkit -mv | grep toki`; if absent, re-clear quarantine recursively and relaunch the app.
+
 ## Concurrency checking
 
 CI builds with stricter concurrency than a plain `swift build`, and the difference has broken this project's CI more than once — a pure static helper on a `@MainActor` type needs `nonisolated`, which only the stricter mode catches. Reproduce it locally before pushing:
