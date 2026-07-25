@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.1 - Unreleased
+
+### Added
+
+- Cursor agent detection in the Active Agents panel (#33).
+
 ## 2.5.0 - 2026-07-26
 
 ### Added
