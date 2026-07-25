@@ -32,7 +32,7 @@ struct UpdateAvailableBanner: View {
                 } label: {
                     Text("What's New")
                 }
-                .buttonStyle(.bordered)
+                .glassButton()
                 .controlSize(.small)
                 .help("Open this release's notes on GitHub")
                 .accessibilityLabel("What's new in Toki \(update.version)")
@@ -47,7 +47,7 @@ struct UpdateAvailableBanner: View {
                         Text("Update")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentButton()
                 .controlSize(.small)
                 .disabled(updateChecker.isInstalling)
 
@@ -78,10 +78,11 @@ struct UpdateAvailableBanner: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.blue.opacity(0.28), lineWidth: 1)
+        .glassSurface(
+            tint: .blue,
+            fallbackFill: Color.blue.opacity(0.08),
+            fallbackStroke: .blue,
+            fallbackStrokeOpacity: 0.28
         )
     }
 }
@@ -258,10 +259,11 @@ struct AIInsightCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
-        .background((isAI ? Color.purple : Color.primary).opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke((isAI ? Color.purple : Color.primary).opacity(isAI ? 0.18 : 0.08), lineWidth: 1)
+        .glassSurface(
+            tint: isAI ? .purple : nil,
+            fallbackFill: (isAI ? Color.purple : Color.primary).opacity(0.06),
+            fallbackStroke: isAI ? .purple : .primary,
+            fallbackStrokeOpacity: isAI ? 0.18 : 0.08
         )
     }
 

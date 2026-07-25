@@ -265,11 +265,7 @@ struct AccountCard: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(borderColor, lineWidth: 1)
-        )
+        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: borderColor)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .gesture(

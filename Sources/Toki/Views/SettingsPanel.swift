@@ -296,7 +296,7 @@ struct SettingsPanel: View {
                             Text("Check now")
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .glassButton()
                     .controlSize(.small)
                     .disabled(updateChecker.isChecking)
                     .pointerOnHover()
@@ -353,10 +353,10 @@ struct SettingsPanel: View {
             }
             .font(.system(size: 12))
             .padding(8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            .glassSurface(
+                fallbackFill: .ultraThinMaterial,
+                fallbackStroke: .primary,
+                fallbackStrokeOpacity: 0.07
             )
         }
         .frame(maxHeight: .infinity)
@@ -574,13 +574,12 @@ struct SettingsPanel: View {
 }
 
 private extension View {
-    // Shared card chrome so every settings row is the same rounded, bordered shape. Defaults
-    // are the neutral tint; colored cards (AI insight, quota rings, dev channel) pass their own.
     func settingsCard(tint: Color = .primary, fill: Double = 0.04, stroke: Double = 0.08) -> some View {
-        background(tint.opacity(fill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(tint.opacity(stroke), lineWidth: 1)
-            )
+        glassSurface(
+            tint: tint == .primary ? nil : tint,
+            fallbackFill: tint.opacity(fill),
+            fallbackStroke: tint,
+            fallbackStrokeOpacity: stroke
+        )
     }
 }

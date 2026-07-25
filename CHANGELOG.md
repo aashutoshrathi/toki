@@ -5,6 +5,7 @@
 ### Added
 
 - Cursor agent detection in the Active Agents panel (#33).
+- Liquid Glass surfaces and controls on macOS 26, with the current styling kept on earlier macOS (#34).
 
 ## 2.5.0 - 2026-07-26
 
