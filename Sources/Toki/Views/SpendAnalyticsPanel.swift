@@ -62,11 +62,7 @@ struct SpendAnalyticsPanel: View {
         }
         .frame(maxWidth: .infinity)
         .padding(8)
-        .glassSurface(fallbackFill: .ultraThinMaterial)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
     }
 
     // MARK: - Spend ($)
@@ -97,11 +93,7 @@ struct SpendAnalyticsPanel: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .glassSurface(fallbackFill: .ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                    )
+                    .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
                 }
             }
 
@@ -217,11 +209,7 @@ struct SpendAnalyticsPanel: View {
                         }
                     }
                     .padding(8)
-                    .glassSurface(fallbackFill: .ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                    )
+                    .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
                     .onHover { isHovered in
                         selectedAgentID = isHovered ? agent.id : nil
                     }
@@ -244,11 +232,7 @@ struct SpendAnalyticsPanel: View {
         }
         .frame(maxWidth: .infinity)
         .padding(8)
-        .glassSurface(fallbackFill: .ultraThinMaterial)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
     }
 
     // MARK: - Quota (%)
@@ -330,11 +314,7 @@ struct SpendAnalyticsPanel: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .glassSurface(fallbackFill: .ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                    )
+                    .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
                 }
             }
 

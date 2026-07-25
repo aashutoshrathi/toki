@@ -121,11 +121,7 @@ struct ActiveAgentsPanel: View {
                                 .pointerOnHover()
                             }
                             .padding(8)
-                            .glassSurface(fallbackFill: .ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                            )
+                            .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
                         }
                     }
                 }

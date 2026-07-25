@@ -24,22 +24,4 @@ extension View {
                 ))
         }
     }
-
-    @ViewBuilder
-    func glassProminentButton() -> some View {
-        if #available(macOS 26, *) {
-            buttonStyle(.glassProminent)
-        } else {
-            buttonStyle(.borderedProminent)
-        }
-    }
-
-    @ViewBuilder
-    func glassButton() -> some View {
-        if #available(macOS 26, *) {
-            buttonStyle(.glass)
-        } else {
-            buttonStyle(.bordered)
-        }
-    }
 }

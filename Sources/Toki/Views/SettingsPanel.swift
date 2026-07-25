@@ -296,7 +296,7 @@ struct SettingsPanel: View {
                             Text("Check now")
                         }
                     }
-                    .glassButton()
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(updateChecker.isChecking)
                     .pointerOnHover()
@@ -353,10 +353,10 @@ struct SettingsPanel: View {
             }
             .font(.system(size: 12))
             .padding(8)
-            .glassSurface(
-                fallbackFill: .ultraThinMaterial,
-                fallbackStroke: .primary,
-                fallbackStrokeOpacity: 0.07
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
         }
         .frame(maxHeight: .infinity)

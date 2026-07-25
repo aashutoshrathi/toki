@@ -32,7 +32,7 @@ struct UpdateAvailableBanner: View {
                 } label: {
                     Text("What's New")
                 }
-                .glassButton()
+                .buttonStyle(.bordered)
                 .controlSize(.small)
                 .help("Open this release's notes on GitHub")
                 .accessibilityLabel("What's new in Toki \(update.version)")
@@ -47,7 +47,7 @@ struct UpdateAvailableBanner: View {
                         Text("Update")
                     }
                 }
-                .glassProminentButton()
+                .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(updateChecker.isInstalling)
 
@@ -137,11 +137,7 @@ struct StatBlock: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
-        .glassSurface(fallbackFill: .ultraThinMaterial)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
     }
 }
 
@@ -499,10 +495,6 @@ struct EmptyPanel: View {
         }
         .frame(maxWidth: .infinity)
         .padding(18)
-        .glassSurface(fallbackFill: .ultraThinMaterial)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
     }
 }
