@@ -6,27 +6,36 @@ struct QuotaRingsPanel: View {
     @State private var hoveredSnapshotID: String?
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(spacing: 6) {
-                ForEach(ringSnapshots) { snapshot in
-                    card(snapshot)
-                }
-                Spacer(minLength: 0)
+        // A header row ("QUOTA" left, Hide right) keeps those two clear of the ring below, so
+        // nothing crowds. Cards and ring sit in the row underneath and are vertically centered,
+        // so the card's height follows its content instead of a fixed, oversized ring.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Quota")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 8)
+                hideButton
             }
-            .frame(width: 150, alignment: .leading)
 
-            Spacer(minLength: 8)
+            HStack(alignment: .center, spacing: 12) {
+                VStack(spacing: 6) {
+                    ForEach(ringSnapshots) { snapshot in
+                        card(snapshot)
+                    }
+                }
+                .frame(width: 150, alignment: .leading)
 
-            QuotaRingsView(
-                snapshots: ringSnapshots,
-                size: 100,
-                hoveredSnapshotID: $hoveredSnapshotID
-            )
-            // Extra trailing space nudges the ring in from the edge so it isn't jammed
-            // against the panel border and the hide button has room in the corner.
-            .padding(.leading, 6)
-            .padding(.trailing, 22)
-            .padding(.vertical, 2)
+                Spacer(minLength: 8)
+
+                QuotaRingsView(
+                    snapshots: ringSnapshots,
+                    size: 84,
+                    hoveredSnapshotID: $hoveredSnapshotID
+                )
+                .padding(.trailing, 8)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -42,10 +51,6 @@ struct QuotaRingsPanel: View {
         .overlay {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .stroke(Color.primary.opacity(0.085), lineWidth: 1)
-        }
-        .overlay(alignment: .topTrailing) {
-            hideButton
-                .padding(8)
         }
         .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
     }
@@ -80,9 +85,16 @@ struct QuotaRingsPanel: View {
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(percentText(snapshot.remainingRatio ?? 0))
+                Text("\(percentText(snapshot.remainingRatio ?? 0)) left")
                     .font(.system(size: 9, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
+                if let resetHint = snapshot.primaryWindow?.resetHint {
+                    Text(resetHint)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
             Spacer(minLength: 0)
         }
