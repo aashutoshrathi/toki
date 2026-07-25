@@ -19,15 +19,15 @@ struct QuotaRingsPanel: View {
                 hideButton
             }
 
-            HStack(alignment: .center, spacing: 12) {
+            // Cards fill the available width instead of a fixed 150; the HStack spacing keeps a
+            // comfortable gap to the ring so the wider cards never feel crowded against it.
+            HStack(alignment: .center, spacing: 16) {
                 VStack(spacing: 6) {
                     ForEach(ringSnapshots) { snapshot in
                         card(snapshot)
                     }
                 }
-                .frame(width: 150, alignment: .leading)
-
-                Spacer(minLength: 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 QuotaRingsView(
                     snapshots: ringSnapshots,

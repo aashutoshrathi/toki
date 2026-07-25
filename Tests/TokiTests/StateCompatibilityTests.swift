@@ -36,7 +36,7 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertEqual(state.preferences.historyRetentionDays, 14, "existing values must be preserved")
         XCTAssertFalse(state.preferences.notchModeEnabled, "a missing field must fall back to its default")
         XCTAssertTrue(state.preferences.aiInsightEnabled, "a missing field must keep the insight visible")
-        XCTAssertFalse(state.preferences.quotaRingsEnabled, "a missing field must keep rings opt-in")
+        XCTAssertTrue(state.preferences.quotaRingsEnabled, "a missing field adopts the current default — rings are now on by default")
     }
 
     // The general rule, not just the one field: any subset of preferences must decode.
