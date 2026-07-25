@@ -41,27 +41,39 @@ struct SettingsPanel: View {
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     @State private var launchAtLoginError: String?
-    // Starts collapsed - expanding reveals AIInstructionsEditor inline below this row
-    // instead of navigating to a separate page, so editing a prompt doesn't lose your
-    // place in the rest of Settings.
-    @State private var isAIInstructionsExpanded = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle(isOn: binding(\.aiInsightEnabled)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show AI insight")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Display the insight card at the top of the main panel.")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
+                // The toggle and the prompt editor live in one card: the instructions only
+                // matter when the insight is shown, so they stay hidden until it's enabled -
+                // which also keeps the page short when the feature is off.
+                VStack(alignment: .leading, spacing: 0) {
+                    Toggle(isOn: binding(\.aiInsightEnabled)) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.purple)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Show AI insight")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("Show the insight card in the panel, and steer what it says below.")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+
+                    if store.preferences.aiInsightEnabled {
+                        AIInstructionsEditor(store: store)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
                     }
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
                 .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -87,51 +99,6 @@ struct SettingsPanel: View {
                         .stroke(Color.blue.opacity(0.13), lineWidth: 1)
                 )
 
-                // Surfaced first, above the plain toggles below - it's the one setting that
-                // changes what the AI actually says about your usage, so it shouldn't require
-                // scrolling past half the page to find. Shown regardless of
-                // isAIInsightAvailable - instructions are still worth writing/saving ahead of
-                // Apple Intelligence becoming available, and hiding the row entirely made it
-                // look like the feature didn't exist rather than just being inactive for now.
-                VStack(alignment: .leading, spacing: 0) {
-                    Button {
-                        isAIInstructionsExpanded.toggle()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.purple)
-                            Text("AI insight instructions")
-                                .font(.system(size: 12, weight: .semibold))
-                            Spacer()
-                            if !store.isAIInsightAvailable {
-                                Text("Apple Intelligence off")
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                                .rotationEffect(.degrees(isAIInstructionsExpanded ? 90 : 0))
-                        }
-                        .padding(8)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Customize what the on-device AI says about your usage")
-                    .pointerOnHover()
-
-                    if isAIInstructionsExpanded {
-                        AIInstructionsEditor(store: store)
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 8)
-                    }
-                }
-                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.purple.opacity(0.14), lineWidth: 1)
-                )
                 Divider()
 
                 sectionHeader("General")
