@@ -96,8 +96,11 @@ struct SettingsPanel: View {
                 )
 
                 HStack(spacing: 8) {
+                    Image(systemName: "bolt.ring.closed")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.blue)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Show quota health rings")
+                        Text("Show quota rings")
                             .font(.system(size: 12, weight: .semibold))
                         Text("Display provider availability rings in the Accounts panel.")
                             .font(.system(size: 9))
