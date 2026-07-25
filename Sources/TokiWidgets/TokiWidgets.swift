@@ -106,7 +106,6 @@ private struct TokiWidgetEntryView: View {
                     .fontWeight(.semibold)
                     .lineLimit(2)
                 Spacer(minLength: 0)
-                updatedText(data.updatedAt)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .overlay(alignment: .topTrailing) {
@@ -148,7 +147,6 @@ private struct TokiWidgetEntryView: View {
                 }
             }
             Spacer(minLength: 0)
-            updatedText(data.updatedAt)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -167,12 +165,8 @@ private struct TokiWidgetEntryView: View {
     }
 
     private var widgetHeader: some View {
-        HStack(spacing: 6) {
-            WidgetTokiLogo(size: 20)
-            Text("/toki")
-                .font(.headline)
-        }
-        .accessibilityElement(children: .combine)
+        WidgetTokiLogo(size: 20)
+            .accessibilityLabel("Toki")
     }
 
     @ViewBuilder
@@ -188,11 +182,6 @@ private struct TokiWidgetEntryView: View {
         }
     }
 
-    private func updatedText(_ date: Date) -> some View {
-        Text("Updated \(date, style: .relative)")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-    }
 }
 
 private struct ProviderRow: View {
@@ -321,11 +310,8 @@ private struct TokiQuotaRingsEntryView: View {
     private func content(_ data: WidgetDataSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                HStack(spacing: 6) {
-                    WidgetTokiLogo(size: 20)
-                    Text("/toki")
-                        .font(.headline)
-                }
+                WidgetTokiLogo(size: 20)
+                    .accessibilityLabel("Toki")
                 Spacer()
                 if data.awaitingInputCount > 0 {
                     Image(systemName: "exclamationmark.circle.fill")
