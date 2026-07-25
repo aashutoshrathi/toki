@@ -40,6 +40,14 @@ extension UsageStore {
     // available. The deterministic recommendation is already shown; this only replaces
     // it once ready, and stays nil (rule-based visible) on older systems or failure.
     func refreshAIInsight(for snapshots: [AccountSnapshot]) {
+        guard preferences.aiInsightEnabled else {
+            // Invalidate an in-flight generation too, otherwise it can finish after the toggle
+            // is switched off and repopulate state that should remain dormant.
+            insightGeneration += 1
+            aiInsight = nil
+            isGeneratingInsight = false
+            return
+        }
         // FoundationModels only exists in the macOS 26 SDK; when building against an older
         // SDK the generator is compiled out entirely and the rule-based recommendation stays.
         #if canImport(FoundationModels)

@@ -54,7 +54,12 @@ struct MenuContentView: View {
             if store.needsOnboarding {
                 OnboardingView(store: store) { showConfig = true }
             } else {
-                overview
+                if store.preferences.aiInsightEnabled {
+                    overview
+                }
+                if showsQuotaRings {
+                    QuotaRingsPanel(snapshots: store.snapshots)
+                }
                 tabBar
                 if let configError = store.configError {
                     ErrorBanner(message: configError)
@@ -131,6 +136,8 @@ struct MenuContentView: View {
                         ProgressView()
                             .controlSize(.small)
                             .scaleEffect(0.7)
+                    } else if !store.isNetworkAvailable {
+                        Image(systemName: "wifi.slash")
                     } else {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -140,9 +147,15 @@ struct MenuContentView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(store.isRefreshing)
+            .disabled(store.isRefreshing || !store.isNetworkAvailable)
             .font(.system(size: 13, weight: .semibold))
-            .help(store.isRefreshing ? "Refreshing…" : "Refresh")
+            .help(
+                store.isRefreshing
+                    ? "Refreshing…"
+                    : (store.isNetworkAvailable
+                        ? "Refresh"
+                        : "Offline — usage refreshes automatically when the connection returns")
+            )
             .pointerOnHover()
 
             Button {
@@ -329,8 +342,20 @@ struct MenuContentView: View {
                 .padding(.trailing, 2)
                 .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.snapshots.map(\.id))
             }
-            .frame(maxHeight: accountListHeight())
+            .frame(maxHeight: accountListMaxHeight)
         }
+    }
+
+    private var showsQuotaRings: Bool {
+        store.preferences.quotaRingsEnabled
+            && selectedTab == .accounts
+            && store.snapshots.contains(where: { !$0.isError && $0.remainingRatio != nil })
+    }
+
+    private var accountListMaxHeight: CGFloat {
+        let ringSpace: CGFloat = showsQuotaRings ? 158 : 0
+        let reclaimedInsightSpace: CGFloat = store.preferences.aiInsightEnabled ? 0 : 72
+        return max(100, accountListHeight() - ringSpace + reclaimedInsightSpace)
     }
 
     private var debugPanel: some View {

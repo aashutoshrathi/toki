@@ -8,18 +8,31 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "Toki", targets: ["Toki"])
+        .executable(name: "Toki", targets: ["Toki"]),
+        .executable(name: "TokiWidgets", targets: ["TokiWidgets"])
     ],
     targets: [
         .executableTarget(
             name: "Toki",
+            dependencies: ["TokiWidgetShared"],
             resources: [
                 .process("Resources")
             ]
         ),
+        .target(name: "TokiWidgetShared"),
+        .executableTarget(
+            name: "TokiWidgets",
+            dependencies: ["TokiWidgetShared"],
+            swiftSettings: [
+                .unsafeFlags(["-application-extension"])
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])
+            ]
+        ),
         .testTarget(
             name: "TokiTests",
-            dependencies: ["Toki"],
+            dependencies: ["Toki", "TokiWidgetShared"],
             resources: [.copy("Fixtures")]
         )
     ]

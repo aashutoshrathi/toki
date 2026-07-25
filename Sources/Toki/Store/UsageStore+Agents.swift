@@ -7,8 +7,13 @@ extension UsageStore {
         guard !isScanningAgents else { return }
         isScanningAgents = true
         Task {
-            activeAgents = await ActiveAgentScanner.scan()
+            let previousAwaitingInput = activeAgents.filter(\.needsInput).count
+            let scanned = await ActiveAgentScanner.scan()
+            activeAgents = scanned
             isScanningAgents = false
+            if scanned.filter(\.needsInput).count != previousAwaitingInput {
+                writeWidgetData(for: snapshots)
+            }
         }
     }
 

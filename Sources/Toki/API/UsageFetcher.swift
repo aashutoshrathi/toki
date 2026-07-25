@@ -129,6 +129,13 @@ enum UsageFetcher {
                 return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
             }
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
+        } catch where isConnectivityFailure(error) {
+            // A network transition is not an account failure. Preserve the last successful
+            // snapshot and leave the API timestamp untouched so reconnect can retry at once.
+            if let previous = previousSnapshots(for: account, previousByID: previousByID) {
+                return AccountFetchResult(snapshots: previous, apiCallKeys: [])
+            }
+            return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: [])
         } catch {
             DiagnosticLogger.shared.record(
                 .error,
