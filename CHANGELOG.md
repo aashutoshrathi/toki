@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.4 - Unreleased
+## 2.4.4 - 2026-07-25
 
 ### Added
 
