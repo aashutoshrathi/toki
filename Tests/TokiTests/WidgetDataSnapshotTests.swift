@@ -57,7 +57,7 @@ final class WidgetDataSnapshotTests: XCTestCase {
         XCTAssertNotNil(snapshot.breakSuggestion)
     }
 
-    func testStalenessUsesFiveMinuteWindow() {
+    func testStalenessWindowOutlastsTheRefreshCadence() {
         let updatedAt = Date(timeIntervalSince1970: 1_000)
         let snapshot = WidgetDataSnapshot(
             updatedAt: updatedAt,
@@ -67,8 +67,11 @@ final class WidgetDataSnapshotTests: XCTestCase {
             breakSuggestion: nil
         )
 
-        XCTAssertFalse(snapshot.isStale(at: updatedAt.addingTimeInterval(299)))
-        XCTAssertTrue(snapshot.isStale(at: updatedAt.addingTimeInterval(301)))
+        // Well past the 5-minute refresh cadence, the widget must still show the last snapshot
+        // rather than blanking in the gap between refreshes.
+        XCTAssertFalse(snapshot.isStale(at: updatedAt.addingTimeInterval(10 * 60)))
+        XCTAssertFalse(snapshot.isStale(at: updatedAt.addingTimeInterval(tokiWidgetStaleAfter - 1)))
+        XCTAssertTrue(snapshot.isStale(at: updatedAt.addingTimeInterval(tokiWidgetStaleAfter + 1)))
     }
 
     func testLocalURLUsesApplicationSupport() {
