@@ -101,7 +101,13 @@ private struct QuotaRingsView: View {
                     .pointerOnHover()
             }
 
-            TokiLogoMark(size: centerBadgeSize * 0.56)
+            Group {
+                if let centerProvider {
+                    ProviderLogo(provider: centerProvider, size: centerBadgeSize * 0.6)
+                } else {
+                    TokiLogoMark(size: centerBadgeSize * 0.56)
+                }
+            }
                 .frame(width: centerBadgeSize, height: centerBadgeSize)
                 .background(.regularMaterial, in: Circle())
                 .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
@@ -114,6 +120,10 @@ private struct QuotaRingsView: View {
                 .map { "\($0.provider.displayName), \(percentText($0.remainingRatio ?? 0)) remaining" }
                 .joined(separator: "; ")
         )
+    }
+
+    private var centerProvider: Provider? {
+        (snapshots.first { $0.id == hoveredSnapshotID } ?? snapshots.first)?.provider
     }
 
     private var lineWidth: CGFloat {
