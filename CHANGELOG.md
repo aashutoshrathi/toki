@@ -4,14 +4,6 @@
 
 ### Added
 
-- Update channels. Settings > Updates now has a Stable/Beta picker: Beta offers GitHub pre-releases (tags like `v2.5.0-beta.1`) so upcoming builds can be tested before they ship, while Stable keeps ignoring them. Once the stable version is published, beta testers are offered it automatically and graduate back onto the production build.
-
-### Fixed
-
-- Update version comparison is now semver-aware. The old numeric string compare ranked `2.5.0-beta.1` above `2.5.0`, which would have kept re-offering a beta over its own final release.
-
-### Added
-
 - **Desktop widgets.** Two new widgets you can add from the macOS widget gallery, in small and medium sizes. One shows your account quota, how many agents are waiting on you, and a nudge to take a break once everything's used up; the other draws your remaining quota as colorful rings.
 - **Quota rings in the app.** An optional ring view — turn it on in Settings — shows how much of each provider you have left at a glance, with the provider name and percentage on hover.
 - **"What's New" on the update banner.** When an update is ready, a button takes you straight to the release notes on GitHub before you install.
@@ -30,6 +22,16 @@
 ### Removed
 
 - The `toki status`, `toki usage`, and `toki pi` terminal commands. Toki is a menu bar and widget app now.
+
+## 2.4.4 - 2026-07-26
+
+### Added
+
+- Update channels. Settings > Updates now has a Stable/Beta picker: Beta offers GitHub pre-releases (tags like `v2.5.0-beta.1`) so upcoming builds can be tested before they ship, while Stable keeps ignoring them. Once the stable version is published, beta testers are offered it automatically and graduate back onto the production build.
+
+### Fixed
+
+- Update version comparison is now semver-aware. The old numeric string compare ranked `2.5.0-beta.1` above `2.5.0`, which would have kept re-offering a beta over its own final release.
 
 ## 2.4.3 - 2026-07-25
 
