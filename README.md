@@ -27,8 +27,8 @@
     <td align="center"><img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="60%"></td>
   </tr>
   <tr>
-    <th align="center" valign="top" width="180">CLI</th>
-    <td><pre>            @@@@ @@@@             <br>   @@@@@@@@@@@     @@@@@@@        <br>   @@@@@@@@@@@     @@@@@@@        <br>            @@@@@@@@@             <br>              @@@@@               <br>               @@@                  /toki<br>               @@@    @@@           v2.4.4<br>               @@@   @@@@           github.com/aashutoshrathi/toki<br>               @@@@@@@@@          <br>               @@@@@@@            <br>               @@@@@              <br>               @@@@               <br>               @@@@@              <br>                @@@@@@@@@@        <br><br>Claude San: 85% left<br>Codex: 0% left<br>OpenCode: No usage today<br>Pi: $0.01 today</pre></td>
+    <th align="center" valign="top" width="180">Widgets</th>
+    <td align="center"><img src="https://files.aashutosh.dev/toki-widgets.png" alt="Toki macOS widgets preview" width="60%"></td>
   </tr>
 </table>
 
@@ -73,7 +73,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 **Agents waiting on you.** A session parked on a permission prompt or a question is called out with a red dot and the question itself — on the card, the tab, and the menu bar — so you don't discover it twenty minutes later.
 
-**Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed. Also available in the terminal via `toki usage`.
+**Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed.
 
 **Insights and notifications.** An on-device Apple Intelligence summary on macOS 26+ (deterministic recommendation elsewhere), low-quota and session warnings with cooldowns and DND, and a session mode for tracking burn during a focused run. The insight card can be hidden from Settings.
 
@@ -89,7 +89,6 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 |---|---|
 | [Configuration](docs/configuration.md) | Config file, accounts, labels, refresh cadence, state |
 | [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
-| [Command line](docs/cli.md) | `toki status`, `toki usage`, `toki pi`, environment overrides |
 | [Features](docs/features.md) | Agents, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
 

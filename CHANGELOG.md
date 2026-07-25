@@ -22,6 +22,10 @@
 - Redeeming a Codex rate-limit reset updates its quota and reset badge immediately, then bypasses the normal five-minute API cache to confirm the new server state.
 - Local builds no longer write widget snapshots directly into the extension sandbox, avoiding repeated macOS prompts to access data from other apps.
 
+### Removed
+
+- The `toki status`, `toki usage`, and `toki pi` command-line subcommands are gone. Toki is a menu bar and widget app; the terminal readouts saw little use and carried their own status-cache plumbing.
+
 ## 2.4.3 - 2026-07-25
 
 ### Fixed
