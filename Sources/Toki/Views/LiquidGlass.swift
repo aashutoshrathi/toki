@@ -5,6 +5,7 @@ extension View {
     func glassSurface<Fill: ShapeStyle>(
         cornerRadius: CGFloat = 8,
         tint: Color? = nil,
+        interactive: Bool = false,
         fallbackFill: Fill,
         fallbackStroke: Color? = nil,
         fallbackStrokeOpacity: Double = 1,
@@ -12,11 +13,9 @@ extension View {
     ) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(macOS 26, *) {
-            if let tint {
-                glassEffect(.regular.tint(tint.opacity(0.45)), in: shape)
-            } else {
-                glassEffect(.regular, in: shape)
-            }
+            let base = interactive ? Glass.regular.interactive() : Glass.regular
+            let glass = tint.map { base.tint($0.opacity(0.45)) } ?? base
+            glassEffect(glass, in: shape)
         } else {
             background(fallbackFill, in: shape)
                 .overlay(shape.strokeBorder(

@@ -65,7 +65,13 @@ struct QuotaRingsPanel: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(Color.primary.opacity(0.06), in: Capsule())
+            .background {
+                if #available(macOS 26, *) {
+                    Color.clear.glassEffect(.regular.interactive(), in: Capsule())
+                } else {
+                    Capsule().fill(Color.primary.opacity(0.06))
+                }
+            }
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

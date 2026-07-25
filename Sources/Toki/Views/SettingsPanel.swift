@@ -537,8 +537,6 @@ struct SettingsPanel: View {
         }
     }
 
-    // Advanced actions are buttons, not settings, so they get a lighter treatment than the
-    // cards above: equal-width, subtly bordered, so the pair reads as one tidy row.
     private func advancedButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -550,10 +548,12 @@ struct SettingsPanel: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 7)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(Color.primary.opacity(0.09), lineWidth: 1)
+            .glassSurface(
+                cornerRadius: 7,
+                interactive: true,
+                fallbackFill: Color.primary.opacity(0.05),
+                fallbackStroke: .primary,
+                fallbackStrokeOpacity: 0.09
             )
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }

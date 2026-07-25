@@ -177,11 +177,21 @@ private struct TokiWidgetEntryView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(.red, in: Capsule())
+                .modifier(WidgetBadgeBackground())
                 .accessibilityLabel("\(count) agents awaiting input")
         }
     }
 
+}
+
+private struct WidgetBadgeBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.glassEffect(.regular.tint(.red), in: Capsule())
+        } else {
+            content.background(.red, in: Capsule())
+        }
+    }
 }
 
 private struct ProviderRow: View {
