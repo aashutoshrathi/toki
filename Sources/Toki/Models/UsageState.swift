@@ -106,6 +106,11 @@ struct AppPreferences: Codable, Equatable {
     // min(30, retention), so a shorter retention silently shortens the chart.
     var historyRetentionDays = 30
     var sessionWarningThreshold = 0.15
+    /// Shows the recommendation/AI summary card at the top of the main panel.
+    var aiInsightEnabled = true
+    /// Shows the provider availability rings in the Accounts panel. The standalone macOS
+    /// widget is independently opt-in through the system widget gallery.
+    var quotaRingsEnabled = true
     /// Experimental: render the status readout at the display notch instead of the menu bar.
     /// Off by default - it relocates the whole app, so it is opt-in.
     var notchModeEnabled = false
@@ -119,6 +124,8 @@ struct AppPreferences: Codable, Equatable {
         case menuBarMode
         case historyRetentionDays
         case sessionWarningThreshold
+        case aiInsightEnabled
+        case quotaRingsEnabled
         case notchModeEnabled
         case notchPlacement
     }
@@ -145,6 +152,8 @@ struct AppPreferences: Codable, Equatable {
         menuBarMode = try container.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarMode) ?? defaults.menuBarMode
         historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
+        aiInsightEnabled = try container.decodeIfPresent(Bool.self, forKey: .aiInsightEnabled) ?? defaults.aiInsightEnabled
+        quotaRingsEnabled = try container.decodeIfPresent(Bool.self, forKey: .quotaRingsEnabled) ?? defaults.quotaRingsEnabled
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled
         notchPlacement = try container.decodeIfPresent(NotchPlacement.self, forKey: .notchPlacement) ?? defaults.notchPlacement
     }

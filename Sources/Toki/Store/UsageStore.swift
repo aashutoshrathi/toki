@@ -35,6 +35,7 @@ final class UsageStore: ObservableObject {
     @Published var isScanningProviders = false
     @Published private(set) var needsOnboarding = false
     @Published var resettingAccountIDs: Set<String> = []
+    @Published private(set) var isNetworkAvailable = true
 
     // Not private(set): these are written from UsageStore+*.swift extensions in other
     // files, and Swift's `private`/`private(set)` is scoped to the declaring file, not
@@ -55,12 +56,20 @@ final class UsageStore: ObservableObject {
     var insightGeneration = 0
     var notificationAuthorization: Bool?
     var agentTimer: Timer?
+    let connectivityMonitor = ConnectivityMonitor()
+    var connectivityGeneration = 0
+    var refreshAfterReconnect = false
 
     init() {
         reloadConfig()
         refreshActiveAgents()
         agentTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshActiveAgents() }
+        }
+        connectivityMonitor.start { [weak self] isAvailable in
+            Task { @MainActor [weak self] in
+                self?.connectivityDidChange(isAvailable: isAvailable)
+            }
         }
     }
 
@@ -72,6 +81,26 @@ final class UsageStore: ObservableObject {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh(keepsExistingSnapshots: true) }
+        }
+    }
+
+    func connectivityDidChange(isAvailable: Bool) {
+        guard isNetworkAvailable != isAvailable else { return }
+        isNetworkAvailable = isAvailable
+        connectivityGeneration &+= 1
+
+        if !isAvailable {
+            logDebug("Internet connection unavailable - keeping last successful usage")
+            DiagnosticLogger.shared.record(.info, component: "connectivity", code: "offline")
+            return
+        }
+
+        logDebug("Internet connection restored - refreshing usage")
+        DiagnosticLogger.shared.record(.info, component: "connectivity", code: "restored")
+        if isRefreshing {
+            refreshAfterReconnect = true
+        } else {
+            refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
         }
     }
 

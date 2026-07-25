@@ -72,8 +72,16 @@ struct ClaudeCodeUsageClient {
         let primaryMetric = usage.primaryMetric ?? UsageMetric(label: "Daily", utilization: usage.worstUtilization ?? 0, resetDescription: nil)
         let usedRatio = max(0, min(1, primaryMetric.utilization / 100))
         let remainingRatio = max(0, min(1, 1 - usedRatio))
-        let primary = "\(Int((remainingRatio * 100).rounded()))% left"
+        let percentLeft = Int((remainingRatio * 100).rounded())
+        let primary = "\(percentLeft)% left"
         let email = record.email ?? ClaudeCodeCredentialReader.emailIdentifier(from: credentials)
+
+        // Surface Claude Code's single rolling window the same way Codex exposes its windows,
+        // so consumers like the quota-rings panel can show "resets in <time>" beside it. The
+        // main account card reads its reset line from `metrics`, so this doesn't duplicate there.
+        let primaryWindow = primaryMetric.resetDescription.map {
+            RateLimitWindow(label: primaryMetric.label, percentLeft: percentLeft, resetHint: "resets in \($0)")
+        }
 
         return AccountSnapshot(
             id: record.id,
@@ -88,7 +96,8 @@ struct ClaudeCodeUsageClient {
             switchTarget: switchTarget(for: record),
             switchCommand: account.claudeSwapCommand,
             emoji: record.label?.emoji,
-            colorHex: record.label?.color
+            colorHex: record.label?.color,
+            primaryWindow: primaryWindow
         )
     }
 

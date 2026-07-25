@@ -16,13 +16,26 @@ The scale runs through 64 interpolated shades. Adjacent shades are deliberately 
 
 Days Toki could not read are distinguished from days with no activity. The first is a failure and says so; the second says "No usage".
 
+## Desktop widgets
+
+Two macOS WidgetKit widgets, each in small and medium sizes, live on the desktop or in Notification Center:
+
+- **Toki Usage** shows account quota, a badge counting agents awaiting input, and — when every tracked account is exhausted — a break suggestion.
+- **Toki Quota Rings** draws concentric provider-colored rings for percentage-based accounts (Claude Code, Codex), with the Toki mark at the center.
+
+Toki writes a compact, privacy-safe snapshot (provider labels and percentages only — never account names or emails) and asks WidgetKit to reload after usage or attention changes. A widget whose snapshot is older than five minutes falls back to an "Open Toki" prompt, so the readout is never silently stale. Properly signed release builds share the snapshot through the App Group; ad-hoc local builds route it through Toki's Application Support folder instead, which the extension reads with narrowly scoped read-only access.
+
+## Quota rings
+
+On by default. The same provider-colored rings render inside the Accounts panel, showing remaining percentage at a glance and revealing the provider and live percentage on hover. Hide them with the button on the panel or the toggle in Settings. The standalone macOS widget above is enabled independently through the system widget gallery.
+
 ## Live in the notch (experimental)
 
 Off by default, notched Macs only. Puts the readout at the display notch instead of the menu bar, in one of three resting positions — hanging below, sideways beside it, or spread around both sides — expanding on hover. Clicking opens the popover anchored to the pill, so it appears on the side you actually clicked.
 
 ## Insights
 
-A single card on the overview. On macOS 26+ with Apple Intelligence available it generates a natural-language summary with suggestions, marked by a purple sparkle. On older systems it shows the same deterministic recommendation with a lightbulb. Steer the prompt with `aiInstructions`, or the Settings page for custom instructions, which takes priority over the default tone and format.
+A single card on the overview. On macOS 26+ with Apple Intelligence available it generates a natural-language summary with suggestions, marked by a purple sparkle. On older systems it shows the same deterministic recommendation with a lightbulb. Steer the prompt with `aiInstructions`, or the Settings page for custom instructions, which takes priority over the default tone and format. The whole card can be hidden from Settings, which also stops its background generation.
 
 ## Notifications and session mode
 

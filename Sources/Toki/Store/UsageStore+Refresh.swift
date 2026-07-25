@@ -2,6 +2,10 @@ import SwiftUI
 
 extension UsageStore {
     func refresh(keepsExistingSnapshots: Bool = true, minimumRefreshInterval: TimeInterval? = nil) {
+        guard isNetworkAvailable else {
+            logDebug("Refresh skipped - internet connection unavailable")
+            return
+        }
         guard let config, !isRefreshing else {
             if isRefreshing { logDebug("Refresh skipped - already in progress") }
             return
@@ -13,15 +17,29 @@ extension UsageStore {
         }
         let currentState = usageState
         let previousSnapshots = snapshots
+        let startedForConnectivityGeneration = connectivityGeneration
 
         Task {
-            defer { isRefreshing = false }
+            defer {
+                isRefreshing = false
+                if refreshAfterReconnect, isNetworkAvailable {
+                    refreshAfterReconnect = false
+                    Task { @MainActor [weak self] in
+                        self?.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
+                    }
+                }
+            }
             let response = await UsageFetcher.fetch(
                 config: config,
                 state: currentState,
                 previousSnapshots: previousSnapshots,
                 minimumRefreshInterval: minimumRefreshInterval
             )
+            guard isNetworkAvailable,
+                  connectivityGeneration == startedForConnectivityGeneration else {
+                logDebug("Refresh result discarded - connectivity changed during fetch")
+                return
+            }
             for key in response.apiCallKeys {
                 usageState.apiLastCalledAt[key] = response.fetchedAt
             }
@@ -54,7 +72,16 @@ extension UsageStore {
         }
         syncPublishedState()
         refreshAIInsight(for: snapshots)
-        StatusCacheStore.write(snapshots: snapshots, recommendation: recommendation, menuBarEntries: statusEntries, updatedAt: lastUpdated ?? Date())
+        writeWidgetData(for: snapshots)
+    }
+
+    func writeWidgetData(for snapshots: [AccountSnapshot]) {
+        WidgetDataStore.write(
+            entries: statusEntries,
+            awaitingInput: activeAgents.filter(\.needsInput).count,
+            snapshots: snapshots,
+            updatedAt: lastUpdated ?? Date()
+        )
     }
 
     func recordHistory(for snapshots: [AccountSnapshot], at date: Date) {

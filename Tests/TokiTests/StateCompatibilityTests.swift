@@ -35,6 +35,8 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertEqual(state.history.count, 1, "history must survive a preferences field being added")
         XCTAssertEqual(state.preferences.historyRetentionDays, 14, "existing values must be preserved")
         XCTAssertFalse(state.preferences.notchModeEnabled, "a missing field must fall back to its default")
+        XCTAssertTrue(state.preferences.aiInsightEnabled, "a missing field must keep the insight visible")
+        XCTAssertTrue(state.preferences.quotaRingsEnabled, "a missing field adopts the current default — rings are now on by default")
     }
 
     // The general rule, not just the one field: any subset of preferences must decode.
@@ -58,6 +60,8 @@ final class StateCompatibilityTests: XCTestCase {
         var preferences = AppPreferences()
         preferences.notchModeEnabled = true
         preferences.historyRetentionDays = 21
+        preferences.aiInsightEnabled = false
+        preferences.quotaRingsEnabled = true
         let data = try JSONEncoder.toki.encode(preferences)
         XCTAssertEqual(try JSONDecoder.toki.decode(AppPreferences.self, from: data), preferences)
     }

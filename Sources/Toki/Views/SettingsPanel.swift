@@ -41,93 +41,136 @@ struct SettingsPanel: View {
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     @State private var launchAtLoginError: String?
-    // Starts collapsed - expanding reveals AIInstructionsEditor inline below this row
-    // instead of navigating to a separate page, so editing a prompt doesn't lose your
-    // place in the rest of Settings.
-    @State private var isAIInstructionsExpanded = false
+    @State private var isEditingPrompt = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                // Surfaced first, above the plain toggles below - it's the one setting that
-                // changes what the AI actually says about your usage, so it shouldn't require
-                // scrolling past half the page to find. Shown regardless of
-                // isAIInsightAvailable - instructions are still worth writing/saving ahead of
-                // Apple Intelligence becoming available, and hiding the row entirely made it
-                // look like the feature didn't exist rather than just being inactive for now.
+                // AI insight — the one card that expands (its prompt editor drops in below).
                 VStack(alignment: .leading, spacing: 0) {
-                    Button {
-                        isAIInstructionsExpanded.toggle()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.purple)
-                            Text("AI insight instructions")
-                                .font(.system(size: 12, weight: .semibold))
-                            Spacer()
-                            if !store.isAIInsightAvailable {
-                                Text("Apple Intelligence off")
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                                .rotationEffect(.degrees(isAIInstructionsExpanded ? 90 : 0))
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "sparkles",
+                            iconColor: .purple,
+                            title: "Show AI insight",
+                            subtitle: "Show the insight card at the top of the main panel."
+                        )
+                        Spacer(minLength: 8)
+                        Button {
+                            isEditingPrompt.toggle()
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(isEditingPrompt ? Color.purple : Color.secondary)
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    (isEditingPrompt ? Color.purple : Color.primary).opacity(isEditingPrompt ? 0.16 : 0.06),
+                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                )
+                                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         }
-                        .padding(8)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .help("Edit the AI prompt")
+                        .accessibilityLabel("Edit the AI prompt")
+                        .pointerOnHover()
+                        Toggle("", isOn: binding(\.aiInsightEnabled))
+                            .accessibilityLabel("Show AI insight")
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
                     }
-                    .buttonStyle(.plain)
-                    .help("Customize what the on-device AI says about your usage")
-                    .pointerOnHover()
+                    .padding(8)
 
-                    if isAIInstructionsExpanded {
+                    if isEditingPrompt {
                         AIInstructionsEditor(store: store)
                             .padding(.horizontal, 8)
                             .padding(.bottom, 8)
                     }
                 }
-                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.purple.opacity(0.14), lineWidth: 1)
-                )
-                Divider()
+                .settingsCard(tint: .purple, fill: 0.06, stroke: 0.14)
+
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "bolt.ring.closed",
+                        iconColor: .blue,
+                        title: "Show quota rings",
+                        subtitle: "Display provider availability rings in the Accounts panel."
+                    )
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: binding(\.quotaRingsEnabled))
+                        .accessibilityLabel("Show quota rings")
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                .padding(8)
+                .settingsCard(tint: .blue, fill: 0.055, stroke: 0.13)
 
                 sectionHeader("General")
 
-                Toggle("Launch at login", isOn: launchAtLoginBinding)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "power",
+                            iconColor: .secondary,
+                            title: "Launch at login",
+                            subtitle: "Start Toki automatically after you sign in."
+                        )
+                        Spacer(minLength: 8)
+                        Toggle("", isOn: launchAtLoginBinding)
+                            .accessibilityLabel("Launch at login")
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
 
-                if launchAtLoginNeedsApproval {
-                    HStack(spacing: 4) {
-                        Text("Needs approval in System Settings > General > Login Items.")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                        Button("Open") {
-                            LaunchAtLogin.openSystemSettings()
+                    if launchAtLoginNeedsApproval {
+                        HStack(spacing: 4) {
+                            Text("Needs approval in System Settings > General > Login Items.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Button("Open") {
+                                LaunchAtLogin.openSystemSettings()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.blue)
+                            .pointerOnHover()
                         }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.blue)
-                        .pointerOnHover()
+                        .padding(.leading, 26)
+                    }
+
+                    if let launchAtLoginError {
+                        Text(launchAtLoginError)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.red)
+                            .padding(.leading, 26)
                     }
                 }
+                .padding(8)
+                .settingsCard()
 
-                if let launchAtLoginError {
-                    Text(launchAtLoginError)
-                        .font(.system(size: 9))
-                        .foregroundStyle(.red)
-                }
-
-                Picker("Menu bar", selection: binding(\.menuBarMode)) {
-                    ForEach(MenuBarDisplayMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "menubar.rectangle",
+                        iconColor: .secondary,
+                        title: "Menu bar",
+                        subtitle: "What the menu bar item shows at a glance."
+                    )
+                    Spacer(minLength: 8)
+                    Picker("Menu bar", selection: binding(\.menuBarMode)) {
+                        ForEach(MenuBarDisplayMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .fixedSize()
+                    .pointerOnHover()
                 }
+                .padding(8)
+                .settingsCard()
 
                 // Sits directly under the menu bar picker: it decides where the readout lives,
                 // so it belongs with the other placement settings rather than below the
@@ -136,61 +179,113 @@ struct SettingsPanel: View {
                     notchModeRow
                 }
 
-                Divider()
                 sectionHeader("Notifications")
 
-                Toggle("Notifications", isOn: binding(\.notificationsEnabled))
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "bell",
+                        iconColor: .secondary,
+                        title: "Notifications",
+                        subtitle: "Show low-quota and session warnings."
+                    )
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: binding(\.notificationsEnabled))
+                        .accessibilityLabel("Notifications")
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                .padding(8)
+                .settingsCard()
+
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "moon",
+                        iconColor: .secondary,
+                        title: "Do not disturb",
+                        subtitle: "Silence notifications until you turn it back off."
+                    )
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: Binding(
+                        get: { store.preferences.dndEnabled },
+                        set: { store.setDND($0) }
+                    ))
+                    .accessibilityLabel("Do not disturb")
+                    .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
+                }
+                .padding(8)
+                .settingsCard()
 
-                Toggle("Do not disturb", isOn: Binding(
-                    get: { store.preferences.dndEnabled },
-                    set: { store.setDND($0) }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.small)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Low quota threshold \(percentText(store.preferences.lowQuotaThreshold))")
-                        .font(.system(size: 11, weight: .semibold))
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "speedometer",
+                            iconColor: .secondary,
+                            title: "Low quota threshold",
+                            subtitle: "Warn when a provider's remaining quota falls below this."
+                        )
+                        Spacer(minLength: 8)
+                        Text(percentText(store.preferences.lowQuotaThreshold))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    }
                     Slider(value: binding(\.lowQuotaThreshold), in: 0.05...0.50, step: 0.05)
                 }
+                .padding(8)
+                .settingsCard()
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Session warning \(percentText(store.preferences.sessionWarningThreshold))")
-                        .font(.system(size: 11, weight: .semibold))
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "hourglass",
+                            iconColor: .secondary,
+                            title: "Session warning",
+                            subtitle: "Warn when the active session's quota falls below this."
+                        )
+                        Spacer(minLength: 8)
+                        Text(percentText(store.preferences.sessionWarningThreshold))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    }
                     Slider(value: binding(\.sessionWarningThreshold), in: 0.05...0.40, step: 0.05)
                 }
+                .padding(8)
+                .settingsCard()
 
-                Stepper("Cooldown \(store.preferences.notificationCooldownMinutes)m", value: intBinding(\.notificationCooldownMinutes), in: 5...360, step: 5)
+                VStack(spacing: 10) {
+                    steppedSetting(
+                        icon: "timer",
+                        title: "Cooldown",
+                        explanation: "Minimum time between repeat notifications.",
+                        value: "\(store.preferences.notificationCooldownMinutes)m"
+                    ) {
+                        Stepper("", value: intBinding(\.notificationCooldownMinutes), in: 5...360, step: 5)
+                            .labelsHidden()
+                    }
+                    Divider()
+                    steppedSetting(
+                        icon: "clock.arrow.circlepath",
+                        title: "History",
+                        explanation: "Days of usage history kept for the heatmap.",
+                        value: "\(store.preferences.historyRetentionDays)d"
+                    ) {
+                        Stepper("", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
+                            .labelsHidden()
+                    }
+                }
+                .padding(8)
+                .settingsCard()
 
-                Stepper("History \(store.preferences.historyRetentionDays)d", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
-
-                Divider()
                 sectionHeader("Updates")
 
                 HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("App updates")
-                            .font(.system(size: 11, weight: .semibold))
-                        if updateChecker.isChecking {
-                            Text("Checking GitHub…")
-                                .foregroundStyle(.secondary)
-                        } else if let message = updateChecker.checkMessage {
-                            Text(message)
-                                .foregroundStyle(.secondary)
-                        } else if updateChecker.lastCheckedAt != nil {
-                            Text("Checked")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("Checks automatically every 5 minutes")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .font(.system(size: 10))
-
-                    Spacer()
-
+                    cardLabel(
+                        icon: "arrow.triangle.2.circlepath",
+                        iconColor: .secondary,
+                        title: "App updates",
+                        subtitle: appUpdatesStatus
+                    )
+                    Spacer(minLength: 8)
                     Button {
                         updateChecker.checkNow()
                     } label: {
@@ -206,20 +301,22 @@ struct SettingsPanel: View {
                     .disabled(updateChecker.isChecking)
                     .pointerOnHover()
                 }
+                .padding(8)
+                .settingsCard()
 
+                // Tinted differently from the neutral cards: the channel picker is a
+                // developer/early-tester setting (it opts into pre-release builds), so it
+                // reads as distinct from everyday preferences.
                 HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Channel")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(updateChecker.channel == .beta
+                    cardLabel(
+                        icon: "hammer",
+                        iconColor: .orange,
+                        title: "Channel",
+                        subtitle: updateChecker.channel == .beta
                             ? "Includes pre-releases for early testing."
-                            : "Stable releases only.")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                    }
-
+                            : "Stable releases only."
+                    )
                     Spacer(minLength: 8)
-
                     Picker("Update channel", selection: Binding(
                         get: { updateChecker.channel },
                         set: { updateChecker.setChannel($0) }
@@ -234,40 +331,24 @@ struct SettingsPanel: View {
                     .fixedSize()
                     .pointerOnHover()
                 }
-                .padding(10)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                )
+                .padding(8)
+                .settingsCard(tint: .orange, fill: 0.07, stroke: 0.16)
 
                 if let update = updateChecker.availableUpdate {
                     UpdateAvailableBanner(update: update, updateChecker: updateChecker)
                 }
 
-                Divider()
                 sectionHeader("Advanced")
 
                 ConfigEditor(store: store)
 
                 HStack(spacing: 8) {
-                    Button {
+                    advancedButton("Send debug report", icon: "paperclip") {
                         DiagnosticsReporter.presentSharePicker()
-                    } label: {
-                        Label("Send debug report", systemImage: "paperclip")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .pointerOnHover()
-
-                    Button {
+                    advancedButton("Logs", icon: "folder") {
                         DiagnosticsReporter.openLogFolder()
-                    } label: {
-                        Label("Logs", systemImage: "folder")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .pointerOnHover()
                 }
             }
             .font(.system(size: 12))
@@ -287,6 +368,14 @@ struct SettingsPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             resyncLaunchAtLoginFromSystem()
         }
+    }
+
+    // Status line shown as the App updates card's subtitle.
+    private var appUpdatesStatus: String {
+        if updateChecker.isChecking { return "Checking GitHub…" }
+        if let message = updateChecker.checkMessage { return message }
+        if updateChecker.lastCheckedAt != nil { return "Checked." }
+        return "Checks automatically every 5 minutes."
     }
 
     // Only for external resync (view appearing, app regaining focus) - also clears any
@@ -330,50 +419,97 @@ struct SettingsPanel: View {
         )
     }
 
-    // Given its own row rather than a plain checkbox line: it is the one setting that visibly
-    // relocates the whole app, and it is unfinished, so it needs room to say both.
+    // A proper card rather than a plain checkbox line: it is the one setting that visibly
+    // relocates the whole app, and it is unfinished, so it needs room to say both. The switch
+    // sits right-aligned like every other card, and when enabled the placement picker drops in
+    // as an aligned sub-row inside the same card.
     @ViewBuilder
     private var notchModeRow: some View {
-        Toggle(isOn: binding(\.notchModeEnabled)) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text("Live in the notch")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("BETA")
-                        .font(.system(size: 8, weight: .heavy))
-                        .tracking(0.4)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(
-                            LinearGradient(
-                                colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
-                                         Color(red: 0.85, green: 0.35, blue: 0.65)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            in: Capsule()
-                        )
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "macbook")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, alignment: .center)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 5) {
+                            Text("Live in the notch")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("BETA")
+                                .font(.system(size: 8, weight: .heavy))
+                                .tracking(0.4)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                                 Color(red: 0.85, green: 0.35, blue: 0.65)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    in: Capsule()
+                                )
+                        }
+                        Text(store.preferences.notchModeEnabled
+                             ? "Toki is hanging out up there. Hover it for more."
+                             : "Move Toki into the notch, Dynamic Island style.")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Text(store.preferences.notchModeEnabled
-                     ? "Toki is hanging out up there. Hover it for more."
-                     : "Move Toki into the notch, Dynamic Island style.")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 8)
+                Toggle("", isOn: binding(\.notchModeEnabled))
+                    .accessibilityLabel("Live in the notch")
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            .padding(8)
+
+            if store.preferences.notchModeEnabled {
+                Divider()
+                    .padding(.horizontal, 8)
+                HStack(spacing: 8) {
+                    Text("Rests")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.leading, 26)
+                    Spacer(minLength: 8)
+                    Picker("Rests", selection: binding(\.notchPlacement)) {
+                        ForEach(NotchPlacement.allCases) { placement in
+                            Text(placement.label).tag(placement)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
+                }
+                .padding(8)
             }
         }
+        .settingsCard()
         .help("Replaces the menu bar item with a panel that hangs from the display notch")
         .pointerOnHover()
+    }
 
-        if store.preferences.notchModeEnabled {
-            Picker("Rests", selection: binding(\.notchPlacement)) {
-                ForEach(NotchPlacement.allCases) { placement in
-                    Text(placement.label).tag(placement)
-                }
+    // Shared card header so every settings card lines its title/subtitle up at the same x,
+    // whatever control sits on the right. The icon lives in a fixed-width slot so the text
+    // columns match across cards even when the glyphs differ in width.
+    private func cardLabel(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 18, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
             }
-            .pickerStyle(.segmented)
-            .padding(.leading, 18)
-            .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
         }
     }
 
@@ -382,6 +518,47 @@ struct SettingsPanel: View {
             .font(.system(size: 9, weight: .bold))
             .foregroundStyle(.tertiary)
             .tracking(0.5)
+            .padding(.top, 2)
+    }
+
+    private func steppedSetting<Control: View>(
+        icon: String,
+        title: String,
+        explanation: String,
+        value: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 8) {
+            cardLabel(icon: icon, iconColor: .secondary, title: title, subtitle: explanation)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            control()
+        }
+    }
+
+    // Advanced actions are buttons, not settings, so they get a lighter treatment than the
+    // cards above: equal-width, subtly bordered, so the pair reads as one tidy row.
+    private func advancedButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Color.primary.opacity(0.09), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .pointerOnHover()
     }
 
     private func intBinding(_ keyPath: WritableKeyPath<AppPreferences, Int>) -> Binding<Int> {
@@ -393,5 +570,17 @@ struct SettingsPanel: View {
                 store.updatePreferences(next)
             }
         )
+    }
+}
+
+private extension View {
+    // Shared card chrome so every settings row is the same rounded, bordered shape. Defaults
+    // are the neutral tint; colored cards (AI insight, quota rings, dev channel) pass their own.
+    func settingsCard(tint: Color = .primary, fill: Double = 0.04, stroke: Double = 0.08) -> some View {
+        background(tint.opacity(fill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(tint.opacity(stroke), lineWidth: 1)
+            )
     }
 }

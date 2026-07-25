@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.4.2" src="https://img.shields.io/badge/version-2.4.2-2f80ed">
+  <img alt="Version 2.5.0" src="https://img.shields.io/badge/version-2.5.0-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -21,16 +21,9 @@
   <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away.
 </p>
 
-<table>
-  <tr>
-    <th align="center" valign="top" width="180">Menu bar</th>
-    <td align="center"><img src="https://files.aashutosh.dev/toki-preview.png" alt="Toki menu bar popover preview" width="60%"></td>
-  </tr>
-  <tr>
-    <th align="center" valign="top" width="180">CLI</th>
-    <td><pre>            @@@@ @@@@             <br>   @@@@@@@@@@@     @@@@@@@        <br>   @@@@@@@@@@@     @@@@@@@        <br>            @@@@@@@@@             <br>              @@@@@               <br>               @@@                  /toki<br>               @@@    @@@           v2.4.2<br>               @@@   @@@@           github.com/aashutoshrathi/toki<br>               @@@@@@@@@          <br>               @@@@@@@            <br>               @@@@@              <br>               @@@@               <br>               @@@@@              <br>                @@@@@@@@@@        <br><br>Claude San: 85% left<br>Codex: 0% left<br>OpenCode: No usage today<br>Pi: $0.01 today</pre></td>
-  </tr>
-</table>
+| Menu bar | Widget |
+|:---:|:---:|
+| ![Toki menu bar popover preview](https://files.aashutosh.dev/toki-preview.png) | ![Toki macOS widgets preview](https://files.aashutosh.dev/toki-widgets.png) |
 
 
 ## Why Toki
@@ -51,7 +44,13 @@ brew trust --cask aashutoshrathi/tap/toki
 brew install --cask toki
 ```
 
-The cask installs the latest release DMG. Toki is ad-hoc signed and not notarized, so on first launch macOS may block it - right-click Toki in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Toki.app`.
+The cask installs the latest release DMG. Toki is ad-hoc signed and not notarized, so macOS quarantines it. Clear the quarantine with:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Toki.app
+```
+
+The `-r` (recursive) is important: it also clears the bundled widget extension. Right-clicking Toki and choosing **Open** unblocks the app itself but leaves the nested extension quarantined, so macOS refuses to load it and the widgets stay blank — the recursive `xattr` is what makes the widgets work.
 
 ### Direct download
 
@@ -73,9 +72,13 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 **Agents waiting on you.** A session parked on a permission prompt or a question is called out with a red dot and the question itself — on the card, the tab, and the menu bar — so you don't discover it twenty minutes later.
 
-**Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed. Also available in the terminal via `toki usage`.
+**Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed.
 
-**Insights and notifications.** An on-device Apple Intelligence summary on macOS 26+ (deterministic recommendation elsewhere), low-quota and session warnings with cooldowns and DND, and a session mode for tracking burn during a focused run.
+**Insights and notifications.** An on-device Apple Intelligence summary on macOS 26+ (deterministic recommendation elsewhere), low-quota and session warnings with cooldowns and DND, and a session mode for tracking burn during a focused run. The insight card can be hidden from Settings.
+
+**Desktop widgets.** Small and medium macOS WidgetKit widgets put account quota, agents awaiting input, and break suggestions on your desktop or in Notification Center — plus a separate quota-rings widget for percentage-based accounts. They refresh from Toki's live data while it runs.
+
+**Quota rings.** Provider-colored rings that show remaining percentage at a glance, in the Accounts panel and as the standalone macOS widget, with provider details on hover. On by default; hide them from the panel or Settings.
 
 **Experimental notch mode.** Off by default, notched Macs only — moves the readout into the display notch, expanding on hover.
 
@@ -85,8 +88,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 |---|---|
 | [Configuration](docs/configuration.md) | Config file, accounts, labels, refresh cadence, state |
 | [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
-| [Command line](docs/cli.md) | `toki status`, `toki usage`, `toki pi`, environment overrides |
-| [Features](docs/features.md) | Agents, heatmap, notch mode, insights, notifications, updates |
+| [Features](docs/features.md) | Agents, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
 
 ## Privacy

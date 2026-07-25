@@ -54,7 +54,9 @@ struct MenuContentView: View {
             if store.needsOnboarding {
                 OnboardingView(store: store) { showConfig = true }
             } else {
-                overview
+                if store.preferences.aiInsightEnabled {
+                    overview
+                }
                 tabBar
                 if let configError = store.configError {
                     ErrorBanner(message: configError)
@@ -104,20 +106,6 @@ struct MenuContentView: View {
 
     private var headerControls: some View {
         HStack(spacing: 5) {
-            Button {
-                store.session == nil ? store.startSession() : store.endSession()
-            } label: {
-                Image(systemName: store.session == nil ? "play.fill" : "stop.fill")
-                    .frame(width: 25, height: 25)
-                    .background((store.session == nil ? Color.primary : Color.blue).opacity(store.session == nil ? 0.06 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(store.session == nil ? Color.primary : Color.blue)
-            .help(store.session == nil ? "Start session tracking" : "End session tracking")
-            .accessibilityLabel(store.session == nil ? "Start session tracking" : "End session tracking")
-            .pointerOnHover()
 
             // Same reasoning as the Agents panel's refresh: without a visible busy state the
             // button looks identical before, during and after a refresh, so a press that is
@@ -131,6 +119,8 @@ struct MenuContentView: View {
                         ProgressView()
                             .controlSize(.small)
                             .scaleEffect(0.7)
+                    } else if !store.isNetworkAvailable {
+                        Image(systemName: "wifi.slash")
                     } else {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -140,9 +130,15 @@ struct MenuContentView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(store.isRefreshing)
+            .disabled(store.isRefreshing || !store.isNetworkAvailable)
             .font(.system(size: 13, weight: .semibold))
-            .help(store.isRefreshing ? "Refreshing…" : "Refresh")
+            .help(
+                store.isRefreshing
+                    ? "Refreshing…"
+                    : (store.isNetworkAvailable
+                        ? "Refresh"
+                        : "Offline — usage refreshes automatically when the connection returns")
+            )
             .pointerOnHover()
 
             Button {
@@ -280,18 +276,29 @@ struct MenuContentView: View {
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    @ViewBuilder
     private var tabContent: some View {
-        switch selectedTab {
-        case .accounts:
-            accountList
-        case .agents:
-            ActiveAgentsPanel(store: store)
-        case .analytics:
-            SpendAnalyticsPanel(store: store)
-        case .events:
-            EventPanel(store: store)
+        Group {
+            switch selectedTab {
+            case .accounts:
+                VStack(spacing: 10) {
+                    if showsQuotaRings {
+                        QuotaRingsPanel(snapshots: store.snapshots) {
+                            var next = store.preferences
+                            next.quotaRingsEnabled = false
+                            store.updatePreferences(next)
+                        }
+                    }
+                    accountList
+                }
+            case .agents:
+                ActiveAgentsPanel(store: store)
+            case .analytics:
+                SpendAnalyticsPanel(store: store)
+            case .events:
+                EventPanel(store: store)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // Active accounts first, then exhausted (0% remaining), then errored/not connected.
@@ -329,8 +336,14 @@ struct MenuContentView: View {
                 .padding(.trailing, 2)
                 .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.snapshots.map(\.id))
             }
-            .frame(maxHeight: accountListHeight())
+            .frame(maxHeight: .infinity)
         }
+    }
+
+    private var showsQuotaRings: Bool {
+        store.preferences.quotaRingsEnabled
+            && selectedTab == .accounts
+            && store.snapshots.contains(where: { !$0.isError && $0.remainingRatio != nil })
     }
 
     private var debugPanel: some View {

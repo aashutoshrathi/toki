@@ -35,7 +35,7 @@ struct SpendAnalyticsPanel: View {
             }
             .padding(2)
         }
-        .frame(maxHeight: accountListHeight())
+        .frame(maxHeight: .infinity)
         .task { await loadPiTotals() }
     }
 
