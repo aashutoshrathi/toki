@@ -92,11 +92,6 @@ enum WidgetDataStore {
             updatedAt: updatedAt
         )
 
-        // WidgetKit throttles timeline reloads against a daily budget, so requesting one on every
-        // 5-minute refresh and every agent-attention change exhausts it and the widget freezes.
-        // Compare only what the widget renders (timestamp zeroed) and reload just when that
-        // changes; the file itself is still rewritten every time, keeping it fresh for the next
-        // scheduled read and below the 30-minute stale cutoff.
         let contentSignature = try? JSONEncoder.toki.encode(contentSignatureSnapshot(snapshot))
         let contentChanged = contentSignature == nil || contentSignature != lastReloadedContent
 
@@ -144,8 +139,6 @@ enum WidgetDataStore {
         }
     }
 
-    // Signature of the content last reloaded for. A pure timestamp change leaves it untouched, so
-    // an unchanged snapshot doesn't spend a reload. Written only from MainActor refresh paths.
     nonisolated(unsafe) private static var lastReloadedContent: Data?
 
     private static func contentSignatureSnapshot(_ snapshot: WidgetDataSnapshot) -> WidgetDataSnapshot {

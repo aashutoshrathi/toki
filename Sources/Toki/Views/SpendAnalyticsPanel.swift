@@ -35,9 +35,6 @@ struct SpendAnalyticsPanel: View {
             }
             .padding(2)
         }
-        // Fill the popover's fixed height instead of capping at the account-list height: the
-        // popover stays a stable size across tabs, but the scroll viewport uses the whole space
-        // so a content-rich Analytics tab doesn't leave dead space below it.
         .frame(maxHeight: .infinity)
         .task { await loadPiTotals() }
     }

@@ -7,11 +7,6 @@ public let tokiQuotaRingsWidgetKind = "com.aashutoshrathi.toki.quota-rings"
 public let tokiWidgetDataFilename = "widget-data.json"
 public let tokiWidgetDataModeInfoKey = "TokiWidgetDataMode"
 
-// How old a snapshot may be before the widget falls back to its "Open Toki" state. This is a
-// safety net for an app that has been quit for a while, *not* a per-refresh freshness check:
-// keeping it comfortably above the app's refresh cadence (5 min by default) stops the widget
-// from blanking in the gap between one refresh and the next. The card shows "Updated X ago", so
-// showing slightly aged quota is far better than showing nothing.
 public let tokiWidgetStaleAfter: TimeInterval = 30 * 60
 
 public func tokiUsesLocalWidgetData(bundle: Bundle = .main) -> Bool {
