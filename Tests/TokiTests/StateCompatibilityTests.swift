@@ -106,3 +106,20 @@ final class UpdateSnoozeTests: XCTestCase {
         ))
     }
 }
+
+// A prerelease tag (2.5.0-beta.1) must verify against the app's base marketing version (2.5.0).
+final class UpdateVerifyVersionTests: XCTestCase {
+    func testStableTagMatchesExactly() {
+        XCTAssertTrue(UpdateInstaller.versionMatchesRelease(bundleVersion: "2.5.0", releaseVersion: "2.5.0"))
+    }
+
+    func testBetaTagMatchesTheBaseVersion() {
+        XCTAssertTrue(UpdateInstaller.versionMatchesRelease(bundleVersion: "2.5.0", releaseVersion: "2.5.0-beta.1"))
+        XCTAssertTrue(UpdateInstaller.versionMatchesRelease(bundleVersion: "2.5.0", releaseVersion: "2.5.0-rc.2"))
+    }
+
+    func testDifferentBaseVersionStillFails() {
+        XCTAssertFalse(UpdateInstaller.versionMatchesRelease(bundleVersion: "2.4.4", releaseVersion: "2.5.0-beta.1"))
+        XCTAssertFalse(UpdateInstaller.versionMatchesRelease(bundleVersion: "2.5.1", releaseVersion: "2.5.0"))
+    }
+}
