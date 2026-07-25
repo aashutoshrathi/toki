@@ -12,19 +12,24 @@
 
 ### Added
 
-- A macOS WidgetKit widget shows account quota, agents awaiting input, and break suggestions in small and medium sizes. Toki shares a compact snapshot through its App Group and pushes timeline reloads after usage or attention changes.
-- Provider-colored quota rings visualize remaining percentage at a glance in the Toki panel and in a separate small or medium macOS widget, with lighter strokes and provider details on hover.
-- Settings can hide the AI insight card at the top of the main panel and stop its background generation.
-- Quota health rings are opt-in in Settings and now use a polished, provider-tinted treatment with the Toki mark at their center in both the panel and macOS widget.
+- **Desktop widgets.** Two new widgets you can add from the macOS widget gallery, in small and medium sizes. One shows your account quota, how many agents are waiting on you, and a nudge to take a break once everything's used up; the other draws your remaining quota as colorful rings.
+- **Quota rings in the app.** An optional ring view — turn it on in Settings — shows how much of each provider you have left at a glance, with the provider name and percentage on hover.
+- **"What's New" on the update banner.** When an update is ready, a button takes you straight to the release notes on GitHub before you install.
+- **Hide the AI insight card.** A Settings toggle hides the insight card at the top of the panel; its prompt instructions now sit in the same card, only showing when the insight is on.
+
+### Changed
+
+- Toki keeps showing your last known usage when you lose internet, and refreshes on its own the moment you're back online. The refresh button now shows an offline icon instead of spinning for nothing.
+- The header is simpler: the session-tracking button is gone, and Save buttons across the app use a floppy-disk icon.
 
 ### Fixed
 
-- Redeeming a Codex rate-limit reset updates its quota and reset badge immediately, then bypasses the normal five-minute API cache to confirm the new server state.
-- Local builds no longer write widget snapshots directly into the extension sandbox, avoiding repeated macOS prompts to access data from other apps.
+- Redeeming a Codex reset now updates your quota and clears the reset badge instantly, then confirms it with the server.
+- Widgets no longer go blank in the gap between refreshes, and unsigned builds no longer trigger repeated macOS prompts asking to access other apps' data.
 
 ### Removed
 
-- The `toki status`, `toki usage`, and `toki pi` command-line subcommands are gone. Toki is a menu bar and widget app; the terminal readouts saw little use and carried their own status-cache plumbing.
+- The `toki status`, `toki usage`, and `toki pi` terminal commands. Toki is a menu bar and widget app now.
 
 ## 2.4.3 - 2026-07-25
 
