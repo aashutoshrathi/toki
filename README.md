@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.4.2" src="https://img.shields.io/badge/version-2.4.2-2f80ed">
+  <img alt="Version 2.4.4" src="https://img.shields.io/badge/version-2.4.4-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -28,7 +28,7 @@
   </tr>
   <tr>
     <th align="center" valign="top" width="180">CLI</th>
-    <td><pre>            @@@@ @@@@             <br>   @@@@@@@@@@@     @@@@@@@        <br>   @@@@@@@@@@@     @@@@@@@        <br>            @@@@@@@@@             <br>              @@@@@               <br>               @@@                  /toki<br>               @@@    @@@           v2.4.2<br>               @@@   @@@@           github.com/aashutoshrathi/toki<br>               @@@@@@@@@          <br>               @@@@@@@            <br>               @@@@@              <br>               @@@@               <br>               @@@@@              <br>                @@@@@@@@@@        <br><br>Claude San: 85% left<br>Codex: 0% left<br>OpenCode: No usage today<br>Pi: $0.01 today</pre></td>
+    <td><pre>            @@@@ @@@@             <br>   @@@@@@@@@@@     @@@@@@@        <br>   @@@@@@@@@@@     @@@@@@@        <br>            @@@@@@@@@             <br>              @@@@@               <br>               @@@                  /toki<br>               @@@    @@@           v2.4.4<br>               @@@   @@@@           github.com/aashutoshrathi/toki<br>               @@@@@@@@@          <br>               @@@@@@@            <br>               @@@@@              <br>               @@@@               <br>               @@@@@              <br>                @@@@@@@@@@        <br><br>Claude San: 85% left<br>Codex: 0% left<br>OpenCode: No usage today<br>Pi: $0.01 today</pre></td>
   </tr>
 </table>
 
@@ -75,7 +75,11 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 **Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed. Also available in the terminal via `toki usage`.
 
-**Insights and notifications.** An on-device Apple Intelligence summary on macOS 26+ (deterministic recommendation elsewhere), low-quota and session warnings with cooldowns and DND, and a session mode for tracking burn during a focused run.
+**Insights and notifications.** An on-device Apple Intelligence summary on macOS 26+ (deterministic recommendation elsewhere), low-quota and session warnings with cooldowns and DND, and a session mode for tracking burn during a focused run. The insight card can be hidden from Settings.
+
+**Desktop widgets.** Small and medium macOS WidgetKit widgets put account quota, agents awaiting input, and break suggestions on your desktop or in Notification Center — plus a separate quota-rings widget for percentage-based accounts. They refresh from Toki's live data while it runs.
+
+**Quota health rings.** Opt-in, provider-colored rings that show remaining percentage at a glance, in the Accounts panel and as the standalone macOS widget, with provider details on hover.
 
 **Experimental notch mode.** Off by default, notched Macs only — moves the readout into the display notch, expanding on hover.
 
@@ -86,7 +90,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 | [Configuration](docs/configuration.md) | Config file, accounts, labels, refresh cadence, state |
 | [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
 | [Command line](docs/cli.md) | `toki status`, `toki usage`, `toki pi`, environment overrides |
-| [Features](docs/features.md) | Agents, heatmap, notch mode, insights, notifications, updates |
+| [Features](docs/features.md) | Agents, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
 
 ## Privacy
