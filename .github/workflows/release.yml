@@ -75,13 +75,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
+          # A hyphen in the tag (v2.5.0-beta.1) marks a GitHub prerelease: the in-app beta
+          # channel offers it, while releases/latest (the stable channel) never returns it.
+          PRERELEASE_FLAG=""
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             ".build/Toki_${VERSION}_universal.dmg" \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+            --generate-notes $PRERELEASE_FLAG
 
       - name: Update Homebrew tap
-        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        # The cask tracks the stable channel only, so prerelease tags must not rewrite it.
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' && !contains(github.ref_name, '-') }}
         run: |
           TAP_DIR="$(mktemp -d)"
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/aashutoshrathi/homebrew-tap.git" "$TAP_DIR"

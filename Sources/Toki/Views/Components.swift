@@ -16,9 +16,11 @@ struct UpdateAvailableBanner: View {
                     .foregroundStyle(.blue)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Toki \(update.version) is available")
+                    Text(update.isPrerelease ? "Toki \(update.version) (beta) is available" : "Toki \(update.version) is available")
                         .font(.system(size: 11, weight: .semibold))
-                    Text(updateChecker.isInstalling ? "Downloading and verifying update…" : "Install the latest GitHub release.")
+                    Text(updateChecker.isInstalling
+                        ? "Downloading and verifying update…"
+                        : (update.isPrerelease ? "Install the latest pre-release from GitHub." : "Install the latest GitHub release."))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }

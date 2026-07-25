@@ -1,10 +1,30 @@
 import AppKit
 import Foundation
 
+/// Which GitHub releases the updater is willing to offer.
+///
+/// Beta maps onto GitHub prereleases (tags like `v2.5.0-beta.1`). Stable keeps using the
+/// `releases/latest` endpoint, which GitHub already restricts to full releases, so stable
+/// users never see a prerelease no matter what is published.
+enum UpdateChannel: String, CaseIterable, Identifiable {
+    case stable
+    case beta
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .stable: return "Stable"
+        case .beta: return "Beta"
+        }
+    }
+}
+
 struct AvailableUpdate: Equatable {
     let version: String
     let releaseURL: URL
     let downloadURL: URL
+    let isPrerelease: Bool
 }
 
 private struct GitHubRelease: Decodable {
@@ -20,11 +40,15 @@ private struct GitHubRelease: Decodable {
 
     let tagName: String
     let htmlURL: URL
+    let prerelease: Bool
+    let draft: Bool
     let assets: [Asset]
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlURL = "html_url"
+        case prerelease
+        case draft
         case assets
     }
 }
@@ -37,10 +61,12 @@ final class UpdateChecker: ObservableObject {
     @Published private(set) var isChecking = false
     @Published private(set) var lastCheckedAt: Date?
     @Published private(set) var checkMessage: String?
+    @Published private(set) var channel: UpdateChannel
 
     private let session: URLSession
     private let currentVersion: String
     private let latestReleaseURL: URL
+    private let releaseListURL: URL
     private let defaults: UserDefaults
     private let mockVersion: String?
     private var checkTimer: Timer?
@@ -48,15 +74,19 @@ final class UpdateChecker: ObservableObject {
     init(
         session: URLSession = .shared,
         currentVersion: String = appVersion,
-        latestReleaseURL: URL = URL(string: "https://api.github.com/repos/aashutoshrathi/toki/releases/latest")!,
+        apiBaseURL: URL = URL(string: "https://api.github.com/repos/aashutoshrathi/toki")!,
         defaults: UserDefaults = .standard,
         mockVersion: String? = ProcessInfo.processInfo.environment["TOKI_MOCK_UPDATE_VERSION"]
     ) {
         self.session = session
         self.currentVersion = currentVersion
-        self.latestReleaseURL = latestReleaseURL
+        self.latestReleaseURL = apiBaseURL.appendingPathComponent("releases/latest")
+        // Enough pages of history that a stable release stays visible behind a run of betas;
+        // the newest published release is first, so 20 is generous.
+        self.releaseListURL = URL(string: apiBaseURL.appendingPathComponent("releases").absoluteString + "?per_page=20")!
         self.defaults = defaults
         self.mockVersion = mockVersion
+        self.channel = UpdateChannel(rawValue: defaults.string(forKey: updateChannelKey) ?? "") ?? .stable
         lastCheckedAt = defaults.object(forKey: lastUpdateCheckKey) as? Date
     }
 
@@ -75,6 +105,17 @@ final class UpdateChecker: ObservableObject {
 
     func checkNow() {
         runCheck(isManual: true)
+    }
+
+    /// Switching channels re-checks immediately: the point of opting into beta is to get the
+    /// prerelease now, not at the next five-minute tick. The stale offer is cleared first so a
+    /// beta banner can't linger after switching back to stable.
+    func setChannel(_ newChannel: UpdateChannel) {
+        guard newChannel != channel else { return }
+        channel = newChannel
+        defaults.set(newChannel.rawValue, forKey: updateChannelKey)
+        availableUpdate = nil
+        checkNow()
     }
 
     func dismiss() {
@@ -177,39 +218,25 @@ final class UpdateChecker: ObservableObject {
 
     private func checkForUpdates() async {
         if let mockVersion {
-            let version = normalizedVersion(mockVersion)
-            guard isNewerVersion(version, than: currentVersion),
+            let version = Self.normalizedVersion(mockVersion)
+            guard Self.isNewerVersion(version, than: currentVersion),
                   let url = URL(string: "https://github.com/aashutoshrathi/toki/releases/tag/v\(version)"),
                   let downloadURL = URL(string: "https://github.com/aashutoshrathi/toki/releases/download/v\(version)/Toki_\(version)_universal.dmg") else {
                 return
             }
-            availableUpdate = AvailableUpdate(version: version, releaseURL: url, downloadURL: downloadURL)
+            availableUpdate = AvailableUpdate(
+                version: version,
+                releaseURL: url,
+                downloadURL: downloadURL,
+                isPrerelease: version.contains("-")
+            )
             checkMessage = nil
             return
         }
 
         do {
-            var request = URLRequest(url: latestReleaseURL)
-            request.setValue(appUserAgent, forHTTPHeaderField: "User-Agent")
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            request.timeoutInterval = 10
-
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                checkMessage = "Couldn't check for updates."
-                return
-            }
-            if http.statusCode == 429 {
-                checkMessage = nil
-                return
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                checkMessage = "Couldn't check for updates."
-                return
-            }
-
-            let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-            let releaseVersion = normalizedVersion(release.tagName)
+            guard let release = try await fetchCandidateRelease() else { return }
+            let releaseVersion = Self.normalizedVersion(release.tagName)
             guard let asset = release.assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }) else {
                 checkMessage = "The latest release has no DMG."
                 return
@@ -220,7 +247,7 @@ final class UpdateChecker: ObservableObject {
                 return
             }
 
-            guard isNewerVersion(releaseVersion, than: currentVersion) else {
+            guard Self.isNewerVersion(releaseVersion, than: currentVersion) else {
                 availableUpdate = nil
                 checkMessage = "Toki is up to date."
                 return
@@ -246,7 +273,8 @@ final class UpdateChecker: ObservableObject {
             availableUpdate = AvailableUpdate(
                 version: releaseVersion,
                 releaseURL: release.htmlURL,
-                downloadURL: asset.browserDownloadURL
+                downloadURL: asset.browserDownloadURL,
+                isPrerelease: release.prerelease
             )
             checkMessage = nil
         } catch {
@@ -255,25 +283,116 @@ final class UpdateChecker: ObservableObject {
             // Update checks must never interrupt normal app startup.
         }
     }
+
+    /// Stable asks GitHub for `releases/latest`, which excludes prereleases and drafts by
+    /// definition. Beta has no equivalent endpoint, so it lists recent releases and picks the
+    /// highest version among them - prereleases included. Picking by version rather than list
+    /// order matters for graduation: once `2.5.0` ships, someone on `2.5.0-beta.2` must be
+    /// offered the stable build even if a stray older beta was published after it.
+    private func fetchCandidateRelease() async throws -> GitHubRelease? {
+        if channel == .stable {
+            guard let data = try await fetch(latestReleaseURL) else { return nil }
+            return try JSONDecoder().decode(GitHubRelease.self, from: data)
+        }
+        guard let data = try await fetch(releaseListURL) else { return nil }
+        let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
+        return releases
+            .filter { !$0.draft }
+            .max { Self.compareVersions(Self.normalizedVersion($0.tagName), Self.normalizedVersion($1.tagName)) == .orderedAscending }
+    }
+
+    /// Returns nil when the response was handled as a status message (rate limit, HTTP error).
+    private func fetch(_ url: URL) async throws -> Data? {
+        var request = URLRequest(url: url)
+        request.setValue(appUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 10
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            checkMessage = "Couldn't check for updates."
+            return nil
+        }
+        if http.statusCode == 429 {
+            checkMessage = nil
+            return nil
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            checkMessage = "Couldn't check for updates."
+            return nil
+        }
+        return data
+    }
+
+    nonisolated static func normalizedVersion(_ value: String) -> String {
+        var version = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if version.lowercased().hasPrefix("v") {
+            version.removeFirst()
+        }
+        return version
+    }
+
+    nonisolated static func isNewerVersion(_ candidate: String, than current: String) -> Bool {
+        compareVersions(candidate, normalizedVersion(current)) == .orderedDescending
+    }
+
+    /// Semver-aware ordering, which the previous `String.compare(options: .numeric)` was not:
+    /// that ordering ranks `2.5.0-beta.1` above `2.5.0` because the prerelease tag makes the
+    /// string longer. Getting this right is what lets a beta build graduate - `2.5.0` must beat
+    /// `2.5.0-beta.2` so the stable release is offered to beta testers, and must NOT beat itself
+    /// so stable users aren't reinstalled in a loop.
+    nonisolated static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let left = parseVersion(lhs)
+        let right = parseVersion(rhs)
+
+        for index in 0..<max(left.core.count, right.core.count) {
+            let a = index < left.core.count ? left.core[index] : 0
+            let b = index < right.core.count ? right.core[index] : 0
+            if a != b { return a < b ? .orderedAscending : .orderedDescending }
+        }
+
+        // Same core version: a full release outranks any of its prereleases.
+        switch (left.prerelease.isEmpty, right.prerelease.isEmpty) {
+        case (true, true): return .orderedSame
+        case (true, false): return .orderedDescending
+        case (false, true): return .orderedAscending
+        case (false, false): break
+        }
+
+        for index in 0..<max(left.prerelease.count, right.prerelease.count) {
+            // Fewer identifiers sorts first (semver: `-beta` < `-beta.1`).
+            guard index < left.prerelease.count else { return .orderedAscending }
+            guard index < right.prerelease.count else { return .orderedDescending }
+            let a = left.prerelease[index]
+            let b = right.prerelease[index]
+            switch (Int(a), Int(b)) {
+            case let (numA?, numB?):
+                if numA != numB { return numA < numB ? .orderedAscending : .orderedDescending }
+            case (.some, nil):
+                // Numeric identifiers sort below alphanumeric ones (semver spec rule 11).
+                return .orderedAscending
+            case (nil, .some):
+                return .orderedDescending
+            case (nil, nil):
+                if a != b { return a < b ? .orderedAscending : .orderedDescending }
+            }
+        }
+        return .orderedSame
+    }
+
+    private nonisolated static func parseVersion(_ value: String) -> (core: [Int], prerelease: [String]) {
+        // Build metadata (`+sha`) never affects precedence, so it is stripped outright.
+        let withoutBuild = value.split(separator: "+", maxSplits: 1).first ?? ""
+        let parts = withoutBuild.split(separator: "-", maxSplits: 1)
+        let core = (parts.first ?? "").split(separator: ".").map { Int($0) ?? 0 }
+        let prerelease = parts.count > 1 ? parts[1].split(separator: ".").map(String.init) : []
+        return (core, prerelease)
+    }
 }
 
 private let dismissedVersionKey = "dismissedUpdateVersion"
 private let snoozedVersionKey = "snoozedUpdateVersion"
 private let snoozedUntilKey = "snoozedUpdateUntil"
 private let lastUpdateCheckKey = "lastUpdateCheckAt"
+private let updateChannelKey = "updateChannel"
 private let updateCheckInterval: TimeInterval = 5 * 60
-
-private func normalizedVersion(_ value: String) -> String {
-    var version = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    if version.lowercased().hasPrefix("v") {
-        version.removeFirst()
-    }
-    return version
-}
-
-private func isNewerVersion(_ candidate: String, than current: String) -> Bool {
-    candidate.compare(
-        normalizedVersion(current),
-        options: [.numeric, .caseInsensitive]
-    ) == .orderedDescending
-}
