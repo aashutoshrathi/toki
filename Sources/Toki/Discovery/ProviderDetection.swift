@@ -29,6 +29,7 @@ enum ProviderDetection {
             if let pi = detectPi() { detected.append(pi) }
             if let grok = detectGrok() { detected.append(grok) }
             if let gemini = detectGemini() { detected.append(gemini) }
+            if let cursor = detectCursor() { detected.append(cursor) }
             return detected
         }.value
     }
@@ -113,6 +114,25 @@ enum ProviderDetection {
             detail: credentials.email.map { "Signed in as \($0)" } ?? "Signed in via Google OAuth",
             makeAccount: {
                 AccountConfig(id: "gemini", name: "Gemini", provider: .gemini)
+            }
+        )
+    }
+
+    // Cursor has no quota API, so like Grok/Gemini this is agent-detection-only: detected by
+    // the presence of the cursor-agent CLI, rendered as an agent-only card that fills with live
+    // sessions in the Agents tab.
+    private static func detectCursor() -> DetectedProvider? {
+        let locations = ["~/.local/bin/cursor-agent", "/usr/local/bin/cursor-agent", "/opt/homebrew/bin/cursor-agent"]
+        let installed = locations
+            .map { ($0 as NSString).expandingTildeInPath }
+            .contains { FileManager.default.isExecutableFile(atPath: $0) }
+        guard installed else { return nil }
+        return DetectedProvider(
+            provider: .cursor,
+            title: "Cursor",
+            detail: "cursor-agent CLI detected",
+            makeAccount: {
+                AccountConfig(id: "cursor", name: "Cursor", provider: .cursor)
             }
         )
     }

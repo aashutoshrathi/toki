@@ -198,6 +198,7 @@ enum ActiveAgentScanner {
         if executable == "copilot" || (executable == "node" && entrypoint?.contains("/@github/copilot/") == true) { return .copilot }
         if executable == "codex" || executable.hasPrefix("codex-") || (executable == "node" && entrypoint?.contains("/@openai/codex/") == true) { return .codex }
         if executable == "claude" { return .claudeCode }
+        if executable == "cursor-agent" { return .cursor }
         if executable == "grok" { return .grok }
         if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
         return nil

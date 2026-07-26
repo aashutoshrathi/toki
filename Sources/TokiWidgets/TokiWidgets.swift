@@ -125,8 +125,10 @@ private struct TokiWidgetEntryView: View {
                 Spacer()
                 attentionBadge(data.awaitingInputCount)
             }
-            ForEach(Array(data.entries.prefix(2))) { item in
-                ProviderRow(item: item)
+            let shown = Array(data.entries.prefix(2))
+            let titles = disambiguatedTitles(shown)
+            ForEach(shown) { item in
+                ProviderRow(item: item, title: titles[item.id] ?? item.displayName)
             }
             Spacer(minLength: 0)
         }
@@ -140,9 +142,11 @@ private struct TokiWidgetEntryView: View {
                 Spacer()
                 attentionBadge(data.awaitingInputCount)
             }
+            let shown = Array(data.entries.prefix(4))
+            let titles = disambiguatedTitles(shown)
             HStack(alignment: .top, spacing: 12) {
-                ForEach(Array(data.entries.prefix(4))) { item in
-                    ProviderColumn(item: item)
+                ForEach(shown) { item in
+                    ProviderColumn(item: item, title: titles[item.id] ?? item.displayName)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -177,20 +181,48 @@ private struct TokiWidgetEntryView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(.red, in: Capsule())
+                .modifier(WidgetBadgeBackground())
                 .accessibilityLabel("\(count) agents awaiting input")
         }
     }
 
 }
 
+extension View {
+    @ViewBuilder
+    func widgetGlass<S: Shape, Fill: ShapeStyle>(
+        in shape: S,
+        tint: Color? = nil,
+        tintOpacity: Double = GlassStyle.tintOpacity,
+        prominent: Bool = GlassStyle.prominentByDefault,
+        fallbackFill: Fill
+    ) -> some View {
+        if #available(macOS 26, *) {
+            background(fallbackFill, in: shape)
+                .glassEffect(
+                    GlassStyle.resolve(prominent: prominent, tint: tint, tintOpacity: tintOpacity, interactive: false),
+                    in: shape
+                )
+        } else {
+            background(fallbackFill, in: shape)
+        }
+    }
+}
+
+private struct WidgetBadgeBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        content.widgetGlass(in: Capsule(), tint: .red, tintOpacity: 0.85, prominent: true, fallbackFill: Color.red)
+    }
+}
+
 private struct ProviderRow: View {
     let item: WidgetEntry
+    var title: String
 
     var body: some View {
         HStack(spacing: 8) {
             ProviderGlyph(item: item, size: 18)
-            Text(item.displayName)
+            Text(title)
                 .font(.caption)
                 .lineLimit(1)
             Spacer(minLength: 4)
@@ -203,6 +235,7 @@ private struct ProviderRow: View {
 
 private struct ProviderColumn: View {
     let item: WidgetEntry
+    var title: String
 
     var body: some View {
         VStack(spacing: 6) {
@@ -211,13 +244,33 @@ private struct ProviderColumn: View {
                 .font(.title3.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text(item.displayName)
+            Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity)
+        .widgetGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), fallbackFill: Color.primary.opacity(0.05))
         .accessibilityElement(children: .combine)
     }
+}
+
+private func disambiguatedTitles(_ entries: [WidgetEntry]) -> [String: String] {
+    var counts: [String: Int] = [:]
+    for entry in entries { counts[entry.provider, default: 0] += 1 }
+    var used: [String: Int] = [:]
+    var result: [String: String] = [:]
+    for entry in entries {
+        if counts[entry.provider, default: 0] > 1 {
+            used[entry.provider, default: 0] += 1
+            result[entry.id] = "\(entry.displayName) \(used[entry.provider]!)"
+        } else {
+            result[entry.id] = entry.displayName
+        }
+    }
+    return result
 }
 
 private struct QuotaRings: View {
@@ -225,10 +278,11 @@ private struct QuotaRings: View {
     let size: CGFloat
 
     var body: some View {
-        ZStack {
+        let colors = resolvedRingColors(ringEntries)
+        return ZStack {
             ForEach(Array(ringEntries.enumerated()), id: \.element.id) { index, item in
                 let diameter = size - CGFloat(index) * ringSpacing * 2
-                let color = providerColor(item.provider)
+                let color = colors[item.id] ?? providerColor(item.provider)
 
                 ZStack {
                     Circle()
@@ -251,7 +305,7 @@ private struct QuotaRings: View {
     }
 
     private var ringEntries: [WidgetEntry] {
-        uniqueProviders(entries.filter { $0.remainingRatio != nil })
+        distinctByID(entries.filter { $0.remainingRatio != nil })
     }
 
     private var lineWidth: CGFloat {
@@ -321,13 +375,15 @@ private struct TokiQuotaRingsEntryView: View {
             }
 
             if family == .systemMedium {
+                let rings = ringEntries(data)
+                let colors = resolvedRingColors(rings)
                 HStack(spacing: 22) {
                     QuotaRings(entries: data.entries, size: 104)
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(ringEntries(data)) { item in
+                        ForEach(rings) { item in
                             HStack(spacing: 7) {
                                 Circle()
-                                    .fill(providerColor(item.provider))
+                                    .fill(colors[item.id] ?? providerColor(item.provider))
                                     .frame(width: 8, height: 8)
                                 Text(item.displayName)
                                     .font(.caption)
@@ -364,13 +420,41 @@ private struct TokiQuotaRingsEntryView: View {
     }
 
     private func ringEntries(_ data: WidgetDataSnapshot) -> [WidgetEntry] {
-        uniqueProviders(data.entries.filter { $0.remainingRatio != nil })
+        distinctByID(data.entries.filter { $0.remainingRatio != nil })
     }
 }
 
-private func uniqueProviders(_ entries: [WidgetEntry]) -> [WidgetEntry] {
+private func distinctByID(_ entries: [WidgetEntry]) -> [WidgetEntry] {
     var seen = Set<String>()
-    return entries.filter { seen.insert($0.provider).inserted }
+    return entries.filter { seen.insert($0.id).inserted }
+}
+
+private func resolvedRingColors(_ entries: [WidgetEntry]) -> [String: Color] {
+    var result: [String: Color] = [:]
+    let groups = Dictionary(grouping: entries, by: { $0.provider })
+    for (_, group) in groups {
+        for (index, entry) in group.enumerated() {
+            if let custom = Color(hex: entry.colorHex) {
+                result[entry.id] = custom
+            } else if group.count == 1 {
+                result[entry.id] = providerColor(entry.provider)
+            } else {
+                result[entry.id] = shadedColor(providerColor(entry.provider), index: index, count: group.count)
+            }
+        }
+    }
+    return result
+}
+
+private func shadedColor(_ base: Color, index: Int, count: Int) -> Color {
+    let ns = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+    let t = count > 1 ? Double(index) / Double(count - 1) : 0.5
+    let factor = 0.68 + t * 0.64
+    return Color(
+        red: min(1, Double(ns.redComponent) * factor),
+        green: min(1, Double(ns.greenComponent) * factor),
+        blue: min(1, Double(ns.blueComponent) * factor)
+    )
 }
 
 private struct ProviderGlyph: View {
@@ -400,6 +484,7 @@ private struct ProviderGlyph: View {
         case "gemini": return "gemini-logo"
         case "grok": return "grok-logo"
         case "pi": return "pi-logo"
+        case "cursor": return "cursor-logo"
         default: return nil
         }
     }

@@ -537,8 +537,6 @@ struct SettingsPanel: View {
         }
     }
 
-    // Advanced actions are buttons, not settings, so they get a lighter treatment than the
-    // cards above: equal-width, subtly bordered, so the pair reads as one tidy row.
     private func advancedButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -550,10 +548,12 @@ struct SettingsPanel: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 7)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(Color.primary.opacity(0.09), lineWidth: 1)
+            .glassSurface(
+                cornerRadius: 7,
+                interactive: true,
+                fallbackFill: Color.primary.opacity(0.05),
+                fallbackStroke: .primary,
+                fallbackStrokeOpacity: 0.09
             )
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
@@ -574,13 +574,12 @@ struct SettingsPanel: View {
 }
 
 private extension View {
-    // Shared card chrome so every settings row is the same rounded, bordered shape. Defaults
-    // are the neutral tint; colored cards (AI insight, quota rings, dev channel) pass their own.
     func settingsCard(tint: Color = .primary, fill: Double = 0.04, stroke: Double = 0.08) -> some View {
-        background(tint.opacity(fill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(tint.opacity(stroke), lineWidth: 1)
-            )
+        glassSurface(
+            tint: tint == .primary ? nil : tint,
+            fallbackFill: tint.opacity(fill),
+            fallbackStroke: tint,
+            fallbackStrokeOpacity: stroke
+        )
     }
 }

@@ -34,6 +34,12 @@ struct ProviderLogo: View {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: size * 0.72, weight: .bold))
                     .foregroundStyle(Color(red: 0.55, green: 0.45, blue: 0.95))
+            case .cursor:
+                SVGLogoMark(asset: "cursor-logo", size: size) {
+                    Image(systemName: "cube.fill")
+                        .font(.system(size: size * 0.72, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                }
             case .grok:
                 SVGLogoMark(asset: "grok-logo", size: size, template: true) {
                     Image(systemName: "asterisk")

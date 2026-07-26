@@ -294,6 +294,8 @@ final class PiUsageClientTests: XCTestCase {
             ("/opt/homebrew/bin/codex", .codex),
             ("node /x/@openai/codex/dist/cli.js", .codex),
             ("/usr/local/bin/claude", .claudeCode),
+            ("/usr/local/bin/cursor-agent", .cursor),
+            ("/Users/x/.local/bin/cursor-agent --use-system-ca /Users/x/.local/share/cursor-agent/versions/v/index.js", .cursor),
             ("/usr/local/bin/grok", .grok),
             ("/usr/local/bin/gemini", .gemini),
             ("node /x/bin/gemini", .gemini),
@@ -312,7 +314,9 @@ final class PiUsageClientTests: XCTestCase {
             "bun /x/@earendil-works/not-pi/dist/cli.js",
             "node /tmp/copilot-helper.js",
             "node /tmp/codex-helper.js",
-            "node /tmp/gemini-helper.js"
+            "node /tmp/gemini-helper.js",
+            "node /tmp/cursor-helper.js",
+            "/usr/local/bin/cursor"
         ]
         for command in nonMatches {
             XCTAssertNil(ActiveAgentScanner.providerForCommand(command), command)

@@ -103,6 +103,7 @@ struct ActiveAgentsPanel: View {
                                 .buttonStyle(.plain)
                                 .help(agent.attention.map { "\($0.summary) - click to go answer" }
                                     ?? (agent.hasTerminalTarget ? "Go to this terminal session" : "Open the likely host app"))
+                                .pointerOnHover()
 
                                 // Quit button, folded inside the card next to the open affordance
                                 // (a sibling of the navigate button, not nested in it, so clicking
@@ -121,11 +122,7 @@ struct ActiveAgentsPanel: View {
                                 .pointerOnHover()
                             }
                             .padding(8)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                            )
+                            .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
                         }
                     }
                 }

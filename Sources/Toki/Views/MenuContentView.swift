@@ -1,4 +1,5 @@
 import SwiftUI
+import TokiWidgetShared
 
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
@@ -76,10 +77,10 @@ struct MenuContentView: View {
         HStack(alignment: .center, spacing: 9) {
             TokiLogoMark(size: 34)
                 .padding(5)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .glassSurface(
+                    fallbackFill: .regularMaterial,
+                    fallbackStroke: .primary,
+                    fallbackStrokeOpacity: 0.08
                 )
 
             VStack(alignment: .leading, spacing: 3) {
@@ -126,7 +127,7 @@ struct MenuContentView: View {
                     }
                 }
                 .frame(width: 25, height: 25)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .glassSurface(cornerRadius: 7, interactive: true, fallbackFill: Color.primary.opacity(0.06))
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
@@ -146,7 +147,12 @@ struct MenuContentView: View {
             } label: {
                 Image(systemName: store.hidesSensitiveInfo ? "eye.slash" : "eye")
                     .frame(width: 25, height: 25)
-                    .background((store.hidesSensitiveInfo ? Color.blue : Color.primary).opacity(store.hidesSensitiveInfo ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .glassSurface(
+                        cornerRadius: 7,
+                        tint: store.hidesSensitiveInfo ? .blue : nil,
+                        interactive: true,
+                        fallbackFill: (store.hidesSensitiveInfo ? Color.blue : Color.primary).opacity(store.hidesSensitiveInfo ? 0.12 : 0.06)
+                    )
                     .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
@@ -161,7 +167,7 @@ struct MenuContentView: View {
             } label: {
                 Image(systemName: "doc.text")
                     .frame(width: 25, height: 25)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .glassSurface(cornerRadius: 7, interactive: true, fallbackFill: Color.primary.opacity(0.06))
                     .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
@@ -174,7 +180,7 @@ struct MenuContentView: View {
             } label: {
                 Image(systemName: "gearshape")
                     .frame(width: 25, height: 25)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .glassSurface(cornerRadius: 7, interactive: true, fallbackFill: Color.primary.opacity(0.06))
                     .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
@@ -187,10 +193,13 @@ struct MenuContentView: View {
             } label: {
                 Image(systemName: "power")
                     .frame(width: 25, height: 25)
-                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(Color.red.opacity(0.42), lineWidth: 1)
+                    .glassSurface(
+                        cornerRadius: 7,
+                        tint: .red,
+                        interactive: true,
+                        fallbackFill: Color.red.opacity(0.08),
+                        fallbackStroke: .red,
+                        fallbackStrokeOpacity: 0.42
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
@@ -262,7 +271,15 @@ struct MenuContentView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 28)
                         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .background(selectedTab == tab ? Color.primary.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .background {
+                            if selectedTab == tab {
+                                if #available(macOS 26, *) {
+                                    Color.clear.glassEffect(GlassStyle.resolve(prominent: false, tint: nil, tintOpacity: 0, interactive: true), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                } else {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.10))
+                                }
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .semibold))

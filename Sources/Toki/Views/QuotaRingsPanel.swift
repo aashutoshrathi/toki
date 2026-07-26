@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 
 struct QuotaRingsPanel: View {
     let snapshots: [AccountSnapshot]
     var onHide: () -> Void = {}
     @State private var hoveredSnapshotID: String?
+    @State private var cardsHeight: CGFloat = 84
 
     var body: some View {
         // A header row ("QUOTA" left, Hide right) keeps those two clear of the ring below, so
@@ -21,37 +23,44 @@ struct QuotaRingsPanel: View {
 
             // Cards fill the available width instead of a fixed 150; the HStack spacing keeps a
             // comfortable gap to the ring so the wider cards never feel crowded against it.
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: 14) {
                 VStack(spacing: 6) {
                     ForEach(ringSnapshots) { snapshot in
                         card(snapshot)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { cardsHeight = proxy.size.height }
+                            .onChange(of: proxy.size.height) { _, newValue in cardsHeight = newValue }
+                    }
+                )
 
                 QuotaRingsView(
                     snapshots: ringSnapshots,
-                    size: 84,
+                    colors: ringColors,
+                    size: min(180, max(96, cardsHeight - 4)),
                     hoveredSnapshotID: $hoveredSnapshotID
                 )
-                .padding(.trailing, 8)
+                .padding(.trailing, 4)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(
-            RadialGradient(
+        .glassSurface(
+            cornerRadius: 11,
+            tint: panelAccent,
+            fallbackFill: RadialGradient(
                 colors: [panelAccent.opacity(0.11), Color.primary.opacity(0.035)],
                 center: .trailing,
                 startRadius: 8,
                 endRadius: 220
             ),
-            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            fallbackStroke: .primary,
+            fallbackStrokeOpacity: 0.085
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color.primary.opacity(0.085), lineWidth: 1)
-        }
         .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
     }
 
@@ -77,11 +86,11 @@ struct QuotaRingsPanel: View {
 
     private func card(_ snapshot: AccountSnapshot) -> some View {
         let isHovered = hoveredSnapshotID == snapshot.id
-        let color = ringColor(snapshot)
+        let color = color(for: snapshot)
         return HStack(spacing: 8) {
             ProviderLogo(provider: snapshot.provider, size: 16)
             VStack(alignment: .leading, spacing: 1) {
-                Text(snapshot.provider.displayName)
+                Text(chipTitle(for: snapshot))
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -120,22 +129,64 @@ struct QuotaRingsPanel: View {
     }
 
     private var ringSnapshots: [AccountSnapshot] {
-        var seen = Set<Provider>()
+        var seen = Set<String>()
         return snapshots.filter {
             !$0.isError
                 && !$0.isLoadingPlaceholder
                 && $0.remainingRatio != nil
-                && seen.insert($0.provider).inserted
+                && seen.insert($0.id).inserted
         }
     }
 
+    private func chipTitle(for snapshot: AccountSnapshot) -> String {
+        let alias = snapshot.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sameProviderCount = ringSnapshots.filter { $0.provider == snapshot.provider }.count
+        if sameProviderCount > 1, !alias.isEmpty {
+            return alias
+        }
+        return snapshot.provider.displayName
+    }
+
     private var panelAccent: Color {
-        ringSnapshots.first.map(ringColor) ?? .accentColor
+        ringSnapshots.first.map { color(for: $0) } ?? .accentColor
+    }
+
+    private var ringColors: [String: Color] {
+        var result: [String: Color] = [:]
+        let groups = Dictionary(grouping: ringSnapshots, by: { $0.provider })
+        for (_, group) in groups {
+            for (index, snap) in group.enumerated() {
+                if let custom = colorFromHex(snap.colorHex) {
+                    result[snap.id] = custom
+                } else if group.count == 1 {
+                    result[snap.id] = ringColor(snap)
+                } else {
+                    result[snap.id] = shaded(ringColor(snap), index: index, count: group.count)
+                }
+            }
+        }
+        return result
+    }
+
+    private func color(for snapshot: AccountSnapshot) -> Color {
+        ringColors[snapshot.id] ?? ringColor(snapshot)
+    }
+
+    private func shaded(_ base: Color, index: Int, count: Int) -> Color {
+        let ns = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+        let t = count > 1 ? Double(index) / Double(count - 1) : 0.5
+        let factor = 0.68 + t * 0.64
+        return Color(
+            red: min(1, Double(ns.redComponent) * factor),
+            green: min(1, Double(ns.greenComponent) * factor),
+            blue: min(1, Double(ns.blueComponent) * factor)
+        )
     }
 }
 
 private struct QuotaRingsView: View {
     let snapshots: [AccountSnapshot]
+    let colors: [String: Color]
     let size: CGFloat
     @Binding var hoveredSnapshotID: String?
 
@@ -143,7 +194,7 @@ private struct QuotaRingsView: View {
         ZStack {
             ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
                 let diameter = size - CGFloat(index) * ringSpacing * 2
-                let color = ringColor(snapshot)
+                let color = colors[snapshot.id] ?? ringColor(snapshot)
 
                 ZStack {
                     Circle()
@@ -178,7 +229,11 @@ private struct QuotaRingsView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             snapshots
-                .map { "\($0.provider.displayName), \(percentText($0.remainingRatio ?? 0)) remaining" }
+                .map { snap in
+                    let alias = snap.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let label = alias.isEmpty ? snap.provider.displayName : alias
+                    return "\(label), \(percentText(snap.remainingRatio ?? 0)) remaining"
+                }
                 .joined(separator: "; ")
         )
     }

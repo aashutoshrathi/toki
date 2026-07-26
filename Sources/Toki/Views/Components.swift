@@ -78,10 +78,11 @@ struct UpdateAvailableBanner: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.blue.opacity(0.28), lineWidth: 1)
+        .glassSurface(
+            tint: .blue,
+            fallbackFill: Color.blue.opacity(0.08),
+            fallbackStroke: .blue,
+            fallbackStrokeOpacity: 0.28
         )
     }
 }
@@ -136,11 +137,7 @@ struct StatBlock: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
     }
 }
 
@@ -258,10 +255,11 @@ struct AIInsightCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
-        .background((isAI ? Color.purple : Color.primary).opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke((isAI ? Color.purple : Color.primary).opacity(isAI ? 0.18 : 0.08), lineWidth: 1)
+        .glassSurface(
+            tint: isAI ? .purple : nil,
+            fallbackFill: (isAI ? Color.purple : Color.primary).opacity(0.06),
+            fallbackStroke: isAI ? .purple : .primary,
+            fallbackStrokeOpacity: isAI ? 0.18 : 0.08
         )
     }
 
@@ -497,10 +495,6 @@ struct EmptyPanel: View {
         }
         .frame(maxWidth: .infinity)
         .padding(18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
     }
 }
