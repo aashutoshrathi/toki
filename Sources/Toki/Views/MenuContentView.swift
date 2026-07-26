@@ -273,7 +273,7 @@ struct MenuContentView: View {
                         .background {
                             if selectedTab == tab {
                                 if #available(macOS 26, *) {
-                                    Color.clear.glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                    Color.clear.glassEffect(GlassStyle.resolve(prominent: false, tint: nil, tintOpacity: 0, interactive: true), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                                 } else {
                                     RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.10))
                                 }

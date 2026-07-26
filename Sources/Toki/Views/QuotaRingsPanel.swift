@@ -80,7 +80,7 @@ struct QuotaRingsPanel: View {
         return HStack(spacing: 8) {
             ProviderLogo(provider: snapshot.provider, size: 16)
             VStack(alignment: .leading, spacing: 1) {
-                Text(snapshot.provider.displayName)
+                Text(chipTitle(for: snapshot))
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -119,13 +119,22 @@ struct QuotaRingsPanel: View {
     }
 
     private var ringSnapshots: [AccountSnapshot] {
-        var seen = Set<Provider>()
+        var seen = Set<String>()
         return snapshots.filter {
             !$0.isError
                 && !$0.isLoadingPlaceholder
                 && $0.remainingRatio != nil
-                && seen.insert($0.provider).inserted
+                && seen.insert($0.id).inserted
         }
+    }
+
+    private func chipTitle(for snapshot: AccountSnapshot) -> String {
+        let alias = snapshot.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sameProviderCount = ringSnapshots.filter { $0.provider == snapshot.provider }.count
+        if sameProviderCount > 1, !alias.isEmpty {
+            return alias
+        }
+        return snapshot.provider.displayName
     }
 
     private var panelAccent: Color {
