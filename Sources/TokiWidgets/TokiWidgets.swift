@@ -125,8 +125,10 @@ private struct TokiWidgetEntryView: View {
                 Spacer()
                 attentionBadge(data.awaitingInputCount)
             }
-            ForEach(Array(data.entries.prefix(2))) { item in
-                ProviderRow(item: item)
+            let shown = Array(data.entries.prefix(2))
+            let titles = disambiguatedTitles(shown)
+            ForEach(shown) { item in
+                ProviderRow(item: item, title: titles[item.id] ?? item.displayName)
             }
             Spacer(minLength: 0)
         }
@@ -140,9 +142,11 @@ private struct TokiWidgetEntryView: View {
                 Spacer()
                 attentionBadge(data.awaitingInputCount)
             }
+            let shown = Array(data.entries.prefix(4))
+            let titles = disambiguatedTitles(shown)
             HStack(alignment: .top, spacing: 12) {
-                ForEach(Array(data.entries.prefix(4))) { item in
-                    ProviderColumn(item: item)
+                ForEach(shown) { item in
+                    ProviderColumn(item: item, title: titles[item.id] ?? item.displayName)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -194,10 +198,11 @@ extension View {
         fallbackFill: Fill
     ) -> some View {
         if #available(macOS 26, *) {
-            glassEffect(
-                GlassStyle.resolve(prominent: prominent, tint: tint, tintOpacity: tintOpacity, interactive: false),
-                in: shape
-            )
+            background(fallbackFill, in: shape)
+                .glassEffect(
+                    GlassStyle.resolve(prominent: prominent, tint: tint, tintOpacity: tintOpacity, interactive: false),
+                    in: shape
+                )
         } else {
             background(fallbackFill, in: shape)
         }
@@ -212,11 +217,12 @@ private struct WidgetBadgeBackground: ViewModifier {
 
 private struct ProviderRow: View {
     let item: WidgetEntry
+    var title: String
 
     var body: some View {
         HStack(spacing: 8) {
             ProviderGlyph(item: item, size: 18)
-            Text(item.displayName)
+            Text(title)
                 .font(.caption)
                 .lineLimit(1)
             Spacer(minLength: 4)
@@ -229,6 +235,7 @@ private struct ProviderRow: View {
 
 private struct ProviderColumn: View {
     let item: WidgetEntry
+    var title: String
 
     var body: some View {
         VStack(spacing: 6) {
@@ -237,7 +244,7 @@ private struct ProviderColumn: View {
                 .font(.title3.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text(item.displayName)
+            Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -248,6 +255,22 @@ private struct ProviderColumn: View {
         .widgetGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), fallbackFill: Color.primary.opacity(0.05))
         .accessibilityElement(children: .combine)
     }
+}
+
+private func disambiguatedTitles(_ entries: [WidgetEntry]) -> [String: String] {
+    var counts: [String: Int] = [:]
+    for entry in entries { counts[entry.provider, default: 0] += 1 }
+    var used: [String: Int] = [:]
+    var result: [String: String] = [:]
+    for entry in entries {
+        if counts[entry.provider, default: 0] > 1 {
+            used[entry.provider, default: 0] += 1
+            result[entry.id] = "\(entry.displayName) \(used[entry.provider]!)"
+        } else {
+            result[entry.id] = entry.displayName
+        }
+    }
+    return result
 }
 
 private struct QuotaRings: View {
@@ -461,6 +484,7 @@ private struct ProviderGlyph: View {
         case "gemini": return "gemini-logo"
         case "grok": return "grok-logo"
         case "pi": return "pi-logo"
+        case "cursor": return "cursor-logo"
         default: return nil
         }
     }
