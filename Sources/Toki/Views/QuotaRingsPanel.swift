@@ -221,7 +221,11 @@ private struct QuotaRingsView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             snapshots
-                .map { "\($0.provider.displayName), \(percentText($0.remainingRatio ?? 0)) remaining" }
+                .map { snap in
+                    let alias = snap.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let label = alias.isEmpty ? snap.provider.displayName : alias
+                    return "\(label), \(percentText(snap.remainingRatio ?? 0)) remaining"
+                }
                 .joined(separator: "; ")
         )
     }
