@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct QuotaRingsPanel: View {
@@ -31,6 +32,7 @@ struct QuotaRingsPanel: View {
 
                 QuotaRingsView(
                     snapshots: ringSnapshots,
+                    colors: ringColors,
                     size: 84,
                     hoveredSnapshotID: $hoveredSnapshotID
                 )
@@ -76,7 +78,7 @@ struct QuotaRingsPanel: View {
 
     private func card(_ snapshot: AccountSnapshot) -> some View {
         let isHovered = hoveredSnapshotID == snapshot.id
-        let color = ringColor(snapshot)
+        let color = color(for: snapshot)
         return HStack(spacing: 8) {
             ProviderLogo(provider: snapshot.provider, size: 16)
             VStack(alignment: .leading, spacing: 1) {
@@ -138,12 +140,45 @@ struct QuotaRingsPanel: View {
     }
 
     private var panelAccent: Color {
-        ringSnapshots.first.map(ringColor) ?? .accentColor
+        ringSnapshots.first.map { color(for: $0) } ?? .accentColor
+    }
+
+    private var ringColors: [String: Color] {
+        var result: [String: Color] = [:]
+        let groups = Dictionary(grouping: ringSnapshots, by: { $0.provider })
+        for (_, group) in groups {
+            for (index, snap) in group.enumerated() {
+                if let custom = colorFromHex(snap.colorHex) {
+                    result[snap.id] = custom
+                } else if group.count == 1 {
+                    result[snap.id] = ringColor(snap)
+                } else {
+                    result[snap.id] = shaded(ringColor(snap), index: index, count: group.count)
+                }
+            }
+        }
+        return result
+    }
+
+    private func color(for snapshot: AccountSnapshot) -> Color {
+        ringColors[snapshot.id] ?? ringColor(snapshot)
+    }
+
+    private func shaded(_ base: Color, index: Int, count: Int) -> Color {
+        let ns = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+        let t = count > 1 ? Double(index) / Double(count - 1) : 0.5
+        let factor = 0.68 + t * 0.64
+        return Color(
+            red: min(1, Double(ns.redComponent) * factor),
+            green: min(1, Double(ns.greenComponent) * factor),
+            blue: min(1, Double(ns.blueComponent) * factor)
+        )
     }
 }
 
 private struct QuotaRingsView: View {
     let snapshots: [AccountSnapshot]
+    let colors: [String: Color]
     let size: CGFloat
     @Binding var hoveredSnapshotID: String?
 
@@ -151,7 +186,7 @@ private struct QuotaRingsView: View {
         ZStack {
             ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
                 let diameter = size - CGFloat(index) * ringSpacing * 2
-                let color = ringColor(snapshot)
+                let color = colors[snapshot.id] ?? ringColor(snapshot)
 
                 ZStack {
                     Circle()
