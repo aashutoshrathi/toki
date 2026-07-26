@@ -68,7 +68,20 @@ enum UsageFetcher {
            let detected = PiUsageClient.autoDetectedAccount() {
             accounts.append(detected)
         }
+        if !configured.contains(where: { $0.provider == .cursor }),
+           let detected = cursorAutoDetectedAccount() {
+            accounts.append(detected)
+        }
         return accounts
+    }
+
+    private static func cursorAutoDetectedAccount() -> AccountConfig? {
+        let locations = ["~/.local/bin/cursor-agent", "/usr/local/bin/cursor-agent", "/opt/homebrew/bin/cursor-agent"]
+        let installed = locations
+            .map { ($0 as NSString).expandingTildeInPath }
+            .contains { FileManager.default.isExecutableFile(atPath: $0) }
+        guard installed else { return nil }
+        return AccountConfig(id: "cursor-auto", name: "Cursor", provider: .cursor)
     }
 
     private static func snapshots(

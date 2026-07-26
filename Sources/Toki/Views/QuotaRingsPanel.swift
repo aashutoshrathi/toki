@@ -5,6 +5,7 @@ struct QuotaRingsPanel: View {
     let snapshots: [AccountSnapshot]
     var onHide: () -> Void = {}
     @State private var hoveredSnapshotID: String?
+    @State private var cardsHeight: CGFloat = 84
 
     var body: some View {
         // A header row ("QUOTA" left, Hide right) keeps those two clear of the ring below, so
@@ -22,21 +23,28 @@ struct QuotaRingsPanel: View {
 
             // Cards fill the available width instead of a fixed 150; the HStack spacing keeps a
             // comfortable gap to the ring so the wider cards never feel crowded against it.
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: 14) {
                 VStack(spacing: 6) {
                     ForEach(ringSnapshots) { snapshot in
                         card(snapshot)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { cardsHeight = proxy.size.height }
+                            .onChange(of: proxy.size.height) { _, newValue in cardsHeight = newValue }
+                    }
+                )
 
                 QuotaRingsView(
                     snapshots: ringSnapshots,
                     colors: ringColors,
-                    size: 84,
+                    size: min(180, max(96, cardsHeight - 4)),
                     hoveredSnapshotID: $hoveredSnapshotID
                 )
-                .padding(.trailing, 8)
+                .padding(.trailing, 4)
             }
         }
         .padding(.horizontal, 12)
