@@ -1,22 +1,5 @@
 import SwiftUI
-
-enum GlassStyle {
-    static let cornerRadius: CGFloat = 8
-    static let tintOpacity: Double = 0.18
-    static let prominentByDefault = false
-
-    @available(macOS 26, *)
-    static func resolve(prominent: Bool, tint: Color?, tintOpacity: Double, interactive: Bool) -> Glass {
-        var glass = prominent ? Glass.regular : Glass.clear
-        if let tint {
-            glass = glass.tint(tint.opacity(tintOpacity))
-        }
-        if interactive {
-            glass = glass.interactive()
-        }
-        return glass
-    }
-}
+import TokiWidgetShared
 
 extension View {
     @ViewBuilder

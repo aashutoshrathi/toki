@@ -1,4 +1,5 @@
 import SwiftUI
+import TokiWidgetShared
 
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
