@@ -122,7 +122,7 @@ struct ActiveAgentsPanel: View {
                                 .pointerOnHover()
                             }
                             .padding(8)
-                            .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
+                            .contentSurface()
                         }
                     }
                 }

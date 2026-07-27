@@ -10,6 +10,7 @@ struct AccountCard: View {
     @FocusState private var aliasFocused: Bool
     @State private var expandedTab: ExpandedTab
     @State private var confirmingReset = false
+    @State private var isHovered = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
@@ -27,10 +28,30 @@ struct AccountCard: View {
     }
 
     // Active agents are discovered by scanning processes, which reveals the provider but not
-    // which configured account authenticated them. So sessions are provider-scoped: every card
-    // for a given provider surfaces the same list. The UI copy makes that scope explicit.
+    // which configured account authenticated them, so sessions are provider-scoped. The one
+    // exception is Claude Code with multiple accounts: only one is active at a time (claude-swap),
+    // and the active account is the one with no switch target, so sessions are attributed there
+    // instead of double-counting on every Claude card.
     private var accountAgents: [ActiveAgent] {
-        store.activeAgents.filter { $0.provider == snapshot.provider }
+        Self.attributedAgents(store.activeAgents, for: snapshot, among: store.snapshots)
+    }
+
+    static func attributedAgents(
+        _ activeAgents: [ActiveAgent],
+        for snapshot: AccountSnapshot,
+        among snapshots: [AccountSnapshot]
+    ) -> [ActiveAgent] {
+        let agents = activeAgents.filter { $0.provider == snapshot.provider }
+        guard snapshot.provider == .claudeCode else { return agents }
+        let claudeSnapshots = snapshots.filter { $0.provider == .claudeCode }
+        // Only narrow to the active account when the data unambiguously has one: exactly one
+        // Claude account with no switch target. Zero or several would otherwise hide the session
+        // everywhere or show it on multiple cards, so fall back to provider-scoped there.
+        guard claudeSnapshots.count > 1,
+              claudeSnapshots.filter({ $0.switchTarget == nil }).count == 1 else {
+            return agents
+        }
+        return snapshot.switchTarget == nil ? agents : []
     }
 
     var body: some View {
@@ -265,7 +286,15 @@ struct AccountCard: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: borderColor)
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(alignment: .leading) {
+            if snapshot.isError {
+                Capsule()
+                    .fill(Color.red.opacity(0.75))
+                    .frame(width: 2, height: 28)
+                    .padding(.leading, 2)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .gesture(
@@ -275,12 +304,21 @@ struct AccountCard: View {
             },
             including: .gesture
         )
-        .pointerOnHover()
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeInOut(duration: 0.15), value: isExpanded)
         .onChange(of: snapshot.isError) { _, isError in
             // Sessions has no meaning for a disconnected account; snap back to Usage so a
             // reconnect doesn't leave the toggle stuck on a hidden Sessions selection.
             if isError { expandedTab = .usage }
         }
+    }
+
+    private var rowBackground: Color {
+        if isExpanded { return Color.accentColor.opacity(0.075) }
+        if snapshot.isError { return Color.red.opacity(0.035) }
+        if isHovered { return Color.primary.opacity(0.035) }
+        return .clear
     }
 
     @ViewBuilder
@@ -544,11 +582,6 @@ struct AccountCard: View {
         if remaining <= 0.15 { return .red }
         if remaining <= 0.40 { return .orange }
         return .green
-    }
-
-    private var borderColor: Color {
-        if snapshot.isError { return Color.red.opacity(0.25) }
-        return Color.primary.opacity(0.08)
     }
 
     private func progressTint(_ ratio: Double) -> Color {

@@ -14,6 +14,8 @@ enum AgentSessionResolver {
             return newestGrokSession(cwd: cwd)?.title
         case .pi:
             return PiUsageClient.latestSession(cwd: cwd)?.title
+        case .cursor:
+            return newestCursorSession(cwd: cwd)?.title
         default:
             return nil
         }
@@ -225,6 +227,8 @@ enum AgentSessionResolver {
             return newestGrokSession(cwd: cwd)?.lastActiveAt
         case .pi:
             return PiUsageClient.latestSession(cwd: cwd)?.modified
+        case .cursor:
+            return newestCursorSession(cwd: cwd)?.lastActive
         default:
             return nil
         }
@@ -247,6 +251,47 @@ enum AgentSessionResolver {
             return (title, lastActiveAt)
         }
         return sessions.max { ($0.lastActiveAt ?? .distantPast) < ($1.lastActiveAt ?? .distantPast) }
+    }
+
+    private nonisolated(unsafe) static var cursorSessionCache: [String: (result: (title: String?, lastActive: Date?)?, at: Date)] = [:]
+    private static let cursorSessionCacheTTL: TimeInterval = 5
+
+    // Unlike Grok, Cursor's chat store is not keyed by cwd, so resolving a session traverses every
+    // meta.json. chatTitle and lastActivity each call this per agent, so a short-lived per-cwd memo
+    // collapses those repeated scans within a single agent scan while still refreshing on the next.
+    static func newestCursorSession(cwd: String?, chatsRoot: String? = nil) -> (title: String?, lastActive: Date?)? {
+        guard let cwd else { return nil }
+        guard chatsRoot == nil else {
+            return computeNewestCursorSession(cwd: cwd, root: chatsRoot!)
+        }
+        if let cached = cursorSessionCache[cwd], Date().timeIntervalSince(cached.at) < cursorSessionCacheTTL {
+            return cached.result
+        }
+        let root = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cursor/chats"
+        let result = computeNewestCursorSession(cwd: cwd, root: root)
+        cursorSessionCache[cwd] = (result, Date())
+        return result
+    }
+
+    private static func computeNewestCursorSession(cwd: String, root: String) -> (title: String?, lastActive: Date?)? {
+        guard let workspaces = try? FileManager.default.contentsOfDirectory(atPath: root) else { return nil }
+        var best: (title: String?, lastActive: Date?)?
+        for workspace in workspaces {
+            let workspaceDir = "\(root)/\(workspace)"
+            guard let sessions = try? FileManager.default.contentsOfDirectory(atPath: workspaceDir) else { continue }
+            for session in sessions {
+                let metaPath = "\(workspaceDir)/\(session)/meta.json"
+                guard let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      json["cwd"] as? String == cwd else { continue }
+                let title = (json["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                let lastActive = (json["updatedAtMs"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+                if best == nil || (lastActive ?? .distantPast) > (best?.lastActive ?? .distantPast) {
+                    best = (title, lastActive)
+                }
+            }
+        }
+        return best
     }
 
     // The CLI writes microsecond precision, which ISO8601DateFormatter's 3-digit

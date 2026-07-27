@@ -66,7 +66,7 @@ struct EventPanel: View {
                                 Spacer()
                             }
                             .padding(8)
-                            .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
+                            .contentSurface()
                         }
                     }
                 }

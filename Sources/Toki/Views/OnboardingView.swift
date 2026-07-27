@@ -75,7 +75,7 @@ struct OnboardingView: View {
             .pointerOnHover()
         }
         .padding(10)
-        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
+        .contentSurface()
     }
 
     private var scanningRow: some View {
