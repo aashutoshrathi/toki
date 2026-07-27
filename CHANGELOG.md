@@ -18,6 +18,7 @@
 - Quota rings now draw one ring per account instead of collapsing accounts that share a provider, so two Claude (or two Codex) accounts each get their own ring and side card. Each is given a distinct color (the account's label color, or a shaded provider color), and multiple accounts of a provider show their alias to tell them apart. The same fix applies to the quota-rings widget and the usage widget.
 - The quota rings now scale to the available height so they read clearly next to the account cards.
 - With multiple Claude Code accounts, a running session was shown on every Claude card. It is now attributed to the active account only (the one `claude-swap` has switched to), so inactive accounts no longer double-count it.
+- Beta builds now carry their full release version (e.g. `2.5.1-beta.3`), so the in-app updater on the beta channel correctly offers the next beta and graduates to the stable release. Previously every build of a version reported the same base version, so betas never saw each other.
 
 ## 2.5.0 - 2026-07-26
 
