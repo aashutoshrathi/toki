@@ -7,10 +7,10 @@ description: Add support for a new AI coding agent/provider to Toki (e.g. Cursor
 
 Toki knows two kinds of provider:
 
-- **Agent-only** (Copilot, Grok, Gemini, Cursor): no usage/quota API. Detected by scanning running processes, shown as a card that reads "No usage API available" plus live sessions in the Agents tab. Most new providers are this kind, so start here.
-- **Usage-API** (Claude Code, Codex, OpenCode, Pi): has a readable quota/credential source, so it gets a dedicated client and a real percentage/spend card.
+- **Agent-only** (Copilot, Grok, Gemini, Cursor): no usage/quota API. A running CLI is detected by scanning processes and shows as a row in the Agents tab. To also get a standing card on the main page (reading "No usage API available"), the provider needs either auto-detection when its CLI is installed (like Cursor) or a configured/connected account (like Grok/Gemini). A provider with neither (Copilot) only appears as an Agents row while a session runs. Most new providers are this kind, so start here.
+- **Usage-API** (Claude Code, Codex, OpenCode, Pi): has a readable data source, a quota/credential API (Claude Code, Codex) or local session history (OpenCode, Pi), so it gets a dedicated client and a real percentage/spend card.
 
-The fastest reference is the **Cursor** implementation. Read commits `6345d66` (detection) and `1743942` (auto-detected card); it is the exact template for an agent-only provider.
+The fastest reference is the **Cursor** implementation. Read commits `6345d66` (detection), `1743942` (auto-detected card), and `59be714` (logo, widget glyph, widget test); together they are the template for an agent-only provider.
 
 ## Step 0a: get the logo
 
@@ -44,20 +44,20 @@ Adding the enum case makes the compiler flag every exhaustive `switch` you still
    - Add it to the `false` group in `isConsumerTracked`.
 
 2. **`Sources/Toki/Agents/ActiveAgent.swift`, `providerForProcess(executable:entrypoint:)`**
-   - Add a match. Exact executable: `if executable == "<cli>" { return .<case> }`. If it runs via node, also handle `executable == "node" && entrypoint?.contains("/<pkg>/") == true`. Keep it narrow so unrelated processes do not match.
+   - Add a match. Exact executable: `if executable == "<cli>" { return .<case> }`. If it runs via node or bun, also handle `(executable == "node" || executable == "bun") && entrypoint?.contains("/<pkg>/") == true` (Codex/Copilot are node-only; Pi covers both node and bun, use whichever the CLI actually launches with, from Step 0b). Keep it narrow so unrelated processes do not match.
 
 3. **`Sources/Toki/API/UsageFetcher.swift`**, three agent-only switches:
    - `snapshots(...)`: add the case alongside `.copilot, .grok, .gemini, .cursor`, returning `agentOnlySnapshot(for:)`.
    - `apiCacheKey(for:)`: add to the `nil` group.
    - `refreshInterval(for:)`: add to the `0` group.
-   - Optional but recommended, auto-detect as a card: if the provider should appear whenever its CLI is installed (like Cursor), add a clause to `accountsIncludingAutoDetected` plus a small `<provider>AutoDetectedAccount()` that checks the binary exists (mirror `cursorAutoDetectedAccount`). Without this, the provider only appears as an agent row while a session runs, not as a standing card.
+   - Optional but recommended, auto-detect as a card: if the provider should appear whenever its CLI is installed (like Cursor), add a clause to `accountsIncludingAutoDetected` plus a small `<provider>AutoDetectedAccount()` that checks the binary exists (mirror `cursorAutoDetectedAccount`). Without this (and without a configured/connected account from step 4), the provider only appears as an agent row while a session runs, not as a standing card.
 
-4. **`Sources/Toki/Discovery/ProviderDetection.swift`** (optional, onboarding "Connect")
-   - Add `detect<Provider>()` returning a `DetectedProvider` (with a `makeAccount` that writes an `AccountConfig`) and call it in `scan()`.
+4. **`Sources/Toki/Discovery/ProviderDetection.swift`** (gives the provider a standing card via connect)
+   - Add `detect<Provider>()` returning a `DetectedProvider` (its `makeAccount` closure returns an `AccountConfig`) and call it in `scan()`. `scan()` runs on popover open via `rescanProviders()`, and a connectable detection is persisted automatically, so this path alone can produce a standing card even without the step 3 auto-detect hook.
 
 5. **Logo, `Sources/Toki/Views/ProviderLogo.swift`**
    - Add a `case` in the `switch`. Either an SF Symbol (like `.copilot`) or `SVGLogoMark(asset: "<provider>-logo", size: size) { <fallback symbol> }` using the asset from Step 0a.
-   - Widget glyph, `Sources/TokiWidgets/TokiWidgets.swift`: add the provider to `ProviderGlyph.assetName` (and, if using a symbol, `symbolName` / `fallbackColor`) and to the string-keyed `providerColor(_:)`.
+   - Widget glyph, `Sources/TokiWidgets/TokiWidgets.swift`: if you have an SVG, map the provider in `ProviderGlyph.assetName`. If you are using an SF Symbol instead, leave it OUT of `assetName` (an unmapped provider there falls back to a generic `app.fill`) and add it to `symbolName` / `fallbackColor`. Either way, add it to the string-keyed `providerColor(_:)`.
 
 6. **Test, `Tests/TokiTests/PiUsageClientTests.swift`, `testProcessClassificationIsNarrow`**
    - Add a positive case (the real command string, including the node/exec-a form you found in Step 0b) to `matches`, and a near-miss (e.g. `node /tmp/<tool>-helper.js`) to `nonMatches`.
@@ -78,7 +78,7 @@ exec -a /path/to/<cli> sleep 600 &
 
 ## Usage-API provider (advanced)
 
-Only if the tool exposes a readable quota/credential source:
+Only if the tool exposes a readable data source (a quota API, credentials, or local session history like OpenCode/Pi):
 
 - Add a `<Provider>UsageClient` under `Sources/Toki/API/` returning an `AccountSnapshot` with `remainingRatio` / `primaryWindow` (model it on `CodexUsageClient` or `ClaudeCodeUsageClient`).
 - Wire it into the `snapshots(...)` switch in `UsageFetcher.swift` (its own arm, not `agentOnlySnapshot`), and give it a real `apiCacheKey` + `refreshInterval`.
@@ -87,7 +87,7 @@ Only if the tool exposes a readable quota/credential source:
 
 ## Notes
 
-- Follow the repo convention: no explanatory code comments. Put rationale in the commit/PR.
-- Do not use em-dashes in any commit, PR, or doc text for this repo.
+- Avoid adding new explanatory comments that just restate the code; put rationale in the commit/PR (the repo owner's preference is to not add new code comments).
+- Do not use em-dashes in commits, PRs, or docs (repo owner's preference).
 - CHANGELOG.md: add a line under the unreleased section.
 - Multi-account: the quota-rings panel keys colors/dedupe by account id, not provider, so two accounts of one provider each get a ring. Nothing extra is needed for a new provider there.
