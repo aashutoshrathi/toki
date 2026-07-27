@@ -8,9 +8,6 @@ struct QuotaRingsPanel: View {
     @State private var cardsHeight: CGFloat = 84
 
     var body: some View {
-        // A header row ("QUOTA" left, Hide right) keeps those two clear of the ring below, so
-        // nothing crowds. Cards and ring sit in the row underneath and are vertically centered,
-        // so the card's height follows its content instead of a fixed, oversized ring.
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("Quota")
@@ -41,26 +38,16 @@ struct QuotaRingsPanel: View {
                 QuotaRingsView(
                     snapshots: ringSnapshots,
                     colors: ringColors,
-                    size: min(180, max(96, cardsHeight - 4)),
+                    size: min(88, max(68, cardsHeight - 8)),
                     hoveredSnapshotID: $hoveredSnapshotID
                 )
                 .padding(.trailing, 4)
+                .padding(.vertical, 4)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .glassSurface(
-            cornerRadius: 11,
-            tint: panelAccent,
-            fallbackFill: RadialGradient(
-                colors: [panelAccent.opacity(0.11), Color.primary.opacity(0.035)],
-                center: .trailing,
-                startRadius: 8,
-                endRadius: 220
-            ),
-            fallbackStroke: .primary,
-            fallbackStrokeOpacity: 0.085
-        )
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
         .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
     }
 
@@ -73,12 +60,10 @@ struct QuotaRingsPanel: View {
                     .font(.system(size: 10, weight: .medium))
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(Color.primary.opacity(0.06), in: Capsule())
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
+        .controlSize(.small)
         .help("Hide the quota rings — turn them back on in Settings")
         .accessibilityLabel("Hide quota rings")
         .pointerOnHover()
@@ -110,12 +95,8 @@ struct QuotaRingsPanel: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(
-            isHovered ? color.opacity(0.18) : Color.primary.opacity(0.04),
+            isHovered ? color.opacity(0.09) : Color.clear,
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isHovered ? color.opacity(0.55) : Color.primary.opacity(0.08), lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { hovering in
@@ -145,10 +126,6 @@ struct QuotaRingsPanel: View {
             return alias
         }
         return snapshot.provider.displayName
-    }
-
-    private var panelAccent: Color {
-        ringSnapshots.first.map { color(for: $0) } ?? .accentColor
     }
 
     private var ringColors: [String: Color] {

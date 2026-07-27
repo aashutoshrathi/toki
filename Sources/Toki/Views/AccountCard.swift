@@ -10,6 +10,7 @@ struct AccountCard: View {
     @FocusState private var aliasFocused: Bool
     @State private var expandedTab: ExpandedTab
     @State private var confirmingReset = false
+    @State private var isHovered = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
@@ -285,7 +286,15 @@ struct AccountCard: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: borderColor)
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(alignment: .leading) {
+            if snapshot.isError {
+                Capsule()
+                    .fill(Color.red.opacity(0.75))
+                    .frame(width: 2, height: 28)
+                    .padding(.leading, 2)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .gesture(
@@ -295,12 +304,21 @@ struct AccountCard: View {
             },
             including: .gesture
         )
-        .pointerOnHover()
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeInOut(duration: 0.15), value: isExpanded)
         .onChange(of: snapshot.isError) { _, isError in
             // Sessions has no meaning for a disconnected account; snap back to Usage so a
             // reconnect doesn't leave the toggle stuck on a hidden Sessions selection.
             if isError { expandedTab = .usage }
         }
+    }
+
+    private var rowBackground: Color {
+        if isExpanded { return Color.accentColor.opacity(0.075) }
+        if snapshot.isError { return Color.red.opacity(0.035) }
+        if isHovered { return Color.primary.opacity(0.035) }
+        return .clear
     }
 
     @ViewBuilder
@@ -564,11 +582,6 @@ struct AccountCard: View {
         if remaining <= 0.15 { return .red }
         if remaining <= 0.40 { return .orange }
         return .green
-    }
-
-    private var borderColor: Color {
-        if snapshot.isError { return Color.red.opacity(0.25) }
-        return Color.primary.opacity(0.08)
     }
 
     private func progressTint(_ ratio: Double) -> Color {

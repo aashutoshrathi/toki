@@ -78,12 +78,7 @@ struct UpdateAvailableBanner: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
-        .glassSurface(
-            tint: .blue,
-            fallbackFill: Color.blue.opacity(0.08),
-            fallbackStroke: .blue,
-            fallbackStrokeOpacity: 0.28
-        )
+        .contentSurface(stroke: .blue)
     }
 }
 
@@ -137,7 +132,7 @@ struct StatBlock: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
-        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
+        .contentSurface()
     }
 }
 
@@ -255,12 +250,7 @@ struct AIInsightCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
-        .glassSurface(
-            tint: isAI ? .purple : nil,
-            fallbackFill: (isAI ? Color.purple : Color.primary).opacity(0.06),
-            fallbackStroke: isAI ? .purple : .primary,
-            fallbackStrokeOpacity: isAI ? 0.18 : 0.08
-        )
+        .contentSurface()
     }
 
     private func color(for severity: RecommendationSeverity) -> Color {
@@ -495,6 +485,6 @@ struct EmptyPanel: View {
         }
         .frame(maxWidth: .infinity)
         .padding(18)
-        .glassSurface(fallbackFill: .ultraThinMaterial, fallbackStroke: .primary, fallbackStrokeOpacity: 0.07)
+        .contentSurface()
     }
 }

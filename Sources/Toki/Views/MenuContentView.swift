@@ -1,5 +1,4 @@
 import SwiftUI
-import TokiWidgetShared
 
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
@@ -40,12 +39,32 @@ struct MenuContentView: View {
         // follow each tab's preferred height makes AppKit re-anchor the panel while the menu bar
         // auto-hides, which can move the entire popover to the left edge of the screen.
         .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
-        .background(.regularMaterial)
     }
 
+    @ViewBuilder
     private var mainContent: some View {
+        if #available(macOS 26, *) {
+            contentBody
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    functionalBar
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
+                }
+                .scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            VStack(spacing: 0) {
+                functionalBar
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+                contentBody
+            }
+        }
+    }
+
+    private var contentBody: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
             if let update = updateChecker.availableUpdate {
                 UpdateAvailableBanner(update: update, updateChecker: updateChecker)
             }
@@ -69,39 +88,33 @@ struct MenuContentView: View {
                 debugPanel
             }
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+        .padding(.top, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 9) {
-            TokiLogoMark(size: 34)
+    private var functionalBar: some View {
+        HStack(alignment: .center, spacing: 7) {
+            TokiLogoMark(size: 22)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text("/toki")
-                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
-                        .lineLimit(1)
-                        .fixedSize()
-                    Text("v\(appVersion)")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.07), in: Capsule())
-                        .onTapGesture(count: 5) {
-                            store.toggleDebug()
-                        }
+            Text("/toki")
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .fixedSize()
+                .onTapGesture(count: 5) {
+                    store.toggleDebug()
                 }
-            }
-            Spacer()
+
+            Spacer(minLength: 0)
             headerControls
         }
+        .padding(6)
+        .functionalGlass()
     }
 
     private var headerControls: some View {
         HStack(spacing: 5) {
-
             // Same reasoning as the Agents panel's refresh: without a visible busy state the
             // button looks identical before, during and after a refresh, so a press that is
             // already running reads as one that did nothing and invites another - and the
@@ -120,13 +133,11 @@ struct MenuContentView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                 }
-                .frame(width: 25, height: 25)
-                .glassSurface(cornerRadius: 7, interactive: true, fallbackFill: Color.primary.opacity(0.06))
-                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .disabled(store.isRefreshing || !store.isNetworkAvailable)
-            .font(.system(size: 13, weight: .semibold))
             .help(
                 store.isRefreshing
                     ? "Refreshing…"
@@ -140,69 +151,59 @@ struct MenuContentView: View {
                 store.hidesSensitiveInfo.toggle()
             } label: {
                 Image(systemName: store.hidesSensitiveInfo ? "eye.slash" : "eye")
-                    .frame(width: 25, height: 25)
-                    .glassSurface(
-                        cornerRadius: 7,
-                        tint: store.hidesSensitiveInfo ? .blue : nil,
-                        interactive: true,
-                        fallbackFill: (store.hidesSensitiveInfo ? Color.blue : Color.primary).opacity(store.hidesSensitiveInfo ? 0.12 : 0.06)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
+            .buttonStyle(.borderless)
             .foregroundStyle(store.hidesSensitiveInfo ? Color.blue : Color.primary)
             .help(store.hidesSensitiveInfo ? "Showing masked emails and org info - click to reveal" : "Hide emails and org info for screenshots")
             .accessibilityLabel(store.hidesSensitiveInfo ? "Reveal sensitive info" : "Hide sensitive info")
             .pointerOnHover()
 
             Button {
-                showChangelog = true
-            } label: {
-                Image(systemName: "doc.text")
-                    .frame(width: 25, height: 25)
-                    .glassSurface(cornerRadius: 7, interactive: true, fallbackFill: Color.primary.opacity(0.06))
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
-            .help("What's new")
-            .pointerOnHover()
-
-            Button {
                 showConfig = true
             } label: {
                 Image(systemName: "gearshape")
-                    .frame(width: 25, height: 25)
-                    .glassSurface(cornerRadius: 7, interactive: true, fallbackFill: Color.primary.opacity(0.06))
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
+            .buttonStyle(.borderless)
             .help("Settings")
             .pointerOnHover()
 
-            Button {
-                NSApp.terminate(nil)
+            Menu {
+                Button("Version \(appVersion)") {}
+                    .disabled(true)
+
+                Divider()
+
+                Button {
+                    showChangelog = true
+                } label: {
+                    Label("What's New", systemImage: "doc.text")
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    NSApp.terminate(nil)
+                } label: {
+                    Label("Quit Toki", systemImage: "power")
+                }
             } label: {
-                Image(systemName: "power")
-                    .frame(width: 25, height: 25)
-                    .glassSurface(
-                        cornerRadius: 7,
-                        tint: .red,
-                        interactive: true,
-                        fallbackFill: Color.red.opacity(0.08),
-                        fallbackStroke: .red,
-                        fallbackStrokeOpacity: 0.42
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Image(systemName: "ellipsis")
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.red)
-            .help("Quit")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
+            .accessibilityLabel("More actions")
             .pointerOnHover()
         }
+        .font(.system(size: 13, weight: .semibold))
+        .controlSize(.small)
     }
 
     private var overview: some View {
@@ -242,65 +243,50 @@ struct MenuContentView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(TokiTab.allCases) { tab in
                 Button {
                     selectedTab = tab
                 } label: {
                     Image(systemName: tab.systemImage)
-                        .overlay(alignment: .topTrailing) {
-                            if tab == .agents, !store.activeAgents.isEmpty {
-                                // The badge turns red - and counts only the blocked agents -
-                                // when any session is waiting on the user, so "needs you" is
-                                // distinguishable from "just running" without opening the tab.
-                                let blocked = store.activeAgents.filter(\.needsInput).count
-                                Text("\(blocked > 0 ? blocked : store.activeAgents.count)")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(2)
-                                    .frame(minWidth: 12, minHeight: 12)
-                                    .background(blocked > 0 ? Color.red : Color.blue, in: Circle())
-                                    .offset(x: 9, y: -7)
-                            }
+                    .overlay(alignment: .topTrailing) {
+                        if tab == .agents, !store.activeAgents.isEmpty {
+                            let blocked = store.activeAgents.filter(\.needsInput).count
+                            Text("\(blocked > 0 ? blocked : store.activeAgents.count)")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(2)
+                                .frame(minWidth: 12, minHeight: 12)
+                                .background(blocked > 0 ? Color.red : Color.blue, in: Circle())
+                                .offset(x: 8, y: -6)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 28)
-                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .background {
-                            if selectedTab == tab {
-                                if #available(macOS 26, *) {
-                                    Color.clear.glassEffect(GlassStyle.resolve(prominent: false, tint: nil, tintOpacity: 0, interactive: true), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                } else {
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.10))
-                                }
-                            }
-                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(selectedTab == tab ? .primary : .secondary)
+                .foregroundStyle(selectedTab == tab ? Color.white : Color.secondary)
+                .background(
+                    selectedTab == tab ? Color.accentColor : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
                 .help(tab.rawValue)
                 .accessibilityLabel(tab.rawValue)
+                .accessibilityValue(selectedTab == tab ? "Selected" : "")
                 .pointerOnHover()
             }
         }
         .padding(3)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .frame(maxWidth: .infinity)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityLabel("Toki section")
     }
 
     private var tabContent: some View {
         Group {
             switch selectedTab {
             case .accounts:
-                VStack(spacing: 10) {
-                    if showsQuotaRings {
-                        QuotaRingsPanel(snapshots: store.snapshots) {
-                            var next = store.preferences
-                            next.quotaRingsEnabled = false
-                            store.updatePreferences(next)
-                        }
-                    }
-                    accountList
-                }
+                accountList
             case .agents:
                 ActiveAgentsPanel(store: store)
             case .analytics:
@@ -331,8 +317,19 @@ struct MenuContentView: View {
     private var accountList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(sortedSnapshots) { snapshot in
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if showsQuotaRings {
+                        QuotaRingsPanel(snapshots: store.snapshots) {
+                            var next = store.preferences
+                            next.quotaRingsEnabled = false
+                            store.updatePreferences(next)
+                        }
+
+                        Divider()
+                            .padding(.leading, 44)
+                    }
+
+                    ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snapshot in
                         AccountCard(snapshot: snapshot, store: store) { id in
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                                 withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
@@ -342,9 +339,14 @@ struct MenuContentView: View {
                         }
                         .id(snapshot.id)
                         .transition(.move(edge: .top).combined(with: .opacity))
+
+                        if index < sortedSnapshots.count - 1 {
+                            Divider()
+                                .padding(.leading, 44)
+                        }
                     }
                 }
-                .padding(.trailing, 2)
+                .padding(.horizontal, 2)
                 .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.snapshots.map(\.id))
             }
             .frame(maxHeight: .infinity)

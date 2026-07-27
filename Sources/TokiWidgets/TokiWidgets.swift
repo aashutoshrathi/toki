@@ -181,38 +181,11 @@ private struct TokiWidgetEntryView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .modifier(WidgetBadgeBackground())
+                .background(Color.red, in: Capsule())
                 .accessibilityLabel("\(count) agents awaiting input")
         }
     }
 
-}
-
-extension View {
-    @ViewBuilder
-    func widgetGlass<S: Shape, Fill: ShapeStyle>(
-        in shape: S,
-        tint: Color? = nil,
-        tintOpacity: Double = GlassStyle.tintOpacity,
-        prominent: Bool = GlassStyle.prominentByDefault,
-        fallbackFill: Fill
-    ) -> some View {
-        if #available(macOS 26, *) {
-            background(fallbackFill, in: shape)
-                .glassEffect(
-                    GlassStyle.resolve(prominent: prominent, tint: tint, tintOpacity: tintOpacity, interactive: false),
-                    in: shape
-                )
-        } else {
-            background(fallbackFill, in: shape)
-        }
-    }
-}
-
-private struct WidgetBadgeBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        content.widgetGlass(in: Capsule(), tint: .red, tintOpacity: 0.85, prominent: true, fallbackFill: Color.red)
-    }
 }
 
 private struct ProviderRow: View {
@@ -252,7 +225,7 @@ private struct ProviderColumn: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity)
-        .widgetGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), fallbackFill: Color.primary.opacity(0.05))
+        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
