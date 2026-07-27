@@ -2,6 +2,10 @@
 
 ## 2.5.3 - 2026-07-28
 
+### Changed
+
+- On macOS 26, the usage and quota-rings widgets now render on the system's Liquid Glass material, bringing them in line with the app's redesigned popover. Older macOS keeps the existing look.
+
 ### Fixed
 
 - On multiple displays, the popover now stays below the menu bar item that was clicked instead of rejecting the display change and falling back to stale coordinates from another screen.
