@@ -107,6 +107,24 @@ final class ClaudeSessionAttributionTests: XCTestCase {
         XCTAssertTrue(agents.isEmpty)
     }
 
+    func testTwoClaudeAccountsWithNoActiveOneFallsBackToProviderScoped() {
+        let a = claude(id: "claude-1", switchTarget: "1")
+        let b = claude(id: "claude-2", switchTarget: "2")
+        let onA = AccountCard.attributedAgents([agent(pid: 1, provider: .claudeCode)], for: a, among: [a, b])
+        let onB = AccountCard.attributedAgents([agent(pid: 1, provider: .claudeCode)], for: b, among: [a, b])
+        XCTAssertEqual(onA.map(\.id), [1])
+        XCTAssertEqual(onB.map(\.id), [1])
+    }
+
+    func testTwoClaudeAccountsWithTwoActiveFallsBackToProviderScoped() {
+        let a = claude(id: "claude-1", switchTarget: nil)
+        let b = claude(id: "claude-2", switchTarget: nil)
+        let onA = AccountCard.attributedAgents([agent(pid: 1, provider: .claudeCode)], for: a, among: [a, b])
+        let onB = AccountCard.attributedAgents([agent(pid: 1, provider: .claudeCode)], for: b, among: [a, b])
+        XCTAssertEqual(onA.map(\.id), [1])
+        XCTAssertEqual(onB.map(\.id), [1])
+    }
+
     func testNonClaudeProviderStaysProviderScoped() {
         let codex = AccountSnapshot(
             id: "codex", name: "Codex", provider: .codex, primary: "50%", subtitle: "",
