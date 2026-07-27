@@ -373,7 +373,8 @@ enum ActiveAgentNavigator {
         for window in windows {
             var titleValue: CFTypeRef?
             guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
-                  let title = titleValue as? String, title.contains(folder) else { continue }
+                  let title = titleValue as? String,
+                  title == folder || title.hasSuffix(" \(folder)") else { continue }
             AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
             AXUIElementPerformAction(window, kAXRaiseAction as CFString)
             return
