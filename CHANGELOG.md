@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.2 - 2026-07-27
+
+### Fixed
+
+- The reset-credit badge (redeem a banked Codex reset) is clickable again on the collapsed account card. The card's tap-to-expand gesture was swallowing taps meant for the buttons inside it.
+
 ## 2.5.1 - 2026-07-27
 
 ### Added
