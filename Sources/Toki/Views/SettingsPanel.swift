@@ -46,7 +46,7 @@ struct SettingsPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                // AI insight — the one card that expands (its prompt editor drops in below).
+                // AI insight is the one setting row that expands; its prompt editor drops below.
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         cardLabel(
@@ -87,7 +87,7 @@ struct SettingsPanel: View {
                             .padding(.bottom, 8)
                     }
                 }
-                .settingsCard(tint: .purple, fill: 0.06, stroke: 0.14)
+                .settingsCard()
 
                 HStack(spacing: 8) {
                     cardLabel(
@@ -104,7 +104,7 @@ struct SettingsPanel: View {
                         .controlSize(.small)
                 }
                 .padding(8)
-                .settingsCard(tint: .blue, fill: 0.055, stroke: 0.13)
+                .settingsCard()
 
                 sectionHeader("General")
 
@@ -304,9 +304,8 @@ struct SettingsPanel: View {
                 .padding(8)
                 .settingsCard()
 
-                // Tinted differently from the neutral cards: the channel picker is a
-                // developer/early-tester setting (it opts into pre-release builds), so it
-                // reads as distinct from everyday preferences.
+                // The warning icon carries the pre-release meaning. Keeping the containing
+                // surface neutral prevents an infrequent setting from competing with updates.
                 HStack(spacing: 8) {
                     cardLabel(
                         icon: "hammer",
@@ -332,7 +331,7 @@ struct SettingsPanel: View {
                     .pointerOnHover()
                 }
                 .padding(8)
-                .settingsCard(tint: .orange, fill: 0.07, stroke: 0.16)
+                .settingsCard()
 
                 if let update = updateChecker.availableUpdate {
                     UpdateAvailableBanner(update: update, updateChecker: updateChecker)
@@ -353,11 +352,6 @@ struct SettingsPanel: View {
             }
             .font(.system(size: 12))
             .padding(8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-            )
         }
         .frame(maxHeight: .infinity)
         .onAppear(perform: resyncLaunchAtLoginFromSystem)
@@ -419,10 +413,8 @@ struct SettingsPanel: View {
         )
     }
 
-    // A proper card rather than a plain checkbox line: it is the one setting that visibly
-    // relocates the whole app, and it is unfinished, so it needs room to say both. The switch
-    // sits right-aligned like every other card, and when enabled the placement picker drops in
-    // as an aligned sub-row inside the same card.
+    // This setting visibly relocates the whole app, so it needs room for both the explanation
+    // and placement picker. The switch remains aligned with the other setting rows.
     @ViewBuilder
     private var notchModeRow: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -494,7 +486,7 @@ struct SettingsPanel: View {
         .pointerOnHover()
     }
 
-    // Shared card header so every settings card lines its title/subtitle up at the same x,
+    // Shared row label so every setting lines its title/subtitle up at the same x,
     // whatever control sits on the right. The icon lives in a fixed-width slot so the text
     // columns match across cards even when the glyphs differ in width.
     private func cardLabel(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
@@ -514,10 +506,9 @@ struct SettingsPanel: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 9, weight: .bold))
+        Text(title)
+            .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(.tertiary)
-            .tracking(0.5)
             .padding(.top, 2)
     }
 
@@ -547,17 +538,9 @@ struct SettingsPanel: View {
             }
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .glassSurface(
-                cornerRadius: 7,
-                interactive: true,
-                fallbackFill: Color.primary.opacity(0.05),
-                fallbackStroke: .primary,
-                fallbackStrokeOpacity: 0.09
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
         .pointerOnHover()
     }
 
@@ -574,12 +557,10 @@ struct SettingsPanel: View {
 }
 
 private extension View {
-    func settingsCard(tint: Color = .primary, fill: Double = 0.04, stroke: Double = 0.08) -> some View {
-        glassSurface(
-            tint: tint == .primary ? nil : tint,
-            fallbackFill: tint.opacity(fill),
-            fallbackStroke: tint,
-            fallbackStrokeOpacity: stroke
-        )
+    func settingsCard() -> some View {
+        overlay(alignment: .bottom) {
+            Divider()
+                .padding(.leading, 34)
+        }
     }
 }

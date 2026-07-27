@@ -27,9 +27,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         popover.behavior = .transient
         popover.contentSize = NSSize(width: popoverWidth(), height: popoverHeight())
-        popover.contentViewController = NSHostingController(
+        let popoverController = NSHostingController(
             rootView: MenuContentView(store: store, updateChecker: updateChecker)
         )
+        // NSPopover already supplies the semantic behind-window material. Keep the hosting
+        // surface transparent so wallpaper and nearby window colour can actually reach that
+        // material instead of being flattened by an opaque AppKit backing layer.
+        popoverController.view.wantsLayer = true
+        popoverController.view.layer?.backgroundColor = NSColor.clear.cgColor
+        popoverController.view.layer?.isOpaque = false
+        popover.contentViewController = popoverController
         popover.delegate = self
 
         updateChecker.startAutomaticChecks()
@@ -171,12 +178,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             if let controller = self.notchController, let anchor = controller.anchorView, anchor.window != nil {
                 // The pill, not the window: it can rest to one side of the notch.
                 self.popover.show(relativeTo: controller.anchorRect, of: anchor, preferredEdge: .minY)
+                self.configurePopoverBackdrop()
                 self.popover.contentViewController?.view.window?.makeKey()
                 return
             }
             guard let button = self.statusItem.button else { return }
             if self.hasValidScreenPosition(button) {
                 self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                self.configurePopoverBackdrop()
                 self.popover.contentViewController?.view.window?.makeKey()
             } else if retriesRemaining > 0 {
                 // 40ms is long enough to let a menu-bar reveal animation advance without the
@@ -243,8 +252,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+        configurePopoverBackdrop()
         popover.contentViewController?.view.window?.makeKey()
         DiagnosticLogger.shared.record(.warning, component: "app", code: "popover_fallback_anchor")
+    }
+
+    private func configurePopoverBackdrop() {
+        guard let contentView = popover.contentViewController?.view else { return }
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        contentView.layer?.isOpaque = false
+
+        // The popover's system-owned NSVisualEffectView remains responsible for blur,
+        // vibrancy, accessibility contrast, and active/inactive appearance.
+        contentView.window?.isOpaque = false
+        contentView.window?.backgroundColor = .clear
     }
 
     // Tear the transient anchor down so it never lingers invisibly.
