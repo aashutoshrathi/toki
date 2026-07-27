@@ -253,9 +253,9 @@ enum AgentSessionResolver {
         return sessions.max { ($0.lastActiveAt ?? .distantPast) < ($1.lastActiveAt ?? .distantPast) }
     }
 
-    private static func newestCursorSession(cwd: String?) -> (title: String?, lastActive: Date?)? {
+    static func newestCursorSession(cwd: String?, chatsRoot: String? = nil) -> (title: String?, lastActive: Date?)? {
         guard let cwd else { return nil }
-        let root = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cursor/chats"
+        let root = chatsRoot ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cursor/chats"
         guard let workspaces = try? FileManager.default.contentsOfDirectory(atPath: root) else { return nil }
         var best: (title: String?, lastActive: Date?)?
         for workspace in workspaces {

@@ -32,9 +32,17 @@ struct AccountCard: View {
     // and the active account is the one with no switch target, so sessions are attributed there
     // instead of double-counting on every Claude card.
     private var accountAgents: [ActiveAgent] {
-        let agents = store.activeAgents.filter { $0.provider == snapshot.provider }
+        Self.attributedAgents(store.activeAgents, for: snapshot, among: store.snapshots)
+    }
+
+    static func attributedAgents(
+        _ activeAgents: [ActiveAgent],
+        for snapshot: AccountSnapshot,
+        among snapshots: [AccountSnapshot]
+    ) -> [ActiveAgent] {
+        let agents = activeAgents.filter { $0.provider == snapshot.provider }
         guard snapshot.provider == .claudeCode,
-              store.snapshots.filter({ $0.provider == .claudeCode }).count > 1 else {
+              snapshots.filter({ $0.provider == .claudeCode }).count > 1 else {
             return agents
         }
         return snapshot.switchTarget == nil ? agents : []
