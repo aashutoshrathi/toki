@@ -137,14 +137,18 @@ func colorFromHex(_ raw: String?) -> Color? {
     return Color(red: red, green: green, blue: blue)
 }
 
-func availabilityColor(for percent: Int) -> Color {
+func availabilityColor(for percent: Int, colorScheme: ColorScheme) -> Color {
     if percent > 75 {
         return .primary
     }
     if percent > 42 {
-        return Color(red: 1.0, green: 0.64, blue: 0.18)
+        return colorScheme == .dark
+            ? Color(red: 1.0, green: 0.64, blue: 0.18)
+            : Color(red: 0.55, green: 0.31, blue: 0.02)
     }
-    return Color(red: 1.0, green: 0.48, blue: 0.50)
+    return colorScheme == .dark
+        ? Color(red: 1.0, green: 0.48, blue: 0.50)
+        : Color(red: 0.68, green: 0.10, blue: 0.16)
 }
 
 func copyToPasteboard(_ value: String) {

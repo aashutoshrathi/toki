@@ -5,6 +5,7 @@ struct SpendAnalyticsPanel: View {
     @ObservedObject var store: UsageStore
     @State private var piTotals: PiUsageClient.Totals?
     @State private var openCodeTotals: OpenCodeUsageClient.Totals?
+    @State private var isLoadingLocalTotals = true
     @State private var selectedRange: TimeRange = .day
     @State private var selectedAgentID: Int32?
 
@@ -102,7 +103,15 @@ struct SpendAnalyticsPanel: View {
             let week = (piTotals?.weekCost ?? 0) + (openCodeTotals?.weekCost ?? 0)
             let month = (piTotals?.monthCost ?? 0) + (openCodeTotals?.monthCost ?? 0)
             let allTime = (piTotals?.allTimeCost ?? 0) + (openCodeTotals?.allTimeCost ?? 0)
-            if piTotals != nil || openCodeTotals != nil {
+            if isLoadingLocalTotals && hasLocalCostProvider {
+                HStack(spacing: 4) {
+                    spendBlock(label: "Today", cost: 0)
+                    spendBlock(label: "Week", cost: 0)
+                    spendBlock(label: "Month", cost: 0)
+                    spendBlock(label: "All Time", cost: 0)
+                }
+                .redacted(reason: .placeholder)
+            } else if piTotals != nil || openCodeTotals != nil {
                 HStack(spacing: 4) {
                     spendBlock(label: "Today", cost: today)
                     spendBlock(label: "Week", cost: week)
@@ -164,32 +173,33 @@ struct SpendAnalyticsPanel: View {
                 }
 
                 // Hover detail / total line
-                if let selID = selectedAgentID,
-                   let agent = costAgents.first(where: { $0.id == selID }),
-                   let cost = agent.sessionUsage?.cost {
-                    HStack(spacing: 6) {
-                        ProviderLogo(provider: agent.provider, size: 14)
-                        Text(agent.title)
-                            .font(.system(size: 10, weight: .medium))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
-                        Text(cost, format: .currency(code: "USD").precision(.fractionLength(2)))
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                Group {
+                    if let selID = selectedAgentID,
+                       let agent = costAgents.first(where: { $0.id == selID }),
+                       let cost = agent.sessionUsage?.cost {
+                        HStack(spacing: 6) {
+                            ProviderLogo(provider: agent.provider, size: 14)
+                            Text(agent.title)
+                                .font(.system(size: 10, weight: .medium))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Text(cost, format: .currency(code: "USD").precision(.fractionLength(2)))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        }
+                    } else {
+                        HStack {
+                            Text("Total")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                            Text(totalCost, format: .currency(code: "USD").precision(.fractionLength(2)))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        }
                     }
-                    .padding(.horizontal, 4)
-                    .transition(.opacity)
-                } else {
-                    HStack {
-                        Text("Total")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                        Spacer()
-                        Text(totalCost, format: .currency(code: "USD").precision(.fractionLength(2)))
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    }
-                    .padding(.horizontal, 4)
                 }
+                .frame(height: 14)
+                .padding(.horizontal, 4)
 
                 ForEach(costAgents) { agent in
                     HStack(spacing: 8) {
@@ -216,7 +226,7 @@ struct SpendAnalyticsPanel: View {
                 }
             }
 
-            if costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && costAgents.isEmpty {
+            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && costAgents.isEmpty {
                 emptyState(icon: "dollarsign.circle", text: "No spend data yet")
             }
         }
@@ -444,12 +454,17 @@ struct SpendAnalyticsPanel: View {
     }
 
     private func loadPiTotals() async {
+        defer { isLoadingLocalTotals = false }
         if store.snapshots.contains(where: { $0.provider == .pi }) {
             piTotals = try? PiUsageClient.aggregate()
         }
         if store.snapshots.contains(where: { $0.provider == .openCode }) {
             openCodeTotals = try? OpenCodeUsageClient.aggregate()
         }
+    }
+
+    private var hasLocalCostProvider: Bool {
+        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode }
     }
 }
 

@@ -69,7 +69,11 @@ struct AIInstructionsEditor: View {
                 Button {
                     persist(text)
                 } label: {
-                    Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "checkmark.circle.fill")
+                    ZStack {
+                        Label("Saved", systemImage: "checkmark")
+                            .hidden()
+                        Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "checkmark.circle.fill")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

@@ -61,7 +61,7 @@ struct OnboardingView: View {
             if let configError = store.configError {
                 Text(configError)
                     .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.red)
             }
 
             Button {
@@ -139,11 +139,10 @@ private struct ProviderConnectRow: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .background(.fill.quaternary, in: Capsule())
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
