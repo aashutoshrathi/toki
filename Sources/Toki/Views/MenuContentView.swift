@@ -337,7 +337,7 @@ struct MenuContentView: View {
                 }
 
                 Divider()
-                    .padding(.leading, 44)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 2)
             }
 
@@ -361,12 +361,11 @@ struct MenuContentView: View {
 
                         if index < sortedSnapshots.count - 1 {
                             Divider()
-                                .padding(.leading, 44)
+                                .padding(.horizontal, 10)
                                 .padding(.vertical, 2)
                         }
                     }
                 }
-                .padding(.horizontal, 2)
             }
             .frame(maxHeight: .infinity)
         }
