@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 
 struct AgentSessionUsage: Hashable, Sendable {
@@ -330,6 +331,7 @@ enum ActiveAgentNavigator {
            let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)),
            running.activationPolicy == .regular {
             running.activate(options: [.activateAllWindows])
+            raiseWorkspaceWindow(pid: running.processIdentifier, directory: agent.directory)
             return
         }
 
@@ -337,23 +339,45 @@ enum ActiveAgentNavigator {
         // The host's own bundle id is matched first and exactly, so with both VS Code and VS
         // Code Insiders running the click lands on the variant that actually holds the agent
         // rather than whichever the system happens to list first.
-        if let host = agent.hostApp, activate(bundleID: host.bundleID) {
+        if let host = agent.hostApp, activate(bundleID: host.bundleID, directory: agent.directory) {
             return
         }
         // Only when the ancestry walk named no host: raise any known terminal that's running.
-        for bundleID in ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"] where activate(bundleID: bundleID) {
+        for bundleID in ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"]
+        where activate(bundleID: bundleID, directory: agent.directory) {
             return
         }
         DiagnosticLogger.shared.record(.warning, component: "agents", code: "navigation_unavailable")
     }
 
     @discardableResult
-    private static func activate(bundleID: String) -> Bool {
+    private static func activate(bundleID: String, directory: String?) -> Bool {
         guard let application = NSWorkspace.shared.runningApplications.first(where: {
             $0.activationPolicy == .regular && $0.bundleIdentifier == bundleID
         }) else { return false }
         application.activate(options: [.activateAllWindows])
+        raiseWorkspaceWindow(pid: application.processIdentifier, directory: directory)
         return true
+    }
+
+    private static func raiseWorkspaceWindow(pid: pid_t, directory: String?) {
+        guard let directory else { return }
+        let folder = (directory as NSString).lastPathComponent
+        guard !folder.isEmpty, folder != "/" else { return }
+
+        let app = AXUIElementCreateApplication(pid)
+        var windowsValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+              let windows = windowsValue as? [AXUIElement] else { return }
+
+        for window in windows {
+            var titleValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
+                  let title = titleValue as? String, title.contains(folder) else { continue }
+            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            return
+        }
     }
 
     nonisolated private static func isSafeTTY(_ value: String) -> Bool {
