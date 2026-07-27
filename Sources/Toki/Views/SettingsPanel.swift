@@ -288,11 +288,14 @@ struct SettingsPanel: View {
                     Button {
                         updateChecker.checkNow()
                     } label: {
-                        if updateChecker.isChecking {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
+                        ZStack {
                             Text("Check now")
+                                .opacity(updateChecker.isChecking ? 0 : 1)
+                            if updateChecker.isChecking {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Checking for updates")
+                            }
                         }
                     }
                     .buttonStyle(.bordered)

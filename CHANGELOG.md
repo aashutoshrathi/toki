@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- The header now keeps its version/debug affordance, uses aligned glass squircle controls and a layered glass Toki mark, while quota rings stay pinned and loading states no longer shift nearby content.
 - Quota rings now draw one ring per account instead of collapsing accounts that share a provider, so two Claude (or two Codex) accounts each get their own ring and side card. Each is given a distinct color (the account's label color, or a shaded provider color), and multiple accounts of a provider show their alias to tell them apart. The same fix applies to the quota-rings widget and the usage widget.
 - The quota rings now scale to the available height so they read clearly next to the account cards.
 - With multiple Claude Code accounts, a running session was shown on every Claude card. It is now attributed to the active account only (the one `claude-swap` has switched to), so inactive accounts no longer double-count it.

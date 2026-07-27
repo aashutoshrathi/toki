@@ -9,7 +9,11 @@ struct EventPanel: View {
                 Button {
                     store.setDND(!store.preferences.dndEnabled)
                 } label: {
-                    Label(store.preferences.dndEnabled ? "DND On" : "DND Off", systemImage: store.preferences.dndEnabled ? "moon.zzz.fill" : "bell")
+                    ZStack {
+                        Label("DND Off", systemImage: "moon.zzz.fill")
+                            .hidden()
+                        Label(store.preferences.dndEnabled ? "DND On" : "DND Off", systemImage: store.preferences.dndEnabled ? "moon.zzz.fill" : "bell")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

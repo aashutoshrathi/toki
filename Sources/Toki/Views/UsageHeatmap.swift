@@ -5,6 +5,7 @@ import SwiftUI
 struct UsageHeatmap: View {
     @ObservedObject var store: UsageStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var provider: Provider?
     @State private var isPulsing = false
     @State private var hoveredDay: HeatmapDay?
@@ -92,10 +93,16 @@ struct UsageHeatmap: View {
                     }
                 }
             }
+
+            Color.clear
+                .frame(height: 26)
         }
-        .opacity(isPulsing ? 0.55 : 1)
-        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
-        .onAppear { isPulsing = true }
+        .opacity(accessibilityReduceMotion ? 1 : (isPulsing ? 0.55 : 1))
+        .animation(
+            accessibilityReduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+            value: isPulsing
+        )
+        .onAppear { isPulsing = !accessibilityReduceMotion }
         .accessibilityLabel("Loading daily usage")
     }
 

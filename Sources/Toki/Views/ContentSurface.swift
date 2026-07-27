@@ -12,13 +12,21 @@ extension View {
     }
 
     @ViewBuilder
-    func functionalGlass(cornerRadius: CGFloat = 14) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    func functionalGlass<S: Shape>(in shape: S, interactive: Bool = false) -> some View {
         if #available(macOS 26, *) {
-            glassEffect(.regular, in: shape)
+            glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
         } else {
             background(.regularMaterial, in: shape)
-                .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+                .overlay(shape.stroke(Color.primary.opacity(0.08), lineWidth: 1))
         }
+    }
+
+    @ViewBuilder
+    func functionalControlStyle() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        buttonStyle(.plain)
+            .frame(width: 28, height: 28)
+            .contentShape(shape)
+            .functionalGlass(in: shape, interactive: true)
     }
 }

@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 extension UsageStore {
     func refresh(keepsExistingSnapshots: Bool = true, minimumRefreshInterval: TimeInterval? = nil) {
@@ -56,9 +56,7 @@ extension UsageStore {
             evaluateEventsAndNotifications(for: sorted, previous: previousSnapshots, at: response.fetchedAt)
             pruneState(now: response.fetchedAt)
             StateLoader.save(usageState)
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                snapshots = sorted
-            }
+            snapshots = sorted
             lastUpdated = Date()
             updateDerivedState(for: sorted)
         }
