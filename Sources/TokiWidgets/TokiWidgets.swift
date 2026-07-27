@@ -93,7 +93,7 @@ private struct TokiWidgetEntryView: View {
                 emptyState
             }
         }
-        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetContainerBackground()
     }
 
     @ViewBuilder
@@ -333,7 +333,7 @@ private struct TokiQuotaRingsEntryView: View {
                 emptyState
             }
         }
-        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetContainerBackground()
     }
 
     private func content(_ data: WidgetDataSnapshot) -> some View {
@@ -553,6 +553,17 @@ private extension Color {
             green: Double((value >> 8) & 0xff) / 255,
             blue: Double(value & 0xff) / 255
         )
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func widgetContainerBackground() -> some View {
+        if #available(macOS 26, *) {
+            containerBackground(.regularMaterial, for: .widget)
+        } else {
+            containerBackground(.fill.tertiary, for: .widget)
+        }
     }
 }
 
