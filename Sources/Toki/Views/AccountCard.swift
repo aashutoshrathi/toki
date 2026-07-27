@@ -27,10 +27,17 @@ struct AccountCard: View {
     }
 
     // Active agents are discovered by scanning processes, which reveals the provider but not
-    // which configured account authenticated them. So sessions are provider-scoped: every card
-    // for a given provider surfaces the same list. The UI copy makes that scope explicit.
+    // which configured account authenticated them, so sessions are provider-scoped. The one
+    // exception is Claude Code with multiple accounts: only one is active at a time (claude-swap),
+    // and the active account is the one with no switch target, so sessions are attributed there
+    // instead of double-counting on every Claude card.
     private var accountAgents: [ActiveAgent] {
-        store.activeAgents.filter { $0.provider == snapshot.provider }
+        let agents = store.activeAgents.filter { $0.provider == snapshot.provider }
+        guard snapshot.provider == .claudeCode,
+              store.snapshots.filter({ $0.provider == .claudeCode }).count > 1 else {
+            return agents
+        }
+        return snapshot.switchTarget == nil ? agents : []
     }
 
     var body: some View {
