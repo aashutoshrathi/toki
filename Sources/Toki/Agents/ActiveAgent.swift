@@ -331,7 +331,7 @@ enum ActiveAgentNavigator {
            let running = NSRunningApplication(processIdentifier: pid_t(hostProcessID)),
            running.activationPolicy == .regular {
             running.activate(options: [.activateAllWindows])
-            raiseWorkspaceWindow(pid: running.processIdentifier, directory: agent.directory)
+            raiseWorkspaceWindow(pid: running.processIdentifier, bundleID: running.bundleIdentifier, directory: agent.directory)
             return
         }
 
@@ -356,12 +356,19 @@ enum ActiveAgentNavigator {
             $0.activationPolicy == .regular && $0.bundleIdentifier == bundleID
         }) else { return false }
         application.activate(options: [.activateAllWindows])
-        raiseWorkspaceWindow(pid: application.processIdentifier, directory: directory)
+        raiseWorkspaceWindow(pid: application.processIdentifier, bundleID: bundleID, directory: directory)
         return true
     }
 
-    private static func raiseWorkspaceWindow(pid: pid_t, directory: String?) {
-        guard let directory else { return }
+    private static let workspaceWindowBundleIDs: Set<String> = [
+        "com.microsoft.VSCode",
+        "com.microsoft.VSCodeInsiders",
+        "com.visualstudio.code.oss",
+        "com.vscodium",
+    ]
+
+    private static func raiseWorkspaceWindow(pid: pid_t, bundleID: String?, directory: String?) {
+        guard let bundleID, workspaceWindowBundleIDs.contains(bundleID), let directory else { return }
         let folder = (directory as NSString).lastPathComponent
         guard !folder.isEmpty, folder != "/" else { return }
 
