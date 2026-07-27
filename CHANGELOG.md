@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- On multiple displays, the popover now stays below the menu bar item that was clicked instead of rejecting the display change and falling back to stale coordinates from another screen.
+
 ## 2.5.2 - 2026-07-27
 
 ### Fixed
