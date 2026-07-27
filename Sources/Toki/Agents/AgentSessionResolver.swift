@@ -253,9 +253,27 @@ enum AgentSessionResolver {
         return sessions.max { ($0.lastActiveAt ?? .distantPast) < ($1.lastActiveAt ?? .distantPast) }
     }
 
+    private nonisolated(unsafe) static var cursorSessionCache: [String: (result: (title: String?, lastActive: Date?)?, at: Date)] = [:]
+    private static let cursorSessionCacheTTL: TimeInterval = 5
+
+    // Unlike Grok, Cursor's chat store is not keyed by cwd, so resolving a session traverses every
+    // meta.json. chatTitle and lastActivity each call this per agent, so a short-lived per-cwd memo
+    // collapses those repeated scans within a single agent scan while still refreshing on the next.
     static func newestCursorSession(cwd: String?, chatsRoot: String? = nil) -> (title: String?, lastActive: Date?)? {
         guard let cwd else { return nil }
-        let root = chatsRoot ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cursor/chats"
+        guard chatsRoot == nil else {
+            return computeNewestCursorSession(cwd: cwd, root: chatsRoot!)
+        }
+        if let cached = cursorSessionCache[cwd], Date().timeIntervalSince(cached.at) < cursorSessionCacheTTL {
+            return cached.result
+        }
+        let root = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cursor/chats"
+        let result = computeNewestCursorSession(cwd: cwd, root: root)
+        cursorSessionCache[cwd] = (result, Date())
+        return result
+    }
+
+    private static func computeNewestCursorSession(cwd: String, root: String) -> (title: String?, lastActive: Date?)? {
         guard let workspaces = try? FileManager.default.contentsOfDirectory(atPath: root) else { return nil }
         var best: (title: String?, lastActive: Date?)?
         for workspace in workspaces {
