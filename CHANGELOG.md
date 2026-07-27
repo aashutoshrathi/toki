@@ -9,7 +9,7 @@
 ### Fixed
 
 - On multiple displays, the popover now stays below the menu bar item that was clicked instead of rejecting the display change and falling back to stale coordinates from another screen.
-- Clicking an agent running in a VS Code integrated terminal now raises the specific workspace window that hosts it, so on a multi-display setup you land on the right window and screen instead of whichever one macOS happened to focus.
+- When Toki has Accessibility access, clicking an agent running in a VS Code integrated terminal now tries to raise the specific workspace window that hosts it, so on a multi-display setup you are more likely to land on the right window and screen. Without that permission it falls back to bringing VS Code forward as before.
 
 ## 2.5.2 - 2026-07-27
 
