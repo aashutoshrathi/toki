@@ -71,9 +71,20 @@ final class UpdateChecker: ObservableObject {
     private let mockVersion: String?
     private var checkTimer: Timer?
 
+    // The full release identity of this build, including any prerelease suffix, so a beta can see
+    // the next beta and the eventual stable. Release DMGs carry it in Info.plist; local/dev builds
+    // fall back to the marketing version.
+    nonisolated static var installedVersion: String {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "TokiReleaseVersion") as? String,
+              !value.isEmpty else {
+            return appVersion
+        }
+        return value
+    }
+
     init(
         session: URLSession = .shared,
-        currentVersion: String = appVersion,
+        currentVersion: String = UpdateChecker.installedVersion,
         apiBaseURL: URL = URL(string: "https://api.github.com/repos/aashutoshrathi/toki")!,
         defaults: UserDefaults = .standard,
         mockVersion: String? = ProcessInfo.processInfo.environment["TOKI_MOCK_UPDATE_VERSION"]

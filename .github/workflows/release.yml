@@ -58,7 +58,11 @@ jobs:
           echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Build and package
-        run: bash scripts/package-release.sh
+        env:
+          TOKI_RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          export TOKI_RELEASE_VERSION="${TOKI_RELEASE_VERSION#v}"
+          bash scripts/package-release.sh
 
       - name: Notarize DMG
         # notarytool rejects ad-hoc signed binaries outright, so if notarization creds are

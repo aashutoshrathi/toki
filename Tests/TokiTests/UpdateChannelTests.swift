@@ -40,6 +40,18 @@ final class UpdateChannelTests: XCTestCase {
         XCTAssertFalse(UpdateChecker.isNewerVersion("2.5.0-beta.1", than: "2.5.0-beta.1"))
     }
 
+    // Only works when the build reports its full beta identity, which is why release builds carry
+    // TokiReleaseVersion rather than the dotted-numeric CFBundleShortVersionString.
+    func testBetaSeesNextBetaAndGraduatesToStable() {
+        XCTAssertTrue(UpdateChecker.isNewerVersion("2.5.1-beta.3", than: "2.5.1-beta.2"))
+        XCTAssertTrue(UpdateChecker.isNewerVersion("2.5.1", than: "2.5.1-beta.2"))
+        XCTAssertFalse(UpdateChecker.isNewerVersion("2.5.1-beta.2", than: "2.5.1"))
+    }
+
+    func testInstalledVersionFallsBackToMarketingVersionWithoutTheKey() {
+        XCTAssertEqual(UpdateChecker.installedVersion, appVersion)
+    }
+
     func testPrereleaseIdentifierRules() {
         // Fewer identifiers sort first: -beta < -beta.1 (semver spec rule 11).
         XCTAssertTrue(UpdateChecker.isNewerVersion("2.5.0-beta.1", than: "2.5.0-beta"))

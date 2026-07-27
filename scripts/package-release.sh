@@ -6,6 +6,10 @@ cd "$ROOT_DIR"
 
 APP_NAME="Toki"
 VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
+# The full release identity, including any prerelease suffix (e.g. 2.5.1-beta.3). CFBundleShort-
+# VersionString must stay dotted-numeric, so the updater compares against this instead, letting a
+# beta see the next beta and the eventual stable. Falls back to the marketing version locally.
+RELEASE_VERSION="${TOKI_RELEASE_VERSION:-$VERSION}"
 BUILD_NUMBER="${TOKI_BUILD_NUMBER:-10}"
 if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
   WIDGET_DATA_MODE="app-group"
@@ -75,6 +79,8 @@ cat > "$INFO_PLIST" <<PLIST
   <string>$VERSION</string>
   <key>CFBundleVersion</key>
   <string>$BUILD_NUMBER</string>
+  <key>TokiReleaseVersion</key>
+  <string>$RELEASE_VERSION</string>
   <key>TokiWidgetDataMode</key>
   <string>$WIDGET_DATA_MODE</string>
   <key>LSMinimumSystemVersion</key>
@@ -110,6 +116,8 @@ cat > "$WIDGET_DIR/Contents/Info.plist" <<PLIST
   <string>$VERSION</string>
   <key>CFBundleVersion</key>
   <string>$BUILD_NUMBER</string>
+  <key>TokiReleaseVersion</key>
+  <string>$RELEASE_VERSION</string>
   <key>TokiWidgetDataMode</key>
   <string>$WIDGET_DATA_MODE</string>
   <key>LSMinimumSystemVersion</key>
