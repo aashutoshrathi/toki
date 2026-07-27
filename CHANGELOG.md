@@ -4,13 +4,15 @@
 
 ### Added
 
-- Cursor support (#33): auto-detected as a card when the `cursor-agent` CLI is installed, with live `cursor-agent` sessions appearing in the Active Agents panel and a proper Cursor logo.
+- Cursor support (#33): auto-detected as a card when the `cursor-agent` CLI is installed, with live `cursor-agent` sessions appearing in the Active Agents panel (showing the conversation title and last-active time) and a proper Cursor logo.
 - Liquid Glass surfaces and controls on macOS 26, with the current styling kept on earlier macOS (#34).
 
 ### Fixed
 
-- Quota rings now draw one ring per account instead of collapsing accounts that share a provider, so two Claude (or two Codex) accounts each get their own ring and side card. Each is given a distinct color — the account's label color, or a shaded provider color — and multiple accounts of a provider show their alias to tell them apart. The same fix applies to the quota-rings widget and the usage widget.
+- Quota rings now draw one ring per account instead of collapsing accounts that share a provider, so two Claude (or two Codex) accounts each get their own ring and side card. Each is given a distinct color (the account's label color, or a shaded provider color), and multiple accounts of a provider show their alias to tell them apart. The same fix applies to the quota-rings widget and the usage widget.
 - The quota rings now scale to the available height so they read clearly next to the account cards.
+- With multiple Claude Code accounts, a running session was shown on every Claude card. It is now attributed to the active account only (the one `claude-swap` has switched to), so inactive accounts no longer double-count it.
+- Removed the redundant glass tile behind the header logo.
 
 ## 2.5.0 - 2026-07-26
 
