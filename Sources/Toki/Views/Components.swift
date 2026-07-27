@@ -40,11 +40,14 @@ struct UpdateAvailableBanner: View {
                 Button {
                     updateChecker.installUpdate()
                 } label: {
-                    if updateChecker.isInstalling {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
+                    ZStack {
                         Text("Update")
+                            .opacity(updateChecker.isInstalling ? 0 : 1)
+                        if updateChecker.isInstalling {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Installing update")
+                        }
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -187,37 +190,44 @@ struct AIInsightCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: expanded ? 6 : 0) {
-            HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
                 Button {
                     if canExpand { expanded.toggle() }
                 } label: {
-                    HStack(alignment: .top, spacing: 6) {
-                        if isUpdating {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .frame(width: 11, height: 11)
-                        } else {
-                            Image(systemName: isAI ? "sparkles" : "lightbulb")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(isAI ? .purple : .secondary)
+                    HStack(alignment: .center, spacing: 6) {
+                        Group {
+                            if isUpdating {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            } else {
+                                Image(systemName: isAI ? "sparkles" : "lightbulb")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(isAI ? .purple : .secondary)
+                            }
                         }
-                        Text(summary)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-                        if canExpand {
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                                .padding(.top, 3)
+                        .frame(width: 11, height: 11)
+                        Group {
+                            if canExpand {
+                                Text(summary)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.primary)
+                                + Text(" ")
+                                + Text(Image(systemName: expanded ? "chevron.up" : "chevron.down"))
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundColor(Color(nsColor: .tertiaryLabelColor))
+                            } else {
+                                Text(summary)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.primary)
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
                     }
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .pointerOnHover()
-
-                Spacer(minLength: 4)
 
                 if let switchAction {
                     Button(action: switchAction.perform) {
@@ -385,6 +395,7 @@ struct MetricRow: View {
 // MARK: - QuotaSummaryLine
 
 struct QuotaSummaryLine: View {
+    @Environment(\.colorScheme) private var colorScheme
     var label: String
     var value: String
     var resetHint: String?
@@ -416,7 +427,7 @@ struct QuotaSummaryLine: View {
             HStack(spacing: 3) {
                 Text("\(availability)%")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(availabilityColor(for: availability))
+                    .foregroundStyle(availabilityColor(for: availability, colorScheme: colorScheme))
                 Text("left")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(.secondary)

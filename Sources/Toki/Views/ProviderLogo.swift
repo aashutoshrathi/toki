@@ -159,15 +159,27 @@ struct TokiLogoMark: View {
     var size: CGFloat
 
     var body: some View {
-        SVGLogoMark(asset: "toki-logo", size: size) {
-            ZStack {
-                RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
-                    .fill(Color.primary.opacity(0.08))
-                Image(systemName: "wallet.pass")
-                    .font(.system(size: size * 0.48, weight: .semibold))
-                    .foregroundStyle(.primary)
+        ZStack {
+            SVGLogoMark(asset: "toki-router-mark", size: size, template: true) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: size * 0.52, weight: .semibold))
             }
+            .foregroundStyle(.primary)
+
+            Circle()
+                .fill(Color(red: 0.56, green: 0.66, blue: 0.61))
+                .frame(width: size * 0.076, height: size * 0.076)
+                .offset(x: size * 0.229, y: size * -0.219)
+
+            Circle()
+                .fill(Color(red: 0.79, green: 0.60, blue: 0.32))
+                .frame(width: size * 0.076, height: size * 0.076)
+                .offset(x: size * 0.227, y: size * 0.197)
         }
+        .frame(width: size, height: size)
+        .functionalGlass(
+            in: RoundedRectangle(cornerRadius: size * 0.286, style: .continuous)
+        )
         .accessibilityLabel("/toki")
     }
 }

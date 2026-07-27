@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 struct QuotaRingsPanel: View {
+    @Environment(\.colorScheme) private var colorScheme
     let snapshots: [AccountSnapshot]
     var onHide: () -> Void = {}
     @State private var hoveredSnapshotID: String?
-    @State private var cardsHeight: CGFloat = 84
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -27,18 +27,11 @@ struct QuotaRingsPanel: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear
-                            .onAppear { cardsHeight = proxy.size.height }
-                            .onChange(of: proxy.size.height) { _, newValue in cardsHeight = newValue }
-                    }
-                )
 
                 QuotaRingsView(
                     snapshots: ringSnapshots,
                     colors: ringColors,
-                    size: min(88, max(68, cardsHeight - 8)),
+                    size: 88,
                     hoveredSnapshotID: $hoveredSnapshotID
                 )
                 .padding(.trailing, 4)
@@ -85,7 +78,7 @@ struct QuotaRingsPanel: View {
                 if let resetHint = snapshot.primaryWindow?.resetHint {
                     Text(resetHint)
                         .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -152,7 +145,7 @@ struct QuotaRingsPanel: View {
     private func shaded(_ base: Color, index: Int, count: Int) -> Color {
         let ns = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
         let t = count > 1 ? Double(index) / Double(count - 1) : 0.5
-        let factor = 0.68 + t * 0.64
+        let factor = colorScheme == .dark ? 1 + t * 0.32 : 0.72 + t * 0.28
         return Color(
             red: min(1, Double(ns.redComponent) * factor),
             green: min(1, Double(ns.greenComponent) * factor),
@@ -196,7 +189,7 @@ private struct QuotaRingsView: View {
             if let centerProvider {
                 ProviderLogo(provider: centerProvider, size: centerBadgeSize * 0.6)
                     .frame(width: centerBadgeSize, height: centerBadgeSize)
-                    .background(.regularMaterial, in: Circle())
+                    .background(.fill.tertiary, in: Circle())
                     .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
                     .allowsHitTesting(false)
                     .transition(.opacity)

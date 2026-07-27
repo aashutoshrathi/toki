@@ -47,7 +47,7 @@ struct MenuContentView: View {
             contentBody
                 .safeAreaBar(edge: .top, spacing: 0) {
                     functionalBar
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 10)
                         .padding(.top, 10)
                         .padding(.bottom, 6)
                 }
@@ -55,7 +55,7 @@ struct MenuContentView: View {
         } else {
             VStack(spacing: 0) {
                 functionalBar
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 10)
                     .padding(.top, 10)
                     .padding(.bottom, 6)
                 contentBody
@@ -88,20 +88,40 @@ struct MenuContentView: View {
                 debugPanel
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.bottom, 12)
         .padding(.top, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    @ViewBuilder
     private var functionalBar: some View {
+        if #available(macOS 26, *) {
+            GlassEffectContainer(spacing: 0) {
+                functionalBarContents
+            }
+        } else {
+            functionalBarContents
+        }
+    }
+
+    private var functionalBarContents: some View {
         HStack(alignment: .center, spacing: 7) {
-            TokiLogoMark(size: 22)
+            TokiLogoMark(size: 28)
+                .accessibilityHidden(true)
 
             Text("/toki")
                 .font(.system(size: 14, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
                 .fixedSize()
+
+            Text("v\(appVersion)")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .functionalGlass(in: Capsule(), interactive: true)
+                .accessibilityLabel("Toki version \(appVersion)")
                 .onTapGesture(count: 5) {
                     store.toggleDebug()
                 }
@@ -109,101 +129,94 @@ struct MenuContentView: View {
             Spacer(minLength: 0)
             headerControls
         }
-        .padding(6)
-        .functionalGlass()
+        .frame(height: 28)
     }
 
     private var headerControls: some View {
-        HStack(spacing: 5) {
-            // Same reasoning as the Agents panel's refresh: without a visible busy state the
-            // button looks identical before, during and after a refresh, so a press that is
-            // already running reads as one that did nothing and invites another - and the
-            // store drops overlapping refreshes, so those presses go nowhere.
-            Button {
-                store.refresh(minimumRefreshInterval: 60)
-            } label: {
-                Group {
-                    if store.isRefreshing {
-                        ProgressView()
-                            .controlSize(.small)
-                            .scaleEffect(0.7)
-                    } else if !store.isNetworkAvailable {
-                        Image(systemName: "wifi.slash")
-                    } else {
-                        Image(systemName: "arrow.clockwise")
+        HStack(spacing: 8) {
+            HStack(spacing: 5) {
+                Button {
+                    store.refresh(minimumRefreshInterval: 60)
+                } label: {
+                    Group {
+                        if store.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                        } else if !store.isNetworkAvailable {
+                            Image(systemName: "wifi.slash")
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
+                    .frame(width: 13, height: 13)
+                    .contentShape(Rectangle())
                 }
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .disabled(store.isRefreshing || !store.isNetworkAvailable)
-            .help(
-                store.isRefreshing
-                    ? "Refreshing…"
-                    : (store.isNetworkAvailable
-                        ? "Refresh"
-                        : "Offline — usage refreshes automatically when the connection returns")
-            )
-            .pointerOnHover()
-
-            Button {
-                store.hidesSensitiveInfo.toggle()
-            } label: {
-                Image(systemName: store.hidesSensitiveInfo ? "eye.slash" : "eye")
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(store.hidesSensitiveInfo ? Color.blue : Color.primary)
-            .help(store.hidesSensitiveInfo ? "Showing masked emails and org info - click to reveal" : "Hide emails and org info for screenshots")
-            .accessibilityLabel(store.hidesSensitiveInfo ? "Reveal sensitive info" : "Hide sensitive info")
-            .pointerOnHover()
-
-            Button {
-                showConfig = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help("Settings")
-            .pointerOnHover()
-
-            Menu {
-                Button("Version \(appVersion)") {}
-                    .disabled(true)
-
-                Divider()
+                .functionalControlStyle()
+                .disabled(store.isRefreshing || !store.isNetworkAvailable)
+                .help(
+                    store.isRefreshing
+                        ? "Refreshing…"
+                        : (store.isNetworkAvailable
+                            ? "Refresh"
+                            : "Offline — usage refreshes automatically when the connection returns")
+                )
+                .pointerOnHover()
 
                 Button {
-                    showChangelog = true
+                    store.hidesSensitiveInfo.toggle()
                 } label: {
-                    Label("What's New", systemImage: "doc.text")
+                    Image(systemName: store.hidesSensitiveInfo ? "eye.slash" : "eye")
+                        .frame(width: 13, height: 13)
+                        .contentShape(Rectangle())
                 }
-
-                Divider()
-
-                Button(role: .destructive) {
-                    NSApp.terminate(nil)
-                } label: {
-                    Label("Quit Toki", systemImage: "power")
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
+                .functionalControlStyle()
+                .foregroundStyle(store.hidesSensitiveInfo ? Color.blue : Color.primary)
+                .help(store.hidesSensitiveInfo ? "Showing masked emails and org info - click to reveal" : "Hide emails and org info for screenshots")
+                .accessibilityLabel(store.hidesSensitiveInfo ? "Reveal sensitive info" : "Hide sensitive info")
+                .pointerOnHover()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More")
-            .accessibilityLabel("More actions")
-            .pointerOnHover()
+
+            HStack(spacing: 5) {
+                Button {
+                    showConfig = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .frame(width: 13, height: 13)
+                        .contentShape(Rectangle())
+                }
+                .functionalControlStyle()
+                .help("Settings")
+                .pointerOnHover()
+
+                Menu {
+                    Button {
+                        showChangelog = true
+                    } label: {
+                        Label("What's New", systemImage: "doc.text")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        NSApp.terminate(nil)
+                    } label: {
+                        Label("Quit Toki", systemImage: "power")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 13, height: 13)
+                        .contentShape(Rectangle())
+                }
+                .functionalControlStyle()
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More")
+                .accessibilityLabel("More actions")
+                .pointerOnHover()
+            }
         }
         .font(.system(size: 13, weight: .semibold))
-        .controlSize(.small)
     }
 
     private var overview: some View {
@@ -265,9 +278,9 @@ struct MenuContentView: View {
                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(selectedTab == tab ? Color.white : Color.secondary)
+                .foregroundStyle(selectedTab == tab ? Color.primary : Color.secondary)
                 .background(
-                    selectedTab == tab ? Color.accentColor : Color.clear,
+                    selectedTab == tab ? Color.accentColor.opacity(0.16) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
                 .help(tab.rawValue)
@@ -278,7 +291,7 @@ struct MenuContentView: View {
         }
         .padding(3)
         .frame(maxWidth: .infinity)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityLabel("Toki section")
     }
 
@@ -286,7 +299,7 @@ struct MenuContentView: View {
         Group {
             switch selectedTab {
             case .accounts:
-                accountList
+                accountsContent
             case .agents:
                 ActiveAgentsPanel(store: store)
             case .analytics:
@@ -314,21 +327,28 @@ struct MenuContentView: View {
         return 0
     }
 
+    private var accountsContent: some View {
+        VStack(spacing: 0) {
+            if showsQuotaRings {
+                QuotaRingsPanel(snapshots: store.snapshots) {
+                    var next = store.preferences
+                    next.quotaRingsEnabled = false
+                    store.updatePreferences(next)
+                }
+
+                Divider()
+                    .padding(.leading, 44)
+                    .padding(.vertical, 2)
+            }
+
+            accountList
+        }
+    }
+
     private var accountList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if showsQuotaRings {
-                        QuotaRingsPanel(snapshots: store.snapshots) {
-                            var next = store.preferences
-                            next.quotaRingsEnabled = false
-                            store.updatePreferences(next)
-                        }
-
-                        Divider()
-                            .padding(.leading, 44)
-                    }
-
                     ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snapshot in
                         AccountCard(snapshot: snapshot, store: store) { id in
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
@@ -338,16 +358,15 @@ struct MenuContentView: View {
                             }
                         }
                         .id(snapshot.id)
-                        .transition(.move(edge: .top).combined(with: .opacity))
 
                         if index < sortedSnapshots.count - 1 {
                             Divider()
                                 .padding(.leading, 44)
+                                .padding(.vertical, 2)
                         }
                     }
                 }
                 .padding(.horizontal, 2)
-                .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.snapshots.map(\.id))
             }
             .frame(maxHeight: .infinity)
         }
@@ -399,10 +418,6 @@ struct MenuContentView: View {
             }
         }
         .padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-        )
+        .contentSurface(stroke: .orange)
     }
 }

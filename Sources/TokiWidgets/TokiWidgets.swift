@@ -247,11 +247,12 @@ private func disambiguatedTitles(_ entries: [WidgetEntry]) -> [String: String] {
 }
 
 private struct QuotaRings: View {
+    @Environment(\.colorScheme) private var colorScheme
     let entries: [WidgetEntry]
     let size: CGFloat
 
     var body: some View {
-        let colors = resolvedRingColors(ringEntries)
+        let colors = resolvedRingColors(ringEntries, colorScheme: colorScheme)
         return ZStack {
             ForEach(Array(ringEntries.enumerated()), id: \.element.id) { index, item in
                 let diameter = size - CGFloat(index) * ringSpacing * 2
@@ -319,6 +320,7 @@ private func providerColor(_ provider: String) -> Color {
 
 private struct TokiQuotaRingsEntryView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.colorScheme) private var colorScheme
     let entry: TokiTimelineEntry
 
     var body: some View {
@@ -349,7 +351,7 @@ private struct TokiQuotaRingsEntryView: View {
 
             if family == .systemMedium {
                 let rings = ringEntries(data)
-                let colors = resolvedRingColors(rings)
+                let colors = resolvedRingColors(rings, colorScheme: colorScheme)
                 HStack(spacing: 22) {
                     QuotaRings(entries: data.entries, size: 104)
                     VStack(alignment: .leading, spacing: 10) {
@@ -402,7 +404,7 @@ private func distinctByID(_ entries: [WidgetEntry]) -> [WidgetEntry] {
     return entries.filter { seen.insert($0.id).inserted }
 }
 
-private func resolvedRingColors(_ entries: [WidgetEntry]) -> [String: Color] {
+private func resolvedRingColors(_ entries: [WidgetEntry], colorScheme: ColorScheme) -> [String: Color] {
     var result: [String: Color] = [:]
     let groups = Dictionary(grouping: entries, by: { $0.provider })
     for (_, group) in groups {
@@ -412,17 +414,22 @@ private func resolvedRingColors(_ entries: [WidgetEntry]) -> [String: Color] {
             } else if group.count == 1 {
                 result[entry.id] = providerColor(entry.provider)
             } else {
-                result[entry.id] = shadedColor(providerColor(entry.provider), index: index, count: group.count)
+                result[entry.id] = shadedColor(
+                    providerColor(entry.provider),
+                    index: index,
+                    count: group.count,
+                    colorScheme: colorScheme
+                )
             }
         }
     }
     return result
 }
 
-private func shadedColor(_ base: Color, index: Int, count: Int) -> Color {
+private func shadedColor(_ base: Color, index: Int, count: Int, colorScheme: ColorScheme) -> Color {
     let ns = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
     let t = count > 1 ? Double(index) / Double(count - 1) : 0.5
-    let factor = 0.68 + t * 0.64
+    let factor = colorScheme == .dark ? 1 + t * 0.32 : 0.72 + t * 0.28
     return Color(
         red: min(1, Double(ns.redComponent) * factor),
         green: min(1, Double(ns.greenComponent) * factor),
@@ -437,7 +444,7 @@ private struct ProviderGlyph: View {
     var body: some View {
         Group {
             if let assetName {
-                WidgetSVGLogo(asset: assetName, size: size)
+                WidgetSVGLogo(asset: assetName, size: size, template: item.provider == "grok")
             } else if let leadingText = item.leadingText, !leadingText.isEmpty {
                 Text(leadingText)
             } else {
@@ -485,13 +492,15 @@ private struct ProviderGlyph: View {
 private enum WidgetSVGAsset {
     @MainActor private static var cache: [String: NSImage] = [:]
 
-    @MainActor static func image(named name: String) -> NSImage? {
-        if let cached = cache[name] { return cached }
+    @MainActor static func image(named name: String, template: Bool = false) -> NSImage? {
+        let cacheKey = "\(name):\(template)"
+        if let cached = cache[cacheKey] { return cached }
         guard let url = Bundle.main.url(forResource: name, withExtension: "svg"),
               let image = NSImage(contentsOf: url) else {
             return nil
         }
-        cache[name] = image
+        image.isTemplate = template
+        cache[cacheKey] = image
         return image
     }
 }
@@ -499,13 +508,15 @@ private enum WidgetSVGAsset {
 private struct WidgetSVGLogo: View {
     let asset: String
     let size: CGFloat
+    var template = false
 
     var body: some View {
         Group {
-            if let image = WidgetSVGAsset.image(named: asset) {
+            if let image = WidgetSVGAsset.image(named: asset, template: template) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
+                    .foregroundStyle(.primary)
             } else {
                 Image(systemName: "app.fill")
                     .resizable()

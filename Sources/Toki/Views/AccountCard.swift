@@ -98,7 +98,7 @@ struct AccountCard: View {
                         if let secondaryIdentifier {
                             Text(secondaryIdentifier)
                                 .font(.system(size: 9, weight: .regular))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 // Error text reads better cut from the end (keeps the
                                 // meaningful lead-in); emails/org names keep .middle so the
@@ -216,12 +216,14 @@ struct AccountCard: View {
                             // limited credit, so redeeming always asks first.
                             confirmingReset = true
                         } label: {
-                            if isResetting {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .accessibilityLabel("Resetting Codex rate limit")
-                            } else {
+                            ZStack {
                                 Label(resetButtonTitle, systemImage: "arrow.counterclockwise")
+                                    .opacity(isResetting ? 0 : 1)
+                                if isResetting {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .accessibilityLabel("Resetting Codex rate limit")
+                                }
                             }
                         }
                         .buttonStyle(.bordered)
