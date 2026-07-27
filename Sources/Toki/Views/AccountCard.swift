@@ -304,7 +304,7 @@ struct AccountCard: View {
                 guard !isEditingAlias else { return }
                 toggleExpanded()
             },
-            including: .gesture
+            including: .all
         )
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
