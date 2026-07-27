@@ -76,12 +76,6 @@ struct MenuContentView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 9) {
             TokiLogoMark(size: 34)
-                .padding(5)
-                .glassSurface(
-                    fallbackFill: .regularMaterial,
-                    fallbackStroke: .primary,
-                    fallbackStrokeOpacity: 0.08
-                )
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
