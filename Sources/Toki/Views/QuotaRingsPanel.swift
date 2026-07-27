@@ -8,8 +8,6 @@ struct QuotaRingsPanel: View {
     @State private var cardsHeight: CGFloat = 84
 
     var body: some View {
-        // This is the summary at the head of the Accounts list, not a card layered above it.
-        // The shared canvas and the divider below provide structure without another material.
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("Quota")

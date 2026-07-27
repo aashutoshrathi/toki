@@ -30,9 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let popoverController = NSHostingController(
             rootView: MenuContentView(store: store, updateChecker: updateChecker)
         )
-        // NSPopover already supplies the semantic behind-window material. Keep the hosting
-        // surface transparent so wallpaper and nearby window colour can actually reach that
-        // material instead of being flattened by an opaque AppKit backing layer.
+        // Keep AppKit's hosting layer clear so the popover's native material remains visible.
         popoverController.view.wantsLayer = true
         popoverController.view.layer?.backgroundColor = NSColor.clear.cgColor
         popoverController.view.layer?.isOpaque = false

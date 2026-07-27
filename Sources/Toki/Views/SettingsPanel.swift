@@ -46,7 +46,6 @@ struct SettingsPanel: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                // AI insight is the one setting row that expands; its prompt editor drops below.
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         cardLabel(
@@ -304,8 +303,6 @@ struct SettingsPanel: View {
                 .padding(8)
                 .settingsCard()
 
-                // The warning icon carries the pre-release meaning. Keeping the containing
-                // surface neutral prevents an infrequent setting from competing with updates.
                 HStack(spacing: 8) {
                     cardLabel(
                         icon: "hammer",
@@ -413,8 +410,6 @@ struct SettingsPanel: View {
         )
     }
 
-    // This setting visibly relocates the whole app, so it needs room for both the explanation
-    // and placement picker. The switch remains aligned with the other setting rows.
     @ViewBuilder
     private var notchModeRow: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -486,9 +481,6 @@ struct SettingsPanel: View {
         .pointerOnHover()
     }
 
-    // Shared row label so every setting lines its title/subtitle up at the same x,
-    // whatever control sits on the right. The icon lives in a fixed-width slot so the text
-    // columns match across cards even when the glyphs differ in width.
     private func cardLabel(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
