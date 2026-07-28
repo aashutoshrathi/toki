@@ -495,21 +495,21 @@ enum WorkspaceWindowMatcher {
         guard !candidates.isEmpty else { return nil }
 
         for candidate in candidates {
-            guard let rootPath = root(of: directory, named: candidate) else { continue }
+            guard let rootPath = root(of: directory, named: candidate).map(resolved) else { continue }
             if let index = windows.firstIndex(where: { window in
                 titleMatches(window.title, name: candidate)
-                    && (window.documentPath.map { isPath($0, under: rootPath) } ?? false)
+                    && (window.documentPath.map { isPath(resolved($0), under: rootPath) } ?? false)
             }) {
                 return index
             }
         }
         for candidate in candidates {
-            guard let rootPath = root(of: directory, named: candidate) else { continue }
+            guard let rootPath = root(of: directory, named: candidate).map(resolved) else { continue }
             let matches = windows.indices.filter { index in
                 let window = windows[index]
                 guard titleMatches(window.title, name: candidate) else { return false }
                 if let document = window.documentPath,
-                   let otherRoot = root(of: document, named: candidate),
+                   let otherRoot = root(of: document, named: candidate).map(resolved),
                    otherRoot != rootPath {
                     return false
                 }
@@ -518,6 +518,10 @@ enum WorkspaceWindowMatcher {
             if matches.count == 1 { return matches[0] }
         }
         return nil
+    }
+
+    static func resolved(_ path: String) -> String {
+        (path as NSString).resolvingSymlinksInPath
     }
 
     static func documentPath(fromRawValue raw: String) -> String? {

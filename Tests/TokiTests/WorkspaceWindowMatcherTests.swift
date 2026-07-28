@@ -38,6 +38,20 @@ final class WorkspaceWindowMatcherTests: XCTestCase {
         XCTAssertEqual(WorkspaceWindowMatcher.pick(directory: "/work/project/src", windows: windows), 1)
     }
 
+    func testSymlinkedWorkspaceRootResolvesToCanonicalDocument() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("wm-\(UUID().uuidString)")
+        let realProject = base.appendingPathComponent("real/project")
+        try fm.createDirectory(at: realProject, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: base.appendingPathComponent("link"), withDestinationURL: base.appendingPathComponent("real"))
+        defer { try? fm.removeItem(at: base) }
+
+        let cwd = base.appendingPathComponent("link/project").path
+        let document = realProject.appendingPathComponent("main.swift").path
+        let windows = [Window(title: "project", documentPath: document)]
+        XCTAssertEqual(WorkspaceWindowMatcher.pick(directory: cwd, windows: windows), 0)
+    }
+
     func testNoMatchReturnsNil() {
         let windows = [Window(title: "unrelated", documentPath: "/x/y.swift")]
         XCTAssertNil(WorkspaceWindowMatcher.pick(directory: "/work/project", windows: windows))
