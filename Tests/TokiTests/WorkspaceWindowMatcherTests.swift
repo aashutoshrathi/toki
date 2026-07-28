@@ -49,6 +49,18 @@ final class WorkspaceWindowMatcherTests: XCTestCase {
         XCTAssertFalse(WorkspaceWindowMatcher.isPath("/work/project-old/a.swift", under: "/work/project"))
     }
 
+    func testDocumentPathAcceptsFileURLsAndPosixPathsOnly() {
+        XCTAssertEqual(WorkspaceWindowMatcher.documentPath(fromRawValue: "file:///work/project/a.swift"), "/work/project/a.swift")
+        XCTAssertEqual(WorkspaceWindowMatcher.documentPath(fromRawValue: "/work/project/a.swift"), "/work/project/a.swift")
+        XCTAssertNil(WorkspaceWindowMatcher.documentPath(fromRawValue: "untitled:Untitled-1"))
+        XCTAssertNil(WorkspaceWindowMatcher.documentPath(fromRawValue: "vscode-userdata:/foo"))
+    }
+
+    func testUntitledEditorWindowStillFallsBackToTitleMatch() {
+        let windows = [Window(title: "project", documentPath: WorkspaceWindowMatcher.documentPath(fromRawValue: "untitled:Untitled-1"))]
+        XCTAssertEqual(WorkspaceWindowMatcher.pick(directory: "/work/project", windows: windows), 0)
+    }
+
     func testTitleMatchesOnlyOnFullTrailingComponent() {
         XCTAssertTrue(WorkspaceWindowMatcher.titleMatches("project", name: "project"))
         XCTAssertTrue(WorkspaceWindowMatcher.titleMatches("file - project", name: "project"))

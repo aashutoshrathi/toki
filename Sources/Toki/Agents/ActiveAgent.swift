@@ -407,8 +407,7 @@ enum ActiveAgentNavigator {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXDocumentAttribute as CFString, &value) == .success,
               let document = value as? String else { return nil }
-        if let url = URL(string: document), url.isFileURL { return url.path }
-        return document
+        return WorkspaceWindowMatcher.documentPath(fromRawValue: document)
     }
 
     nonisolated private static func isSafeTTY(_ value: String) -> Bool {
@@ -511,6 +510,12 @@ enum WorkspaceWindowMatcher {
                 return index
             }
         }
+        return nil
+    }
+
+    static func documentPath(fromRawValue raw: String) -> String? {
+        if let url = URL(string: raw), url.isFileURL { return url.path }
+        if raw.hasPrefix("/") { return raw }
         return nil
     }
 
