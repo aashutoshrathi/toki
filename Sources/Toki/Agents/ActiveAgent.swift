@@ -495,20 +495,27 @@ enum WorkspaceWindowMatcher {
         guard !candidates.isEmpty else { return nil }
 
         for candidate in candidates {
-            guard let root = root(of: directory, named: candidate) else { continue }
+            guard let rootPath = root(of: directory, named: candidate) else { continue }
             if let index = windows.firstIndex(where: { window in
                 titleMatches(window.title, name: candidate)
-                    && (window.documentPath.map { isPath($0, under: root) } ?? false)
+                    && (window.documentPath.map { isPath($0, under: rootPath) } ?? false)
             }) {
                 return index
             }
         }
         for candidate in candidates {
-            if let index = windows.firstIndex(where: { window in
-                titleMatches(window.title, name: candidate) && window.documentPath == nil
-            }) {
-                return index
+            guard let rootPath = root(of: directory, named: candidate) else { continue }
+            let matches = windows.indices.filter { index in
+                let window = windows[index]
+                guard titleMatches(window.title, name: candidate) else { return false }
+                if let document = window.documentPath,
+                   let otherRoot = root(of: document, named: candidate),
+                   otherRoot != rootPath {
+                    return false
+                }
+                return true
             }
+            if matches.count == 1 { return matches[0] }
         }
         return nil
     }

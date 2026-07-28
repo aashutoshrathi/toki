@@ -49,6 +49,19 @@ final class WorkspaceWindowMatcherTests: XCTestCase {
         XCTAssertFalse(WorkspaceWindowMatcher.isPath("/work/project-old/a.swift", under: "/work/project"))
     }
 
+    func testWindowWithExternalDocumentStillRaisedWhenTitleUnambiguous() {
+        let windows = [Window(title: "project", documentPath: "/somewhere/else/notes.txt")]
+        XCTAssertEqual(WorkspaceWindowMatcher.pick(directory: "/work/project/src", windows: windows), 0)
+    }
+
+    func testAmbiguousSameNameWithoutConfirmingDocumentIsNotGuessed() {
+        let windows = [
+            Window(title: "project", documentPath: nil),
+            Window(title: "project", documentPath: nil),
+        ]
+        XCTAssertNil(WorkspaceWindowMatcher.pick(directory: "/work/project/src", windows: windows))
+    }
+
     func testDocumentPathAcceptsFileURLsAndPosixPathsOnly() {
         XCTAssertEqual(WorkspaceWindowMatcher.documentPath(fromRawValue: "file:///work/project/a.swift"), "/work/project/a.swift")
         XCTAssertEqual(WorkspaceWindowMatcher.documentPath(fromRawValue: "/work/project/a.swift"), "/work/project/a.swift")
