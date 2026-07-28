@@ -149,7 +149,7 @@ struct MenuContentView: View {
                             Image(systemName: "arrow.clockwise")
                         }
                     }
-                    .frame(width: 13, height: 13)
+                    .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
                 }
                 .functionalControlStyle()
@@ -167,7 +167,7 @@ struct MenuContentView: View {
                     store.hidesSensitiveInfo.toggle()
                 } label: {
                     Image(systemName: store.hidesSensitiveInfo ? "eye.slash" : "eye")
-                        .frame(width: 13, height: 13)
+                        .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .functionalControlStyle()
@@ -182,7 +182,7 @@ struct MenuContentView: View {
                     showConfig = true
                 } label: {
                     Image(systemName: "gearshape")
-                        .frame(width: 13, height: 13)
+                        .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .functionalControlStyle()
@@ -205,7 +205,7 @@ struct MenuContentView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .frame(width: 13, height: 13)
+                        .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .functionalControlStyle()
