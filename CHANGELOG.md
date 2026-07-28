@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.3 - 2026-07-28
+
+### Changed
+
+- On macOS 26, the usage and quota-rings widgets now render on the system's Liquid Glass material, bringing them in line with the app's redesigned popover. Older macOS keeps the existing look.
+
+### Fixed
+
+- On multiple displays, the popover now stays below the menu bar item that was clicked instead of rejecting the display change and falling back to stale coordinates from another screen.
+- When Toki has Accessibility access, clicking an agent running in a VS Code integrated terminal now tries to raise the specific workspace window that hosts it, so on a multi-display setup you are more likely to land on the right window and screen. Without that permission it falls back to bringing VS Code forward as before.
+
 ## 2.5.2 - 2026-07-27
 
 ### Fixed
