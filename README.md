@@ -90,6 +90,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 | [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
 | [Features](docs/features.md) | Agents, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
+| [Release signing](docs/release-signing.md) | Apple secrets for signing and notarizing release builds |
 
 ## Privacy
 
