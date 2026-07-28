@@ -367,25 +367,47 @@ enum ActiveAgentNavigator {
         "com.vscodium",
     ]
 
+    private static var didPromptAccessibility = false
+
+    private static func hasAccessibilityAccess() -> Bool {
+        if AXIsProcessTrusted() { return true }
+        if !didPromptAccessibility {
+            didPromptAccessibility = true
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        }
+        return false
+    }
+
     private static func raiseWorkspaceWindow(pid: pid_t, bundleID: String?, directory: String?) {
-        guard let bundleID, workspaceWindowBundleIDs.contains(bundleID), let directory else { return }
-        let folder = (directory as NSString).lastPathComponent
-        guard !folder.isEmpty, folder != "/" else { return }
+        guard let bundleID, workspaceWindowBundleIDs.contains(bundleID), let directory,
+              !WorkspaceWindowMatcher.nameCandidates(for: directory).isEmpty,
+              hasAccessibilityAccess() else { return }
 
         let app = AXUIElementCreateApplication(pid)
         var windowsValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsValue) == .success,
               let windows = windowsValue as? [AXUIElement] else { return }
 
-        for window in windows {
-            var titleValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
-                  let title = titleValue as? String,
-                  title == folder || title.hasSuffix(" \(folder)") else { continue }
-            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
-            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-            return
+        let infos = windows.map {
+            WorkspaceWindowMatcher.WindowInfo(title: windowTitle($0) ?? "", documentPath: windowDocumentPath($0))
         }
+        guard let index = WorkspaceWindowMatcher.pick(directory: directory, windows: infos) else { return }
+        let target = windows[index]
+        AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementPerformAction(target, kAXRaiseAction as CFString)
+    }
+
+    private static func windowTitle(_ window: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private static func windowDocumentPath(_ window: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXDocumentAttribute as CFString, &value) == .success,
+              let document = value as? String else { return nil }
+        return WorkspaceWindowMatcher.documentPath(fromRawValue: document)
     }
 
     nonisolated private static func isSafeTTY(_ value: String) -> Bool {
@@ -459,5 +481,85 @@ enum ActiveAgentNavigator {
         end if
         error "TTY not found"
         """
+    }
+}
+
+enum WorkspaceWindowMatcher {
+    struct WindowInfo: Equatable {
+        let title: String
+        let documentPath: String?
+    }
+
+    static func pick(directory: String, windows: [WindowInfo]) -> Int? {
+        let candidates = nameCandidates(for: directory)
+        guard !candidates.isEmpty else { return nil }
+
+        for candidate in candidates {
+            guard let rootPath = root(of: directory, named: candidate).map(resolved) else { continue }
+            if let index = windows.firstIndex(where: { window in
+                titleMatches(window.title, name: candidate)
+                    && (window.documentPath.map { isPath(resolved($0), under: rootPath) } ?? false)
+            }) {
+                return index
+            }
+        }
+        for candidate in candidates {
+            guard let rootPath = root(of: directory, named: candidate).map(resolved) else { continue }
+            let matches = windows.indices.filter { index in
+                let window = windows[index]
+                guard titleMatches(window.title, name: candidate) else { return false }
+                if let document = window.documentPath,
+                   let otherRoot = root(of: document, named: candidate).map(resolved),
+                   otherRoot != rootPath {
+                    return false
+                }
+                return true
+            }
+            if matches.count == 1 { return matches[0] }
+        }
+        return nil
+    }
+
+    static func resolved(_ path: String) -> String {
+        (path as NSString).resolvingSymlinksInPath
+    }
+
+    static func documentPath(fromRawValue raw: String) -> String? {
+        if let url = URL(string: raw), url.isFileURL { return url.path }
+        if raw.hasPrefix("/") { return raw }
+        return nil
+    }
+
+    static func titleMatches(_ title: String, name: String) -> Bool {
+        title == name || title.hasSuffix(" \(name)")
+    }
+
+    static func isPath(_ path: String, under root: String) -> Bool {
+        path == root || path.hasPrefix(root + "/")
+    }
+
+    static func nameCandidates(for directory: String) -> [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var names: [String] = []
+        var path = (directory as NSString).standardizingPath
+        while !path.isEmpty, path != "/", path != home {
+            let name = (path as NSString).lastPathComponent
+            if !name.isEmpty, name != "/" { names.append(name) }
+            let parent = (path as NSString).deletingLastPathComponent
+            if parent == path { break }
+            path = parent
+        }
+        return names
+    }
+
+    static func root(of directory: String, named candidate: String) -> String? {
+        var path = (directory as NSString).standardizingPath
+        while !path.isEmpty, path != "/" {
+            if (path as NSString).lastPathComponent == candidate { return path }
+            let parent = (path as NSString).deletingLastPathComponent
+            if parent == path { break }
+            path = parent
+        }
+        return nil
     }
 }
