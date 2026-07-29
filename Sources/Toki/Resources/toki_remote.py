@@ -783,139 +783,7 @@ def send_input(tty, text=None, key=None, raw=False):
 
 TOKEN = secrets.token_urlsafe(24)
 
-PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>toki remote</title><style>
-:root{color-scheme:dark light}
-*{box-sizing:border-box;margin:0}
-body{font:15px/1.45 -apple-system,system-ui,sans-serif;background:#111;color:#eee;
-     padding-bottom:calc(180px + env(safe-area-inset-bottom))}
-header{position:sticky;top:0;background:#111c;backdrop-filter:blur(10px);
-       padding:12px 14px;border-bottom:1px solid #333;z-index:2}
-h1{font-size:16px}
-select{width:100%;margin-top:8px;padding:8px;border-radius:8px;background:#222;
-       color:#eee;border:1px solid #444;font-size:15px}
-#alert{display:none;margin:10px 14px;padding:10px 12px;border-radius:10px;
-       background:#5c1f1f;border:1px solid #a33}
-#alert.q{background:#1f3a5c;border-color:#37a}
-#alert .qq{font-weight:600;margin:4px 0 6px}
-.opt{display:inline-block;margin:3px 6px 3px 0;padding:7px 12px;border-radius:8px;
-     background:#2a4a72;border:1px solid #58a;color:#fff;font-size:14px}
-#log{padding:8px 14px}
-.m{margin:8px 0;padding:9px 12px;border-radius:12px;max-width:92%;
-   word-break:break-word;overflow-wrap:anywhere}
-.user{background:#2a4a2a;margin-left:auto;white-space:pre-wrap}
-.assistant{background:#222}
-.assistant pre{background:#161620;padding:8px;border-radius:8px;overflow-x:auto;
-               font-size:12.5px;margin:6px 0}
-.assistant code{background:#161620;padding:1px 4px;border-radius:4px;
-                font-family:ui-monospace,monospace;font-size:13px}
-.assistant p{margin:5px 0}
-.assistant a{color:#8bf}
-.tool{background:#1a1a2e;color:#9ab;font-size:13px;font-family:ui-monospace,monospace}
-footer{position:fixed;bottom:0;left:0;right:0;background:#161616;
-       border-top:1px solid #333;padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
-.keys{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
-.keys button{flex:1;min-width:44px;padding:10px 0;border-radius:8px;background:#2b2b2b;
-             color:#eee;border:1px solid #444;font-size:15px}
-.row{display:flex;gap:6px}
-input{flex:1;padding:10px;border-radius:8px;background:#222;color:#eee;
-      border:1px solid #444;font-size:16px}
-.row button{padding:10px 16px;border-radius:8px;background:#2a4a72;color:#fff;
-            border:1px solid #58a;font-size:15px}
-#status{font-size:12px;color:#888;margin-top:6px;min-height:14px}
-</style></head><body>
-<header><h1>&#9201;&#65039; toki remote</h1><select id="agents"></select></header>
-<div id="alert"></div><div id="log"></div>
-<footer>
-  <div class="keys">
-    <button data-key="up">&#8593;</button><button data-key="down">&#8595;</button>
-    <button data-key="tab">&#8677;</button><button data-key="enter">&#9166;</button>
-    <button data-key="esc">esc</button>
-    <button data-text="1">1</button><button data-text="2">2</button><button data-text="3">3</button>
-  </div>
-  <div class="row"><input id="msg" placeholder="Reply to the agent&#8230;">
-  <button id="send">Send</button></div>
-  <div id="status"></div>
-</footer>
-<script>
-const TOKEN=new URLSearchParams(location.search).get("token")||"";
-const $=s=>document.querySelector(s);
-let current=null, offset=0, agents=[];
-async function api(p,o){const r=await fetch(p+(p.includes("?")?"&":"?")+"token="+TOKEN,o);
-  if(!r.ok)throw new Error(await r.text());return r.json()}
-function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
-function md(src){
-  // escape, then fenced code, inline code, bold, italic, links, headings, bullets
-  let s=esc(src);
-  const fences=[];
-  s=s.replace(/```[a-zA-Z0-9_-]*\\n([\\s\\S]*?)```/g,(m,c)=>{fences.push(c);return "\\u0000"+(fences.length-1)+"\\u0000"});
-  s=s.replace(/`([^`\\n]+)`/g,"<code>$1</code>");
-  s=s.replace(/\\*\\*([^*]+)\\*\\*/g,"<b>$1</b>");
-  s=s.replace(/(^|[^*])\\*([^*\\n]+)\\*(?!\\*)/g,"$1<i>$2</i>");
-  s=s.replace(/\\[([^\\]]+)\\]\\((https?:[^)\\s]+)\\)/g,'<a href="$2" target="_blank">$1</a>');
-  s=s.split("\\n").map(line=>{
-    if(/^#{1,4}\\s/.test(line))return "<p><b>"+line.replace(/^#{1,4}\\s+/,"")+"</b></p>";
-    if(/^\\s*[-*]\\s+/.test(line))return "<p>&bull; "+line.replace(/^\\s*[-*]\\s+/,"")+"</p>";
-    if(/^\\s*\\d+\\.\\s+/.test(line))return "<p>"+line+"</p>";
-    return line.length?"<p>"+line+"</p>":"";
-  }).join("");
-  s=s.replace(/\\u0000(\\d+)\\u0000/g,(m,i)=>"<pre>"+fences[+i]+"</pre>");
-  return s;
-}
-async function refreshAgents(){
-  agents=await api("/api/agents");const sel=$("#agents"),prev=current;
-  sel.innerHTML=agents.map(a=>`<option value="${a.pid}">`+
-    `${a.attention?"\\uD83D\\uDD34 ":""}[${a.provider}] ${esc(a.title)}`+
-    `${a.tty?" \\u00b7 "+a.tty:""}</option>`).join("")
-    ||"<option>no agents found</option>";
-  if(agents.length&&!agents.some(a=>a.pid==prev)){current=agents[0].pid;offset=0;$("#log").innerHTML=""}
-  else if(prev)sel.value=prev;
-  const a=agents.find(x=>x.pid==current), al=$("#alert");
-  if(a&&a.attention){
-    al.style.display="block";al.className=a.attention.kind=="question"?"q":"";
-    const qs=a.attention.questions&&a.attention.questions.length?a.attention.questions
-      :[{question:a.attention.prompt||"Agent is waiting on you",options:a.attention.options||[]}];
-    al.innerHTML=qs.map(q=>'<div class="qq">'+md(q.question||"")+"</div>"+
-      (q.options||[]).map((o,i)=>
-        `<button class="opt" data-text="${i+1}">${i+1}. ${esc(o)}</button>`).join("")).join("");
-  } else al.style.display="none";
-}
-async function refreshLog(){
-  if(!current)return;
-  const r=await api(`/api/transcript?pid=${current}&offset=${offset}`);
-  if(r.reset){offset=0;$("#log").innerHTML="";return}
-  offset=r.offset;
-  for(const e of r.entries){
-    if(e.role=="meta"||e.role=="resolved")continue;
-    const d=document.createElement("div");d.className="m "+e.role;
-    if(e.role=="tool")d.innerHTML="&#128295; <b>"+esc(e.tool)+"</b> "+esc(e.text||"");
-    else if(e.role=="assistant")d.innerHTML=md(e.text);
-    else d.textContent=e.text;
-    $("#log").appendChild(d);
-  }
-  if(r.entries.length)window.scrollTo(0,document.body.scrollHeight);
-}
-async function send(body){
-  if(!current)return;
-  $("#status").textContent="sending\\u2026";
-  try{const r=await api("/api/send",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({pid:current,...body})});
-    $("#status").textContent="delivered via "+r.how;
-  }catch(e){$("#status").textContent="failed: "+e.message}
-  setTimeout(()=>$("#status").textContent="",4000);
-}
-document.addEventListener("click",e=>{
-  const b=e.target.closest("button");if(!b)return;
-  if(b.id=="send"){const v=$("#msg").value.trim();if(v){send({text:v});$("#msg").value=""}}
-  else if(b.dataset.key)send({key:b.dataset.key});
-  else if(b.dataset.text)send({text:b.dataset.text,raw:true});
-});
-$("#msg").addEventListener("keydown",e=>{if(e.key=="Enter")$("#send").click()});
-$("#agents").addEventListener("change",e=>{current=+e.target.value;offset=0;$("#log").innerHTML=""});
-refreshAgents();refreshLog();
-setInterval(refreshAgents,4000);setInterval(refreshLog,2500);
-</script></body></html>"""
+WEBUI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webui")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -933,21 +801,37 @@ class Handler(BaseHTTPRequestHandler):
     def _authed(self, q):
         return secrets.compare_digest(q.get("token", [""])[0], TOKEN)
 
+    def _static(self, name, ctype):
+        try:
+            with open(os.path.join(WEBUI_DIR, name), "rb") as f:
+                body = f.read()
+        except OSError:
+            return self._json({"error": "not found"}, 404)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         url = urlparse(self.path)
         q = parse_qs(url.query)
+        if url.path in ("/", "/index.html"):
+            return self._static("index.html", "text/html; charset=utf-8")
+        if url.path == "/app.js":
+            return self._static("app.js", "application/javascript; charset=utf-8")
+        if url.path == "/styles.css":
+            return self._static("styles.css", "text/css; charset=utf-8")
         if not self._authed(q):
             return self._json({"error": "bad token"}, 403)
-        if url.path == "/":
-            body = PAGE.encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif url.path == "/api/agents":
+        if url.path == "/api/agents":
             result = []
-            for a in discover_agents():
+            agents = discover_agents()
+            agents.sort(
+                key=lambda a: os.path.getmtime(a["session"]) if a.get("session") and os.path.exists(a["session"]) else 0.0,
+                reverse=True,
+            )
+            for a in agents:
                 att = None
                 if a["session"]:
                     att = (claude_attention if a["provider"] == "claude" else codex_attention)(a["session"])
