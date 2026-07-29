@@ -567,25 +567,34 @@ struct SettingsPanel: View {
                 .controlSize(.small)
                 .fixedSize()
                 Spacer(minLength: 0)
-                if remoteServer.isRunning, remoteServer.connectURL != nil {
-                    Button {
-                        showingConnect = true
-                    } label: {
-                        Label("Connect", systemImage: "qrcode")
+            }
+            .padding(.horizontal, 4)
+
+            if remoteServer.isRunning {
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+
+                    if remoteServer.connectURL != nil {
+                        Button {
+                            showingConnect = true
+                        } label: {
+                            Label("Connect", systemImage: "qrcode")
+                        }
+                        .controlSize(.small)
+                        .fixedSize()
+                        .pointerOnHover()
                     }
-                    .controlSize(.small)
-                    .pointerOnHover()
-                }
-                if remoteServer.isRunning {
+
                     Button("Stop", role: .destructive) {
                         remoteServer.stop()
                     }
                     .controlSize(.small)
+                    .fixedSize()
                     .help("Stop Remote Control and invalidate every connected session")
                     .pointerOnHover()
                 }
+                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 4)
 
             if remoteServer.companionAppMode == .hosted {
                 Text("Toki RC only serves the interface. Agent data stays on this Mac and travels directly over your tailnet.")
