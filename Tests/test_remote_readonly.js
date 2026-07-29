@@ -13,6 +13,7 @@ assert.match(html, /cannot send replies/);
 assert.match(app, /agent&&agent\.writable/);
 assert.match(app, /enabled=writable&&!sending/);
 assert.match(app, /el\.disabled=!enabled/);
+assert.match(app, /footer textarea/);
 assert.match(app, /Read-only session/);
 
 console.log("remote read-only session tests passed");

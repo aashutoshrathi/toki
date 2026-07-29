@@ -103,7 +103,7 @@ function renderAgents(){
 function updateComposer(agent){
   const writable=!!(agent&&agent.writable),enabled=writable&&!sending;
   $("#readonly").style.display=agent&&!writable?"block":"none";
-  document.querySelectorAll("footer button,footer input").forEach(el=>el.disabled=!enabled);
+  document.querySelectorAll("footer button,footer input,footer textarea").forEach(el=>el.disabled=!enabled);
   $("#msg").placeholder=writable?"Reply to the agent\u2026":(agent?"Read-only session":"No active session");
 }
 async function refreshAgents(){
@@ -162,13 +162,21 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.id=="send"){
     const input=$("#msg"),v=input.value.trim();
-    if(v&&await send({text:v})&&input.value.trim()==v)input.value="";
+    if(v&&await send({text:v})&&input.value.trim()==v){input.value="";resizeComposer()}
   } else if(b.dataset.key)await send({key:b.dataset.key});
   else if(b.dataset.text)await send({text:b.dataset.text,raw:true});
 });
+function resizeComposer(){
+  const input=$("#msg");input.style.height="auto";
+  input.style.height=Math.min(input.scrollHeight,132)+"px";
+}
+$("#msg").addEventListener("input",resizeComposer);
 $("#msg").addEventListener("keydown",e=>{
-  if(e.key=="Enter"&&!e.isComposing){e.preventDefault();$("#send").click()}
+  if(e.key=="Enter"&&!e.isComposing&&(e.metaKey||e.ctrlKey)){e.preventDefault();$("#send").click()}
 });
+const footer=$("footer");
+new ResizeObserver(()=>document.documentElement.style.setProperty("--footer-height",footer.offsetHeight+"px")).observe(footer);
+resizeComposer();
 $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElementById("dd").classList.toggle("open")});
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
 if(CONFIG_ERROR)invalidLink("This link has an invalid server address. Open Connect in Toki and use a new link.");
