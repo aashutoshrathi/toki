@@ -11,14 +11,16 @@ Static hosting, DNS, and `tailscale serve` remain one-time maintainer setup.
 
 ```
 Phone browser
-  -> https://remote.toki.aashutosh.dev/#host=<mac>.<tailnet>.ts.net&token=XYZ   (Vercel, HTTPS)
+  -> https://rc.toki.aashutosh.dev/#host=<mac>.<tailnet>.ts.net&token=XYZ   (Vercel, HTTPS)
        app.js reads host + token, calls:
   -> https://<mac>.<tailnet>.ts.net/api/...?token=XYZ                            (Tailscale HTTPS)
        tailscale serve proxies to the Mac's server on 127.0.0.1:8765
 ```
 
-Access requires two independent gates: a valid **token** and the phone being on the user's
-**tailnet**.
+Access requires three gates: a valid link **token**, the six-digit verification code shown
+separately in Toki, and the phone being on the user's **tailnet**. The browser exchanges the link
+token and code for a random session token that expires after 12 hours. Five failed code attempts
+within a minute trigger a temporary rate limit.
 
 ## Why hosting needs Tailscale
 
@@ -46,7 +48,7 @@ Vercel or Cloudflare Pages, whichever the maintainer prefers (functionally equiv
 
 - New project, import the repo, set **Root Directory = `Sources/Toki/Resources/webui`**, framework
   preset "Other" (static, no build step).
-- Add the domain `remote.toki.aashutosh.dev` as a CNAME on the existing domain (no new domain).
+- Add the domain `rc.toki.aashutosh.dev` as a CNAME on the existing domain (no new domain).
 - Auto-deploys on every push to `main`; pull requests get preview URLs. This is the same source
   the app bundles, so there is no drift.
 
@@ -60,21 +62,25 @@ Vercel or Cloudflare Pages, whichever the maintainer prefers (functionally equiv
 
 ### 4. App Connect flow (code, this repo)
 
-- When Host is Tailscale, build the QR and connect URL as
-  `https://remote.toki.aashutosh.dev/#host=<tailnet-host>&token=<token>` instead of the raw local
-  URL.
+- Host and Companion app are separate settings. Companion app can use the selected host, localhost,
+  the detected local-network address, or the hosted `rc.toki.aashutosh.dev` interface.
+- When Companion app is `rc.toki.aashutosh.dev`, build the QR and connect URL as
+  `https://rc.toki.aashutosh.dev/#host=<tailnet-host>&token=<token>`.
 - The Mac's tailnet hostname comes from `tailscale status --json`.
+- `rc.toki.aashutosh.dev` serves only static interface files. Agent discovery, transcripts, and replies
+  stay on the Mac and travel directly between the browser and Mac over the tailnet.
 
 ## End-to-end verification
 
 1. Start Toki's Remote Control Server and select **Tailscale** as the host.
 2. Run `tailscale serve --bg 443 http://127.0.0.1:8765` on the Mac.
-3. Open the Connect sheet and copy its `remote.toki.aashutosh.dev` URL.
-4. On a phone connected to the same tailnet, open the URL and confirm agents load.
-5. Send a reply from the phone and confirm it reaches the selected terminal agent.
+3. Select `rc.toki.aashutosh.dev` under Companion app, then open Connect and copy its URL.
+4. On a phone connected to the same tailnet, open the URL and enter the six-digit code shown
+   separately in Toki.
+5. Confirm agents load, then send a reply and verify it reaches the selected terminal agent.
 
 The hosted UI accepts only `*.ts.net` API hosts. The API emits cross-origin headers only for
-`https://remote.toki.aashutosh.dev`; other web origins cannot use the browser CORS path.
+`https://rc.toki.aashutosh.dev`; other web origins cannot use the browser CORS path.
 
 ## Follow-on: mobile push notifications
 

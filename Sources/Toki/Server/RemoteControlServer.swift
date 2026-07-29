@@ -8,7 +8,7 @@ import Foundation
 @MainActor
 final class RemoteControlServer: ObservableObject {
     static let shared = RemoteControlServer()
-    static let hostedRemoteControlOrigin = "https://remote.toki.aashutosh.dev"
+    static let hostedRemoteControlOrigin = "https://rc.toki.aashutosh.dev"
 
     enum HostMode: String, CaseIterable, Identifiable {
         case localhost
@@ -28,8 +28,27 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
+    enum CompanionAppMode: String, CaseIterable, Identifiable {
+        case sameHost
+        case localhost
+        case localNetwork
+        case hosted
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .sameHost: return "Same as host"
+            case .localhost: return "Local"
+            case .localNetwork: return "Local network"
+            case .hosted: return "rc.toki.aashutosh.dev"
+            }
+        }
+    }
+
     @Published private(set) var isRunning = false
     @Published private(set) var token: String?
+    @Published private(set) var pairingCode: String?
     @Published private(set) var lastError: String?
     @Published private(set) var tailscaleDNSName: String?
 
@@ -41,10 +60,12 @@ final class RemoteControlServer: ObservableObject {
         }
     }
     @Published var customHost = ""
+    @Published var companionAppMode: CompanionAppMode = .sameHost
 
     let port = 8765
 
     private var process: Process?
+    private var outputBuffer = ""
 
     private init() {
         refreshTailscaleStatus()
@@ -72,12 +93,41 @@ final class RemoteControlServer: ObservableObject {
     }
 
     var connectURL: String? {
-        guard isRunning, let token, let host else { return nil }
-        return Self.makeConnectURL(hostMode: hostMode, host: host, token: token, port: port)
+        guard isRunning, let token else { return nil }
+        return Self.makeConnectURL(
+            companionAppMode: companionAppMode,
+            hostMode: hostMode,
+            host: host,
+            localNetworkHost: Self.localNetworkIP(),
+            token: token,
+            port: port
+        )
     }
 
-    static func makeConnectURL(hostMode: HostMode, host: String, token: String, port: Int) -> String? {
-        if hostMode == .tailscale {
+    static func makeConnectURL(
+        companionAppMode: CompanionAppMode,
+        hostMode: HostMode,
+        host: String?,
+        localNetworkHost: String?,
+        token: String,
+        port: Int
+    ) -> String? {
+        switch companionAppMode {
+        case .sameHost:
+            guard let host else { return nil }
+            return directConnectURL(
+                host: host,
+                scheme: hostMode == .tailscale ? "https" : "http",
+                port: hostMode == .tailscale ? nil : port,
+                token: token
+            )
+        case .localhost:
+            return directConnectURL(host: "localhost", scheme: "http", port: port, token: token)
+        case .localNetwork:
+            guard let localNetworkHost else { return nil }
+            return directConnectURL(host: localNetworkHost, scheme: "http", port: port, token: token)
+        case .hosted:
+            guard let host, isTailscaleDNSHost(host) else { return nil }
             var parameters = URLComponents()
             parameters.queryItems = [
                 URLQueryItem(name: "host", value: host),
@@ -89,9 +139,16 @@ final class RemoteControlServer: ObservableObject {
             components?.percentEncodedFragment = parameters.percentEncodedQuery
             return components?.url?.absoluteString
         }
+    }
 
+    private static func directConnectURL(
+        host: String,
+        scheme: String,
+        port: Int?,
+        token: String
+    ) -> String? {
         var components = URLComponents()
-        components.scheme = "http"
+        components.scheme = scheme
         components.host = host
         components.port = port
         components.path = "/"
@@ -107,6 +164,8 @@ final class RemoteControlServer: ObservableObject {
         guard !isRunning else { return }
         lastError = nil
         token = nil
+        pairingCode = nil
+        outputBuffer = ""
 
         guard let script = Bundle.main.url(forResource: "toki_remote", withExtension: "py") else {
             lastError = "The companion server script is missing from the app bundle."
@@ -152,18 +211,38 @@ final class RemoteControlServer: ObservableObject {
         process = nil
         isRunning = false
         token = nil
+        pairingCode = nil
+        outputBuffer = ""
     }
 
     private func parseOutput(_ text: String) {
-        guard token == nil, let range = text.range(of: "token=") else { return }
-        let value = text[range.upperBound...].prefix { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
-        if !value.isEmpty { token = String(value) }
+        outputBuffer += text
+        while let newline = outputBuffer.firstIndex(of: "\n") {
+            let line = String(outputBuffer[..<newline])
+            outputBuffer.removeSubrange(...newline)
+            parseOutputLine(line)
+        }
+    }
+
+    private func parseOutputLine(_ text: String) {
+        if token == nil, let range = text.range(of: "token=") {
+            let value = text[range.upperBound...].prefix {
+                $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-"
+            }
+            if !value.isEmpty { token = String(value) }
+        }
+        if pairingCode == nil, let range = text.range(of: "pairing_code=") {
+            let value = text[range.upperBound...].prefix { $0.isNumber }
+            if value.count == 6 { pairingCode = String(value) }
+        }
     }
 
     private func handleTermination(status: Int32) {
         process = nil
         isRunning = false
         token = nil
+        pairingCode = nil
+        outputBuffer = ""
         if status != 0 {
             lastError = "The remote control server stopped (exit code \(status))."
         }
@@ -190,8 +269,12 @@ final class RemoteControlServer: ObservableObject {
         }
 
         let name = rawName.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        guard !name.isEmpty, name.lowercased().hasSuffix(".ts.net") else { return nil }
+        guard isTailscaleDNSHost(name) else { return nil }
         return name
+    }
+
+    private nonisolated static func isTailscaleDNSHost(_ host: String) -> Bool {
+        !host.isEmpty && host.lowercased().hasSuffix(".ts.net")
     }
 
     private func refreshTailscaleStatus() {

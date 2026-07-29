@@ -27,26 +27,82 @@ final class RemoteControlServerTests: XCTestCase {
 
     func testTailscaleConnectURLUsesHostedUIAndEncodesParameters() {
         let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .hosted,
             hostMode: .tailscale,
             host: "my-mac.example-tailnet.ts.net",
+            localNetworkHost: "192.168.1.10",
             token: "token with spaces",
             port: 8765
         )
 
         XCTAssertEqual(
             url,
-            "https://remote.toki.aashutosh.dev/#host=my-mac.example-tailnet.ts.net&token=token%20with%20spaces"
+            "https://rc.toki.aashutosh.dev/#host=my-mac.example-tailnet.ts.net&token=token%20with%20spaces"
         )
     }
 
-    func testLocalConnectURLRemainsDirectAndSameOrigin() {
+    func testSameHostConnectURLRemainsDirectAndSameOrigin() {
         let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .sameHost,
             hostMode: .localNetwork,
             host: "192.168.1.10",
+            localNetworkHost: "192.168.1.10",
             token: "abc",
             port: 8765
         )
 
         XCTAssertEqual(url, "http://192.168.1.10:8765/?token=abc")
+    }
+
+    func testSameTailscaleHostUsesItsHTTPSServedUI() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .sameHost,
+            hostMode: .tailscale,
+            host: "my-mac.example-tailnet.ts.net",
+            localNetworkHost: "192.168.1.10",
+            token: "abc",
+            port: 8765
+        )
+
+        XCTAssertEqual(url, "https://my-mac.example-tailnet.ts.net/?token=abc")
+    }
+
+    func testLocalhostCompanionOverridesSelectedHost() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .localhost,
+            hostMode: .tailscale,
+            host: "my-mac.example-tailnet.ts.net",
+            localNetworkHost: "192.168.1.10",
+            token: "abc",
+            port: 8765
+        )
+
+        XCTAssertEqual(url, "http://localhost:8765/?token=abc")
+    }
+
+    func testLocalNetworkCompanionUsesDetectedLANAddress() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .localNetwork,
+            hostMode: .localhost,
+            host: "localhost",
+            localNetworkHost: "192.168.1.10",
+            token: "abc",
+            port: 8765
+        )
+
+        XCTAssertEqual(url, "http://192.168.1.10:8765/?token=abc")
+    }
+
+    func testHostedCompanionRejectsPlainLANHost() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .hosted,
+            hostMode: .localNetwork,
+            host: "192.168.1.10",
+            localNetworkHost: "192.168.1.10",
+            token: "abc",
+            port: 8765
+        )
+
+        XCTAssertNil(url)
     }
 }

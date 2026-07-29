@@ -27,8 +27,9 @@ If the phone can't connect over plain Wi-Fi:
     ("AP isolation") — Tailscale side-steps all of this, use that URL.
 
 SECURITY: injecting keystrokes into a terminal is arbitrary command
-execution. The random token is required on every request. Only run this
-on networks you trust (your tailnet qualifies; a coffee-shop LAN does not).
+execution. A random link token plus a separately displayed verification
+code are required to create a time-limited session. Only run this on
+networks you trust (your tailnet qualifies; a coffee-shop LAN does not).
 """
 
 import argparse
@@ -38,6 +39,7 @@ import re
 import secrets
 import sqlite3
 import subprocess
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -889,7 +891,14 @@ def send_input(tty, text=None, key=None, raw=False):
 # ------------------------------------------------------------------- server
 
 TOKEN = secrets.token_urlsafe(24)
-HOSTED_ORIGIN = "https://remote.toki.aashutosh.dev"
+PAIRING_CODE = f"{secrets.randbelow(1_000_000):06d}"
+HOSTED_ORIGIN = "https://rc.toki.aashutosh.dev"
+SESSION_TTL = 12 * 60 * 60
+PAIRING_WINDOW = 60
+PAIRING_MAX_FAILURES = 5
+SESSIONS = {}
+PAIRING_FAILURES = {}
+AUTH_LOCK = threading.Lock()
 
 WEBUI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webui")
 
@@ -908,12 +917,52 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self._cors()
         self.end_headers()
         self.wfile.write(body)
 
     def _authed(self, q):
-        return secrets.compare_digest(q.get("token", [""])[0], TOKEN)
+        candidate = q.get("token", [""])[0]
+        now = time.time()
+        with AUTH_LOCK:
+            expired = [token for token, expiry in SESSIONS.items() if expiry <= now]
+            for token in expired:
+                del SESSIONS[token]
+            return candidate in SESSIONS
+
+    def _pair(self, q):
+        link_token = q.get("token", [""])[0]
+        if not secrets.compare_digest(link_token, TOKEN):
+            return self._json({"error": "bad link token"}, 403)
+
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            body = json.loads(self.rfile.read(length))
+        except ValueError:
+            return self._json({"error": "bad json"}, 400)
+        code = str(body.get("code", "")).replace(" ", "")
+        client = self.client_address[0]
+        now = time.time()
+
+        with AUTH_LOCK:
+            recent = [
+                attempt for attempt in PAIRING_FAILURES.get(client, [])
+                if attempt > now - PAIRING_WINDOW
+            ]
+            if len(recent) >= PAIRING_MAX_FAILURES:
+                PAIRING_FAILURES[client] = recent
+                return self._json({"error": "too many attempts; try again shortly"}, 429)
+            if not secrets.compare_digest(code, PAIRING_CODE):
+                recent.append(now)
+                PAIRING_FAILURES[client] = recent
+                return self._json({"error": "incorrect verification code"}, 403)
+
+            PAIRING_FAILURES.pop(client, None)
+            session_token = secrets.token_urlsafe(32)
+            SESSIONS[session_token] = now + SESSION_TTL
+
+        return self._json({"token": session_token, "expiresIn": SESSION_TTL})
 
     def _static(self, name, ctype):
         try:
@@ -1007,6 +1056,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         url = urlparse(self.path)
         q = parse_qs(url.query)
+        if url.path == "/api/pair":
+            return self._pair(q)
         if not self._authed(q):
             return self._json({"error": "bad token"}, 403)
         if url.path != "/api/send":
@@ -1065,6 +1116,7 @@ def main():
     for u in urls:
         print("   " + u)
     print(f"   http://localhost:{args.port}/?token={TOKEN}\n")
+    print(f"pairing_code={PAIRING_CODE}")
     if urls and not args.no_qr:
         print("Scan with your phone (uses the first address above):\n")
         print(qr_terminal(urls[0]))

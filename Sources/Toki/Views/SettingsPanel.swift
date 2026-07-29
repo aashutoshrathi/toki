@@ -529,6 +529,23 @@ struct SettingsPanel: View {
                         .controlSize(.small)
                 }
                 Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+
+            HStack(spacing: 8) {
+                Text("Companion app")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $remoteServer.companionAppMode) {
+                    ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                Spacer(minLength: 0)
                 if remoteServer.isRunning, remoteServer.connectURL != nil {
                     Button {
                         showingConnect = true
@@ -540,6 +557,14 @@ struct SettingsPanel: View {
                 }
             }
             .padding(.horizontal, 4)
+
+            if remoteServer.companionAppMode == .hosted {
+                Text("rc.toki.aashutosh.dev only serves the interface. Agent data stays on this Mac and travels directly over your tailnet.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
 
             if remoteServer.isRunning, remoteServer.connectURL == nil {
                 Text(connectHint)
@@ -565,6 +590,12 @@ struct SettingsPanel: View {
 
     private var connectHint: String {
         if remoteServer.token == nil { return "Starting the server…" }
+        if remoteServer.companionAppMode == .hosted {
+            return "rc.toki.aashutosh.dev requires a Tailscale DNS host with HTTPS Serve enabled."
+        }
+        if remoteServer.companionAppMode == .localNetwork {
+            return "No local network address found. Try Localhost or Same as host."
+        }
         switch remoteServer.hostMode {
         case .custom: return "Enter a host or IP to get a connect link."
         case .localNetwork: return "No local network address found. Try Localhost or Custom."

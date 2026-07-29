@@ -9,7 +9,7 @@ struct RemoteConnectSheet: View {
         VStack(spacing: 14) {
             Text("Scan to connect")
                 .font(.headline)
-            Text(server.hostMode == .tailscale
+            Text(server.hostMode == .tailscale || server.companionAppMode == .hosted
                 ? "Open this on a phone connected to your tailnet."
                 : "Point your phone's camera at the code on the same network.")
                 .font(.caption)
@@ -30,6 +30,17 @@ struct RemoteConnectSheet: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
+
+                if let code = server.pairingCode {
+                    VStack(spacing: 3) {
+                        Text("Verification code")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(code.prefix(3) + " " + code.suffix(3))
+                            .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                            .textSelection(.enabled)
+                    }
+                }
 
                 HStack(spacing: 8) {
                     Button {

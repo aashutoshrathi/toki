@@ -1,7 +1,7 @@
 // Fragments keep the token out of static-host access logs. Query params remain supported for
 // links created from the original hosting plan.
 const PARAMS=new URLSearchParams(location.hash.slice(1)||location.search);
-const TOKEN=PARAMS.get("token")||"";
+const LINK_TOKEN=PARAMS.get("token")||"";
 const REMOTE_HOST=PARAMS.get("host")||"";
 const API_BASE=REMOTE_HOST?remoteAPIBase(REMOTE_HOST):"";
 function remoteAPIBase(host){
@@ -10,10 +10,42 @@ function remoteAPIBase(host){
   return "https://"+host;
 }
 const $=s=>document.querySelector(s);
+const SESSION_KEY="toki-session:"+API_BASE+":"+LINK_TOKEN;
+let TOKEN="";
+try{TOKEN=sessionStorage.getItem(SESSION_KEY)||""}catch(e){}
 let current=null, offset=0, agents=[];
 async function api(p,o){const url=API_BASE+p+(p.includes("?")?"&":"?")+"token="+encodeURIComponent(TOKEN);
   const r=await fetch(url,o);
+  if(r.status==403)lockApp();
   if(!r.ok)throw new Error(await r.text());return r.json()}
+function lockApp(){
+  TOKEN="";try{sessionStorage.removeItem(SESSION_KEY)}catch(e){}
+  document.body.classList.add("locked");$("#paircode").focus();
+}
+let started=false;
+function pollAgents(){if(TOKEN)refreshAgents().catch(()=>{})}
+function pollLog(){if(TOKEN)refreshLog().catch(()=>{})}
+function startApp(){
+  document.body.classList.remove("locked");
+  if(started)return;started=true;
+  pollAgents();pollLog();
+  setInterval(pollAgents,4000);setInterval(pollLog,2500);
+}
+$("#pairform").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const code=$("#paircode").value.replace(/\s/g,"");
+  if(!/^\d{6}$/.test(code)){$("#pairstatus").textContent="Enter all six digits.";return}
+  $("#pairstatus").textContent="verifying\u2026";
+  try{
+    const r=await fetch(API_BASE+"/api/pair?token="+encodeURIComponent(LINK_TOKEN),{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})
+    });
+    const body=await r.json();
+    if(!r.ok)throw new Error(body.error||"verification failed");
+    TOKEN=body.token;try{sessionStorage.setItem(SESSION_KEY,TOKEN)}catch(e){}
+    $("#pairstatus").textContent="";startApp();
+  }catch(err){$("#pairstatus").textContent=err.message}
+});
 function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
 function md(src){
   // escape, then fenced code, inline code, bold, italic, links, headings, bullets
@@ -103,5 +135,4 @@ document.addEventListener("click",e=>{
 $("#msg").addEventListener("keydown",e=>{if(e.key=="Enter")$("#send").click()});
 $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElementById("dd").classList.toggle("open")});
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
-refreshAgents();refreshLog();
-setInterval(refreshAgents,4000);setInterval(refreshLog,2500);
+if(TOKEN)startApp();else lockApp();
