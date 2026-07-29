@@ -147,24 +147,12 @@ struct MenuContentView: View {
                     focusRemoteControlSettings = true
                     showConfig = true
                 } label: {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(Color.teal)
-                            .frame(width: 5, height: 5)
-                        Text("Remote")
-                    }
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.teal)
-                    .padding(.horizontal, 7)
-                    .frame(height: 28)
-                    .background(Color.teal.opacity(0.14), in: Capsule())
-                    .overlay {
-                        Capsule()
-                            .strokeBorder(Color.teal.opacity(0.28), lineWidth: 1)
-                    }
-                    .contentShape(Capsule())
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .functionalControlStyle()
+                .foregroundStyle(Color.teal)
                 .help("Remote Control is on — open its Settings")
                 .accessibilityLabel("Remote Control is on. Open Remote Control Settings")
                 .pointerOnHover()

@@ -1123,6 +1123,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("favicon.svg", "image/svg+xml")
         if url.path == "/styles.css":
             return self._static("styles.css", "text/css; charset=utf-8")
+        if url.path == "/manifest.webmanifest":
+            return self._static("manifest.webmanifest", "application/manifest+json")
+        if url.path == "/sw.js":
+            return self._static("sw.js", "application/javascript; charset=utf-8")
+        if url.path == "/jsqr.js":
+            return self._static("jsqr.js", "application/javascript; charset=utf-8")
+        if url.path in ("/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"):
+            return self._static(url.path.lstrip("/"), "image/png")
         if not self._authed(q):
             return self._json({"error": "bad token"}, 403)
         if url.path == "/api/agents":

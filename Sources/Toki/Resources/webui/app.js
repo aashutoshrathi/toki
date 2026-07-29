@@ -28,6 +28,7 @@ function lockApp(){
   TOKEN="";try{sessionStorage.removeItem(SESSION_KEY)}catch(e){}
   document.body.classList.add("locked");
   $("#paircontrols").hidden=false;
+  $("#connectmethods").hidden=true;
   $("#pairtitle").textContent="Verify this device";
   $("#pairinstructions").textContent="Enter the six-digit code shown by Toki on your Mac.";
   $("#paircode").focus();
@@ -38,11 +39,17 @@ function invalidLink(message){
   $("#pairtitle").textContent="Open a new link from Toki";
   $("#pairinstructions").textContent=message;
   $("#paircontrols").hidden=true;
+  $("#connectmethods").hidden=false;
   $("#pairstatus").textContent="";
 }
-let started=false;
-function pollAgents(){if(TOKEN)refreshAgents().catch(()=>{})}
-function pollLog(){if(TOKEN)refreshLog().catch(()=>{})}
+let started=false,failCount=0;
+function setConnected(ok){
+  if(ok){failCount=0;$("#conn").hidden=true;return}
+  if(document.body.classList.contains("locked"))return;
+  if(++failCount>=2)$("#conn").hidden=false;
+}
+function pollAgents(){if(TOKEN)refreshAgents().then(()=>setConnected(true),()=>setConnected(false))}
+function pollLog(){if(TOKEN)refreshLog().then(()=>setConnected(true),()=>setConnected(false))}
 function startApp(){
   document.body.classList.remove("locked");
   if(started)return;started=true;
@@ -121,20 +128,23 @@ async function refreshAgents(){
       (a.attention.kind=="permission"?'<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>':"");
   } else al.style.display="none";
 }
+function nearBottom(){return window.innerHeight+window.scrollY>=document.body.scrollHeight-140}
+function scrollToLatest(){window.scrollTo(0,document.body.scrollHeight);$("#tolatest").hidden=true}
 async function refreshLog(){
   if(!current)return;
   const r=await api(`/api/transcript?pid=${current}&offset=${offset}`);
   if(r.reset){offset=0;$("#log").innerHTML="";return}
   offset=r.offset;
+  const stick=nearBottom();let added=0;
   for(const e of r.entries){
     if(e.role=="meta"||e.role=="resolved")continue;
     const d=document.createElement("div");d.className="m "+e.role;
     if(e.role=="tool")d.innerHTML="&#128295; <b>"+esc(e.tool)+"</b> "+esc(e.text||"");
     else if(e.role=="assistant")d.innerHTML=md(e.text);
     else d.textContent=e.text;
-    $("#log").appendChild(d);
+    $("#log").appendChild(d);added++;
   }
-  if(r.entries.length)window.scrollTo(0,document.body.scrollHeight);
+  if(added){if(stick)scrollToLatest();else $("#tolatest").hidden=false}
 }
 let sending=false,statusTimer=null;
 function setStatus(message,kind){
@@ -179,6 +189,97 @@ new ResizeObserver(()=>document.documentElement.style.setProperty("--footer-heig
 resizeComposer();
 $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElementById("dd").classList.toggle("open")});
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
+$("#tolatest").addEventListener("click",scrollToLatest);
+window.addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true},{passive:true});
+
+// Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.
+// Both reload with the params in the fragment so the normal verify flow takes over.
+function connectWith(host,token){
+  location.hash="host="+encodeURIComponent(host)+"&token="+encodeURIComponent(token);
+  location.reload();
+}
+function manualConnect(){
+  const host=$("#manualhost").value.trim().replace(/^https?:\/\//i,"").replace(/\/+$/,"");
+  const token=$("#manualtoken").value.trim();
+  if(!token){feedback("error");$("#pairstatus").textContent="Enter the connection token from Toki.";return}
+  try{remoteAPIBase(host)}catch(e){feedback("error");$("#pairstatus").textContent="Enter your Mac\u2019s Tailscale host, like name.tailnet.ts.net.";return}
+  connectWith(host,token);
+}
+$("#manualconnect").addEventListener("click",manualConnect);
+[$("#manualhost"),$("#manualtoken")].forEach(el=>el.addEventListener("keydown",e=>{
+  if(e.key=="Enter"){e.preventDefault();manualConnect()}
+}));
+
+// Scan Toki's Connect QR straight from the landing page, then verify the same way as an opened link.
+const CAN_SCAN=!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.isSecureContext);
+$("#scanbtn").hidden=!CAN_SCAN;
+$("#scanor").hidden=!CAN_SCAN;
+let scanStream=null,scanRAF=null,scanDetector=null,jsqrPromise=null,lastScanValue="",lastScanAt=0,scanErrTimer=null;
+const scanCanvas=document.createElement("canvas");
+function loadJsQR(){
+  if(window.jsQR)return Promise.resolve();
+  if(!jsqrPromise)jsqrPromise=new Promise((res,rej)=>{
+    const s=document.createElement("script");s.src="jsqr.js";
+    s.onload=res;s.onerror=()=>rej(new Error("load failed"));document.head.appendChild(s);
+  });
+  return jsqrPromise;
+}
+async function openScanner(){
+  const video=$("#scanvideo");$("#scanstatus").textContent="";$("#scanner").hidden=false;
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});
+    video.srcObject=scanStream;await video.play();
+  }catch(e){
+    $("#scanstatus").textContent=e.name=="NotAllowedError"?"Allow camera access, then tap Scan again.":"Couldn\u2019t open the camera: "+e.message;
+    return;
+  }
+  if("BarcodeDetector" in window){try{scanDetector=new BarcodeDetector({formats:["qr_code"]})}catch(e){scanDetector=null}}
+  if(!scanDetector){try{await loadJsQR()}catch(e){$("#scanstatus").textContent="Couldn\u2019t load the scanner. Check your connection and retry.";return}}
+  scanRAF=requestAnimationFrame(scanTick);
+}
+function closeScanner(){
+  if(scanRAF)cancelAnimationFrame(scanRAF);scanRAF=null;
+  if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null}
+  $("#scanvideo").srcObject=null;$("#scanner").hidden=true;scanDetector=null;
+}
+function decodeFrame(video){
+  if(scanDetector)return scanDetector.detect(video).then(c=>c.length?c[0].rawValue:null).catch(()=>null);
+  if(!window.jsQR)return Promise.resolve(null);
+  const w=video.videoWidth,h=video.videoHeight;scanCanvas.width=w;scanCanvas.height=h;
+  const ctx=scanCanvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(video,0,0,w,h);
+  const img=ctx.getImageData(0,0,w,h);
+  const code=window.jsQR(img.data,w,h,{inversionAttempts:"dontInvert"});
+  return Promise.resolve(code?code.data:null);
+}
+async function scanTick(){
+  if(!scanStream)return;
+  const video=$("#scanvideo");
+  if(video.readyState>=2&&video.videoWidth){
+    let value=null;try{value=await decodeFrame(video)}catch(e){}
+    if(value&&!(value==lastScanValue&&Date.now()-lastScanAt<2500)){
+      lastScanValue=value;lastScanAt=Date.now();handleScan(value);
+    }
+  }
+  if(scanStream)scanRAF=requestAnimationFrame(scanTick);
+}
+function scanError(msg){
+  $("#scanstatus").textContent=msg;feedback("error");
+  clearTimeout(scanErrTimer);scanErrTimer=setTimeout(()=>{$("#scanstatus").textContent=""},2600);
+}
+function handleScan(value){
+  let target;try{target=new URL(value,location.href)}catch(e){return scanError("That QR code isn\u2019t a Toki link.")}
+  const params=new URLSearchParams(target.hash.slice(1)||target.search);
+  if(!params.get("token")||target.origin!=location.origin)
+    return scanError("That QR isn\u2019t a Toki Remote Control link for this page.");
+  feedback("success");closeScanner();
+  location.hash=target.hash?target.hash.slice(1):target.search.slice(1);
+  location.reload();
+}
+$("#scanbtn").addEventListener("click",openScanner);
+$("#scancancel").addEventListener("click",closeScanner);
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&scanStream)closeScanner()});
+if("serviceWorker" in navigator&&window.isSecureContext)
+  window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 if(CONFIG_ERROR)invalidLink("This link has an invalid server address. Open Connect in Toki and use a new link.");
 else if(!LINK_TOKEN)invalidLink("This page needs a private link from Toki. Open Remote Control settings on your Mac, then choose Connect.");
 else if(TOKEN)startApp();else lockApp();
