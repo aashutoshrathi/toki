@@ -303,7 +303,27 @@ def discover_agents():
             r["session"] = newest_codex_session(r["command"], r["cwd"])
         else:
             r["session"] = newest_opencode_session(r["command"], r["cwd"])
-    return roots
+    return dedupe_agents(roots)
+
+
+def dedupe_agents(agents):
+    """Show a transcript once when several processes resolve to the same session."""
+    result = []
+    positions = {}
+    for agent in agents:
+        session = agent.get("session")
+        key = (
+            (agent.get("provider"), os.path.realpath(session))
+            if session
+            else (agent.get("provider"), agent.get("pid"))
+        )
+        previous = positions.get(key)
+        if previous is None:
+            positions[key] = len(result)
+            result.append(agent)
+        elif not result[previous].get("tty") and agent.get("tty"):
+            result[previous] = agent
+    return result
 
 
 def cwd_of_pid(pid):
@@ -349,6 +369,7 @@ def newest_claude_session(command, cwd):
 _NOISE_PREFIXES = ("Caveat: The messages below", "<local-command-stdout>",
                    "<command-message>", "[Request interrupted")
 _HARNESS_TAGS = (
+    "INSTRUCTIONS",
     "system-reminder",
     "recommended_plugin",
     "recommended_plugins",
@@ -366,12 +387,23 @@ _HARNESS_TAG_RE = re.compile(
     r"^\s*</?(?:" + "|".join(map(re.escape, _HARNESS_TAGS)) + r")(?:\s|>)",
     flags=re.I,
 )
+_HARNESS_HEADING_RE = re.compile(
+    r"^\s*#\s+(?:AGENTS|CLAUDE)\.md\s+instructions\b",
+    flags=re.I,
+)
+_USER_REQUEST_RE = re.compile(
+    r"^#{1,3}\s+My request for Codex:\s*",
+    flags=re.I | re.M,
+)
 
 
 def clean_user_text(text):
     """Strip harness noise from user messages; None means 'do not show'."""
     text = _HARNESS_BLOCK_RE.sub("", text).strip()
-    if not text or _HARNESS_TAG_RE.match(text):
+    request_marker = _USER_REQUEST_RE.search(text)
+    if request_marker:
+        text = text[request_marker.end():].strip()
+    if not text or _HARNESS_TAG_RE.match(text) or _HARNESS_HEADING_RE.match(text):
         return None
     m = re.match(r"<command-name>(/?\S+)</command-name>", text)
     if m:

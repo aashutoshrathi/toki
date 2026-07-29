@@ -20,6 +20,22 @@ class RemoteControlTitleTests(unittest.TestCase):
         text = "<recommended_plugins>\n- Example plugin\n</recommended_plugins>"
         self.assertIsNone(toki_remote.clean_user_text(text))
 
+    def test_agents_instructions_are_not_user_text(self):
+        text = "# AGENTS.md instructions\n\n<INSTRUCTIONS>\n@RTK.md\n</INSTRUCTIONS>"
+        self.assertIsNone(toki_remote.clean_user_text(text))
+
+    def test_codex_file_envelope_keeps_only_the_actual_request(self):
+        text = (
+            "# Files mentioned by the user:\n\n"
+            "## screenshot.png\n\n"
+            "## My request for Codex:\n"
+            "Fix the duplicate chat names"
+        )
+        self.assertEqual(
+            toki_remote.clean_user_text(text),
+            "Fix the duplicate chat names",
+        )
+
     def test_codex_title_skips_recommended_plugins_message(self):
         entries = [
             {
@@ -75,6 +91,17 @@ class RemoteControlPairingTests(unittest.TestCase):
     def test_pairing_code_is_always_six_digits(self):
         with mock.patch.object(toki_remote.secrets, "randbelow", return_value=42):
             self.assertEqual(toki_remote.new_pairing_code(), "000042")
+
+
+class RemoteControlAgentDiscoveryTests(unittest.TestCase):
+    def test_agents_resolving_to_same_session_are_collapsed(self):
+        agents = [
+            {"pid": 10, "provider": "codex", "session": "/tmp/session.jsonl", "tty": None},
+            {"pid": 11, "provider": "codex", "session": "/tmp/session.jsonl", "tty": "ttys001"},
+            {"pid": 12, "provider": "codex", "session": "/tmp/other.jsonl", "tty": "ttys002"},
+        ]
+        result = toki_remote.dedupe_agents(agents)
+        self.assertEqual([agent["pid"] for agent in result], [11, 12])
 
 
 if __name__ == "__main__":
