@@ -52,6 +52,7 @@ function pollAgents(){if(TOKEN)refreshAgents().then(()=>setConnected(true),()=>s
 function pollLog(){if(TOKEN)refreshLog().then(()=>setConnected(true),()=>setConnected(false))}
 function startApp(){
   document.body.classList.remove("locked");
+  updateAlertsButton();
   if(started)return;started=true;
   pollAgents();pollLog();
   setInterval(pollAgents,4000);setInterval(pollLog,2500);
@@ -113,8 +114,41 @@ function updateComposer(agent){
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el=>el.disabled=!enabled);
   $("#msg").placeholder=writable?"Reply to the agent\u2026":(agent?"Read-only session":"No active session");
 }
+let notifiedAttention={},notifySeeded=false;
+function attentionKey(a){
+  if(!a.attention)return"";
+  const q=a.attention.questions&&a.attention.questions.length
+    ?a.attention.questions.map(x=>x.question).join("|"):(a.attention.prompt||"");
+  return a.attention.kind+":"+q;
+}
+function notifyAttention(list){
+  if(!("Notification"in window)||Notification.permission!="granted"){notifiedAttention={};return}
+  const seen={};
+  for(const a of list){
+    const key=attentionKey(a);if(!key)continue;
+    seen[a.pid]=key;
+    if(notifySeeded&&notifiedAttention[a.pid]!=key)showAttentionNotification(a);
+  }
+  notifiedAttention=seen;notifySeeded=true;
+}
+function showAttentionNotification(a){
+  const kind=a.attention.kind=="permission"?"needs approval":"needs your input";
+  const q=(a.attention.questions&&a.attention.questions[0]&&a.attention.questions[0].question)
+    ||a.attention.prompt||"";
+  const opts={body:q.replace(/[#*`>]/g,"").trim().slice(0,140),tag:"toki-"+a.pid,
+    renotify:true,data:{pid:a.pid}};
+  const title=a.title+" "+kind;
+  if(navigator.serviceWorker&&navigator.serviceWorker.ready)
+    navigator.serviceWorker.ready.then(r=>r.showNotification(title,opts))
+      .catch(()=>{try{new Notification(title,opts)}catch(e){}});
+  else try{new Notification(title,opts)}catch(e){}
+}
+function updateAlertsButton(){
+  $("#enablealerts").hidden=!("Notification"in window)||Notification.permission!="default"||!TOKEN;
+}
 async function refreshAgents(){
   agents=await api("/api/agents");const prev=current;
+  notifyAttention(agents);
   if(agents.length&&!agents.some(a=>a.pid==prev)){current=agents[0].pid;offset=0;$("#log").innerHTML=""}
   renderAgents();
   const a=agents.find(x=>x.pid==current), al=$("#alert");
@@ -191,6 +225,10 @@ $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElement
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
 $("#tolatest").addEventListener("click",scrollToLatest);
 window.addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true},{passive:true});
+$("#enablealerts").addEventListener("click",async()=>{
+  try{await Notification.requestPermission()}catch(e){}
+  updateAlertsButton();
+});
 
 // Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.
 // Both reload with the params in the fragment so the normal verify flow takes over.

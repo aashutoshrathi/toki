@@ -8,7 +8,7 @@ button{font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transp
 button:not(:disabled):active{transform:scale(.96);filter:brightness(1.16)}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #72a7e8;outline-offset:2px}
 .locked>header,.locked>#alert,.locked>#log,.locked>footer,
-.locked>#conn,.locked>#tolatest{display:none}
+.locked>#conn,.locked>#tolatest,.locked>#enablealerts{display:none}
 #pairing{display:none;min-height:100vh;align-items:center;justify-content:center;
          padding:calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom))}
 .locked #pairing{display:flex}
@@ -63,6 +63,10 @@ header{position:sticky;top:0;background:#111c;backdrop-filter:blur(10px);
           background:#294f78;color:#fff;border:1px solid #6596c7;box-shadow:0 3px 12px #0007;
           font-size:13px;font-weight:600}
 #tolatest[hidden]{display:none}
+#enablealerts{display:block;width:calc(100% - 28px);margin:10px 14px;padding:10px 12px;
+              border-radius:10px;background:#1f3a5c;border:1px solid #37a;color:#cfe2f7;
+              font-size:13px;font-weight:600;text-align:left}
+#enablealerts[hidden]{display:none}
 h1{font-size:16px;display:flex;align-items:center;gap:8px}
 #dd{position:relative;margin-top:8px}
 #ddbtn{width:100%;display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;
