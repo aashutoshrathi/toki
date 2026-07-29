@@ -9,7 +9,9 @@ struct RemoteConnectSheet: View {
         VStack(spacing: 14) {
             Text("Scan to connect")
                 .font(.headline)
-            Text("Point your phone's camera at the code on the same network.")
+            Text(server.hostMode == .tailscale
+                ? "Open this on a phone connected to your tailnet."
+                : "Point your phone's camera at the code on the same network.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

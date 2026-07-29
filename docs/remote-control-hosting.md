@@ -4,13 +4,14 @@ The in-app Remote Control Server serves its own web UI over the local network to
 document plans the "connect from anywhere" upgrade: a statically hosted UI that reaches the Mac
 over Tailscale HTTPS, using host and token passed as URL params.
 
-Status: planned, not built. The pieces below can land independently.
+Status: frontend parameter routing, locked-down CORS, and the app connect flow are implemented.
+Static hosting, DNS, and `tailscale serve` remain one-time maintainer setup.
 
 ## The flow
 
 ```
 Phone browser
-  -> https://remote.toki.aashutosh.dev/?host=<mac>.<tailnet>.ts.net&token=XYZ   (Vercel, HTTPS)
+  -> https://remote.toki.aashutosh.dev/#host=<mac>.<tailnet>.ts.net&token=XYZ   (Vercel, HTTPS)
        app.js reads host + token, calls:
   -> https://<mac>.<tailnet>.ts.net/api/...?token=XYZ                            (Tailscale HTTPS)
        tailscale serve proxies to the Mac's server on 127.0.0.1:8765
@@ -31,8 +32,10 @@ LAN HTTP the hosted UI is a dead end; that path stays served directly from the M
 
 ### 1. Frontend params + CORS (code, this repo)
 
-- `webui/app.js`: if `?host=` is present, use `https://<host>` as the API base; otherwise keep
+- `webui/app.js`: if `#host=` is present, use `https://<host>` as the API base; otherwise keep
   same-origin so the locally served path still works.
+- Hosted links put their parameters in the URL fragment so the static host never receives the
+  connection token. Query parameters remain supported for links made from the original plan.
 - Python server: send `Access-Control-Allow-Origin` (locked to the hosted origin), allow the
   `Content-Type` header, and answer `OPTIONS` preflight. The page origin (hosted) and the API
   origin (tailnet host) differ, so cross-origin handling is required.
@@ -52,17 +55,26 @@ Vercel or Cloudflare Pages, whichever the maintainer prefers (functionally equiv
 - One-time in the tailnet admin console: enable MagicDNS and HTTPS certificates.
 - Front the API with HTTPS: `tailscale serve --bg 443 http://127.0.0.1:8765`, giving
   `https://<mac>.<tailnet>.ts.net`.
-- Open decision: the app runs `tailscale serve` automatically when Host is set to Tailscale
-  (shelling out to the `tailscale` CLI and discovering the name via `tailscale status --json`), or
-  the maintainer runs it manually. Automatic is smoother but assumes the CLI is installed and
-  HTTPS is enabled on the tailnet.
+- The maintainer runs this command manually. The app does not overwrite an existing persistent
+  Serve configuration on port 443.
 
 ### 4. App Connect flow (code, this repo)
 
 - When Host is Tailscale, build the QR and connect URL as
-  `https://remote.toki.aashutosh.dev/?host=<tailnet-host>&token=<token>` instead of the raw local
+  `https://remote.toki.aashutosh.dev/#host=<tailnet-host>&token=<token>` instead of the raw local
   URL.
 - The Mac's tailnet hostname comes from `tailscale status --json`.
+
+## End-to-end verification
+
+1. Start Toki's Remote Control Server and select **Tailscale** as the host.
+2. Run `tailscale serve --bg 443 http://127.0.0.1:8765` on the Mac.
+3. Open the Connect sheet and copy its `remote.toki.aashutosh.dev` URL.
+4. On a phone connected to the same tailnet, open the URL and confirm agents load.
+5. Send a reply from the phone and confirm it reaches the selected terminal agent.
+
+The hosted UI accepts only `*.ts.net` API hosts. The API emits cross-origin headers only for
+`https://remote.toki.aashutosh.dev`; other web origins cannot use the browser CORS path.
 
 ## Follow-on: mobile push notifications
 

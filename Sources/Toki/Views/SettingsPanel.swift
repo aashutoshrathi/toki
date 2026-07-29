@@ -568,7 +568,7 @@ struct SettingsPanel: View {
         switch remoteServer.hostMode {
         case .custom: return "Enter a host or IP to get a connect link."
         case .localNetwork: return "No local network address found. Try Localhost or Custom."
-        case .tailscale: return "No Tailscale address found. Try Local network or Custom."
+        case .tailscale: return "No Tailscale DNS name found. Make sure Tailscale is running and MagicDNS is enabled."
         case .localhost: return "Preparing the connect link…"
         }
     }

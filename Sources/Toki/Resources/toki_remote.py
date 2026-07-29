@@ -889,6 +889,7 @@ def send_input(tty, text=None, key=None, raw=False):
 # ------------------------------------------------------------------- server
 
 TOKEN = secrets.token_urlsafe(24)
+HOSTED_ORIGIN = "https://remote.toki.aashutosh.dev"
 
 WEBUI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webui")
 
@@ -897,11 +898,17 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def _cors(self):
+        if self.headers.get("Origin") == HOSTED_ORIGIN:
+            self.send_header("Access-Control-Allow-Origin", HOSTED_ORIGIN)
+            self.send_header("Vary", "Origin")
+
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self._cors()
         self.end_headers()
         self.wfile.write(body)
 
@@ -919,6 +926,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        url = urlparse(self.path)
+        requested_method = self.headers.get("Access-Control-Request-Method")
+        if (
+            not url.path.startswith("/api/")
+            or self.headers.get("Origin") != HOSTED_ORIGIN
+            or requested_method not in ("GET", "POST")
+        ):
+            return self._json({"error": "cross-origin request not allowed"}, 403)
+
+        self.send_response(204)
+        self._cors()
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.end_headers()
 
     def do_GET(self):
         url = urlparse(self.path)

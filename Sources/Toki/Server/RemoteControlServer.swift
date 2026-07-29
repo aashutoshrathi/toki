@@ -8,6 +8,7 @@ import Foundation
 @MainActor
 final class RemoteControlServer: ObservableObject {
     static let shared = RemoteControlServer()
+    static let hostedRemoteControlOrigin = "https://remote.toki.aashutosh.dev"
 
     enum HostMode: String, CaseIterable, Identifiable {
         case localhost
@@ -30,15 +31,24 @@ final class RemoteControlServer: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var token: String?
     @Published private(set) var lastError: String?
+    @Published private(set) var tailscaleDNSName: String?
 
-    @Published var hostMode: HostMode = .localhost
+    @Published var hostMode: HostMode = .localhost {
+        didSet {
+            if hostMode == .tailscale {
+                refreshTailscaleStatus()
+            }
+        }
+    }
     @Published var customHost = ""
 
     let port = 8765
 
     private var process: Process?
 
-    private init() {}
+    private init() {
+        refreshTailscaleStatus()
+    }
 
     var host: String? {
         switch hostMode {
@@ -47,7 +57,7 @@ final class RemoteControlServer: ObservableObject {
         case .localNetwork:
             return Self.localNetworkIP()
         case .tailscale:
-            return Self.tailscaleIP()
+            return tailscaleDNSName
         case .custom:
             let trimmed = customHost.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
@@ -56,14 +66,37 @@ final class RemoteControlServer: ObservableObject {
 
     var availableHostModes: [HostMode] {
         var modes: [HostMode] = [.localhost, .localNetwork]
-        if Self.tailscaleIP() != nil { modes.append(.tailscale) }
+        if Self.tailscaleIP() != nil || tailscaleDNSName != nil { modes.append(.tailscale) }
         modes.append(.custom)
         return modes
     }
 
     var connectURL: String? {
         guard isRunning, let token, let host else { return nil }
-        return "http://\(host):\(port)/?token=\(token)"
+        return Self.makeConnectURL(hostMode: hostMode, host: host, token: token, port: port)
+    }
+
+    static func makeConnectURL(hostMode: HostMode, host: String, token: String, port: Int) -> String? {
+        if hostMode == .tailscale {
+            var parameters = URLComponents()
+            parameters.queryItems = [
+                URLQueryItem(name: "host", value: host),
+                URLQueryItem(name: "token", value: token)
+            ]
+
+            var components = URLComponents(string: Self.hostedRemoteControlOrigin)
+            components?.path = "/"
+            components?.percentEncodedFragment = parameters.percentEncodedQuery
+            return components?.url?.absoluteString
+        }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = host
+        components.port = port
+        components.path = "/"
+        components.queryItems = [URLQueryItem(name: "token", value: token)]
+        return components.url?.absoluteString
     }
 
     func toggle() {
@@ -144,6 +177,61 @@ final class RemoteControlServer: ObservableObject {
 
     static func tailscaleIP() -> String? {
         interfaceIPv4Addresses().first { isTailscaleAddress($0.ip) }?.ip
+    }
+
+    nonisolated static func tailscaleDNSName(from statusData: Data) -> String? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: statusData),
+            let status = object as? [String: Any],
+            let selfNode = status["Self"] as? [String: Any],
+            let rawName = selfNode["DNSName"] as? String
+        else {
+            return nil
+        }
+
+        let name = rawName.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard !name.isEmpty, name.lowercased().hasSuffix(".ts.net") else { return nil }
+        return name
+    }
+
+    private func refreshTailscaleStatus() {
+        Task {
+            let name = await Task.detached(priority: .utility) {
+                Self.readTailscaleDNSName()
+            }.value
+            tailscaleDNSName = name
+        }
+    }
+
+    private nonisolated static func readTailscaleDNSName() -> String? {
+        let candidates = [
+            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+            "/opt/homebrew/bin/tailscale",
+            "/usr/local/bin/tailscale"
+        ]
+        let executable = candidates.first(where: FileManager.default.isExecutableFile(atPath:))
+
+        let task = Process()
+        if let executable {
+            task.executableURL = URL(fileURLWithPath: executable)
+            task.arguments = ["status", "--json"]
+        } else {
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            task.arguments = ["tailscale", "status", "--json"]
+        }
+
+        let output = Pipe()
+        task.standardOutput = output
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+        } catch {
+            return nil
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        guard task.terminationStatus == 0 else { return nil }
+        return tailscaleDNSName(from: data)
     }
 
     private static func isTailscaleAddress(_ ip: String) -> Bool {

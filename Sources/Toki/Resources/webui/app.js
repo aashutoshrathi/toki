@@ -1,7 +1,18 @@
-const TOKEN=new URLSearchParams(location.search).get("token")||"";
+// Fragments keep the token out of static-host access logs. Query params remain supported for
+// links created from the original hosting plan.
+const PARAMS=new URLSearchParams(location.hash.slice(1)||location.search);
+const TOKEN=PARAMS.get("token")||"";
+const REMOTE_HOST=PARAMS.get("host")||"";
+const API_BASE=REMOTE_HOST?remoteAPIBase(REMOTE_HOST):"";
+function remoteAPIBase(host){
+  if(!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.ts\.net$/i.test(host))
+    throw new Error("Invalid Tailscale host");
+  return "https://"+host;
+}
 const $=s=>document.querySelector(s);
 let current=null, offset=0, agents=[];
-async function api(p,o){const r=await fetch(p+(p.includes("?")?"&":"?")+"token="+TOKEN,o);
+async function api(p,o){const url=API_BASE+p+(p.includes("?")?"&":"?")+"token="+encodeURIComponent(TOKEN);
+  const r=await fetch(url,o);
   if(!r.ok)throw new Error(await r.text());return r.json()}
 function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
 function md(src){
