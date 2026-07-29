@@ -56,6 +56,7 @@ struct SettingsPanel: View {
     @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var showingConnect = false
     @State private var showingTailscaleGuide = false
+    private let reachabilityTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -643,12 +644,9 @@ struct SettingsPanel: View {
                     .padding(.horizontal, 4)
             }
 
-            if remoteServer.companionAppMode == .hosted, remoteServer.isRunning, remoteServer.connectURL != nil {
-                Text("Your phone reaches this Mac through `tailscale serve` on port 443. If it can't connect, make sure that command is running — see the setup guide next to Host.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
+            if remoteServer.isRunning, remoteServer.connectURL != nil,
+               remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale {
+                tailscaleReadinessRow
             }
 
             if remoteServer.isRunning, remoteServer.connectURL == nil {
@@ -671,6 +669,33 @@ struct SettingsPanel: View {
         .sheet(isPresented: $showingConnect) {
             RemoteConnectSheet()
         }
+        .onAppear { remoteServer.refreshTailscaleStatus() }
+        .onReceive(reachabilityTimer) { _ in
+            if remoteServer.isRunning,
+               remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale {
+                remoteServer.refreshTailscaleStatus()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tailscaleReadinessRow: some View {
+        let ready = remoteServer.tailscaleServeReady
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: ready == true ? "checkmark.circle.fill"
+                : ready == false ? "exclamationmark.triangle.fill" : "ellipsis.circle")
+                .foregroundStyle(ready == true ? Color.green
+                    : ready == false ? Color.orange : Color.secondary)
+            Text(ready == true
+                ? "Reachable from your phone."
+                : ready == false
+                    ? "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet. See the setup guide next to Host."
+                    : "Checking whether your phone can reach this Mac…")
+                .foregroundStyle(ready == false ? Color.orange : Color.secondary)
+        }
+        .font(.system(size: 11))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 4)
     }
 
     private var connectHint: String {
