@@ -11,6 +11,11 @@ function remoteAPIBase(host){
   return "https://"+host;
 }
 const $=s=>document.querySelector(s);
+function feedback(kind="tap"){
+  if(!navigator.vibrate)return;
+  const pattern=kind=="success"?[10,24,10]:kind=="error"?[24,35,24]:7;
+  navigator.vibrate(pattern);
+}
 const SESSION_KEY="toki-session:"+API_BASE+":"+LINK_TOKEN;
 let TOKEN="";
 try{TOKEN=sessionStorage.getItem(SESSION_KEY)||""}catch(e){}
@@ -64,7 +69,7 @@ $("#pairform").addEventListener("submit",async e=>{
     }
     TOKEN=body.token;try{sessionStorage.setItem(SESSION_KEY,TOKEN)}catch(e){}
     $("#pairstatus").textContent="";startApp();
-  }catch(err){$("#pairstatus").textContent=err.message}
+  }catch(err){feedback("error");$("#pairstatus").textContent=err.message}
 });
 function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
 const md=renderMarkdown;
@@ -96,9 +101,9 @@ function renderAgents(){
   });
 }
 function updateComposer(agent){
-  const writable=!!(agent&&agent.writable);
+  const writable=!!(agent&&agent.writable),enabled=writable&&!sending;
   $("#readonly").style.display=agent&&!writable?"block":"none";
-  document.querySelectorAll("footer button,footer input").forEach(el=>el.disabled=!writable);
+  document.querySelectorAll("footer button,footer input").forEach(el=>el.disabled=!enabled);
   $("#msg").placeholder=writable?"Reply to the agent\u2026":(agent?"Read-only session":"No active session");
 }
 async function refreshAgents(){
@@ -112,7 +117,8 @@ async function refreshAgents(){
       :[{question:a.attention.prompt||"Agent is waiting on you",options:a.attention.options||[]}];
     al.innerHTML=qs.map(q=>'<div class="qq">'+md(q.question||"")+"</div>"+
       (q.options||[]).map((o,i)=>
-        `<button class="opt" data-text="${i+1}">${i+1}. ${esc(o)}</button>`).join("")).join("");
+        `<button class="opt" data-text="${i+1}"><b>${i+1}</b>&ensp;${esc(o)}</button>`).join("")).join("")+
+      (a.attention.kind=="permission"?'<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>':"");
   } else al.style.display="none";
 }
 async function refreshLog(){
@@ -130,22 +136,39 @@ async function refreshLog(){
   }
   if(r.entries.length)window.scrollTo(0,document.body.scrollHeight);
 }
+let sending=false,statusTimer=null;
+function setStatus(message,kind){
+  clearTimeout(statusTimer);$("#status").textContent=message;$("#status").className=kind||"";
+}
 async function send(body){
-  if(!current)return;
-  $("#status").textContent="sending\u2026";
+  if(!current||sending)return false;
+  const agent=agents.find(a=>a.pid==current);
+  if(!agent||!agent.writable)return false;
+  sending=true;updateComposer(agent);setStatus("Sending\u2026","sending");
   try{const r=await api("/api/send",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({pid:current,...body})});
-    $("#status").textContent="delivered via "+r.how;
-  }catch(e){$("#status").textContent="failed: "+e.message}
-  setTimeout(()=>$("#status").textContent="",4000);
+    feedback("success");setStatus("Sent \u2713 via "+r.how,"success");
+    return true;
+  }catch(e){feedback("error");setStatus("Couldn\u2019t send: "+e.message,"error");return false}
+  finally{
+    sending=false;updateComposer(agents.find(a=>a.pid==current)||null);
+    statusTimer=setTimeout(()=>setStatus("",""),4000);
+  }
 }
-document.addEventListener("click",e=>{
+document.addEventListener("pointerdown",e=>{
+  const button=e.target.closest("button");if(button&&!button.disabled)feedback("tap");
+},{passive:true});
+document.addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b)return;
-  if(b.id=="send"){const v=$("#msg").value.trim();if(v){send({text:v});$("#msg").value=""}}
-  else if(b.dataset.key)send({key:b.dataset.key});
-  else if(b.dataset.text)send({text:b.dataset.text,raw:true});
+  if(b.id=="send"){
+    const input=$("#msg"),v=input.value.trim();
+    if(v&&await send({text:v})&&input.value.trim()==v)input.value="";
+  } else if(b.dataset.key)await send({key:b.dataset.key});
+  else if(b.dataset.text)await send({text:b.dataset.text,raw:true});
 });
-$("#msg").addEventListener("keydown",e=>{if(e.key=="Enter")$("#send").click()});
+$("#msg").addEventListener("keydown",e=>{
+  if(e.key=="Enter"&&!e.isComposing){e.preventDefault();$("#send").click()}
+});
 $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElementById("dd").classList.toggle("open")});
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
 if(CONFIG_ERROR)invalidLink("This link has an invalid server address. Open Connect in Toki and use a new link.");
