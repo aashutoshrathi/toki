@@ -481,18 +481,38 @@ final class RemoteControlServer: ObservableObject {
         task.executableURL = executable
         task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
 
-        let errorPipe = Pipe()
-        task.standardError = errorPipe
+        // Capture stderr to a temp file, not a Pipe. `serve --bg` can leave a descriptor open,
+        // and a blocking pipe read would then never reach EOF (hangs the caller forever).
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("toki-serve-\(UUID().uuidString).log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        let logHandle = try? FileHandle(forWritingTo: logURL)
+        defer {
+            try? logHandle?.close()
+            try? FileManager.default.removeItem(at: logURL)
+        }
+        task.standardError = logHandle ?? FileHandle.nullDevice
         task.standardOutput = FileHandle.nullDevice
+
         do {
             try task.run()
         } catch {
             return "Couldn't run tailscale. Make sure Tailscale is installed."
         }
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+
+        // Never block the UI indefinitely: `tailscale serve` can stall while provisioning a cert.
+        let deadline = Date().addingTimeInterval(25)
+        while task.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        if task.isRunning {
+            task.terminate()
+            return "Enabling HTTPS timed out. Make sure Tailscale is running and HTTPS Certificates are enabled, or run the command in Terminal (see the guide)."
+        }
+
+        try? logHandle?.close()
         if task.terminationStatus == 0 { return nil }
-        let message = String(data: errorData, encoding: .utf8)?
+        let message = (try? String(contentsOf: logURL, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let message, !message.isEmpty {
             return message
