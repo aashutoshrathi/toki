@@ -51,7 +51,9 @@ strip "$APP_DIR/Contents/MacOS/Toki"
 strip "$APP_DIR/Contents/PlugIns/TokiWidgets.appex/Contents/MacOS/TokiWidgets"
 
 echo "==> Copying resources"
-cp "$ROOT_DIR/Sources/Toki/Resources/"* "$APP_DIR/Contents/Resources/"
+# -R recurses into subdirectories such as webui/; -L follows the CHANGELOG.md
+# symlink so the bundle gets a real file the in-app What's New can read.
+cp -RL "$ROOT_DIR/Sources/Toki/Resources/"* "$APP_DIR/Contents/Resources/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.svg \
   "$APP_DIR/Contents/PlugIns/TokiWidgets.appex/Contents/Resources/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"toki-router-glyph-*.svg \
