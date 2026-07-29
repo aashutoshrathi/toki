@@ -36,6 +36,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import subprocess
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -267,6 +268,8 @@ def provider_of(command):
         return "claude"
     if exe == "codex" or exe.startswith("codex-") or (exe in ("node", "bun") and "/@openai/codex/" in entry):
         return "codex"
+    if exe == "opencode":
+        return "opencode"
     return None
 
 
@@ -294,8 +297,10 @@ def discover_agents():
         r["cwd"] = cwd_of_pid(r["pid"])
         if r["provider"] == "claude":
             r["session"] = newest_claude_session(r["command"], r["cwd"])
-        else:
+        elif r["provider"] == "codex":
             r["session"] = newest_codex_session(r["command"], r["cwd"])
+        else:
+            r["session"] = newest_opencode_session(r["command"], r["cwd"])
     return roots
 
 
@@ -636,8 +641,110 @@ def codex_attention(path):
 _title_cache = {}  # path -> (mtime, title)
 
 
+OPENCODE_DB = os.path.join(
+    os.environ.get("OPENCODE_DATA_DIR") or os.path.join(HOME, ".local", "share", "opencode"),
+    "opencode.db",
+)
+
+
+def opencode_query(sql, params=()):
+    if not os.path.exists(OPENCODE_DB):
+        return []
+    try:
+        con = sqlite3.connect(f"file:{OPENCODE_DB}?mode=ro", uri=True, timeout=1)
+        try:
+            return con.execute(sql, params).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+
+def newest_opencode_session(command, cwd):
+    if not cwd:
+        return None
+    rows = opencode_query("SELECT id FROM session WHERE directory=? ORDER BY time_updated DESC LIMIT 1", (cwd,))
+    return rows[0][0] if rows else None
+
+
+def opencode_session_ts(session_id):
+    rows = opencode_query("SELECT time_updated FROM session WHERE id=?", (session_id,))
+    return rows[0][0] / 1000 if rows and rows[0][0] else 0.0
+
+
+def opencode_title(session_id):
+    rows = opencode_query("SELECT title FROM session WHERE id=?", (session_id,))
+    return rows[0][0] if rows and rows[0][0] else None
+
+
+def opencode_attention(session_id):
+    rows = opencode_query(
+        "SELECT json_extract(data,'$.tool'), time_updated FROM part "
+        "WHERE session_id=? AND json_extract(data,'$.state.status')='running' "
+        "ORDER BY time_updated DESC LIMIT 1",
+        (session_id,),
+    )
+    if not rows:
+        return None
+    tool, ts = rows[0]
+    if not ts or time.time() - ts / 1000 < QUIET_PERIOD:
+        return None
+    return {"kind": "permission", "prompt": f"Allow {tool}?" if tool else "OpenCode is waiting on you", "options": []}
+
+
+def opencode_tool_summary(tool, inp):
+    if not isinstance(inp, dict):
+        return ""
+    for key in ("filePath", "path", "command", "pattern", "query", "description"):
+        value = inp.get(key)
+        if value:
+            return str(value).replace("\n", " ")[:120]
+    return ""
+
+
+def opencode_entries(session_id):
+    rows = opencode_query(
+        "SELECT json_extract(m.data,'$.role'), p.data FROM part p "
+        "JOIN message m ON p.message_id = m.id "
+        "WHERE p.session_id=? ORDER BY m.time_created, p.time_created, p.id",
+        (session_id,),
+    )
+    entries = []
+    for role, pdata in rows:
+        try:
+            data = json.loads(pdata)
+        except (ValueError, TypeError):
+            continue
+        kind = data.get("type")
+        if kind == "text":
+            if data.get("synthetic"):
+                continue
+            text = (data.get("text") or "").strip()
+            if text:
+                entries.append({"role": "assistant" if role == "assistant" else "user", "text": text})
+        elif kind == "tool":
+            state = data.get("state") or {}
+            entries.append({
+                "role": "tool",
+                "tool": data.get("tool", "tool"),
+                "text": opencode_tool_summary(data.get("tool"), state.get("input") or {}),
+            })
+    return entries
+
+
+def agent_recency(agent):
+    session = agent.get("session")
+    if not session:
+        return 0.0
+    if agent["provider"] == "opencode":
+        return opencode_session_ts(session)
+    return os.path.getmtime(session) if os.path.exists(session) else 0.0
+
+
 def chat_title(provider, path, cwd):
     fallback = os.path.basename(cwd) if cwd else provider
+    if provider == "opencode":
+        return (opencode_title(path) if path else None) or fallback
     if not path:
         return fallback
     try:
@@ -827,14 +934,16 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/agents":
             result = []
             agents = discover_agents()
-            agents.sort(
-                key=lambda a: os.path.getmtime(a["session"]) if a.get("session") and os.path.exists(a["session"]) else 0.0,
-                reverse=True,
-            )
+            agents.sort(key=agent_recency, reverse=True)
             for a in agents:
                 att = None
                 if a["session"]:
-                    att = (claude_attention if a["provider"] == "claude" else codex_attention)(a["session"])
+                    if a["provider"] == "claude":
+                        att = claude_attention(a["session"])
+                    elif a["provider"] == "codex":
+                        att = codex_attention(a["session"])
+                    else:
+                        att = opencode_attention(a["session"])
                 result.append({
                     "pid": a["pid"], "tty": a["tty"], "cwd": a["cwd"],
                     "provider": a["provider"],
@@ -848,6 +957,14 @@ class Handler(BaseHTTPRequestHandler):
             agent = next((a for a in discover_agents() if a["pid"] == pid), None)
             if not agent or not agent["session"]:
                 return self._json({"entries": [], "offset": offset})
+            if agent["provider"] == "opencode":
+                entries = opencode_entries(agent["session"])
+                if offset > len(entries):  # session changed under us
+                    return self._json({"entries": [], "offset": 0, "reset": True})
+                shown = entries[offset:]
+                if offset == 0:
+                    shown = [e for e in shown if e["role"] in ("user", "assistant", "tool")][-60:]
+                return self._json({"entries": shown, "offset": len(entries)})
             try:
                 size = os.path.getsize(agent["session"])
             except OSError:
