@@ -533,6 +533,7 @@ struct SettingsPanel: View {
                 Text("Host")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .frame(width: 28, alignment: .leading)
                 Picker("", selection: $remoteServer.hostMode) {
                     ForEach(remoteServer.availableHostModes) { mode in
                         Text(mode.label).tag(mode)
@@ -555,6 +556,7 @@ struct SettingsPanel: View {
                 Text("App")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .frame(width: 28, alignment: .leading)
                 Picker("", selection: $remoteServer.companionAppMode) {
                     ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
                         Text(mode.label).tag(mode)
