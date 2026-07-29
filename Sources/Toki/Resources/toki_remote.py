@@ -348,12 +348,30 @@ def newest_claude_session(command, cwd):
 
 _NOISE_PREFIXES = ("Caveat: The messages below", "<local-command-stdout>",
                    "<command-message>", "[Request interrupted")
+_HARNESS_TAGS = (
+    "system-reminder",
+    "recommended_plugin",
+    "recommended_plugins",
+    "environment_context",
+    "user_instructions",
+    "apps_instructions",
+    "plugins_instructions",
+    "skills_instructions",
+)
+_HARNESS_BLOCK_RE = re.compile(
+    r"<(" + "|".join(map(re.escape, _HARNESS_TAGS)) + r")(?:\s[^>]*)?>.*?</\1\s*>",
+    flags=re.I | re.S,
+)
+_HARNESS_TAG_RE = re.compile(
+    r"^\s*</?(?:" + "|".join(map(re.escape, _HARNESS_TAGS)) + r")(?:\s|>)",
+    flags=re.I,
+)
 
 
 def clean_user_text(text):
     """Strip harness noise from user messages; None means 'do not show'."""
-    text = re.sub(r"<system-reminder>.*?</system-reminder>", "", text, flags=re.S).strip()
-    if not text:
+    text = _HARNESS_BLOCK_RE.sub("", text).strip()
+    if not text or _HARNESS_TAG_RE.match(text):
         return None
     m = re.match(r"<command-name>(/?\S+)</command-name>", text)
     if m:
@@ -568,9 +586,6 @@ def codex_call_summary(payload):
     return name, ""
 
 
-_CODEX_USER_NOISE = ("<user_instructions>", "<environment_context>", "<ENVIRONMENT_CONTEXT>")
-
-
 def parse_codex_transcript(path, offset=0):
     entries = []
     try:
@@ -603,9 +618,9 @@ def parse_codex_transcript(path, offset=0):
                     if not text:
                         continue
                     if role == "user":
-                        if any(text.startswith(p) for p in _CODEX_USER_NOISE):
-                            continue
-                        entries.append({"role": "user", "text": text})
+                        cleaned = clean_user_text(text)
+                        if cleaned:
+                            entries.append({"role": "user", "text": cleaned})
                     elif role == "assistant":
                         entries.append({"role": "assistant", "text": text})
             elif ptype in ("function_call", "local_shell_call", "custom_tool_call"):
@@ -746,7 +761,8 @@ def agent_recency(agent):
 def chat_title(provider, path, cwd):
     fallback = os.path.basename(cwd) if cwd else provider
     if provider == "opencode":
-        return (opencode_title(path) if path else None) or fallback
+        raw_title = opencode_title(path) if path else None
+        return (clean_user_text(raw_title) if raw_title else None) or fallback
     if not path:
         return fallback
     try:
@@ -766,7 +782,11 @@ def chat_title(provider, path, cwd):
             contents = ""
         custom = re.findall(r'"customTitle"\s*:\s*"([^"]+)"', contents)
         ai = re.findall(r'"aiTitle"\s*:\s*"([^"]+)"', contents)
-        title = (custom[-1] if custom else None) or (ai[-1] if ai else None)
+        candidates = list(reversed(custom)) + list(reversed(ai))
+        for candidate in candidates:
+            title = clean_user_text(candidate)
+            if title:
+                break
     if not title:
         parse = parse_claude_transcript if provider == "claude" else parse_codex_transcript
         entries, _ = parse(path, 0)
