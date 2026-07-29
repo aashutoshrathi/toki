@@ -3,8 +3,10 @@ import SwiftUI
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
+    @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var selectedTab: TokiTab = .accounts
     @State private var showConfig = false
+    @State private var focusRemoteControlSettings = false
     @State private var showChangelog = false
 
     private enum TokiTab: String, CaseIterable, Identifiable {
@@ -28,7 +30,13 @@ struct MenuContentView: View {
     var body: some View {
         Group {
             if showConfig {
-                ConfigPage(store: store, updateChecker: updateChecker) { showConfig = false }
+                ConfigPage(
+                    store: store,
+                    updateChecker: updateChecker,
+                    focusRemoteControl: focusRemoteControlSettings
+                ) {
+                    showConfig = false
+                }
             } else if showChangelog {
                 ChangelogPage { showChangelog = false }
             } else {
@@ -134,6 +142,22 @@ struct MenuContentView: View {
 
     private var headerControls: some View {
         HStack(spacing: 8) {
+            if remoteServer.isRunning {
+                Button {
+                    focusRemoteControlSettings = true
+                    showConfig = true
+                } label: {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .functionalControlStyle()
+                .foregroundStyle(Color.teal)
+                .help("Remote Control is on — open its Settings")
+                .accessibilityLabel("Remote Control is on. Open Remote Control Settings")
+                .pointerOnHover()
+            }
+
             HStack(spacing: 5) {
                 Button {
                     store.refresh(minimumRefreshInterval: 60)
@@ -179,6 +203,7 @@ struct MenuContentView: View {
 
             HStack(spacing: 5) {
                 Button {
+                    focusRemoteControlSettings = false
                     showConfig = true
                 } label: {
                     Image(systemName: "gearshape")

@@ -28,7 +28,7 @@ cp "$ROOT_DIR/.build/release/TokiWidgets" "$WIDGET_MACOS_DIR/TokiWidgets"
 # release binary carries ~3MB of symbol tables it never needs at runtime.
 strip "$MACOS_DIR/Toki"
 strip "$WIDGET_MACOS_DIR/TokiWidgets"
-cp "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
+cp -R "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.svg "$WIDGET_RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"toki-router-glyph-*.svg "$WIDGET_RESOURCES_DIR/"
 

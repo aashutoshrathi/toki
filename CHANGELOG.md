@@ -2,6 +2,10 @@
 
 ## 2.5.4
 
+### Added
+
+- **Remote Control (#64): follow and reply to your agents from your phone.** Toki can run a local Remote Control server and pair a browser over Tailscale (recommended), your local network, or this Mac, using a six-digit code that rotates every two minutes and a scoped session you can limit from 1 hour up to 2 days. The web app lists the same active agents as the menu bar, streams their transcripts with GitHub-style Markdown tables, and lets you reply, send terminal keys, and approve or reject prompts; non-terminal sessions such as Codex desktop are clearly read-only. It installs as a phone app (PWA) with an offline-capable shell and Add to Home Screen, and you can start a session by scanning the Connect QR or entering a host and token by hand. Agent data stays between your browser and your Mac; the hosted interface only serves the UI. A teal status icon in the header opens the Remote Control settings while the server is running.
+
 ## 2.5.3 - 2026-07-28
 
 ### Changed
