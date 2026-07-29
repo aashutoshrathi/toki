@@ -5,6 +5,12 @@ private enum SettingsAnchor: Hashable {
     case remoteControl
 }
 
+// Top-level "where can my phone reach this Mac" choice, mapped onto the underlying host/app modes.
+private enum ReachMode: Hashable {
+    case network
+    case anywhere
+}
+
 // Full-page settings/config view opened from the header gear (no longer a bottom tab).
 struct ConfigPage: View {
     @ObservedObject var store: UsageStore
@@ -531,61 +537,83 @@ struct SettingsPanel: View {
                 .controlSize(.small)
             }
 
-            HStack(spacing: 8) {
-                Text("Host")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 48, alignment: .leading)
-                Picker("", selection: $remoteServer.hostMode) {
-                    ForEach(remoteServer.availableHostModes) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .fixedSize()
-                if remoteServer.hostMode == .tailscale || remoteServer.companionAppMode == .hosted {
-                    Button {
-                        showingTailscaleGuide = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("How to set up Tailscale so you can connect from anywhere")
-                    .accessibilityLabel("Tailscale setup guide")
-                    .pointerOnHover()
-                    .popover(isPresented: $showingTailscaleGuide, arrowEdge: .bottom) {
-                        TailscaleSetupGuide(port: remoteServer.port)
-                    }
-                }
-                if remoteServer.hostMode == .custom {
-                    TextField("host or IP", text: $remoteServer.customHost)
-                        .textFieldStyle(.roundedBorder)
-                        .controlSize(.small)
-                }
-                Spacer(minLength: 0)
+            Picker("Reach", selection: reachBinding) {
+                Text("On my network").tag(ReachMode.network)
+                Text("From anywhere").tag(ReachMode.anywhere)
             }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
             .padding(.horizontal, 4)
 
-            HStack(spacing: 8) {
-                Text("App")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 48, alignment: .leading)
-                Picker("", selection: $remoteServer.companionAppMode) {
-                    ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
+            Text(reachBinding.wrappedValue == .network
+                ? "Your phone connects over Wi-Fi on the same network. No setup."
+                : "Reach this Mac from any network over HTTPS via Tailscale or a Cloudflare tunnel.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+
+            DisclosureGroup("Advanced") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Host")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Picker("", selection: $remoteServer.hostMode) {
+                            ForEach(remoteServer.availableHostModes) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .fixedSize()
+                        if remoteServer.hostMode == .tailscale || remoteServer.companionAppMode == .hosted {
+                            Button {
+                                showingTailscaleGuide = true
+                            } label: {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("How to set up Tailscale so you can connect from anywhere")
+                            .accessibilityLabel("Tailscale setup guide")
+                            .pointerOnHover()
+                            .popover(isPresented: $showingTailscaleGuide, arrowEdge: .bottom) {
+                                TailscaleSetupGuide(port: remoteServer.port)
+                            }
+                        }
+                        if remoteServer.hostMode == .custom {
+                            TextField("host or IP", text: $remoteServer.customHost)
+                                .textFieldStyle(.roundedBorder)
+                                .controlSize(.small)
+                        }
+                        Spacer(minLength: 0)
+                    }
+
+                    HStack(spacing: 8) {
+                        Text("App")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Picker("", selection: $remoteServer.companionAppMode) {
+                            ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .fixedSize()
+                        Spacer(minLength: 0)
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .fixedSize()
-                Spacer(minLength: 0)
+                .padding(.top, 6)
             }
+            .font(.system(size: 11))
             .padding(.horizontal, 4)
 
             HStack(spacing: 8) {
@@ -731,6 +759,33 @@ struct SettingsPanel: View {
             }
         }
         .padding(.horizontal, 4)
+    }
+
+    private var reachBinding: Binding<ReachMode> {
+        Binding(
+            get: {
+                switch remoteServer.hostMode {
+                case .tailscale, .tunnel: return .anywhere
+                default: return .network
+                }
+            },
+            set: { mode in
+                switch mode {
+                case .network:
+                    remoteServer.hostMode = RemoteControlServer.localNetworkIP() != nil ? .localNetwork : .localhost
+                    remoteServer.companionAppMode = .sameHost
+                case .anywhere:
+                    let modes = remoteServer.availableHostModes
+                    if modes.contains(.tailscale) {
+                        remoteServer.hostMode = .tailscale
+                        remoteServer.companionAppMode = .hosted
+                    } else if modes.contains(.tunnel) {
+                        remoteServer.hostMode = .tunnel
+                        remoteServer.companionAppMode = .sameHost
+                    }
+                }
+            }
+        )
     }
 
     private var connectHint: String {
