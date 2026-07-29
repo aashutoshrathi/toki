@@ -32,14 +32,25 @@ struct RemoteConnectSheet: View {
                     .textSelection(.enabled)
 
                 if let code = server.pairingCode {
-                    VStack(spacing: 3) {
-                        Text("Verification code")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(code.prefix(3) + " " + code.suffix(3))
-                            .font(.system(size: 22, weight: .semibold).monospacedDigit())
-                            .textSelection(.enabled)
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(code, forType: .string)
+                    } label: {
+                        VStack(spacing: 3) {
+                            Text("Verification code")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(code.prefix(3) + " " + code.suffix(3))
+                                .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                            Text("Click to copy")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .help("Copy verification code")
+                    .accessibilityLabel("Copy verification code \(code)")
                 }
 
                 HStack(spacing: 8) {
