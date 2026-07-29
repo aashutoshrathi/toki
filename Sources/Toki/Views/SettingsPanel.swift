@@ -572,8 +572,6 @@ struct SettingsPanel: View {
 
             if remoteServer.isRunning {
                 HStack(spacing: 8) {
-                    Spacer(minLength: 0)
-
                     if remoteServer.connectURL != nil {
                         Button {
                             showingConnect = true
@@ -592,6 +590,8 @@ struct SettingsPanel: View {
                     .fixedSize()
                     .help("Stop Remote Control and invalidate every connected session")
                     .pointerOnHover()
+
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 4)
             }
