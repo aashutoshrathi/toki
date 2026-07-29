@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).parents[1] / "Sources" / "Toki" / "Resources" / "toki_remote.py"
@@ -65,6 +66,15 @@ class RemoteControlTitleTests(unittest.TestCase):
                 toki_remote.chat_title("claude", transcript.name, "/tmp/toki"),
                 "Use the actual request",
             )
+
+
+class RemoteControlPairingTests(unittest.TestCase):
+    def test_pairing_code_rotation_interval_is_two_minutes(self):
+        self.assertEqual(toki_remote.PAIRING_CODE_TTL, 2 * 60)
+
+    def test_pairing_code_is_always_six_digits(self):
+        with mock.patch.object(toki_remote.secrets, "randbelow", return_value=42):
+            self.assertEqual(toki_remote.new_pairing_code(), "000042")
 
 
 if __name__ == "__main__":

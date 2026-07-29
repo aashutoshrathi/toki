@@ -45,6 +45,9 @@ struct RemoteConnectSheet: View {
                             Text("Click to copy")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                            Text("Rotates every 2 minutes")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .buttonStyle(.plain)

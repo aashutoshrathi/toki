@@ -19,8 +19,10 @@ Phone browser
 
 Access requires three gates: a valid link **token**, the six-digit verification code shown
 separately in Toki, and the phone being on the user's **tailnet**. The browser exchanges the link
-token and code for a random session token that expires after 12 hours. Five failed code attempts
-within a minute trigger a temporary rate limit.
+token and code for a random session token that expires after the lifetime selected in Toki
+(12 hours recommended, 2 days maximum). Five failed code attempts within a minute trigger a
+temporary rate limit. The verification code rotates every two minutes; already verified sessions
+remain valid for their selected lifetime.
 
 ## Why hosting needs Tailscale
 

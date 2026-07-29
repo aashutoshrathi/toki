@@ -910,8 +910,13 @@ def send_input(tty, text=None, key=None, raw=False):
 
 # ------------------------------------------------------------------- server
 
+def new_pairing_code():
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
 TOKEN = secrets.token_urlsafe(24)
-PAIRING_CODE = f"{secrets.randbelow(1_000_000):06d}"
+PAIRING_CODE = new_pairing_code()
+PAIRING_CODE_TTL = 2 * 60
 HOSTED_ORIGIN = "https://rc.toki.aashutosh.dev"
 SESSION_TTL = 12 * 60 * 60
 SESSION_TTL_CHOICES = (60 * 60, 12 * 60 * 60, 24 * 60 * 60, 2 * 24 * 60 * 60)
@@ -922,6 +927,16 @@ PAIRING_FAILURES = {}
 AUTH_LOCK = threading.Lock()
 
 WEBUI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webui")
+
+
+def rotate_pairing_code():
+    global PAIRING_CODE
+    while True:
+        time.sleep(PAIRING_CODE_TTL)
+        with AUTH_LOCK:
+            PAIRING_CODE = new_pairing_code()
+            code = PAIRING_CODE
+        print(f"pairing_code={code}", flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1141,6 +1156,7 @@ def main():
         print("   " + u)
     print(f"   http://localhost:{args.port}/?token={TOKEN}\n")
     print(f"pairing_code={PAIRING_CODE}")
+    threading.Thread(target=rotate_pairing_code, daemon=True).start()
     if urls and not args.no_qr:
         print("Scan with your phone (uses the first address above):\n")
         print(qr_terminal(urls[0]))

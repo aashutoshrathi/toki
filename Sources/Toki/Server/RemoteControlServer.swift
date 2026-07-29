@@ -273,9 +273,11 @@ final class RemoteControlServer: ObservableObject {
             }
             if !value.isEmpty { token = String(value) }
         }
-        if pairingCode == nil, let range = text.range(of: "pairing_code=") {
+        if let range = text.range(of: "pairing_code=") {
             let value = text[range.upperBound...].prefix { $0.isNumber }
-            if value.count == 6 { pairingCode = String(value) }
+            if value.count == 6 {
+                pairingCode = String(value)
+            }
         }
     }
 
