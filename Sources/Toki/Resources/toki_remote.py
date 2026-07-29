@@ -1119,6 +1119,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("app.js", "application/javascript; charset=utf-8")
         if url.path == "/markdown.js":
             return self._static("markdown.js", "application/javascript; charset=utf-8")
+        if url.path == "/favicon.svg":
+            return self._static("favicon.svg", "image/svg+xml")
         if url.path == "/styles.css":
             return self._static("styles.css", "text/css; charset=utf-8")
         if not self._authed(q):
