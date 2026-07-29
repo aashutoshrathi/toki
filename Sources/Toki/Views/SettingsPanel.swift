@@ -643,6 +643,14 @@ struct SettingsPanel: View {
                     .padding(.horizontal, 4)
             }
 
+            if remoteServer.companionAppMode == .hosted, remoteServer.isRunning, remoteServer.connectURL != nil {
+                Text("Your phone reaches this Mac through `tailscale serve` on port 443. If it can't connect, make sure that command is running — see the setup guide next to Host.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+
             if remoteServer.isRunning, remoteServer.connectURL == nil {
                 Text(connectHint)
                     .font(.system(size: 11))
@@ -668,7 +676,7 @@ struct SettingsPanel: View {
     private var connectHint: String {
         if remoteServer.token == nil { return "Starting the server…" }
         if remoteServer.companionAppMode == .hosted {
-            return "Toki RC requires a Tailscale DNS host with HTTPS Serve enabled."
+            return "Toki RC needs a Tailscale DNS host. Use the setup guide next to Host to turn on MagicDNS and HTTPS Serve."
         }
         if remoteServer.companionAppMode == .localNetwork {
             return "No local network address found. Try Localhost or Same as host."
