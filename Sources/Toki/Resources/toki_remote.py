@@ -906,6 +906,10 @@ def safe_tty(tty):
     return bool(re.fullmatch(r"(/dev/)?[a-zA-Z0-9]+", tty or ""))
 
 
+def agent_is_writable(agent):
+    return safe_tty(agent.get("tty"))
+
+
 def applescript_str(s):
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -1137,6 +1141,7 @@ class Handler(BaseHTTPRequestHandler):
                     "provider": a["provider"],
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,
+                    "writable": agent_is_writable(a),
                 })
             self._json(result)
         elif url.path == "/api/transcript":
@@ -1185,8 +1190,8 @@ class Handler(BaseHTTPRequestHandler):
         agent = next((a for a in discover_agents() if a["pid"] == body.get("pid")), None)
         if not agent:
             return self._json({"error": "agent gone"}, 410)
-        if not agent["tty"]:
-            return self._json({"error": "agent has no tty"}, 422)
+        if not agent_is_writable(agent):
+            return self._json({"error": "This non-terminal session is read-only."}, 422)
         key = body.get("key")
         text = body.get("text")
         if key not in (None, "enter", "esc", "up", "down", "tab"):

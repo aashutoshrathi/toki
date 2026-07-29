@@ -126,6 +126,10 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual([agent["pid"] for agent in result], [11])
         self.assertEqual(result[0]["title"], "The actual session")
 
+    def test_non_terminal_agent_is_read_only(self):
+        self.assertFalse(toki_remote.agent_is_writable({"tty": None}))
+        self.assertTrue(toki_remote.agent_is_writable({"tty": "ttys001"}))
+
 
 if __name__ == "__main__":
     unittest.main()

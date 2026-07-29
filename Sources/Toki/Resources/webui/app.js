@@ -81,15 +81,25 @@ function providerLogo(p){
 }
 function renderAgents(){
   const btn=$("#ddbtn"),list=$("#ddlist");
-  if(!agents.length){btn.innerHTML='<span class="t">no agents found</span>';list.innerHTML="";return}
+  if(!agents.length){
+    btn.innerHTML='<span class="t">no agents found</span>';list.innerHTML="";
+    updateComposer(null);return
+  }
   const row=a=>providerLogo(a.provider)+'<span class="t">'+(a.attention?'<span class="dot">\u25cf</span> ':'')+esc(a.title)+'</span>';
   const cur=agents.find(a=>a.pid==current)||agents[0];
   btn.innerHTML=row(cur)+'<span class="caret">\u25be</span>';
+  updateComposer(cur);
   list.innerHTML=agents.map(a=>'<div class="dditem'+(a.pid==current?' sel':'')+'" data-pid="'+a.pid+'">'+row(a)+'</div>').join("");
   list.querySelectorAll(".dditem").forEach(el=>el.onclick=ev=>{
     ev.stopPropagation();current=+el.dataset.pid;offset=0;$("#log").innerHTML="";
     document.getElementById("dd").classList.remove("open");renderAgents();refreshLog();
   });
+}
+function updateComposer(agent){
+  const writable=!!(agent&&agent.writable);
+  $("#readonly").style.display=agent&&!writable?"block":"none";
+  document.querySelectorAll("footer button,footer input").forEach(el=>el.disabled=!writable);
+  $("#msg").placeholder=writable?"Reply to the agent\u2026":(agent?"Read-only session":"No active session");
 }
 async function refreshAgents(){
   agents=await api("/api/agents");const prev=current;
