@@ -72,6 +72,8 @@ final class RemoteControlServer: ObservableObject {
     // nil until the first check completes; true when `tailscale serve` fronts our port on 443,
     // so the hosted Toki RC UI can actually reach this Mac from a phone.
     @Published private(set) var tailscaleServeReady: Bool?
+    @Published private(set) var isEnablingServe = false
+    @Published private(set) var serveSetupError: String?
 
     @Published var hostMode: HostMode = .localhost {
         didSet {
@@ -425,6 +427,53 @@ final class RemoteControlServer: ObservableObject {
     private nonisolated static func readTailscaleServeReady(port: Int) -> Bool {
         guard let data = runTailscale(["serve", "status", "--json"]) else { return false }
         return serveReady(from: data, port: port)
+    }
+
+    // Run `tailscale serve` so the tailnet fronts our loopback port over HTTPS on 443. May fail if
+    // the user is not the tailnet operator; the captured stderr is surfaced with a link to the guide.
+    func enableTailscaleServe() {
+        guard !isEnablingServe else { return }
+        isEnablingServe = true
+        serveSetupError = nil
+        let checkPort = port
+        Task {
+            let failure = await Task.detached(priority: .userInitiated) {
+                Self.runTailscaleServe(port: checkPort)
+            }.value
+            isEnablingServe = false
+            if let failure {
+                serveSetupError = failure
+            } else {
+                refreshTailscaleStatus()
+            }
+        }
+    }
+
+    // Returns nil on success, or an error message to surface.
+    private nonisolated static func runTailscaleServe(port: Int) -> String? {
+        let executable = tailscaleExecutable()
+        let arguments = ["serve", "--bg", "http://127.0.0.1:\(port)"]
+        let task = Process()
+        task.executableURL = executable
+        task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
+
+        let errorPipe = Pipe()
+        task.standardError = errorPipe
+        task.standardOutput = FileHandle.nullDevice
+        do {
+            try task.run()
+        } catch {
+            return "Couldn't run tailscale. Make sure Tailscale is installed."
+        }
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        if task.terminationStatus == 0 { return nil }
+        let message = String(data: errorData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let message, !message.isEmpty {
+            return message
+        }
+        return "tailscale serve did not start. Try running it in Terminal (see the guide)."
     }
 
     // `tailscale serve status --json` reports a Web handler map keyed by "<host>:<port>", each with

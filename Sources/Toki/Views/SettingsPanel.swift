@@ -681,20 +681,55 @@ struct SettingsPanel: View {
     @ViewBuilder
     private var tailscaleReadinessRow: some View {
         let ready = remoteServer.tailscaleServeReady
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: ready == true ? "checkmark.circle.fill"
-                : ready == false ? "exclamationmark.triangle.fill" : "ellipsis.circle")
-                .foregroundStyle(ready == true ? Color.green
-                    : ready == false ? Color.orange : Color.secondary)
-            Text(ready == true
-                ? "Reachable from your phone."
-                : ready == false
-                    ? "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet. See the setup guide next to Host."
-                    : "Checking whether your phone can reach this Mac…")
-                .foregroundStyle(ready == false ? Color.orange : Color.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: ready == true ? "checkmark.circle.fill"
+                    : ready == false ? "exclamationmark.triangle.fill" : "ellipsis.circle")
+                    .foregroundStyle(ready == true ? Color.green
+                        : ready == false ? Color.orange : Color.secondary)
+                Text(ready == true
+                    ? "Reachable from your phone."
+                    : ready == false
+                        ? "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet."
+                        : "Checking whether your phone can reach this Mac…")
+                    .foregroundStyle(ready == false ? Color.orange : Color.secondary)
+            }
+            .font(.system(size: 11))
+            .fixedSize(horizontal: false, vertical: true)
+
+            if ready == false {
+                HStack(spacing: 8) {
+                    Button {
+                        remoteServer.enableTailscaleServe()
+                    } label: {
+                        if remoteServer.isEnablingServe {
+                            HStack(spacing: 5) {
+                                ProgressView().controlSize(.small).scaleEffect(0.7)
+                                Text("Enabling…")
+                            }
+                        } else {
+                            Text("Enable HTTPS access")
+                        }
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .disabled(remoteServer.isEnablingServe)
+                    .help("Run tailscale serve so your phone can reach this Mac over HTTPS")
+                    .pointerOnHover()
+
+                    Text("or set it up by hand with the guide next to Host.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let error = remoteServer.serveSetupError {
+                    Text("Couldn't enable it automatically: \(error) You may need to run the command in Terminal (see the guide).")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
-        .font(.system(size: 11))
-        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 4)
     }
 
@@ -796,7 +831,7 @@ private extension View {
 private struct TailscaleSetupGuide: View {
     let port: Int
 
-    private var serveCommand: String { "tailscale serve --bg 443 http://127.0.0.1:\(port)" }
+    private var serveCommand: String { "tailscale serve --bg http://127.0.0.1:\(port)" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
