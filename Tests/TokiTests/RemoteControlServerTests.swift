@@ -159,4 +159,29 @@ final class RemoteControlServerTests: XCTestCase {
 
         XCTAssertNil(url)
     }
+
+    func testServeReadyDetectsHandlerForOurPort() {
+        let json = """
+        {"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """
+        XCTAssertTrue(RemoteControlServer.serveReady(from: Data(json.utf8), port: 8765))
+    }
+
+    func testServeReadyFalseForDifferentPort() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}
+        """
+        XCTAssertFalse(RemoteControlServer.serveReady(from: Data(json.utf8), port: 8765))
+    }
+
+    func testServeReadyFalseWhenNotServedOn443() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """
+        XCTAssertFalse(RemoteControlServer.serveReady(from: Data(json.utf8), port: 8765))
+    }
+
+    func testServeReadyFalseForEmptyConfig() {
+        XCTAssertFalse(RemoteControlServer.serveReady(from: Data("{}".utf8), port: 8765))
+    }
 }

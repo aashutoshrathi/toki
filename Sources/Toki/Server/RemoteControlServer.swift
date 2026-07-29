@@ -69,6 +69,9 @@ final class RemoteControlServer: ObservableObject {
     @Published private(set) var pairingCode: String?
     @Published private(set) var lastError: String?
     @Published private(set) var tailscaleDNSName: String?
+    // nil until the first check completes; true when `tailscale serve` fronts our port on 443,
+    // so the hosted Toki RC UI can actually reach this Mac from a phone.
+    @Published private(set) var tailscaleServeReady: Bool?
 
     @Published var hostMode: HostMode = .localhost {
         didSet {
@@ -249,6 +252,7 @@ final class RemoteControlServer: ObservableObject {
         process = task
         inputPipe = input
         isRunning = true
+        refreshTailscaleStatus()
         sendActiveAgentSnapshot()
     }
 
@@ -370,31 +374,34 @@ final class RemoteControlServer: ObservableObject {
         !host.isEmpty && host.lowercased().hasSuffix(".ts.net")
     }
 
-    private func refreshTailscaleStatus() {
+    func refreshTailscaleStatus() {
+        let checkPort = port
         Task {
-            let name = await Task.detached(priority: .utility) {
-                Self.readTailscaleDNSName()
+            let result = await Task.detached(priority: .utility) {
+                (name: Self.readTailscaleDNSName(), serve: Self.readTailscaleServeReady(port: checkPort))
             }.value
-            tailscaleDNSName = name
+            tailscaleDNSName = result.name
+            tailscaleServeReady = result.serve
         }
     }
 
-    private nonisolated static func readTailscaleDNSName() -> String? {
+    private nonisolated static func tailscaleExecutable() -> URL {
         let candidates = [
             "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
             "/opt/homebrew/bin/tailscale",
             "/usr/local/bin/tailscale"
         ]
-        let executable = candidates.first(where: FileManager.default.isExecutableFile(atPath:))
-
-        let task = Process()
-        if let executable {
-            task.executableURL = URL(fileURLWithPath: executable)
-            task.arguments = ["status", "--json"]
-        } else {
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            task.arguments = ["tailscale", "status", "--json"]
+        if let path = candidates.first(where: FileManager.default.isExecutableFile(atPath:)) {
+            return URL(fileURLWithPath: path)
         }
+        return URL(fileURLWithPath: "/usr/bin/env")
+    }
+
+    private nonisolated static func runTailscale(_ arguments: [String]) -> Data? {
+        let executable = tailscaleExecutable()
+        let task = Process()
+        task.executableURL = executable
+        task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
 
         let output = Pipe()
         task.standardOutput = output
@@ -407,7 +414,47 @@ final class RemoteControlServer: ObservableObject {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         task.waitUntilExit()
         guard task.terminationStatus == 0 else { return nil }
+        return data
+    }
+
+    private nonisolated static func readTailscaleDNSName() -> String? {
+        guard let data = runTailscale(["status", "--json"]) else { return nil }
         return tailscaleDNSName(from: data)
+    }
+
+    private nonisolated static func readTailscaleServeReady(port: Int) -> Bool {
+        guard let data = runTailscale(["serve", "status", "--json"]) else { return false }
+        return serveReady(from: data, port: port)
+    }
+
+    // `tailscale serve status --json` reports a Web handler map keyed by "<host>:<port>", each with
+    // a Proxy target. Ready means a :443 handler forwards to our loopback port.
+    nonisolated static func serveReady(from data: Data, port: Int) -> Bool {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let root = object as? [String: Any],
+            let web = root["Web"] as? [String: Any]
+        else {
+            return false
+        }
+        let needle = "127.0.0.1:\(port)"
+        for (hostPort, value) in web {
+            guard
+                hostPort.hasSuffix(":443"),
+                let entry = value as? [String: Any],
+                let handlers = entry["Handlers"] as? [String: Any]
+            else {
+                continue
+            }
+            for handler in handlers.values {
+                if let handler = handler as? [String: Any],
+                   let proxy = handler["Proxy"] as? String,
+                   proxy.contains(needle) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private static func isTailscaleAddress(_ ip: String) -> Bool {
