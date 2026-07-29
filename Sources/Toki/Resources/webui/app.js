@@ -3,7 +3,8 @@
 const PARAMS=new URLSearchParams(location.hash.slice(1)||location.search);
 const LINK_TOKEN=PARAMS.get("token")||"";
 const REMOTE_HOST=PARAMS.get("host")||"";
-const API_BASE=REMOTE_HOST?remoteAPIBase(REMOTE_HOST):"";
+let API_BASE="",CONFIG_ERROR="";
+try{API_BASE=REMOTE_HOST?remoteAPIBase(REMOTE_HOST):""}catch(e){CONFIG_ERROR=e.message}
 function remoteAPIBase(host){
   if(!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.ts\.net$/i.test(host))
     throw new Error("Invalid Tailscale host");
@@ -20,7 +21,19 @@ async function api(p,o){const url=API_BASE+p+(p.includes("?")?"&":"?")+"token="+
   if(!r.ok)throw new Error(await r.text());return r.json()}
 function lockApp(){
   TOKEN="";try{sessionStorage.removeItem(SESSION_KEY)}catch(e){}
-  document.body.classList.add("locked");$("#paircode").focus();
+  document.body.classList.add("locked");
+  $("#paircontrols").hidden=false;
+  $("#pairtitle").textContent="Verify this device";
+  $("#pairinstructions").textContent="Enter the six-digit code shown by Toki on your Mac.";
+  $("#paircode").focus();
+}
+function invalidLink(message){
+  TOKEN="";try{sessionStorage.removeItem(SESSION_KEY)}catch(e){}
+  document.body.classList.add("locked");
+  $("#pairtitle").textContent="Open a new link from Toki";
+  $("#pairinstructions").textContent=message;
+  $("#paircontrols").hidden=true;
+  $("#pairstatus").textContent="";
 }
 let started=false;
 function pollAgents(){if(TOKEN)refreshAgents().catch(()=>{})}
@@ -41,7 +54,14 @@ $("#pairform").addEventListener("submit",async e=>{
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})
     });
     const body=await r.json();
-    if(!r.ok)throw new Error(body.error||"verification failed");
+    if(!r.ok){
+      if(body.error=="bad link token"){
+        invalidLink("This Remote Control link is invalid or expired. Open Connect in Toki and use its latest link.");
+        return;
+      }
+      if(body.error=="incorrect verification code")throw new Error("That code is incorrect or has rotated. Check the current code in Toki and try again.");
+      throw new Error(body.error||"verification failed");
+    }
     TOKEN=body.token;try{sessionStorage.setItem(SESSION_KEY,TOKEN)}catch(e){}
     $("#pairstatus").textContent="";startApp();
   }catch(err){$("#pairstatus").textContent=err.message}
@@ -118,4 +138,6 @@ document.addEventListener("click",e=>{
 $("#msg").addEventListener("keydown",e=>{if(e.key=="Enter")$("#send").click()});
 $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElementById("dd").classList.toggle("open")});
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
-if(TOKEN)startApp();else lockApp();
+if(CONFIG_ERROR)invalidLink("This link has an invalid server address. Open Connect in Toki and use a new link.");
+else if(!LINK_TOKEN)invalidLink("This page needs a private link from Toki. Open Remote Control settings on your Mac, then choose Connect.");
+else if(TOKEN)startApp();else lockApp();

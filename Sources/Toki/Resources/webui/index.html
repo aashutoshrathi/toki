@@ -3,13 +3,16 @@
 <title>Remote Control</title><link rel="stylesheet" href="styles.css"></head><body class="locked">
 <div id="pairing">
   <form id="pairform">
-    <h2>Verify this device</h2>
-    <p>Enter the six-digit code shown by Toki on your Mac.</p>
-    <input id="paircode" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
-           autocomplete="one-time-code" placeholder="000 000" aria-label="Verification code">
-    <button type="submit">Connect</button>
+    <div class="pair-brand"><svg width="28" height="28" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="1024" height="1024" rx="232" fill="#181a1f"/><g transform="translate(0 6)"><path d="M268 245H704L682 282L704 319H268C248 319 232 303 232 282C232 261 248 245 268 245Z" fill="#f4f1ea"/><path d="M520 600L636 484" fill="none" stroke="#f4f1ea" stroke-width="74" stroke-linecap="round" stroke-linejoin="round"/><path d="M465 354H539V626C539 664 558 671 600 671H704L684 708L704 745H566C502 745 465 708 465 636Z" fill="#f4f1ea"/><circle cx="502" cy="282" r="96" fill="#f4f1ea"/><circle cx="502" cy="282" r="48" fill="#181a1f"/><circle cx="746" cy="282" r="39" fill="#9bb5a7"/><circle cx="636" cy="484" r="39" fill="#f4f1ea"/><circle cx="744" cy="708" r="38" fill="#d3a45c"/></g></svg><span>Toki Remote Control</span></div>
+    <h2 id="pairtitle">Verify this device</h2>
+    <p id="pairinstructions">Enter the six-digit code shown by Toki on your Mac.</p>
+    <div id="paircontrols">
+      <input id="paircode" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
+             autocomplete="one-time-code" placeholder="000 000" aria-label="Verification code">
+      <button type="submit">Connect</button>
+    </div>
     <div id="pairstatus"></div>
-    <small>The companion site only serves this interface. Your agent data stays on your Mac and travels directly over your network.</small>
+    <div class="privacy-note"><strong>Private by design</strong><span>This is a static interface that runs in your browser. After verification, it connects directly to Toki on your Mac. Toki RC does not receive or store your agent data.</span></div>
   </form>
 </div>
 <header><h1><svg width="24" height="24" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-label="Toki"><rect width="1024" height="1024" rx="232" fill="#181a1f"/><g transform="translate(0 6)"><path d="M268 245H704L682 282L704 319H268C248 319 232 303 232 282C232 261 248 245 268 245Z" fill="#f4f1ea"/><path d="M520 600L636 484" fill="none" stroke="#f4f1ea" stroke-width="74" stroke-linecap="round" stroke-linejoin="round"/><path d="M465 354H539V626C539 664 558 671 600 671H704L684 708L704 745H566C502 745 465 708 465 636Z" fill="#f4f1ea"/><circle cx="502" cy="282" r="96" fill="#f4f1ea"/><circle cx="502" cy="282" r="48" fill="#181a1f"/><circle cx="746" cy="282" r="39" fill="#9bb5a7"/><circle cx="636" cy="484" r="39" fill="#f4f1ea"/><circle cx="744" cy="708" r="38" fill="#d3a45c"/></g></svg>Remote Control</h1><div id="dd"><button id="ddbtn" type="button"></button><div id="ddlist"></div></div></header>
