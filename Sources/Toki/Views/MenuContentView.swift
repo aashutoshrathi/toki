@@ -3,8 +3,10 @@ import SwiftUI
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
+    @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var selectedTab: TokiTab = .accounts
     @State private var showConfig = false
+    @State private var focusRemoteControlSettings = false
     @State private var showChangelog = false
 
     private enum TokiTab: String, CaseIterable, Identifiable {
@@ -28,7 +30,13 @@ struct MenuContentView: View {
     var body: some View {
         Group {
             if showConfig {
-                ConfigPage(store: store, updateChecker: updateChecker) { showConfig = false }
+                ConfigPage(
+                    store: store,
+                    updateChecker: updateChecker,
+                    focusRemoteControl: focusRemoteControlSettings
+                ) {
+                    showConfig = false
+                }
             } else if showChangelog {
                 ChangelogPage { showChangelog = false }
             } else {
@@ -134,6 +142,34 @@ struct MenuContentView: View {
 
     private var headerControls: some View {
         HStack(spacing: 8) {
+            if remoteServer.isRunning {
+                Button {
+                    focusRemoteControlSettings = true
+                    showConfig = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.teal)
+                            .frame(width: 5, height: 5)
+                        Text("Remote")
+                    }
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.teal)
+                    .padding(.horizontal, 7)
+                    .frame(height: 28)
+                    .background(Color.teal.opacity(0.14), in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.teal.opacity(0.28), lineWidth: 1)
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Remote Control is on — open its Settings")
+                .accessibilityLabel("Remote Control is on. Open Remote Control Settings")
+                .pointerOnHover()
+            }
+
             HStack(spacing: 5) {
                 Button {
                     store.refresh(minimumRefreshInterval: 60)
@@ -179,6 +215,7 @@ struct MenuContentView: View {
 
             HStack(spacing: 5) {
                 Button {
+                    focusRemoteControlSettings = false
                     showConfig = true
                 } label: {
                     Image(systemName: "gearshape")

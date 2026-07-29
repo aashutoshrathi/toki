@@ -1,10 +1,15 @@
 import AppKit
 import SwiftUI
 
+private enum SettingsAnchor: Hashable {
+    case remoteControl
+}
+
 // Full-page settings/config view opened from the header gear (no longer a bottom tab).
 struct ConfigPage: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
+    var focusRemoteControl = false
     var onClose: () -> Void
 
     var body: some View {
@@ -27,7 +32,11 @@ struct ConfigPage: View {
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
             }
-            SettingsPanel(store: store, updateChecker: updateChecker)
+            SettingsPanel(
+                store: store,
+                updateChecker: updateChecker,
+                focusRemoteControl: focusRemoteControl
+            )
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -37,6 +46,7 @@ struct ConfigPage: View {
 struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
+    var focusRemoteControl = false
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
@@ -47,8 +57,9 @@ struct SettingsPanel: View {
     @State private var showingConnect = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         cardLabel(
@@ -108,9 +119,10 @@ struct SettingsPanel: View {
                 .padding(8)
                 .settingsCard()
 
-                remoteControlCard
+                    remoteControlCard
+                        .id(SettingsAnchor.remoteControl)
 
-                sectionHeader("General")
+                    sectionHeader("General")
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -359,6 +371,12 @@ struct SettingsPanel: View {
             .padding(8)
         }
         .frame(maxHeight: .infinity)
+        .onAppear {
+            guard focusRemoteControl else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(SettingsAnchor.remoteControl, anchor: .top)
+            }
+        }
         .onAppear(perform: resyncLaunchAtLoginFromSystem)
         // SMAppService's status can change out from under this view - e.g. the user
         // clicks "Open" above, approves the item in System Settings, then switches back
@@ -367,6 +385,7 @@ struct SettingsPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             resyncLaunchAtLoginFromSystem()
         }
+    }
     }
 
     // Status line shown as the App updates card's subtitle.
