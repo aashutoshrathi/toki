@@ -55,6 +55,7 @@ struct SettingsPanel: View {
 
     @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var showingConnect = false
+    @State private var showingTailscaleGuide = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -543,6 +544,22 @@ struct SettingsPanel: View {
                 .pickerStyle(.menu)
                 .controlSize(.small)
                 .fixedSize()
+                if remoteServer.hostMode == .tailscale || remoteServer.companionAppMode == .hosted {
+                    Button {
+                        showingTailscaleGuide = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("How to set up Tailscale so you can connect from anywhere")
+                    .accessibilityLabel("Tailscale setup guide")
+                    .pointerOnHover()
+                    .popover(isPresented: $showingTailscaleGuide, arrowEdge: .bottom) {
+                        TailscaleSetupGuide(port: remoteServer.port)
+                    }
+                }
                 if remoteServer.hostMode == .custom {
                     TextField("host or IP", text: $remoteServer.customHost)
                         .textFieldStyle(.roundedBorder)
@@ -737,5 +754,114 @@ private extension View {
             Divider()
                 .padding(.leading, 34)
         }
+    }
+}
+
+// One-time Tailscale setup so the hosted Toki RC interface can reach this Mac over HTTPS.
+// The hosted page is served over HTTPS and browsers block it from calling a plain-HTTP LAN
+// address, so a tailnet HTTPS host is required for the connect-from-anywhere path.
+private struct TailscaleSetupGuide: View {
+    let port: Int
+
+    private var serveCommand: String { "tailscale serve --bg 443 http://127.0.0.1:\(port)" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Connect from anywhere with Tailscale")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Tailscale gives this Mac a private HTTPS address your phone can reach from any network. It is a one-time setup.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            step(1, "Install Tailscale on this Mac and sign in.") {
+                guideLink("Download Tailscale", "https://tailscale.com/download/mac")
+            }
+            step(2, "In the admin console, turn on MagicDNS, then enable HTTPS Certificates.") {
+                guideLink("Open DNS settings", "https://login.tailscale.com/admin/dns")
+            }
+            step(3, "Give Toki an HTTPS address on your tailnet. Run this in Terminal:") {
+                commandRow
+            }
+            step(4, "Install Tailscale on your phone and sign into the same account.") {
+                guideLink("Get the mobile app", "https://tailscale.com/download")
+            }
+            step(5, "Back here, set Host to Tailscale and App to Toki RC, then open Connect.") {
+                EmptyView()
+            }
+
+            Divider()
+
+            Text("Your agent data never touches Toki RC. It travels directly between your phone and this Mac over your tailnet.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 12) {
+                guideLink("Enabling HTTPS", "https://tailscale.com/kb/1153/enabling-https")
+                guideLink("tailscale serve", "https://tailscale.com/kb/1242/tailscale-serve")
+            }
+        }
+        .padding(16)
+        .frame(width: 344, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func step<Accessory: View>(
+        _ number: Int,
+        _ text: String,
+        @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("\(number)")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 17, height: 17)
+                .background(Color.accentColor, in: Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                Text(text)
+                    .font(.system(size: 11))
+                    .fixedSize(horizontal: false, vertical: true)
+                accessory()
+            }
+        }
+    }
+
+    private var commandRow: some View {
+        HStack(spacing: 6) {
+            Text(serveCommand)
+                .font(.system(size: 10, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(serveCommand, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Copy command")
+            .accessibilityLabel("Copy the tailscale serve command")
+            .pointerOnHover()
+        }
+    }
+
+    private func guideLink(_ label: String, _ urlString: String) -> some View {
+        Link(destination: URL(string: urlString)!) {
+            HStack(spacing: 3) {
+                Text(label)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .font(.system(size: 11, weight: .medium))
+        }
+        .pointerOnHover()
     }
 }
