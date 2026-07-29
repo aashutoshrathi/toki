@@ -62,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = UsageStore()
     private let updateChecker = UpdateChecker()
 
+    func applicationWillTerminate(_ notification: Notification) {
+        RemoteControlServer.shared.stop()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         DiagnosticLogger.shared.record(.info, component: "app", code: "launched", detail: "version=\(appVersion)")
         NSApp.setActivationPolicy(.accessory)

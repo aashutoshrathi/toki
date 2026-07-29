@@ -43,6 +43,9 @@ struct SettingsPanel: View {
     @State private var launchAtLoginError: String?
     @State private var isEditingPrompt = false
 
+    @ObservedObject private var remoteServer = RemoteControlServer.shared
+    @State private var showingConnect = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
@@ -104,6 +107,8 @@ struct SettingsPanel: View {
                 }
                 .padding(8)
                 .settingsCard()
+
+                remoteControlCard
 
                 sectionHeader("General")
 
@@ -482,6 +487,109 @@ struct SettingsPanel: View {
         .settingsCard()
         .help("Replaces the menu bar item with a panel that hangs from the display notch")
         .pointerOnHover()
+    }
+
+    @ViewBuilder
+    private var remoteControlCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                cardLabel(
+                    icon: "antenna.radiowaves.left.and.right",
+                    iconColor: .teal,
+                    title: "Remote Control Server",
+                    subtitle: "Run a local server to check on and reply to your agents from your phone."
+                )
+                Spacer(minLength: 8)
+                Toggle("", isOn: Binding(
+                    get: { remoteServer.isRunning },
+                    set: { $0 ? remoteServer.start() : remoteServer.stop() }
+                ))
+                .accessibilityLabel("Remote Control Server")
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+
+            HStack(spacing: 8) {
+                Text("Host")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $remoteServer.hostMode) {
+                    ForEach(RemoteControlServer.HostMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                if remoteServer.hostMode == .custom {
+                    TextField("host or IP", text: $remoteServer.customHost)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+
+            if remoteServer.isRunning {
+                if let url = remoteServer.connectURL {
+                    HStack(spacing: 8) {
+                        Button {
+                            showingConnect = true
+                        } label: {
+                            Label("Connect", systemImage: "qrcode")
+                        }
+                        .controlSize(.small)
+                        .pointerOnHover()
+                        Text(url)
+                            .font(.system(size: 10).monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 0)
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy link")
+                        .pointerOnHover()
+                    }
+                    .padding(.horizontal, 4)
+                } else {
+                    Text(connectHint)
+                        .font(.system(size: 11))
+                        .foregroundStyle(remoteServer.hostMode == .localNetwork ? .orange : .secondary)
+                        .padding(.horizontal, 4)
+                }
+            }
+
+            if let error = remoteServer.lastError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+        }
+        .padding(8)
+        .settingsCard()
+        .sheet(isPresented: $showingConnect) {
+            RemoteConnectSheet()
+        }
+    }
+
+    private var connectHint: String {
+        if remoteServer.token == nil { return "Starting the server…" }
+        switch remoteServer.hostMode {
+        case .custom: return "Enter a host or IP to get a connect link."
+        case .localNetwork: return "No local network address found. Try Localhost or Custom."
+        case .localhost: return "Preparing the connect link…"
+        }
     }
 
     private func cardLabel(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
