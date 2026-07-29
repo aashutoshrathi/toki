@@ -1113,6 +1113,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("index.html", "text/html; charset=utf-8")
         if url.path == "/app.js":
             return self._static("app.js", "application/javascript; charset=utf-8")
+        if url.path == "/markdown.js":
+            return self._static("markdown.js", "application/javascript; charset=utf-8")
         if url.path == "/styles.css":
             return self._static("styles.css", "text/css; charset=utf-8")
         if not self._authed(q):
