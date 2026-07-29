@@ -184,4 +184,33 @@ final class RemoteControlServerTests: XCTestCase {
     func testServeReadyFalseForEmptyConfig() {
         XCTAssertFalse(RemoteControlServer.serveReady(from: Data("{}".utf8), port: 8765))
     }
+
+    func testParseTunnelHostFromCloudflaredOutput() {
+        let text = """
+        2026-07-29T10:00:00Z INF +----------------------------------------------------+
+        2026-07-29T10:00:00Z INF |  Your quick Tunnel has been created! Visit it at:   |
+        2026-07-29T10:00:00Z INF |  https://blue-green-fox-123.trycloudflare.com       |
+        2026-07-29T10:00:00Z INF +----------------------------------------------------+
+        """
+        XCTAssertEqual(
+            RemoteControlServer.parseTunnelHost(from: text),
+            "blue-green-fox-123.trycloudflare.com"
+        )
+    }
+
+    func testParseTunnelHostReturnsNilWithoutURL() {
+        XCTAssertNil(RemoteControlServer.parseTunnelHost(from: "2026-07-29 INF starting tunnel"))
+    }
+
+    func testTunnelHostBuildsHTTPSConnectURL() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .sameHost,
+            hostMode: .tunnel,
+            host: "blue-green-fox-123.trycloudflare.com",
+            localNetworkHost: nil,
+            token: "abc",
+            port: 8765
+        )
+        XCTAssertEqual(url, "https://blue-green-fox-123.trycloudflare.com/?token=abc")
+    }
 }

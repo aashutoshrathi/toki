@@ -745,6 +745,8 @@ struct SettingsPanel: View {
         case .custom: return "Enter a host or IP to get a connect link."
         case .localNetwork: return "No local network address found. Try Localhost or Custom."
         case .tailscale: return "No Tailscale DNS name found. Make sure Tailscale is running and MagicDNS is enabled."
+        case .tunnel:
+            return remoteServer.tunnelError ?? "Starting a Cloudflare tunnel… this can take a few seconds."
         case .localhost: return "Preparing the connect link…"
         }
     }
