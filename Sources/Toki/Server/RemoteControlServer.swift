@@ -12,6 +12,7 @@ final class RemoteControlServer: ObservableObject {
 
     enum HostMode: String, CaseIterable, Identifiable {
         case tailscale
+        case tunnel
         case localNetwork
         case localhost
         case custom
@@ -23,6 +24,7 @@ final class RemoteControlServer: ObservableObject {
             case .localhost: return "Localhost"
             case .localNetwork: return "Local network"
             case .tailscale: return "Tailscale (Recommended)"
+            case .tunnel: return "Cloudflare Tunnel"
             case .custom: return "Custom"
             }
         }
@@ -74,11 +76,22 @@ final class RemoteControlServer: ObservableObject {
     @Published private(set) var tailscaleServeReady: Bool?
     @Published private(set) var isEnablingServe = false
     @Published private(set) var serveSetupError: String?
+    // Public HTTPS address from a Cloudflare quick tunnel, when Host is Cloudflare Tunnel.
+    @Published private(set) var tunnelHost: String?
+    @Published private(set) var isStartingTunnel = false
+    @Published private(set) var tunnelError: String?
 
     @Published var hostMode: HostMode = .localhost {
         didSet {
+            guard hostMode != oldValue else { return }
             if hostMode == .tailscale {
                 refreshTailscaleStatus()
+            }
+            if oldValue == .tunnel {
+                stopTunnel()
+            }
+            if hostMode == .tunnel, isRunning {
+                startTunnel()
             }
         }
     }
@@ -92,6 +105,7 @@ final class RemoteControlServer: ObservableObject {
     private var inputPipe: Pipe?
     private var outputBuffer = ""
     private var activeAgents: [ActiveAgent] = []
+    private var tunnelProcess: Process?
 
     private init() {
         hostMode = Self.preferredHostMode(
@@ -109,6 +123,8 @@ final class RemoteControlServer: ObservableObject {
             return Self.localNetworkIP()
         case .tailscale:
             return tailscaleDNSName
+        case .tunnel:
+            return tunnelHost
         case .custom:
             let trimmed = customHost.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
@@ -117,12 +133,17 @@ final class RemoteControlServer: ObservableObject {
 
     var availableHostModes: [HostMode] {
         Self.orderedHostModes(
-            tailscaleAvailable: Self.tailscaleIP() != nil || tailscaleDNSName != nil
+            tailscaleAvailable: Self.tailscaleIP() != nil || tailscaleDNSName != nil,
+            cloudflaredAvailable: Self.cloudflaredExecutable() != nil
         )
     }
 
-    static func orderedHostModes(tailscaleAvailable: Bool) -> [HostMode] {
+    static func orderedHostModes(
+        tailscaleAvailable: Bool,
+        cloudflaredAvailable: Bool = false
+    ) -> [HostMode] {
         var modes: [HostMode] = [.localNetwork, .localhost, .custom]
+        if cloudflaredAvailable { modes.insert(.tunnel, at: 0) }
         if tailscaleAvailable { modes.insert(.tailscale, at: 0) }
         return modes
     }
@@ -159,10 +180,11 @@ final class RemoteControlServer: ObservableObject {
         switch companionAppMode {
         case .sameHost:
             guard let host else { return nil }
+            let isHTTPSHost = hostMode == .tailscale || hostMode == .tunnel
             return directConnectURL(
                 host: host,
-                scheme: hostMode == .tailscale ? "https" : "http",
-                port: hostMode == .tailscale ? nil : port,
+                scheme: isHTTPSHost ? "https" : "http",
+                port: isHTTPSHost ? nil : port,
                 token: token
             )
         case .localhost:
@@ -255,10 +277,12 @@ final class RemoteControlServer: ObservableObject {
         inputPipe = input
         isRunning = true
         refreshTailscaleStatus()
+        if hostMode == .tunnel { startTunnel() }
         sendActiveAgentSnapshot()
     }
 
     func stop() {
+        stopTunnel()
         guard let task = process else { return }
         task.terminationHandler = nil
         (task.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
@@ -474,6 +498,83 @@ final class RemoteControlServer: ObservableObject {
             return message
         }
         return "tailscale serve did not start. Try running it in Terminal (see the guide)."
+    }
+
+    // A Cloudflare quick tunnel gives this Mac a public HTTPS address with no account or DNS setup;
+    // the tunnel proxies to the same server, so the phone hits one origin (no mixed content, no CORS).
+    static func cloudflaredExecutable() -> URL? {
+        let candidates = ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared"]
+        if let path = candidates.first(where: FileManager.default.isExecutableFile(atPath:)) {
+            return URL(fileURLWithPath: path)
+        }
+        return nil
+    }
+
+    nonisolated static func parseTunnelHost(from text: String) -> String? {
+        guard let range = text.range(
+            of: #"https://[a-z0-9-]+\.trycloudflare\.com"#,
+            options: .regularExpression
+        ) else {
+            return nil
+        }
+        return URL(string: String(text[range]))?.host
+    }
+
+    func startTunnel() {
+        guard tunnelProcess == nil else { return }
+        guard let executable = Self.cloudflaredExecutable() else {
+            tunnelError = "cloudflared isn't installed. Install it with `brew install cloudflared`, then reopen this menu."
+            return
+        }
+        tunnelError = nil
+        tunnelHost = nil
+        isStartingTunnel = true
+
+        let task = Process()
+        task.executableURL = executable
+        task.arguments = ["tunnel", "--url", "http://127.0.0.1:\(port)"]
+        let output = Pipe()
+        task.standardOutput = output
+        task.standardError = output
+        output.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8),
+                  let host = Self.parseTunnelHost(from: text) else { return }
+            Task { @MainActor in
+                guard RemoteControlServer.shared.tunnelHost == nil else { return }
+                RemoteControlServer.shared.tunnelHost = host
+                RemoteControlServer.shared.isStartingTunnel = false
+            }
+        }
+        task.terminationHandler = { _ in
+            Task { @MainActor in
+                let server = RemoteControlServer.shared
+                server.tunnelProcess = nil
+                if server.tunnelHost == nil, server.hostMode == .tunnel, server.tunnelError == nil {
+                    server.tunnelError = "The Cloudflare tunnel stopped before it was ready."
+                }
+                server.tunnelHost = nil
+                server.isStartingTunnel = false
+            }
+        }
+        do {
+            try task.run()
+        } catch {
+            isStartingTunnel = false
+            tunnelError = "Couldn't launch cloudflared."
+            return
+        }
+        tunnelProcess = task
+    }
+
+    func stopTunnel() {
+        isStartingTunnel = false
+        tunnelHost = nil
+        guard let task = tunnelProcess else { return }
+        task.terminationHandler = nil
+        (task.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+        task.terminate()
+        tunnelProcess = nil
     }
 
     // `tailscale serve status --json` reports a Web handler map keyed by "<host>:<port>", each with
