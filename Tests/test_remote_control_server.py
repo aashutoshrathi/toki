@@ -103,6 +103,29 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         result = toki_remote.dedupe_agents(agents)
         self.assertEqual([agent["pid"] for agent in result], [11, 12])
 
+    def test_canonical_snapshot_filters_process_discovery(self):
+        processes = [
+            {"pid": 10, "ppid": 1, "provider": "codex", "command": "codex", "tty": None},
+            {"pid": 11, "ppid": 1, "provider": "codex", "command": "codex", "tty": None},
+        ]
+        snapshot = [
+            {
+                "pid": 11,
+                "provider": "codex",
+                "cwd": None,
+                "title": "The actual session",
+                "tty": None,
+            }
+        ]
+        with mock.patch.object(
+            toki_remote,
+            "newest_codex_session",
+            return_value="/tmp/session.jsonl",
+        ):
+            result = toki_remote.agents_from_snapshot(processes, snapshot)
+        self.assertEqual([agent["pid"] for agent in result], [11])
+        self.assertEqual(result[0]["title"], "The actual session")
+
 
 if __name__ == "__main__":
     unittest.main()

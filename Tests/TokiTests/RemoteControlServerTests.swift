@@ -12,6 +12,13 @@ final class RemoteControlServerTests: XCTestCase {
         )
     }
 
+    func testRemoteProviderNamesMatchServerProtocol() {
+        XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .codex), "codex")
+        XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .claudeCode), "claude")
+        XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .openCode), "opencode")
+        XCTAssertNil(RemoteControlServer.remoteProviderName(for: .cursor))
+    }
+
     func testSessionLifetimeDefaultsAndStopsAtTwoDays() {
         XCTAssertEqual(
             RemoteControlServer.SessionLifetime.twelveHours.label,

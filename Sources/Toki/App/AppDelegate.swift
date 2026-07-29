@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task { @MainActor in
             for await agents in store.$activeAgents.values {
                 agentsAwaitingInput = agents.filter(\.needsInput).count
+                RemoteControlServer.shared.updateActiveAgents(agents)
                 updateStatusItem()
             }
         }

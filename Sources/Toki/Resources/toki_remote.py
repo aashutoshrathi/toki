@@ -39,6 +39,7 @@ import re
 import secrets
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -47,6 +48,8 @@ from urllib.parse import parse_qs, urlparse
 HOME = os.path.expanduser("~")
 QUIET_PERIOD = 10.0  # seconds; same reasoning as Toki's attentionQuietPeriod
 AUTO_ACCEPTED_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+CANONICAL_AGENTS = None
+CANONICAL_AGENTS_LOCK = threading.Lock()
 
 # ============================================================ QR (byte mode,
 # EC level L, versions 1-10, mask 0; verified against cv2.QRCodeDetector)
@@ -293,6 +296,11 @@ def discover_agents():
             "tty": None if tty in ("??", "?", "-") else tty,
             "etime": etime, "command": command,
         })
+    with CANONICAL_AGENTS_LOCK:
+        canonical = None if CANONICAL_AGENTS is None else list(CANONICAL_AGENTS)
+    if canonical is not None:
+        return agents_from_snapshot(rows, canonical)
+
     pids = {r["pid"] for r in rows}
     roots = [r for r in rows if r["ppid"] not in pids]
     for r in roots:
@@ -304,6 +312,43 @@ def discover_agents():
         else:
             r["session"] = newest_opencode_session(r["command"], r["cwd"])
     return dedupe_agents(roots)
+
+
+def agents_from_snapshot(processes, snapshot):
+    """Enrich only the agents Toki's canonical scanner says are active."""
+    by_pid = {process["pid"]: process for process in processes}
+    result = []
+    for item in snapshot:
+        process = by_pid.get(item.get("pid"))
+        if not process:
+            continue
+        agent = dict(process)
+        agent["provider"] = item.get("provider") or agent["provider"]
+        agent["cwd"] = item.get("cwd")
+        agent["tty"] = item.get("tty")
+        agent["title"] = item.get("title")
+        if agent["provider"] == "claude":
+            agent["session"] = newest_claude_session(agent["command"], agent["cwd"])
+        elif agent["provider"] == "codex":
+            agent["session"] = newest_codex_session(agent["command"], agent["cwd"])
+        else:
+            agent["session"] = newest_opencode_session(agent["command"], agent["cwd"])
+        result.append(agent)
+    return result
+
+
+def read_agent_snapshots():
+    global CANONICAL_AGENTS
+    for line in sys.stdin:
+        try:
+            payload = json.loads(line)
+            agents = payload.get("agents")
+            if not isinstance(agents, list):
+                continue
+        except (ValueError, AttributeError):
+            continue
+        with CANONICAL_AGENTS_LOCK:
+            CANONICAL_AGENTS = agents
 
 
 def dedupe_agents(agents):
@@ -1088,7 +1133,7 @@ class Handler(BaseHTTPRequestHandler):
                 result.append({
                     "pid": a["pid"], "tty": a["tty"], "cwd": a["cwd"],
                     "provider": a["provider"],
-                    "title": chat_title(a["provider"], a["session"], a["cwd"]),
+                    "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,
                 })
             self._json(result)
@@ -1171,14 +1216,18 @@ def local_ipv4s():
 
 
 def main():
-    global SESSION_TTL
+    global CANONICAL_AGENTS, SESSION_TTL
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--session-ttl", type=int, choices=SESSION_TTL_CHOICES, default=SESSION_TTL)
+    ap.add_argument("--agent-snapshot-stdin", action="store_true")
     ap.add_argument("--no-qr", action="store_true")
     args = ap.parse_args()
     SESSION_TTL = args.session_ttl
+    if args.agent_snapshot_stdin:
+        CANONICAL_AGENTS = []
+        threading.Thread(target=read_agent_snapshots, daemon=True).start()
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
 
     ips = local_ipv4s()

@@ -84,7 +84,9 @@ final class RemoteControlServer: ObservableObject {
     let port = 8765
 
     private var process: Process?
+    private var inputPipe: Pipe?
     private var outputBuffer = ""
+    private var activeAgents: [ActiveAgent] = []
 
     private init() {
         hostMode = Self.preferredHostMode(
@@ -215,6 +217,7 @@ final class RemoteControlServer: ObservableObject {
             "python3", "-u", script.path,
             "--port", "\(port)",
             "--session-ttl", "\(sessionLifetime.rawValue)",
+            "--agent-snapshot-stdin",
             "--no-qr"
         ]
         var environment = ProcessInfo.processInfo.environment
@@ -222,6 +225,8 @@ final class RemoteControlServer: ObservableObject {
         task.environment = environment
 
         let output = Pipe()
+        let input = Pipe()
+        task.standardInput = input
         task.standardOutput = output
         task.standardError = output
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -242,7 +247,9 @@ final class RemoteControlServer: ObservableObject {
         }
 
         process = task
+        inputPipe = input
         isRunning = true
+        sendActiveAgentSnapshot()
     }
 
     func stop() {
@@ -251,10 +258,51 @@ final class RemoteControlServer: ObservableObject {
         (task.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
         task.terminate()
         process = nil
+        inputPipe = nil
         isRunning = false
         token = nil
         pairingCode = nil
         outputBuffer = ""
+    }
+
+    func updateActiveAgents(_ agents: [ActiveAgent]) {
+        activeAgents = agents
+        sendActiveAgentSnapshot()
+    }
+
+    static func remoteProviderName(for provider: Provider) -> String? {
+        switch provider {
+        case .codex:
+            return "codex"
+        case .claudeCode:
+            return "claude"
+        case .openCode:
+            return "opencode"
+        default:
+            return nil
+        }
+    }
+
+    private func sendActiveAgentSnapshot() {
+        guard isRunning, let inputPipe else { return }
+        let agents = activeAgents.compactMap { agent -> [String: Any]? in
+            guard let provider = Self.remoteProviderName(for: agent.provider) else { return nil }
+            return [
+                "pid": agent.processID,
+                "provider": provider,
+                "cwd": agent.directory.map { $0 as Any } ?? NSNull(),
+                "title": agent.title,
+                "tty": agent.terminalTTY.map { $0 as Any } ?? NSNull()
+            ]
+        }
+        guard
+            let data = try? JSONSerialization.data(withJSONObject: ["agents": agents]),
+            var line = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        line.append("\n")
+        try? inputPipe.fileHandleForWriting.write(contentsOf: Data(line.utf8))
     }
 
     private func parseOutput(_ text: String) {
@@ -283,6 +331,7 @@ final class RemoteControlServer: ObservableObject {
 
     private func handleTermination(status: Int32) {
         process = nil
+        inputPipe = nil
         isRunning = false
         token = nil
         pairingCode = nil
