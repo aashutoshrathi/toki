@@ -12,6 +12,7 @@ final class RemoteControlServer: ObservableObject {
     enum HostMode: String, CaseIterable, Identifiable {
         case localhost
         case localNetwork
+        case tailscale
         case custom
 
         var id: String { rawValue }
@@ -20,6 +21,7 @@ final class RemoteControlServer: ObservableObject {
             switch self {
             case .localhost: return "Localhost"
             case .localNetwork: return "Local network"
+            case .tailscale: return "Tailscale"
             case .custom: return "Custom"
             }
         }
@@ -44,10 +46,19 @@ final class RemoteControlServer: ObservableObject {
             return "localhost"
         case .localNetwork:
             return Self.localNetworkIP()
+        case .tailscale:
+            return Self.tailscaleIP()
         case .custom:
             let trimmed = customHost.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         }
+    }
+
+    var availableHostModes: [HostMode] {
+        var modes: [HostMode] = [.localhost, .localNetwork]
+        if Self.tailscaleIP() != nil { modes.append(.tailscale) }
+        modes.append(.custom)
+        return modes
     }
 
     var connectURL: String? {
@@ -126,11 +137,26 @@ final class RemoteControlServer: ObservableObject {
     }
 
     static func localNetworkIP() -> String? {
+        let addresses = interfaceIPv4Addresses().filter { !isTailscaleAddress($0.ip) }
+        if let en0 = addresses.first(where: { $0.name == "en0" }) { return en0.ip }
+        return addresses.first?.ip
+    }
+
+    static func tailscaleIP() -> String? {
+        interfaceIPv4Addresses().first { isTailscaleAddress($0.ip) }?.ip
+    }
+
+    private static func isTailscaleAddress(_ ip: String) -> Bool {
+        let parts = ip.split(separator: ".").compactMap { Int($0) }
+        return parts.count == 4 && parts[0] == 100 && (64...127).contains(parts[1])
+    }
+
+    private static func interfaceIPv4Addresses() -> [(name: String, ip: String)] {
         var pointer: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&pointer) == 0, let first = pointer else { return nil }
+        guard getifaddrs(&pointer) == 0, let first = pointer else { return [] }
         defer { freeifaddrs(pointer) }
 
-        var fallback: String?
+        var result: [(name: String, ip: String)] = []
         for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
             let interface = ptr.pointee
             guard let addr = interface.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else { continue }
@@ -139,12 +165,9 @@ final class RemoteControlServer: ObservableObject {
 
             var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             guard getnameinfo(addr, socklen_t(addr.pointee.sa_len), &hostBuffer, socklen_t(hostBuffer.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
-            let ip = String(cString: hostBuffer)
-            let name = String(cString: interface.ifa_name)
-            if name == "en0" { return ip }
-            if fallback == nil { fallback = ip }
+            result.append((String(cString: interface.ifa_name), String(cString: hostBuffer)))
         }
-        return fallback
+        return result
     }
 
     static func qrImage(for string: String, scale: CGFloat = 10) -> NSImage? {

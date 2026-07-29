@@ -515,7 +515,7 @@ struct SettingsPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Picker("", selection: $remoteServer.hostMode) {
-                    ForEach(RemoteControlServer.HostMode.allCases) { mode in
+                    ForEach(remoteServer.availableHostModes) { mode in
                         Text(mode.label).tag(mode)
                     }
                 }
@@ -529,43 +529,23 @@ struct SettingsPanel: View {
                         .controlSize(.small)
                 }
                 Spacer(minLength: 0)
+                if remoteServer.isRunning, remoteServer.connectURL != nil {
+                    Button {
+                        showingConnect = true
+                    } label: {
+                        Label("Connect", systemImage: "qrcode")
+                    }
+                    .controlSize(.small)
+                    .pointerOnHover()
+                }
             }
             .padding(.horizontal, 4)
 
-            if remoteServer.isRunning {
-                if let url = remoteServer.connectURL {
-                    HStack(spacing: 8) {
-                        Button {
-                            showingConnect = true
-                        } label: {
-                            Label("Connect", systemImage: "qrcode")
-                        }
-                        .controlSize(.small)
-                        .pointerOnHover()
-                        Text(url)
-                            .font(.system(size: 10).monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer(minLength: 0)
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(url, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Copy link")
-                        .pointerOnHover()
-                    }
+            if remoteServer.isRunning, remoteServer.connectURL == nil {
+                Text(connectHint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(remoteServer.hostMode == .localNetwork ? .orange : .secondary)
                     .padding(.horizontal, 4)
-                } else {
-                    Text(connectHint)
-                        .font(.system(size: 11))
-                        .foregroundStyle(remoteServer.hostMode == .localNetwork ? .orange : .secondary)
-                        .padding(.horizontal, 4)
-                }
             }
 
             if let error = remoteServer.lastError {
@@ -588,6 +568,7 @@ struct SettingsPanel: View {
         switch remoteServer.hostMode {
         case .custom: return "Enter a host or IP to get a connect link."
         case .localNetwork: return "No local network address found. Try Localhost or Custom."
+        case .tailscale: return "No Tailscale address found. Try Local network or Custom."
         case .localhost: return "Preparing the connect link…"
         }
     }
