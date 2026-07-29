@@ -52,6 +52,12 @@ struct RemoteConnectSheet: View {
                     Button("Done") { dismiss() }
                         .keyboardShortcut(.defaultAction)
                 }
+
+                Button("Stop Remote Control", role: .destructive) {
+                    server.stop()
+                    dismiss()
+                }
+                .help("Stop the server and invalidate this link and every connected session")
             } else {
                 Text("The server isn't reachable at this address right now.")
                     .font(.callout)

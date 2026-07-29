@@ -555,6 +555,14 @@ struct SettingsPanel: View {
                     .controlSize(.small)
                     .pointerOnHover()
                 }
+                if remoteServer.isRunning {
+                    Button("Stop", role: .destructive) {
+                        remoteServer.stop()
+                    }
+                    .controlSize(.small)
+                    .help("Stop Remote Control and invalidate every connected session")
+                    .pointerOnHover()
+                }
             }
             .padding(.horizontal, 4)
 
