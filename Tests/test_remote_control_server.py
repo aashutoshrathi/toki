@@ -1,0 +1,135 @@
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest import mock
+
+
+SCRIPT = Path(__file__).parents[1] / "Sources" / "Toki" / "Resources" / "toki_remote.py"
+SPEC = importlib.util.spec_from_file_location("toki_remote", SCRIPT)
+toki_remote = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(toki_remote)
+
+
+class RemoteControlTitleTests(unittest.TestCase):
+    def setUp(self):
+        toki_remote._title_cache.clear()
+
+    def test_recommended_plugins_message_is_not_user_text(self):
+        text = "<recommended_plugins>\n- Example plugin\n</recommended_plugins>"
+        self.assertIsNone(toki_remote.clean_user_text(text))
+
+    def test_agents_instructions_are_not_user_text(self):
+        text = "# AGENTS.md instructions\n\n<INSTRUCTIONS>\n@RTK.md\n</INSTRUCTIONS>"
+        self.assertIsNone(toki_remote.clean_user_text(text))
+
+    def test_codex_file_envelope_keeps_only_the_actual_request(self):
+        text = (
+            "# Files mentioned by the user:\n\n"
+            "## screenshot.png\n\n"
+            "## My request for Codex:\n"
+            "Fix the duplicate chat names"
+        )
+        self.assertEqual(
+            toki_remote.clean_user_text(text),
+            "Fix the duplicate chat names",
+        )
+
+    def test_codex_title_skips_recommended_plugins_message(self):
+        entries = [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "<recommended_plugins>noise</recommended_plugins>"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "Fix the remote control title"}],
+                },
+            },
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+            for entry in entries:
+                transcript.write(json.dumps(entry) + "\n")
+            transcript.flush()
+            self.assertEqual(
+                toki_remote.chat_title("codex", transcript.name, "/tmp/toki"),
+                "Fix the remote control title",
+            )
+
+    def test_claude_title_rejects_harness_generated_ai_title(self):
+        entries = [
+            {"aiTitle": "<recommended_plugins> noise"},
+            {
+                "type": "user",
+                "message": {
+                    "content": "Use the actual request",
+                },
+            },
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+            for entry in entries:
+                transcript.write(json.dumps(entry) + "\n")
+            transcript.flush()
+            self.assertEqual(
+                toki_remote.chat_title("claude", transcript.name, "/tmp/toki"),
+                "Use the actual request",
+            )
+
+
+class RemoteControlPairingTests(unittest.TestCase):
+    def test_pairing_code_rotation_interval_is_two_minutes(self):
+        self.assertEqual(toki_remote.PAIRING_CODE_TTL, 2 * 60)
+
+    def test_pairing_code_is_always_six_digits(self):
+        with mock.patch.object(toki_remote.secrets, "randbelow", return_value=42):
+            self.assertEqual(toki_remote.new_pairing_code(), "000042")
+
+
+class RemoteControlAgentDiscoveryTests(unittest.TestCase):
+    def test_agents_resolving_to_same_session_are_collapsed(self):
+        agents = [
+            {"pid": 10, "provider": "codex", "session": "/tmp/session.jsonl", "tty": None},
+            {"pid": 11, "provider": "codex", "session": "/tmp/session.jsonl", "tty": "ttys001"},
+            {"pid": 12, "provider": "codex", "session": "/tmp/other.jsonl", "tty": "ttys002"},
+        ]
+        result = toki_remote.dedupe_agents(agents)
+        self.assertEqual([agent["pid"] for agent in result], [11, 12])
+
+    def test_canonical_snapshot_filters_process_discovery(self):
+        processes = [
+            {"pid": 10, "ppid": 1, "provider": "codex", "command": "codex", "tty": None},
+            {"pid": 11, "ppid": 1, "provider": "codex", "command": "codex", "tty": None},
+        ]
+        snapshot = [
+            {
+                "pid": 11,
+                "provider": "codex",
+                "cwd": None,
+                "title": "The actual session",
+                "tty": None,
+            }
+        ]
+        with mock.patch.object(
+            toki_remote,
+            "newest_codex_session",
+            return_value="/tmp/session.jsonl",
+        ):
+            result = toki_remote.agents_from_snapshot(processes, snapshot)
+        self.assertEqual([agent["pid"] for agent in result], [11])
+        self.assertEqual(result[0]["title"], "The actual session")
+
+    def test_non_terminal_agent_is_read_only(self):
+        self.assertFalse(toki_remote.agent_is_writable({"tty": None}))
+        self.assertTrue(toki_remote.agent_is_writable({"tty": "ttys001"}))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,10 +1,15 @@
 import AppKit
 import SwiftUI
 
+private enum SettingsAnchor: Hashable {
+    case remoteControl
+}
+
 // Full-page settings/config view opened from the header gear (no longer a bottom tab).
 struct ConfigPage: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
+    var focusRemoteControl = false
     var onClose: () -> Void
 
     var body: some View {
@@ -27,7 +32,11 @@ struct ConfigPage: View {
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
             }
-            SettingsPanel(store: store, updateChecker: updateChecker)
+            SettingsPanel(
+                store: store,
+                updateChecker: updateChecker,
+                focusRemoteControl: focusRemoteControl
+            )
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -37,15 +46,20 @@ struct ConfigPage: View {
 struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
+    var focusRemoteControl = false
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     @State private var launchAtLoginError: String?
     @State private var isEditingPrompt = false
 
+    @ObservedObject private var remoteServer = RemoteControlServer.shared
+    @State private var showingConnect = false
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         cardLabel(
@@ -105,7 +119,10 @@ struct SettingsPanel: View {
                 .padding(8)
                 .settingsCard()
 
-                sectionHeader("General")
+                    remoteControlCard
+                        .id(SettingsAnchor.remoteControl)
+
+                    sectionHeader("General")
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -354,6 +371,12 @@ struct SettingsPanel: View {
             .padding(8)
         }
         .frame(maxHeight: .infinity)
+        .onAppear {
+            guard focusRemoteControl else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(SettingsAnchor.remoteControl, anchor: .top)
+            }
+        }
         .onAppear(perform: resyncLaunchAtLoginFromSystem)
         // SMAppService's status can change out from under this view - e.g. the user
         // clicks "Open" above, approves the item in System Settings, then switches back
@@ -362,6 +385,7 @@ struct SettingsPanel: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             resyncLaunchAtLoginFromSystem()
         }
+    }
     }
 
     // Status line shown as the App updates card's subtitle.
@@ -482,6 +506,162 @@ struct SettingsPanel: View {
         .settingsCard()
         .help("Replaces the menu bar item with a panel that hangs from the display notch")
         .pointerOnHover()
+    }
+
+    @ViewBuilder
+    private var remoteControlCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                cardLabel(
+                    icon: "antenna.radiowaves.left.and.right",
+                    iconColor: .teal,
+                    title: "Remote Control Server",
+                    subtitle: "Run a local server to check on and reply to your agents from your phone."
+                )
+                Spacer(minLength: 8)
+                Toggle("", isOn: Binding(
+                    get: { remoteServer.isRunning },
+                    set: { $0 ? remoteServer.start() : remoteServer.stop() }
+                ))
+                .accessibilityLabel("Remote Control Server")
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+
+            HStack(spacing: 8) {
+                Text("Host")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 48, alignment: .leading)
+                Picker("", selection: $remoteServer.hostMode) {
+                    ForEach(remoteServer.availableHostModes) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                if remoteServer.hostMode == .custom {
+                    TextField("host or IP", text: $remoteServer.customHost)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+
+            HStack(spacing: 8) {
+                Text("App")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 48, alignment: .leading)
+                Picker("", selection: $remoteServer.companionAppMode) {
+                    ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+
+            HStack(spacing: 8) {
+                Text("Session")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 48, alignment: .leading)
+                Picker("", selection: $remoteServer.sessionLifetime) {
+                    ForEach(RemoteControlServer.SessionLifetime.allCases) { lifetime in
+                        Text(lifetime.label).tag(lifetime)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(remoteServer.isRunning)
+                .help(remoteServer.isRunning
+                    ? "Stop Remote Control to change the session lifetime"
+                    : "How long a verified device stays connected")
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+
+            if remoteServer.isRunning {
+                HStack(spacing: 8) {
+                    if remoteServer.connectURL != nil {
+                        Button {
+                            showingConnect = true
+                        } label: {
+                            Label("Connect", systemImage: "qrcode")
+                        }
+                        .controlSize(.small)
+                        .fixedSize()
+                        .pointerOnHover()
+                    }
+
+                    Button("Stop", role: .destructive) {
+                        remoteServer.stop()
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("Stop Remote Control and invalidate every connected session")
+                    .pointerOnHover()
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 4)
+            }
+
+            if remoteServer.companionAppMode == .hosted {
+                Text("Toki RC only serves the interface. Agent data stays on this Mac and travels directly over your tailnet.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+
+            if remoteServer.isRunning, remoteServer.connectURL == nil {
+                Text(connectHint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(remoteServer.hostMode == .localNetwork ? .orange : .secondary)
+                    .padding(.horizontal, 4)
+            }
+
+            if let error = remoteServer.lastError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+        }
+        .padding(8)
+        .settingsCard()
+        .sheet(isPresented: $showingConnect) {
+            RemoteConnectSheet()
+        }
+    }
+
+    private var connectHint: String {
+        if remoteServer.token == nil { return "Starting the server…" }
+        if remoteServer.companionAppMode == .hosted {
+            return "Toki RC requires a Tailscale DNS host with HTTPS Serve enabled."
+        }
+        if remoteServer.companionAppMode == .localNetwork {
+            return "No local network address found. Try Localhost or Same as host."
+        }
+        switch remoteServer.hostMode {
+        case .custom: return "Enter a host or IP to get a connect link."
+        case .localNetwork: return "No local network address found. Try Localhost or Custom."
+        case .tailscale: return "No Tailscale DNS name found. Make sure Tailscale is running and MagicDNS is enabled."
+        case .localhost: return "Preparing the connect link…"
+        }
     }
 
     private func cardLabel(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {

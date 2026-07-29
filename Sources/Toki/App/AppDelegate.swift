@@ -62,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = UsageStore()
     private let updateChecker = UpdateChecker()
 
+    func applicationWillTerminate(_ notification: Notification) {
+        RemoteControlServer.shared.stop()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         DiagnosticLogger.shared.record(.info, component: "app", code: "launched", detail: "version=\(appVersion)")
         NSApp.setActivationPolicy(.accessory)
@@ -97,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task { @MainActor in
             for await agents in store.$activeAgents.values {
                 agentsAwaitingInput = agents.filter(\.needsInput).count
+                RemoteControlServer.shared.updateActiveAgents(agents)
                 updateStatusItem()
             }
         }

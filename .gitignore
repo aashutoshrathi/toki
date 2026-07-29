@@ -3,3 +3,5 @@
 DerivedData/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcuserstate
+__pycache__/
+*.pyc
