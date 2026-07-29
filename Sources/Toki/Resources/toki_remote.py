@@ -894,6 +894,7 @@ TOKEN = secrets.token_urlsafe(24)
 PAIRING_CODE = f"{secrets.randbelow(1_000_000):06d}"
 HOSTED_ORIGIN = "https://rc.toki.aashutosh.dev"
 SESSION_TTL = 12 * 60 * 60
+SESSION_TTL_CHOICES = (60 * 60, 12 * 60 * 60, 24 * 60 * 60, 2 * 24 * 60 * 60)
 PAIRING_WINDOW = 60
 PAIRING_MAX_FAILURES = 5
 SESSIONS = {}
@@ -1103,11 +1104,14 @@ def local_ipv4s():
 
 
 def main():
+    global SESSION_TTL
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--bind", default="0.0.0.0")
+    ap.add_argument("--session-ttl", type=int, choices=SESSION_TTL_CHOICES, default=SESSION_TTL)
     ap.add_argument("--no-qr", action="store_true")
     args = ap.parse_args()
+    SESSION_TTL = args.session_ttl
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
 
     ips = local_ipv4s()

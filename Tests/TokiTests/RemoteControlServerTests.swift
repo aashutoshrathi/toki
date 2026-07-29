@@ -12,6 +12,17 @@ final class RemoteControlServerTests: XCTestCase {
         )
     }
 
+    func testSessionLifetimeDefaultsAndStopsAtTwoDays() {
+        XCTAssertEqual(
+            RemoteControlServer.SessionLifetime.twelveHours.label,
+            "12 hours (Recommended)"
+        )
+        XCTAssertEqual(
+            RemoteControlServer.SessionLifetime.allCases.map(\.rawValue).max(),
+            2 * 24 * 60 * 60
+        )
+    }
+
     func testTailscaleIsPreferredAndLocalNetworkIsSecond() {
         XCTAssertEqual(
             RemoteControlServer.orderedHostModes(tailscaleAvailable: true),

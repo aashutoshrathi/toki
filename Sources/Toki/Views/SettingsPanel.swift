@@ -533,7 +533,7 @@ struct SettingsPanel: View {
                 Text("Host")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .frame(width: 28, alignment: .leading)
+                    .frame(width: 48, alignment: .leading)
                 Picker("", selection: $remoteServer.hostMode) {
                     ForEach(remoteServer.availableHostModes) { mode in
                         Text(mode.label).tag(mode)
@@ -556,7 +556,7 @@ struct SettingsPanel: View {
                 Text("App")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .frame(width: 28, alignment: .leading)
+                    .frame(width: 48, alignment: .leading)
                 Picker("", selection: $remoteServer.companionAppMode) {
                     ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
                         Text(mode.label).tag(mode)
@@ -566,6 +566,28 @@ struct SettingsPanel: View {
                 .pickerStyle(.menu)
                 .controlSize(.small)
                 .fixedSize()
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+
+            HStack(spacing: 8) {
+                Text("Session")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 48, alignment: .leading)
+                Picker("", selection: $remoteServer.sessionLifetime) {
+                    ForEach(RemoteControlServer.SessionLifetime.allCases) { lifetime in
+                        Text(lifetime.label).tag(lifetime)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(remoteServer.isRunning)
+                .help(remoteServer.isRunning
+                    ? "Stop Remote Control to change the session lifetime"
+                    : "How long a verified device stays connected")
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 4)

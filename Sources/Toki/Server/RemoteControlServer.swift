@@ -46,6 +46,24 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
+    enum SessionLifetime: Int, CaseIterable, Identifiable {
+        case oneHour = 3_600
+        case twelveHours = 43_200
+        case oneDay = 86_400
+        case twoDays = 172_800
+
+        var id: Int { rawValue }
+
+        var label: String {
+            switch self {
+            case .oneHour: return "1 hour"
+            case .twelveHours: return "12 hours (Recommended)"
+            case .oneDay: return "1 day"
+            case .twoDays: return "2 days"
+            }
+        }
+    }
+
     @Published private(set) var isRunning = false
     @Published private(set) var token: String?
     @Published private(set) var pairingCode: String?
@@ -61,6 +79,7 @@ final class RemoteControlServer: ObservableObject {
     }
     @Published var customHost = ""
     @Published var companionAppMode: CompanionAppMode = .sameHost
+    @Published var sessionLifetime: SessionLifetime = .twelveHours
 
     let port = 8765
 
@@ -192,7 +211,12 @@ final class RemoteControlServer: ObservableObject {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        task.arguments = ["python3", "-u", script.path, "--port", "\(port)", "--no-qr"]
+        task.arguments = [
+            "python3", "-u", script.path,
+            "--port", "\(port)",
+            "--session-ttl", "\(sessionLifetime.rawValue)",
+            "--no-qr"
+        ]
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONUNBUFFERED"] = "1"
         task.environment = environment
