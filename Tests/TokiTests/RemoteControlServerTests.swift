@@ -4,6 +4,14 @@ import XCTest
 
 @MainActor
 final class RemoteControlServerTests: XCTestCase {
+    func testRecommendedHostAndAppLabels() {
+        XCTAssertEqual(RemoteControlServer.HostMode.tailscale.label, "Tailscale (Recommended)")
+        XCTAssertEqual(
+            RemoteControlServer.CompanionAppMode.hosted.label,
+            "Toki RC (Recommended)"
+        )
+    }
+
     func testTailscaleIsPreferredAndLocalNetworkIsSecond() {
         XCTAssertEqual(
             RemoteControlServer.orderedHostModes(tailscaleAvailable: true),

@@ -533,7 +533,7 @@ struct SettingsPanel: View {
             .padding(.horizontal, 4)
 
             HStack(spacing: 8) {
-                Text("Companion app")
+                Text("App")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Picker("", selection: $remoteServer.companionAppMode) {
@@ -567,7 +567,7 @@ struct SettingsPanel: View {
             .padding(.horizontal, 4)
 
             if remoteServer.companionAppMode == .hosted {
-                Text("rc.toki.aashutosh.dev only serves the interface. Agent data stays on this Mac and travels directly over your tailnet.")
+                Text("Toki RC only serves the interface. Agent data stays on this Mac and travels directly over your tailnet.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -599,7 +599,7 @@ struct SettingsPanel: View {
     private var connectHint: String {
         if remoteServer.token == nil { return "Starting the server…" }
         if remoteServer.companionAppMode == .hosted {
-            return "rc.toki.aashutosh.dev requires a Tailscale DNS host with HTTPS Serve enabled."
+            return "Toki RC requires a Tailscale DNS host with HTTPS Serve enabled."
         }
         if remoteServer.companionAppMode == .localNetwork {
             return "No local network address found. Try Localhost or Same as host."

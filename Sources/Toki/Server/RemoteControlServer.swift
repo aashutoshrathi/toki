@@ -22,7 +22,7 @@ final class RemoteControlServer: ObservableObject {
             switch self {
             case .localhost: return "Localhost"
             case .localNetwork: return "Local network"
-            case .tailscale: return "Tailscale"
+            case .tailscale: return "Tailscale (Recommended)"
             case .custom: return "Custom"
             }
         }
@@ -41,7 +41,7 @@ final class RemoteControlServer: ObservableObject {
             case .sameHost: return "Same as host"
             case .localhost: return "Local"
             case .localNetwork: return "Local network"
-            case .hosted: return "rc.toki.aashutosh.dev"
+            case .hosted: return "Toki RC (Recommended)"
             }
         }
     }
