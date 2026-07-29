@@ -11,9 +11,9 @@ final class RemoteControlServer: ObservableObject {
     static let hostedRemoteControlOrigin = "https://rc.toki.aashutosh.dev"
 
     enum HostMode: String, CaseIterable, Identifiable {
-        case localhost
-        case localNetwork
         case tailscale
+        case localNetwork
+        case localhost
         case custom
 
         var id: String { rawValue }
@@ -68,6 +68,10 @@ final class RemoteControlServer: ObservableObject {
     private var outputBuffer = ""
 
     private init() {
+        hostMode = Self.preferredHostMode(
+            tailscaleAvailable: Self.tailscaleIP() != nil,
+            localNetworkAvailable: Self.localNetworkIP() != nil
+        )
         refreshTailscaleStatus()
     }
 
@@ -86,10 +90,24 @@ final class RemoteControlServer: ObservableObject {
     }
 
     var availableHostModes: [HostMode] {
-        var modes: [HostMode] = [.localhost, .localNetwork]
-        if Self.tailscaleIP() != nil || tailscaleDNSName != nil { modes.append(.tailscale) }
-        modes.append(.custom)
+        Self.orderedHostModes(
+            tailscaleAvailable: Self.tailscaleIP() != nil || tailscaleDNSName != nil
+        )
+    }
+
+    static func orderedHostModes(tailscaleAvailable: Bool) -> [HostMode] {
+        var modes: [HostMode] = [.localNetwork, .localhost, .custom]
+        if tailscaleAvailable { modes.insert(.tailscale, at: 0) }
         return modes
+    }
+
+    static func preferredHostMode(
+        tailscaleAvailable: Bool,
+        localNetworkAvailable: Bool
+    ) -> HostMode {
+        if tailscaleAvailable { return .tailscale }
+        if localNetworkAvailable { return .localNetwork }
+        return .localhost
     }
 
     var connectURL: String? {

@@ -4,6 +4,34 @@ import XCTest
 
 @MainActor
 final class RemoteControlServerTests: XCTestCase {
+    func testTailscaleIsPreferredAndLocalNetworkIsSecond() {
+        XCTAssertEqual(
+            RemoteControlServer.orderedHostModes(tailscaleAvailable: true),
+            [.tailscale, .localNetwork, .localhost, .custom]
+        )
+        XCTAssertEqual(
+            RemoteControlServer.preferredHostMode(
+                tailscaleAvailable: true,
+                localNetworkAvailable: true
+            ),
+            .tailscale
+        )
+    }
+
+    func testLocalNetworkIsFallbackWhenTailscaleIsUnavailable() {
+        XCTAssertEqual(
+            RemoteControlServer.orderedHostModes(tailscaleAvailable: false),
+            [.localNetwork, .localhost, .custom]
+        )
+        XCTAssertEqual(
+            RemoteControlServer.preferredHostMode(
+                tailscaleAvailable: false,
+                localNetworkAvailable: true
+            ),
+            .localNetwork
+        )
+    }
+
     func testTailscaleDNSNameIsReadAndTrailingDotRemoved() {
         let data = Data(#"{"Self":{"DNSName":"my-mac.example-tailnet.ts.net."}}"#.utf8)
 
