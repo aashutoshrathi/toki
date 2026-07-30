@@ -72,6 +72,10 @@ enum UsageFetcher {
            let detected = cursorAutoDetectedAccount() {
             accounts.append(detected)
         }
+        if !configured.contains(where: { $0.provider == .aider }),
+           let detected = aiderAutoDetectedAccount() {
+            accounts.append(detected)
+        }
         return accounts
     }
 
@@ -82,6 +86,11 @@ enum UsageFetcher {
             .contains { FileManager.default.isExecutableFile(atPath: $0) }
         guard installed else { return nil }
         return AccountConfig(id: "cursor-auto", name: "Cursor", provider: .cursor)
+    }
+
+    private static func aiderAutoDetectedAccount() -> AccountConfig? {
+        guard AiderDetection.isInstalled() else { return nil }
+        return AccountConfig(id: "aider-auto", name: "Aider", provider: .aider)
     }
 
     private static func snapshots(
@@ -114,7 +123,7 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .grok, .gemini, .cursor:
+            case .copilot, .grok, .gemini, .cursor, .aider:
                 snapshots = [agentOnlySnapshot(for: account)]
             case .openCode:
                 snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
@@ -162,7 +171,7 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .aider, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic:
             return "\(account.provider.rawValue):\(account.id)"
@@ -186,7 +195,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .aider, .manual:
             return 0
         }
     }

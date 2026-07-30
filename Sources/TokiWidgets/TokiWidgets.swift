@@ -313,6 +313,8 @@ private func providerColor(_ provider: String) -> Color {
         return Color(red: 0.94, green: 0.36, blue: 0.55)
     case "grok":
         return Color(red: 0.66, green: 0.68, blue: 0.72)
+    case "aider":
+        return Color(red: 0.16, green: 0.63, blue: 0.60)
     default:
         return Color(red: 0.93, green: 0.39, blue: 0.58)
     }
@@ -476,6 +478,7 @@ private struct ProviderGlyph: View {
         case "copilot": return "chevron.left.forwardslash.chevron.right"
         case "gemini": return "sparkles"
         case "grok": return "asterisk"
+        case "aider": return "terminal.fill"
         default: return "terminal"
         }
     }
@@ -484,6 +487,7 @@ private struct ProviderGlyph: View {
         switch item.provider {
         case "claude", "claudeCode", "anthropic": return Color(red: 0.85, green: 0.47, blue: 0.34)
         case "codex", "openai", "chatgpt": return Color(red: 0.48, green: 0.61, blue: 1)
+        case "aider": return Color(red: 0.16, green: 0.63, blue: 0.60)
         default: return .primary
         }
     }

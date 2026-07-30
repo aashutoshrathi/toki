@@ -11,6 +11,7 @@
 - New **Cloudflare Tunnel** host option (when `cloudflared` is installed) gives you a public HTTPS address with no Tailscale, account, or DNS setup.
 - The companion app can notify you when an agent needs your input or approval, with a one-tap prompt to turn alerts on. (Notifications fire while the app is open or backgrounded.)
 - Remote Control settings lead with a single **Reach** choice, "On my network" or "From anywhere", with the detailed host and app options tucked under Advanced.
+- **Aider** is now recognized: its sessions show up in the Agents tab, and it gets a standing card whenever the aider CLI is installed. Like Cursor, Grok, and Gemini it has no usage API, so the card reflects detection rather than a quota.
 
 ## 2.5.3 - 2026-07-28
 

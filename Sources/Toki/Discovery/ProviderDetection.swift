@@ -30,6 +30,7 @@ enum ProviderDetection {
             if let grok = detectGrok() { detected.append(grok) }
             if let gemini = detectGemini() { detected.append(gemini) }
             if let cursor = detectCursor() { detected.append(cursor) }
+            if let aider = detectAider() { detected.append(aider) }
             return detected
         }.value
     }
@@ -135,5 +136,29 @@ enum ProviderDetection {
                 AccountConfig(id: "cursor", name: "Cursor", provider: .cursor)
             }
         )
+    }
+
+    // Same story as Cursor: aider has no quota API, so this is agent-detection-only, detected by
+    // the presence of the aider CLI and rendered as an agent-only card that fills with live
+    // sessions in the Agents tab.
+    private static func detectAider() -> DetectedProvider? {
+        guard AiderDetection.isInstalled() else { return nil }
+        return DetectedProvider(
+            provider: .aider,
+            title: "Aider",
+            detail: "aider CLI detected",
+            makeAccount: {
+                AccountConfig(id: "aider", name: "Aider", provider: .aider)
+            }
+        )
+    }
+}
+
+enum AiderDetection {
+    static func isInstalled() -> Bool {
+        let locations = ["/opt/homebrew/bin/aider", "/usr/local/bin/aider", "~/.local/bin/aider"]
+        return locations
+            .map { ($0 as NSString).expandingTildeInPath }
+            .contains { FileManager.default.isExecutableFile(atPath: $0) }
     }
 }

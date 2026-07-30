@@ -66,6 +66,10 @@ struct ProviderLogo: View {
                         .font(.system(size: size * 0.72, weight: .semibold))
                         .foregroundStyle(Color.primary)
                 }
+            case .aider:
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: size * 0.72, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.16, green: 0.63, blue: 0.60))
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)

@@ -13,6 +13,7 @@ enum Provider: String, Codable, Sendable {
     case gemini
     case pi
     case cursor
+    case aider
     case manual
 
     var displayName: String {
@@ -29,6 +30,7 @@ enum Provider: String, Codable, Sendable {
         case .gemini: return "Gemini"
         case .pi: return "Pi"
         case .cursor: return "Cursor"
+        case .aider: return "Aider"
         case .manual: return "Manual"
         }
     }
@@ -36,7 +38,7 @@ enum Provider: String, Codable, Sendable {
     var isConsumerTracked: Bool {
         switch self {
         case .chatgpt, .claude, .manual: return true
-        case .openai, .codex, .anthropic, .claudeCode, .copilot, .openCode, .grok, .gemini, .pi, .cursor: return false
+        case .openai, .codex, .anthropic, .claudeCode, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .aider: return false
         }
     }
 

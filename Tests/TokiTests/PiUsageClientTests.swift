@@ -301,7 +301,10 @@ final class PiUsageClientTests: XCTestCase {
             ("node /x/bin/gemini", .gemini),
             ("/opt/homebrew/bin/pi", .pi),
             ("node /x/@earendil-works/pi-coding-agent/dist/cli.js", .pi),
-            ("bun /x/@mariozechner/pi-coding-agent/dist/cli.js", .pi)
+            ("bun /x/@mariozechner/pi-coding-agent/dist/cli.js", .pi),
+            ("/opt/homebrew/Cellar/python@3.10/3.10.20/Frameworks/Python.framework/Versions/3.10/Resources/Python.app/Contents/MacOS/Python /opt/homebrew/bin/aider --yes", .aider),
+            ("python3.10 /opt/homebrew/bin/aider", .aider),
+            ("/usr/local/bin/aider", .aider)
         ]
         for (command, expected) in matches {
             XCTAssertEqual(ActiveAgentScanner.providerForCommand(command), expected, command)
@@ -316,7 +319,9 @@ final class PiUsageClientTests: XCTestCase {
             "node /tmp/codex-helper.js",
             "node /tmp/gemini-helper.js",
             "node /tmp/cursor-helper.js",
-            "/usr/local/bin/cursor"
+            "/usr/local/bin/cursor",
+            "python /tmp/aider-helper.py",
+            "python -m aider"
         ]
         for command in nonMatches {
             XCTAssertNil(ActiveAgentScanner.providerForCommand(command), command)

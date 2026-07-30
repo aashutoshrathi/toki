@@ -170,9 +170,14 @@ enum ActiveAgentScanner {
             return nil
         }
 
-        // Reject GUI-app helper processes; a genuine in-bundle agent says "app-server".
+        // Reject GUI-app helper processes; a genuine in-bundle agent says "app-server". For an
+        // interpreter-launched agent, judge the script path rather than the interpreter's:
+        // Homebrew's Python ships inside a Python.app framework bundle that would otherwise trip
+        // this and hide aider.
         let normalized = command.lowercased()
-        if normalized.contains(".app/contents/"), !normalized.contains("app-server") {
+        let interpreterLaunched = executable == "node" || executable == "bun" || executable.hasPrefix("python")
+        let bundlePath = interpreterLaunched ? (entrypoint ?? "") : normalized
+        if bundlePath.contains(".app/contents/"), !normalized.contains("app-server") {
             return nil
         }
 
@@ -202,6 +207,7 @@ enum ActiveAgentScanner {
         if executable == "cursor-agent" { return .cursor }
         if executable == "grok" { return .grok }
         if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
+        if executable == "aider" || (executable.hasPrefix("python") && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "aider") { return .aider }
         return nil
     }
 
