@@ -467,6 +467,7 @@ private struct ProviderGlyph: View {
         case "grok": return "grok-logo"
         case "pi": return "pi-logo"
         case "cursor": return "cursor-logo"
+        case "aider": return "aider-logo"
         default: return nil
         }
     }
@@ -499,7 +500,8 @@ private enum WidgetSVGAsset {
     @MainActor static func image(named name: String, template: Bool = false) -> NSImage? {
         let cacheKey = "\(name):\(template)"
         if let cached = cache[cacheKey] { return cached }
-        guard let url = Bundle.main.url(forResource: name, withExtension: "svg"),
+        guard let url = Bundle.main.url(forResource: name, withExtension: "svg")
+                ?? Bundle.main.url(forResource: name, withExtension: "png"),
               let image = NSImage(contentsOf: url) else {
             return nil
         }

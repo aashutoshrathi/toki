@@ -30,6 +30,7 @@ strip "$MACOS_DIR/Toki"
 strip "$WIDGET_MACOS_DIR/TokiWidgets"
 cp -R "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.svg "$WIDGET_RESOURCES_DIR/"
+cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.png "$WIDGET_RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"toki-router-glyph-*.svg "$WIDGET_RESOURCES_DIR/"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST

@@ -67,9 +67,14 @@ struct ProviderLogo: View {
                         .foregroundStyle(Color.primary)
                 }
             case .aider:
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: size * 0.72, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.16, green: 0.63, blue: 0.60))
+                // Brand icon ships as a raster tile with a baked background, so it's clipped to
+                // a rounded square to sit alongside the transparent glyphs.
+                SVGLogoMark(asset: "aider-logo", size: size) {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: size * 0.72, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.16, green: 0.63, blue: 0.60))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)
@@ -102,16 +107,18 @@ enum SVGLogoAsset {
         // Resources ship as raw files in Contents/Resources (see package-release.sh), so we
         // resolve via Bundle.main rather than Bundle.module - the SPM accessor fatal-errors
         // when its .bundle isn't at the app root, which conflicts with codesign's layout.
-        let urls = [
-            Bundle.main.url(forResource: name, withExtension: "svg"),
-            Bundle.main.resourceURL?.appendingPathComponent("\(name).svg"),
-            executableDir?.deletingLastPathComponent().appendingPathComponent("Resources/\(name).svg"),
+        // svg first so vector marks win; png covers logos that only ship as raster (aider).
+        var urls: [URL?] = []
+        for ext in ["svg", "png"] {
+            urls.append(Bundle.main.url(forResource: name, withExtension: ext))
+            urls.append(Bundle.main.resourceURL?.appendingPathComponent("\(name).\(ext)"))
+            urls.append(executableDir?.deletingLastPathComponent().appendingPathComponent("Resources/\(name).\(ext)"))
             // `swift run Toki` (the documented dev workflow, see README) never produces a
             // real .app - resources land in an SPM-generated bundle right next to the
             // executable instead of Contents/Resources, which none of the candidates above
             // reach.
-            executableDir?.appendingPathComponent("Toki_Toki.bundle/\(name).svg")
-        ]
+            urls.append(executableDir?.appendingPathComponent("Toki_Toki.bundle/\(name).\(ext)"))
+        }
         guard let image = urls.compactMap({ $0 }).lazy.compactMap({ NSImage(contentsOf: $0) }).first else {
             return nil
         }

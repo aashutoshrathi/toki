@@ -56,6 +56,8 @@ echo "==> Copying resources"
 cp -RL "$ROOT_DIR/Sources/Toki/Resources/"* "$APP_DIR/Contents/Resources/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.svg \
   "$APP_DIR/Contents/PlugIns/TokiWidgets.appex/Contents/Resources/"
+cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.png \
+  "$APP_DIR/Contents/PlugIns/TokiWidgets.appex/Contents/Resources/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"toki-router-glyph-*.svg \
   "$APP_DIR/Contents/PlugIns/TokiWidgets.appex/Contents/Resources/"
 
