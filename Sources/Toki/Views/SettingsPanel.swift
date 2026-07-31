@@ -61,6 +61,7 @@ struct SettingsPanel: View {
 
     @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var showingConnect = false
+    @State private var advancedExpanded = false
     @State private var showingTailscaleGuide = false
     private let reachabilityTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
@@ -554,7 +555,7 @@ struct SettingsPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 4)
 
-            DisclosureGroup("Advanced") {
+            DisclosureGroup(isExpanded: $advancedExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("Host")
@@ -612,6 +613,11 @@ struct SettingsPanel: View {
                     }
                 }
                 .padding(.top, 6)
+            } label: {
+                Text("Advanced")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.easeInOut(duration: 0.15)) { advancedExpanded.toggle() } }
             }
             .font(.system(size: 11))
             .padding(.horizontal, 4)
@@ -672,7 +678,7 @@ struct SettingsPanel: View {
                     .padding(.horizontal, 4)
             }
 
-            if remoteServer.isRunning, remoteServer.connectURL != nil,
+            if remoteServer.isRunning, remoteServer.tailscaleDNSName != nil,
                remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale {
                 tailscaleReadinessRow
             }
@@ -778,7 +784,7 @@ struct SettingsPanel: View {
                     let modes = remoteServer.availableHostModes
                     if modes.contains(.tailscale) {
                         remoteServer.hostMode = .tailscale
-                        remoteServer.companionAppMode = .hosted
+                        remoteServer.companionAppMode = .sameHost
                     } else if modes.contains(.tunnel) {
                         remoteServer.hostMode = .tunnel
                         remoteServer.companionAppMode = .sameHost

@@ -164,6 +164,7 @@ final class RemoteControlServer: ObservableObject {
             hostMode: hostMode,
             host: host,
             localNetworkHost: Self.localNetworkIP(),
+            tailscaleIP: Self.tailscaleIP(),
             token: token,
             port: port
         )
@@ -174,37 +175,54 @@ final class RemoteControlServer: ObservableObject {
         hostMode: HostMode,
         host: String?,
         localNetworkHost: String?,
+        tailscaleIP: String? = nil,
         token: String,
         port: Int
     ) -> String? {
         switch companionAppMode {
         case .sameHost:
-            guard let host else { return nil }
-            let isHTTPSHost = hostMode == .tailscale || hostMode == .tunnel
-            return directConnectURL(
-                host: host,
-                scheme: isHTTPSHost ? "https" : "http",
-                port: isHTTPSHost ? nil : port,
-                token: token
-            )
+            if let host {
+                let isHTTPSHost = hostMode == .tailscale || hostMode == .tunnel
+                return directConnectURL(
+                    host: host,
+                    scheme: isHTTPSHost ? "https" : "http",
+                    port: isHTTPSHost ? nil : port,
+                    token: token
+                )
+            }
+            // Tailscale is up but its MagicDNS name isn't resolvable (no CLI on PATH, MagicDNS off).
+            // The server binds 0.0.0.0, so a phone on the tailnet can still reach it at the 100.x IP.
+            if hostMode == .tailscale {
+                return tailscaleDirectURL(ip: tailscaleIP, port: port, token: token)
+            }
+            return nil
         case .localhost:
             return directConnectURL(host: "localhost", scheme: "http", port: port, token: token)
         case .localNetwork:
             guard let localNetworkHost else { return nil }
             return directConnectURL(host: localNetworkHost, scheme: "http", port: port, token: token)
         case .hosted:
-            guard let host, isTailscaleDNSHost(host) else { return nil }
-            var parameters = URLComponents()
-            parameters.queryItems = [
-                URLQueryItem(name: "host", value: host),
-                URLQueryItem(name: "token", value: token)
-            ]
+            if let host, isTailscaleDNSHost(host) {
+                var parameters = URLComponents()
+                parameters.queryItems = [
+                    URLQueryItem(name: "host", value: host),
+                    URLQueryItem(name: "token", value: token)
+                ]
 
-            var components = URLComponents(string: Self.hostedRemoteControlOrigin)
-            components?.path = "/"
-            components?.percentEncodedFragment = parameters.percentEncodedQuery
-            return components?.url?.absoluteString
+                var components = URLComponents(string: Self.hostedRemoteControlOrigin)
+                components?.path = "/"
+                components?.percentEncodedFragment = parameters.percentEncodedQuery
+                return components?.url?.absoluteString
+            }
+            // The hosted UI needs a MagicDNS host; when it isn't available, fall back to the Mac's
+            // own UI served directly over the tailnet IP so the QR (and token) still work.
+            return tailscaleDirectURL(ip: tailscaleIP, port: port, token: token)
         }
+    }
+
+    private static func tailscaleDirectURL(ip: String?, port: Int, token: String) -> String? {
+        guard let ip else { return nil }
+        return directConnectURL(host: ip, scheme: "http", port: port, token: token)
     }
 
     private static func directConnectURL(
@@ -412,10 +430,13 @@ final class RemoteControlServer: ObservableObject {
     }
 
     private nonisolated static func tailscaleExecutable() -> URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
             "/opt/homebrew/bin/tailscale",
-            "/usr/local/bin/tailscale"
+            "/usr/local/bin/tailscale",
+            "/usr/bin/tailscale",
+            "\(home)/.local/bin/tailscale"
         ]
         if let path = candidates.first(where: FileManager.default.isExecutableFile(atPath:)) {
             return URL(fileURLWithPath: path)
@@ -428,6 +449,14 @@ final class RemoteControlServer: ObservableObject {
         let task = Process()
         task.executableURL = executable
         task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
+        // A menu-bar app launched from Finder inherits a bare PATH, so the env fallback needs the
+        // usual CLI directories spelled out to find a `tailscale` that isn't at a known path.
+        if executable.lastPathComponent == "env" {
+            var environment = ProcessInfo.processInfo.environment
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\(home)/.local/bin"
+            task.environment = environment
+        }
 
         let output = Pipe()
         task.standardOutput = output
