@@ -5,6 +5,12 @@ private enum SettingsAnchor: Hashable {
     case remoteControl
 }
 
+// Top-level "where can my phone reach this Mac" choice, mapped onto the underlying host/app modes.
+private enum ReachMode: Hashable {
+    case network
+    case anywhere
+}
+
 // Full-page settings/config view opened from the header gear (no longer a bottom tab).
 struct ConfigPage: View {
     @ObservedObject var store: UsageStore
@@ -55,6 +61,8 @@ struct SettingsPanel: View {
 
     @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var showingConnect = false
+    @State private var showingTailscaleGuide = false
+    private let reachabilityTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -529,45 +537,83 @@ struct SettingsPanel: View {
                 .controlSize(.small)
             }
 
-            HStack(spacing: 8) {
-                Text("Host")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 48, alignment: .leading)
-                Picker("", selection: $remoteServer.hostMode) {
-                    ForEach(remoteServer.availableHostModes) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .fixedSize()
-                if remoteServer.hostMode == .custom {
-                    TextField("host or IP", text: $remoteServer.customHost)
-                        .textFieldStyle(.roundedBorder)
-                        .controlSize(.small)
-                }
-                Spacer(minLength: 0)
+            Picker("Reach", selection: reachBinding) {
+                Text("On my network").tag(ReachMode.network)
+                Text("From anywhere").tag(ReachMode.anywhere)
             }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
             .padding(.horizontal, 4)
 
-            HStack(spacing: 8) {
-                Text("App")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 48, alignment: .leading)
-                Picker("", selection: $remoteServer.companionAppMode) {
-                    ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
+            Text(reachBinding.wrappedValue == .network
+                ? "Your phone connects over Wi-Fi on the same network. No setup."
+                : "Reach this Mac from any network over HTTPS via Tailscale or a Cloudflare tunnel.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+
+            DisclosureGroup("Advanced") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Host")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Picker("", selection: $remoteServer.hostMode) {
+                            ForEach(remoteServer.availableHostModes) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .fixedSize()
+                        if remoteServer.hostMode == .tailscale || remoteServer.companionAppMode == .hosted {
+                            Button {
+                                showingTailscaleGuide = true
+                            } label: {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("How to set up Tailscale so you can connect from anywhere")
+                            .accessibilityLabel("Tailscale setup guide")
+                            .pointerOnHover()
+                            .popover(isPresented: $showingTailscaleGuide, arrowEdge: .bottom) {
+                                TailscaleSetupGuide(port: remoteServer.port)
+                            }
+                        }
+                        if remoteServer.hostMode == .custom {
+                            TextField("host or IP", text: $remoteServer.customHost)
+                                .textFieldStyle(.roundedBorder)
+                                .controlSize(.small)
+                        }
+                        Spacer(minLength: 0)
+                    }
+
+                    HStack(spacing: 8) {
+                        Text("App")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Picker("", selection: $remoteServer.companionAppMode) {
+                            ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .fixedSize()
+                        Spacer(minLength: 0)
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .fixedSize()
-                Spacer(minLength: 0)
+                .padding(.top, 6)
             }
+            .font(.system(size: 11))
             .padding(.horizontal, 4)
 
             HStack(spacing: 8) {
@@ -626,6 +672,11 @@ struct SettingsPanel: View {
                     .padding(.horizontal, 4)
             }
 
+            if remoteServer.isRunning, remoteServer.connectURL != nil,
+               remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale {
+                tailscaleReadinessRow
+            }
+
             if remoteServer.isRunning, remoteServer.connectURL == nil {
                 Text(connectHint)
                     .font(.system(size: 11))
@@ -646,12 +697,101 @@ struct SettingsPanel: View {
         .sheet(isPresented: $showingConnect) {
             RemoteConnectSheet()
         }
+        .onAppear { remoteServer.refreshTailscaleStatus() }
+        .onReceive(reachabilityTimer) { _ in
+            if remoteServer.isRunning,
+               remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale {
+                remoteServer.refreshTailscaleStatus()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tailscaleReadinessRow: some View {
+        let ready = remoteServer.tailscaleServeReady
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: ready == true ? "checkmark.circle.fill"
+                    : ready == false ? "exclamationmark.triangle.fill" : "ellipsis.circle")
+                    .foregroundStyle(ready == true ? Color.green
+                        : ready == false ? Color.orange : Color.secondary)
+                Text(ready == true
+                    ? "Reachable from your phone."
+                    : ready == false
+                        ? "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet."
+                        : "Checking whether your phone can reach this Mac…")
+                    .foregroundStyle(ready == false ? Color.orange : Color.secondary)
+            }
+            .font(.system(size: 11))
+            .fixedSize(horizontal: false, vertical: true)
+
+            if ready == false {
+                HStack(spacing: 8) {
+                    Button {
+                        remoteServer.enableTailscaleServe()
+                    } label: {
+                        if remoteServer.isEnablingServe {
+                            HStack(spacing: 5) {
+                                ProgressView().controlSize(.small).scaleEffect(0.7)
+                                Text("Enabling…")
+                            }
+                        } else {
+                            Text("Enable HTTPS access")
+                        }
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .disabled(remoteServer.isEnablingServe)
+                    .help("Run tailscale serve so your phone can reach this Mac over HTTPS")
+                    .pointerOnHover()
+
+                    Text("or set it up by hand with the guide next to Host.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let error = remoteServer.serveSetupError {
+                    Text("Couldn't enable it automatically: \(error) You may need to run the command in Terminal (see the guide).")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var reachBinding: Binding<ReachMode> {
+        Binding(
+            get: {
+                switch remoteServer.hostMode {
+                case .tailscale, .tunnel: return .anywhere
+                default: return .network
+                }
+            },
+            set: { mode in
+                switch mode {
+                case .network:
+                    remoteServer.hostMode = RemoteControlServer.localNetworkIP() != nil ? .localNetwork : .localhost
+                    remoteServer.companionAppMode = .sameHost
+                case .anywhere:
+                    let modes = remoteServer.availableHostModes
+                    if modes.contains(.tailscale) {
+                        remoteServer.hostMode = .tailscale
+                        remoteServer.companionAppMode = .hosted
+                    } else if modes.contains(.tunnel) {
+                        remoteServer.hostMode = .tunnel
+                        remoteServer.companionAppMode = .sameHost
+                    }
+                }
+            }
+        )
     }
 
     private var connectHint: String {
         if remoteServer.token == nil { return "Starting the server…" }
         if remoteServer.companionAppMode == .hosted {
-            return "Toki RC requires a Tailscale DNS host with HTTPS Serve enabled."
+            return "Toki RC needs a Tailscale DNS host. Use the setup guide next to Host to turn on MagicDNS and HTTPS Serve."
         }
         if remoteServer.companionAppMode == .localNetwork {
             return "No local network address found. Try Localhost or Same as host."
@@ -660,6 +800,8 @@ struct SettingsPanel: View {
         case .custom: return "Enter a host or IP to get a connect link."
         case .localNetwork: return "No local network address found. Try Localhost or Custom."
         case .tailscale: return "No Tailscale DNS name found. Make sure Tailscale is running and MagicDNS is enabled."
+        case .tunnel:
+            return remoteServer.tunnelError ?? "Starting a Cloudflare tunnel… this can take a few seconds."
         case .localhost: return "Preparing the connect link…"
         }
     }
@@ -737,5 +879,114 @@ private extension View {
             Divider()
                 .padding(.leading, 34)
         }
+    }
+}
+
+// One-time Tailscale setup so the hosted Toki RC interface can reach this Mac over HTTPS.
+// The hosted page is served over HTTPS and browsers block it from calling a plain-HTTP LAN
+// address, so a tailnet HTTPS host is required for the connect-from-anywhere path.
+private struct TailscaleSetupGuide: View {
+    let port: Int
+
+    private var serveCommand: String { "tailscale serve --bg http://127.0.0.1:\(port)" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Connect from anywhere with Tailscale")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Tailscale gives this Mac a private HTTPS address your phone can reach from any network. It is a one-time setup.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            step(1, "Install Tailscale on this Mac and sign in.") {
+                guideLink("Download Tailscale", "https://tailscale.com/download/mac")
+            }
+            step(2, "In the admin console, turn on MagicDNS, then enable HTTPS Certificates.") {
+                guideLink("Open DNS settings", "https://login.tailscale.com/admin/dns")
+            }
+            step(3, "Give Toki an HTTPS address on your tailnet. Run this in Terminal:") {
+                commandRow
+            }
+            step(4, "Install Tailscale on your phone and sign into the same account.") {
+                guideLink("Get the mobile app", "https://tailscale.com/download")
+            }
+            step(5, "Back here, set Host to Tailscale and App to Toki RC, then open Connect.") {
+                EmptyView()
+            }
+
+            Divider()
+
+            Text("Your agent data never touches Toki RC. It travels directly between your phone and this Mac over your tailnet.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 12) {
+                guideLink("Enabling HTTPS", "https://tailscale.com/kb/1153/enabling-https")
+                guideLink("tailscale serve", "https://tailscale.com/kb/1242/tailscale-serve")
+            }
+        }
+        .padding(16)
+        .frame(width: 344, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func step<Accessory: View>(
+        _ number: Int,
+        _ text: String,
+        @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("\(number)")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 17, height: 17)
+                .background(Color.accentColor, in: Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                Text(text)
+                    .font(.system(size: 11))
+                    .fixedSize(horizontal: false, vertical: true)
+                accessory()
+            }
+        }
+    }
+
+    private var commandRow: some View {
+        HStack(spacing: 6) {
+            Text(serveCommand)
+                .font(.system(size: 10, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(serveCommand, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Copy command")
+            .accessibilityLabel("Copy the tailscale serve command")
+            .pointerOnHover()
+        }
+    }
+
+    private func guideLink(_ label: String, _ urlString: String) -> some View {
+        Link(destination: URL(string: urlString)!) {
+            HStack(spacing: 3) {
+                Text(label)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .font(.system(size: 11, weight: .medium))
+        }
+        .pointerOnHover()
     }
 }

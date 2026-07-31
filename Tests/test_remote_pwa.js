@@ -67,4 +67,13 @@ assert.match(html, /id="conn"/);
 assert.match(app, /function setConnected/);
 assert.match(css, /\.conn-dot/);
 
+// --- Attention notifications: permission affordance, transition-only firing, SW click handler ---
+assert.match(html, /id="enablealerts"/);
+assert.match(app, /function notifyAttention/);
+assert.match(app, /Notification\.permission!="granted"/);
+assert.match(app, /notifySeeded&&notifiedAttention\[a\.pid\]!=key/);
+assert.match(app, /showNotification\(title,opts\)/);
+assert.match(app, /requestPermission\(\)/);
+assert.match(sw, /addEventListener\("notificationclick"/);
+
 console.log("remote pwa + qr + ux tests passed");
