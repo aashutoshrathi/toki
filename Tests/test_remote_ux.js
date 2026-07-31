@@ -23,8 +23,17 @@ assert.match(app, /e\.metaKey\|\|e\.ctrlKey/);
 assert.match(app, /function resizeComposer/);
 assert.match(app, /new ResizeObserver/);
 assert.match(app, /if\(!current\|\|sending\)return/);
-assert.match(app, /await send\(\{text:v\}\)/);
 assert.match(app, /Sent \\u2713 via/);
+// Optimistic send: the message is echoed and the input cleared before the round trip resolves.
+assert.match(app, /function sendText/);
+assert.match(app, /sendText\(v\)/);
+assert.match(app, /function addEcho/);
+assert.match(app, /pendingEcho/);
+// A typing indicator covers the wait for the reply, and is reconciled against the polled transcript.
+assert.match(app, /function showTyping/);
+assert.match(app, /awaitingReply/);
+assert.match(css, /\.m\.typing/);
+assert.match(css, /@keyframes tblink/);
 assert.match(css, /button:not\(:disabled\):active/);
 assert.match(css, /\.decision\.reject/);
 assert.match(css, /min-height:44px/);

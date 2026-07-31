@@ -104,7 +104,7 @@ function renderAgents(){
   updateComposer(cur);
   list.innerHTML=agents.map(a=>'<div class="dditem'+(a.pid==current?' sel':'')+'" data-pid="'+a.pid+'">'+row(a)+'</div>').join("");
   list.querySelectorAll(".dditem").forEach(el=>el.onclick=ev=>{
-    ev.stopPropagation();current=+el.dataset.pid;offset=0;$("#log").innerHTML="";
+    ev.stopPropagation();current=+el.dataset.pid;offset=0;$("#log").innerHTML="";clearPending();
     document.getElementById("dd").classList.remove("open");renderAgents();refreshLog();
   });
 }
@@ -149,7 +149,7 @@ function updateAlertsButton(){
 async function refreshAgents(){
   agents=await api("/api/agents");const prev=current;
   notifyAttention(agents);
-  if(agents.length&&!agents.some(a=>a.pid==prev)){current=agents[0].pid;offset=0;$("#log").innerHTML=""}
+  if(agents.length&&!agents.some(a=>a.pid==prev)){current=agents[0].pid;offset=0;$("#log").innerHTML="";clearPending()}
   renderAgents();
   const a=agents.find(x=>x.pid==current), al=$("#alert");
   if(a&&a.attention){
@@ -164,20 +164,40 @@ async function refreshAgents(){
 }
 function nearBottom(){return window.innerHeight+window.scrollY>=document.body.scrollHeight-140}
 function scrollToLatest(){window.scrollTo(0,document.body.scrollHeight);$("#tolatest").hidden=true}
+// Optimistic echo + a typing indicator so a reply-in-progress is visible instead of a silent gap.
+let awaitingReply=false,pendingEcho=null;
+function addEcho(text){
+  const d=document.createElement("div");d.className="m user pending";d.textContent=text;
+  $("#log").appendChild(d);pendingEcho={node:d,text:text.trim()};
+}
+function markEchoFailed(){if(pendingEcho){pendingEcho.node.classList.remove("pending");pendingEcho.node.classList.add("failed");pendingEcho=null}}
+function showTyping(){
+  if($("#typing"))return;
+  const d=document.createElement("div");d.className="m assistant typing";d.id="typing";
+  d.innerHTML='<span class="td"></span><span class="td"></span><span class="td"></span>';
+  $("#log").appendChild(d);
+}
+function hideTyping(){const t=$("#typing");if(t)t.remove()}
+function clearPending(){pendingEcho=null;awaitingReply=false;hideTyping()}
 async function refreshLog(){
   if(!current)return;
   const r=await api(`/api/transcript?pid=${current}&offset=${offset}`);
-  if(r.reset){offset=0;$("#log").innerHTML="";return}
+  if(r.reset){offset=0;$("#log").innerHTML="";clearPending();return}
   offset=r.offset;
   const stick=nearBottom();let added=0;
   for(const e of r.entries){
     if(e.role=="meta"||e.role=="resolved")continue;
+    // The agent echoes back the message we optimistically showed; drop the placeholder so it isn't doubled.
+    if(e.role=="user"&&pendingEcho&&e.text.trim()==pendingEcho.text){pendingEcho.node.remove();pendingEcho=null}
+    if(e.role=="assistant"){awaitingReply=false;pendingEcho=null}
+    if(!added)hideTyping();
     const d=document.createElement("div");d.className="m "+e.role;
     if(e.role=="tool")d.innerHTML="&#128295; <b>"+esc(e.tool)+"</b> "+esc(e.text||"");
     else if(e.role=="assistant")d.innerHTML=md(e.text);
     else d.textContent=e.text;
     $("#log").appendChild(d);added++;
   }
+  if(awaitingReply)showTyping();
   if(added){if(stick)scrollToLatest();else $("#tolatest").hidden=false}
 }
 let sending=false,statusTimer=null;
@@ -192,12 +212,20 @@ async function send(body){
   try{const r=await api("/api/send",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({pid:current,...body})});
     feedback("success");setStatus("Sent \u2713 via "+r.how,"success");
+    // A reply is now on its way; show the indicator and pull the transcript now instead of
+    // waiting for the next poll, so the round trip feels immediate.
+    awaitingReply=true;showTyping();refreshLog().catch(()=>{});
     return true;
   }catch(e){feedback("error");setStatus("Couldn\u2019t send: "+e.message,"error");return false}
   finally{
     sending=false;updateComposer(agents.find(a=>a.pid==current)||null);
     statusTimer=setTimeout(()=>setStatus("",""),4000);
   }
+}
+// Show the message the instant it's sent, then hand off to the server round trip.
+function sendText(text){
+  addEcho(text);awaitingReply=true;showTyping();scrollToLatest();
+  send({text}).then(ok=>{if(!ok){markEchoFailed();awaitingReply=false;hideTyping()}});
 }
 document.addEventListener("pointerdown",e=>{
   const button=e.target.closest("button");if(button&&!button.disabled)feedback("tap");
@@ -206,7 +234,9 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.id=="send"){
     const input=$("#msg"),v=input.value.trim();
-    if(v&&await send({text:v})&&input.value.trim()==v){input.value="";resizeComposer()}
+    if(!v||sending)return;
+    input.value="";resizeComposer();
+    sendText(v);
   } else if(b.dataset.key)await send({key:b.dataset.key});
   else if(b.dataset.text)await send({text:b.dataset.text,raw:true});
 });
