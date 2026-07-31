@@ -121,6 +121,48 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertEqual(url, "https://my-mac.example-tailnet.ts.net/?token=abc")
     }
 
+    func testTailscaleFallsBackToDirectTailnetIPWhenDNSNameMissing() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .sameHost,
+            hostMode: .tailscale,
+            host: nil,
+            localNetworkHost: "192.168.1.10",
+            tailscaleIP: "100.101.102.103",
+            token: "abc",
+            port: 8765
+        )
+
+        XCTAssertEqual(url, "http://100.101.102.103:8765/?token=abc")
+    }
+
+    func testHostedTailscaleFallsBackToDirectTailnetIPWhenDNSNameMissing() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .hosted,
+            hostMode: .tailscale,
+            host: nil,
+            localNetworkHost: nil,
+            tailscaleIP: "100.101.102.103",
+            token: "abc",
+            port: 8765
+        )
+
+        XCTAssertEqual(url, "http://100.101.102.103:8765/?token=abc")
+    }
+
+    func testTailscaleWithoutDNSNameOrTailnetIPHasNoURL() {
+        let url = RemoteControlServer.makeConnectURL(
+            companionAppMode: .sameHost,
+            hostMode: .tailscale,
+            host: nil,
+            localNetworkHost: "192.168.1.10",
+            tailscaleIP: nil,
+            token: "abc",
+            port: 8765
+        )
+
+        XCTAssertNil(url)
+    }
+
     func testLocalhostCompanionOverridesSelectedHost() {
         let url = RemoteControlServer.makeConnectURL(
             companionAppMode: .localhost,
