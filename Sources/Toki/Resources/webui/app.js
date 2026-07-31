@@ -170,10 +170,16 @@ function addEcho(text){
   const d=document.createElement("div");d.className="m user pending";d.textContent=text;
   $("#log").appendChild(d);pendingEcho={node:d,text:text.trim()};
 }
-function markEchoFailed(){if(pendingEcho){pendingEcho.node.classList.remove("pending");pendingEcho.node.classList.add("failed");pendingEcho=null}}
+function markEchoFailed(){
+  if(!pendingEcho)return;
+  const n=pendingEcho.node;n.classList.remove("pending");n.classList.add("failed");
+  n.setAttribute("role","button");n.setAttribute("aria-label","Failed to send. Tap to retry.");
+  pendingEcho=null;
+}
 function showTyping(){
   if($("#typing"))return;
   const d=document.createElement("div");d.className="m assistant typing";d.id="typing";
+  d.setAttribute("role","status");d.setAttribute("aria-label","Agent is replying…");
   d.innerHTML='<span class="td"></span><span class="td"></span><span class="td"></span>';
   $("#log").appendChild(d);
 }
@@ -214,7 +220,8 @@ async function send(body){
     feedback("success");setStatus("Sent \u2713 via "+r.how,"success");
     // A reply is now on its way; show the indicator and pull the transcript now instead of
     // waiting for the next poll, so the round trip feels immediate.
-    awaitingReply=true;showTyping();refreshLog().catch(()=>{});
+    const stick=nearBottom();awaitingReply=true;showTyping();if(stick)scrollToLatest();
+    refreshLog().catch(()=>{});
     return true;
   }catch(e){feedback("error");setStatus("Couldn\u2019t send: "+e.message,"error");return false}
   finally{
@@ -237,8 +244,13 @@ document.addEventListener("click",async e=>{
     if(!v||sending)return;
     input.value="";resizeComposer();
     sendText(v);
-  } else if(b.dataset.key)await send({key:b.dataset.key});
-  else if(b.dataset.text)await send({text:b.dataset.text,raw:true});
+  } else if(b.dataset.key){$("#alert").style.display="none";await send({key:b.dataset.key});}
+  else if(b.dataset.text){$("#alert").style.display="none";await send({text:b.dataset.text,raw:true});}
+});
+// Tap a failed message to resend it.
+$("#log").addEventListener("click",e=>{
+  const f=e.target.closest(".m.user.failed");if(!f)return;
+  const text=f.textContent;f.remove();feedback("tap");sendText(text);
 });
 function resizeComposer(){
   const input=$("#msg");input.style.height="auto";

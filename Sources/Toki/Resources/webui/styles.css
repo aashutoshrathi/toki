@@ -97,7 +97,9 @@ h1{font-size:16px;display:flex;align-items:center;gap:8px}
    word-break:break-word;overflow-wrap:anywhere}
 .user{background:#2a4a2a;margin-left:auto;white-space:pre-wrap}
 .m.pending{opacity:.55}
-.m.failed{opacity:.75;border:1px solid #a14a4a}
+.m.failed{opacity:.85;border:1px solid #a14a4a;cursor:pointer}
+.m.user.failed::after{content:"Failed to send. Tap to retry.";display:block;margin-top:4px;
+                      font-size:11px;color:#ef8e8e}
 .m.typing{background:#222;display:inline-flex;gap:5px;align-items:center;padding:13px 14px}
 .m.typing .td{width:6px;height:6px;border-radius:50%;background:#8ea0b5;animation:tblink 1.2s infinite}
 .m.typing .td:nth-child(2){animation-delay:.2s}

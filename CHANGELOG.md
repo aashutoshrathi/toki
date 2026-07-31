@@ -17,7 +17,7 @@
 - Remote Control "From anywhere" now always shows the Connect QR when Tailscale is up. It points the phone straight at this Mac's Tailscale address with the session token in the URL (`https://<your-machine>.ts.net/?token=…`), and when the MagicDNS name can't be read it falls back to the tailnet IP so the QR and its verification code still work without extra setup.
 - Tailscale MagicDNS detection now looks in more locations for the `tailscale` CLI and searches a real PATH, so the machine's DNS name is found on more setups.
 - The "Advanced" row in Remote Control settings now expands when you click anywhere on it, not only the disclosure triangle.
-- The Remote Control companion chat now feels immediate: your message appears the instant you send it (with a subtle typing indicator while the agent replies) instead of waiting for the next poll, and sending refreshes the transcript right away. A message that fails to send is marked so you can retry.
+- The Remote Control companion chat now feels immediate: your message appears the instant you send it (with a subtle typing indicator while the agent replies) instead of waiting for the next poll, and sending refreshes the transcript right away. Answering a question or approving a prompt dismisses it at once, and a message that fails to send can be resent with a tap.
 
 ## 2.5.3 - 2026-07-28
 

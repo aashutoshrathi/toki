@@ -34,6 +34,11 @@ assert.match(app, /function showTyping/);
 assert.match(app, /awaitingReply/);
 assert.match(css, /\.m\.typing/);
 assert.match(css, /@keyframes tblink/);
+// Tap-to-retry on a failed message, and the question/approval panel is dismissed on answer.
+assert.match(app, /\.m\.user\.failed/);
+assert.match(app, /f\.remove\(\);feedback\("tap"\);sendText\(text\)/);
+assert.match(app, /\$\("#alert"\)\.style\.display="none"/);
+assert.match(css, /Tap to retry/);
 assert.match(css, /button:not\(:disabled\):active/);
 assert.match(css, /\.decision\.reject/);
 assert.match(css, /min-height:44px/);
