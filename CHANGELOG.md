@@ -15,6 +15,7 @@
 - Text fields across the app now support the standard Cut, Copy, Paste, and Select All shortcuts (the menu-bar app previously shipped no Edit menu, so Cmd+V did nothing).
 - Fixed the companion app layout on iPad (and other large screens): the composer no longer drifts up the page while scrolling. The shell is now pinned to the viewport height with the transcript scrolling inside it, so the header and reply bar stay put.
 - The companion app has an eye toggle in the header that masks agent names in the picker, handy for screen recordings, plus a subtle background grain.
+- The companion app interface got a visual refresh built on a cohesive color system: layered surfaces with hairline borders, chat-style message bubbles, a brand-teal "private by design" note, and refined buttons, inputs, and code blocks for a cleaner, more legible read on the phone.
 
 ### Fixed
 
