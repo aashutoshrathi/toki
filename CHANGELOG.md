@@ -22,7 +22,7 @@
 - The companion app renders an agent's question and its choices more clearly, with a labeled header and numbered options.
 - Remote Control now shows each agent's own transcript when several agents run in the same folder, instead of occasionally attributing one agent's conversation (and your reply) to another.
 - The installed companion app (Add to Home Screen) reopens to your saved connection instead of an "invalid link" screen after it has been closed.
-- Running Toki from source with `swift run` can now start the Remote Control server; the bundled companion script is found in the SwiftPM resource bundle as well as a packaged app.
+- Running Toki from source with `swift run` can now start the Remote Control server and serve its web UI; both the companion script and its assets are located whether they sit in a packaged app or SwiftPM's flattened resource bundle.
 - When the Tailscale DNS name can't be read, Remote Control settings now explain why (command not found, not signed in, or MagicDNS off) instead of quietly falling back to the tailnet IP.
 - Tailscale lookups can no longer wedge the app: each `tailscale` command now times out (and the timeout/failure is logged), so a misbehaving Tailscale binary can't leave the popover stuck.
 - Debug mode (now seven taps on the version badge) mirrors the diagnostic log live in the in-app debug panel, so agent, usage, and Remote Control events are visible without exporting a report.

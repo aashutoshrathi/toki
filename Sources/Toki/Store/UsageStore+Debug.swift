@@ -13,13 +13,13 @@ extension UsageStore {
         debugMode.toggle()
         if debugMode {
             debugLogHandler = { [weak self] in self?.logDebug($0) }
-            DiagnosticLogger.shared.observer = { [weak self] line in
+            DiagnosticLogger.shared.setObserver { [weak self] line in
                 Task { @MainActor in self?.logDebug(line) }
             }
             logDebug("Debug mode enabled")
         } else {
             debugLogHandler = nil
-            DiagnosticLogger.shared.observer = nil
+            DiagnosticLogger.shared.setObserver(nil)
         }
     }
 }

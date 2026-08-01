@@ -1020,7 +1020,12 @@ SESSIONS = {}
 PAIRING_FAILURES = {}
 AUTH_LOCK = threading.Lock()
 
-WEBUI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webui")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+WEBUI_DIR = os.path.join(_SCRIPT_DIR, "webui")
+if not os.path.isdir(WEBUI_DIR):
+    # `swift run` flattens SwiftPM's processed resources beside the script rather than into a
+    # webui/ subdirectory, so serve them from the script's own directory in that case.
+    WEBUI_DIR = _SCRIPT_DIR
 
 
 def rotate_pairing_code():
