@@ -87,6 +87,7 @@ final class RemoteControlServer: ObservableObject {
     @Published var hostMode: HostMode = .localhost {
         didSet {
             guard hostMode != oldValue else { return }
+            didAutoEnableServe = false
             if hostMode == .tailscale {
                 refreshTailscaleStatus()
             }
@@ -115,6 +116,9 @@ final class RemoteControlServer: ObservableObject {
     private var outputBuffer = ""
     private var activeAgents: [ActiveAgent] = []
     private var tunnelProcess: Process?
+    // Guards the automatic `tailscale serve` so it's attempted once per Tailscale selection, not
+    // re-run on every status refresh (and not retried in a loop after it fails).
+    private var didAutoEnableServe = false
 
     private init() {
         hostMode = Self.preferredHostMode(
@@ -332,6 +336,7 @@ final class RemoteControlServer: ObservableObject {
         token = nil
         pairingCode = nil
         outputBuffer = ""
+        didAutoEnableServe = false
     }
 
     func updateActiveAgents(_ agents: [ActiveAgent]) {
@@ -451,7 +456,19 @@ final class RemoteControlServer: ObservableObject {
             tailscaleDNSName = result.name
             tailscaleStatusDiagnostic = result.diagnostic
             tailscaleServeReady = result.serve
+            maybeAutoEnableServe()
         }
+    }
+
+    // Choosing Tailscale for "from anywhere" implies wanting HTTPS reachability, so run
+    // `tailscale serve` automatically once instead of making the user press a button. Only when
+    // the server is up and we have a DNS name to serve; failures fall back to the manual button.
+    private func maybeAutoEnableServe() {
+        guard isRunning, hostMode == .tailscale, tailscaleDNSName != nil,
+              tailscaleServeReady == false,
+              !didAutoEnableServe, !isEnablingServe, serveSetupError == nil else { return }
+        didAutoEnableServe = true
+        enableTailscaleServe()
     }
 
     private nonisolated static func tailscaleExecutable() -> URL {
