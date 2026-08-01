@@ -66,9 +66,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         RemoteControlServer.shared.stop()
     }
 
+    // A menu-bar (.accessory) app ships no menu bar, so the standard editing shortcuts never reach
+    // text fields in the popover. Installing an Edit menu routes Cut/Copy/Paste/Select All to the
+    // first responder, which is what makes Cmd+V work in fields like the Tailscale host input.
+    private func installEditMenu() {
+        let mainMenu = NSMenu()
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        editItem.submenu = editMenu
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        NSApp.mainMenu = mainMenu
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         DiagnosticLogger.shared.record(.info, component: "app", code: "launched", detail: "version=\(appVersion)")
         NSApp.setActivationPolicy(.accessory)
+        installEditMenu()
         installCLISymlink()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

@@ -202,6 +202,19 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(url)
     }
 
+    func testStatusDiagnosticReportsDisconnectedBackend() {
+        let json = #"{"BackendState":"Stopped","Self":{"DNSName":""}}"#
+        let message = RemoteControlServer.statusDiagnostic(from: Data(json.utf8))
+        XCTAssertTrue(message.contains("isn't connected"), message)
+        XCTAssertTrue(message.contains("Stopped"), message)
+    }
+
+    func testStatusDiagnosticReportsMagicDNSOffWhenRunningWithoutName() {
+        let json = #"{"BackendState":"Running","Self":{"DNSName":"macbook"}}"#
+        let message = RemoteControlServer.statusDiagnostic(from: Data(json.utf8))
+        XCTAssertTrue(message.contains("MagicDNS is off"), message)
+    }
+
     func testServeReadyDetectsHandlerForOurPort() {
         let json = """
         {"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}

@@ -11,7 +11,8 @@
 - New **Cloudflare Tunnel** host option (when `cloudflared` is installed) gives you a public HTTPS address with no Tailscale, account, or DNS setup.
 - The companion app can notify you when an agent needs your input or approval, with a one-tap prompt to turn alerts on. (Notifications fire while the app is open or backgrounded.)
 - Remote Control settings lead with a single **Reach** choice, "On my network" or "From anywhere", with the detailed host and app options tucked under Advanced.
-- When Toki can't read your Tailscale name automatically, Remote Control settings now let you type it in, so the Connect link and QR use your real `.ts.net` host (pair it with App -> Toki RC for an instant connect).
+- When Toki can't read your Tailscale name automatically, Remote Control settings now let you type it in, so the Connect link and QR use your real `.ts.net` host (pair it with App -> Toki RC for an instant connect). The name you enter is remembered on this device.
+- Text fields across the app now support the standard Cut, Copy, Paste, and Select All shortcuts (the menu-bar app previously shipped no Edit menu, so Cmd+V did nothing).
 - The companion app has an eye toggle in the header that masks agent names in the picker, handy for screen recordings, plus a subtle background grain.
 
 ### Fixed
@@ -21,6 +22,7 @@
 - Remote Control now shows each agent's own transcript when several agents run in the same folder, instead of occasionally attributing one agent's conversation (and your reply) to another.
 - The installed companion app (Add to Home Screen) reopens to your saved connection instead of an "invalid link" screen after it has been closed.
 - Running Toki from source with `swift run` can now start the Remote Control server; the bundled companion script is found in the SwiftPM resource bundle as well as a packaged app.
+- When the Tailscale DNS name can't be read, Remote Control settings now explain why (command not found, not signed in, or MagicDNS off) instead of quietly falling back to the tailnet IP.
 
 - Remote Control "From anywhere" now always shows the Connect QR when Tailscale is up. It points the phone straight at this Mac's Tailscale address with the session token in the URL (`https://<your-machine>.ts.net/?token=…`), and when the MagicDNS name can't be read it falls back to the tailnet IP so the QR and its verification code still work without extra setup.
 - Tailscale MagicDNS detection now looks in more locations for the `tailscale` CLI and searches a real PATH, so the machine's DNS name is found on more setups.

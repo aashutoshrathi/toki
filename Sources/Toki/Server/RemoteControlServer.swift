@@ -74,6 +74,9 @@ final class RemoteControlServer: ObservableObject {
     // nil until the first check completes; true when `tailscale serve` fronts our port on 443,
     // so the hosted Toki RC UI can actually reach this Mac from a phone.
     @Published private(set) var tailscaleServeReady: Bool?
+    // Why the Tailscale DNS name couldn't be read (command missing, not logged in, MagicDNS off),
+    // surfaced in settings so a failed lookup explains itself instead of silently using the IP.
+    @Published private(set) var tailscaleStatusDiagnostic: String?
     @Published private(set) var isEnablingServe = false
     @Published private(set) var serveSetupError: String?
     // Public HTTPS address from a Cloudflare quick tunnel, when Host is Cloudflare Tunnel.
@@ -97,8 +100,11 @@ final class RemoteControlServer: ObservableObject {
     }
     @Published var customHost = ""
     // A Tailscale DNS name typed by hand when `tailscale status` can't be read (e.g. the CLI
-    // isn't installed), so the Connect link can still carry the real .ts.net host.
-    @Published var manualTailscaleHost = ""
+    // isn't installed). Persisted per device so it survives relaunches; the name is stable per Mac.
+    private static let manualHostKey = "toki.remoteControl.manualTailscaleHost"
+    @Published var manualTailscaleHost = UserDefaults.standard.string(forKey: manualHostKey) ?? "" {
+        didSet { UserDefaults.standard.set(manualTailscaleHost, forKey: Self.manualHostKey) }
+    }
     @Published var companionAppMode: CompanionAppMode = .sameHost
     @Published var sessionLifetime: SessionLifetime = .twelveHours
 
@@ -438,9 +444,12 @@ final class RemoteControlServer: ObservableObject {
         let checkPort = port
         Task {
             let result = await Task.detached(priority: .utility) {
-                (name: Self.readTailscaleDNSName(), serve: Self.readTailscaleServeReady(port: checkPort))
+                let status = Self.readTailscaleStatus()
+                return (name: status.name, diagnostic: status.diagnostic,
+                        serve: Self.readTailscaleServeReady(port: checkPort))
             }.value
             tailscaleDNSName = result.name
+            tailscaleStatusDiagnostic = result.diagnostic
             tailscaleServeReady = result.serve
         }
     }
@@ -478,29 +487,62 @@ final class RemoteControlServer: ObservableObject {
         return task
     }
 
-    private nonisolated static func runTailscale(_ arguments: [String]) -> Data? {
+    struct TailscaleRun {
+        let data: Data?
+        let launched: Bool
+        let exitCode: Int32
+        let stderr: String
+    }
+
+    private nonisolated static func runTailscale(_ arguments: [String]) -> TailscaleRun {
         let task = tailscaleProcess(arguments)
         let output = Pipe()
+        let errors = Pipe()
         task.standardOutput = output
-        task.standardError = FileHandle.nullDevice
+        task.standardError = errors
         do {
             try task.run()
         } catch {
-            return nil
+            return TailscaleRun(data: nil, launched: false, exitCode: -1, stderr: "")
         }
         let data = output.fileHandleForReading.readDataToEndOfFile()
+        let stderr = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         task.waitUntilExit()
-        guard task.terminationStatus == 0 else { return nil }
-        return data
+        let code = task.terminationStatus
+        return TailscaleRun(data: code == 0 ? data : nil, launched: true, exitCode: code, stderr: stderr)
     }
 
-    private nonisolated static func readTailscaleDNSName() -> String? {
-        guard let data = runTailscale(["status", "--json"]) else { return nil }
-        return tailscaleDNSName(from: data)
+    // Returns the MagicDNS name, or a short diagnostic explaining why it couldn't be read.
+    nonisolated static func readTailscaleStatus() -> (name: String?, diagnostic: String?) {
+        let run = runTailscale(["status", "--json"])
+        guard let data = run.data else {
+            if !run.launched {
+                return (nil, "Couldn't run the tailscale command. Is Tailscale installed?")
+            }
+            let detail = run.stderr.isEmpty ? "exit code \(run.exitCode)" : run.stderr
+            return (nil, "tailscale status failed: \(detail)")
+        }
+        if let name = tailscaleDNSName(from: data) {
+            return (name, nil)
+        }
+        return (nil, statusDiagnostic(from: data))
+    }
+
+    // The command ran but yielded no usable .ts.net name: distinguish "not connected" from
+    // "connected but MagicDNS is off" so the settings hint points at the right fix.
+    nonisolated static func statusDiagnostic(from data: Data) -> String {
+        let object = try? JSONSerialization.jsonObject(with: data)
+        let status = object as? [String: Any]
+        let backend = status?["BackendState"] as? String
+        if let backend, backend != "Running" {
+            return "Tailscale isn't connected (state: \(backend)). Sign in, then try again."
+        }
+        return "Tailscale is connected but MagicDNS is off, so there's no .ts.net name. Turn on MagicDNS, or enter the host by hand."
     }
 
     private nonisolated static func readTailscaleServeReady(port: Int) -> Bool {
-        guard let data = runTailscale(["serve", "status", "--json"]) else { return false }
+        guard let data = runTailscale(["serve", "status", "--json"]).data else { return false }
         return serveReady(from: data, port: port)
     }
 

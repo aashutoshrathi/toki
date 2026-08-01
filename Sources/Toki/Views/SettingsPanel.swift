@@ -597,11 +597,17 @@ struct SettingsPanel: View {
 
                     if remoteServer.hostMode == .tailscale, remoteServer.tailscaleDNSName == nil {
                         VStack(alignment: .leading, spacing: 4) {
+                            if let diagnostic = remoteServer.tailscaleStatusDiagnostic {
+                                Text(diagnostic)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                             TextField("your-mac.tailnet.ts.net", text: $remoteServer.manualTailscaleHost)
                                 .textFieldStyle(.roundedBorder)
                                 .controlSize(.small)
                                 .autocorrectionDisabled()
-                            Text("Couldn't read your Tailscale name automatically. Enter it here, then pick App -> Toki RC for an instant Connect link.")
+                            Text("Enter your Mac's Tailscale name to build a Connect link; pick App -> Toki RC for an instant connect.")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
