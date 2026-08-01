@@ -1061,8 +1061,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("X-Frame-Options", "DENY")
 
     def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        if length > MAX_BODY_BYTES:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            return None
+        if length < 0 or length > MAX_BODY_BYTES:
             return None
         return self.rfile.read(length)
 
