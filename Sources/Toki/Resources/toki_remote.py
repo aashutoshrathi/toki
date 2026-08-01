@@ -1016,6 +1016,12 @@ SESSION_TTL = 12 * 60 * 60
 SESSION_TTL_CHOICES = (60 * 60, 12 * 60 * 60, 24 * 60 * 60, 2 * 24 * 60 * 60)
 PAIRING_WINDOW = 60
 PAIRING_MAX_FAILURES = 5
+MAX_BODY_BYTES = 256 * 1024
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; "
+    "base-uri 'none'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+)
 SESSIONS = {}
 PAIRING_FAILURES = {}
 AUTH_LOCK = threading.Lock()
@@ -1047,12 +1053,26 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", HOSTED_ORIGIN)
             self.send_header("Vary", "Origin")
 
+    def _secure(self, document=False):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if document:
+            self.send_header("Content-Security-Policy", CSP)
+            self.send_header("X-Frame-Options", "DENY")
+
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length > MAX_BODY_BYTES:
+            return None
+        return self.rfile.read(length)
+
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self._secure()
         self._cors()
         self.end_headers()
         self.wfile.write(body)
@@ -1071,9 +1091,11 @@ class Handler(BaseHTTPRequestHandler):
         if not secrets.compare_digest(link_token, TOKEN):
             return self._json({"error": "bad link token"}, 403)
 
-        length = int(self.headers.get("Content-Length", 0))
+        raw = self._read_body()
+        if raw is None:
+            return self._json({"error": "request too large"}, 413)
         try:
-            body = json.loads(self.rfile.read(length))
+            body = json.loads(raw)
         except ValueError:
             return self._json({"error": "bad json"}, 400)
         code = str(body.get("code", "")).replace(" ", "")
@@ -1108,6 +1130,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self._secure(document=True)
         self.end_headers()
         self.wfile.write(body)
 
@@ -1210,9 +1233,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "bad token"}, 403)
         if url.path != "/api/send":
             return self._json({"error": "not found"}, 404)
-        length = int(self.headers.get("Content-Length", 0))
+        raw = self._read_body()
+        if raw is None:
+            return self._json({"error": "request too large"}, 413)
         try:
-            body = json.loads(self.rfile.read(length))
+            body = json.loads(raw)
         except ValueError:
             return self._json({"error": "bad json"}, 400)
         agent = next((a for a in discover_agents() if a["pid"] == body.get("pid")), None)
