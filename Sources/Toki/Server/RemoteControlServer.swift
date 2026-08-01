@@ -88,6 +88,7 @@ final class RemoteControlServer: ObservableObject {
         didSet {
             guard hostMode != oldValue else { return }
             didAutoEnableServe = false
+            serveSetupError = nil
             if hostMode == .tailscale {
                 refreshTailscaleStatus()
             }
@@ -337,6 +338,7 @@ final class RemoteControlServer: ObservableObject {
         pairingCode = nil
         outputBuffer = ""
         didAutoEnableServe = false
+        serveSetupError = nil
     }
 
     func updateActiveAgents(_ agents: [ActiveAgent]) {

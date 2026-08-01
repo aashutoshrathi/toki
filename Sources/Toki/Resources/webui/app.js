@@ -10,7 +10,9 @@ const LINK_TOKEN=PARAMS.get("token")||(REVIVE&&REVIVE.token)||"";
 const REMOTE_HOST=PARAMS.get("host")||(REVIVE&&REVIVE.host)||"";
 let API_BASE="",CONFIG_ERROR="";
 try{API_BASE=REMOTE_HOST?remoteAPIBase(REMOTE_HOST):""}catch(e){CONFIG_ERROR=e.message}
-if(LINK_TOKEN&&REMOTE_HOST&&!CONFIG_ERROR){
+// Save whenever we have a link token, even with no host: the direct same-host flow serves the
+// PWA from the Mac's own origin, so an empty host restores to the same origin on relaunch.
+if(LINK_TOKEN&&!CONFIG_ERROR){
   try{localStorage.setItem(CONN_KEY,JSON.stringify({host:REMOTE_HOST,token:LINK_TOKEN}))}catch(e){}
 }
 function remoteAPIBase(host){
