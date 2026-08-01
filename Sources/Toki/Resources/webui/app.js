@@ -19,7 +19,9 @@ function feedback(kind="tap"){
 const SESSION_KEY="toki-session:"+API_BASE+":"+LINK_TOKEN;
 let TOKEN="";
 try{TOKEN=sessionStorage.getItem(SESSION_KEY)||""}catch(e){}
-let current=null, offset=0, agents=[];
+let current=null, offset=0, agents=[], privacyMode=false;
+// When privacy mode is on, agent names in the picker are masked so they stay out of recordings.
+function dispTitle(t){return privacyMode?"•".repeat(Math.min(Math.max((t||"").length,4),14)):esc(t)}
 async function api(p,o){const url=API_BASE+p+(p.includes("?")?"&":"?")+"token="+encodeURIComponent(TOKEN);
   const r=await fetch(url,o);
   if(r.status==403)lockApp();
@@ -98,13 +100,13 @@ function renderAgents(){
     btn.innerHTML='<span class="t">no agents found</span>';list.innerHTML="";
     updateComposer(null);return
   }
-  const row=a=>providerLogo(a.provider)+'<span class="t">'+(a.attention?'<span class="dot">\u25cf</span> ':'')+esc(a.title)+'</span>';
+  const row=a=>providerLogo(a.provider)+'<span class="t">'+(a.attention?'<span class="dot">\u25cf</span> ':'')+dispTitle(a.title)+'</span>';
   const cur=agents.find(a=>a.pid==current)||agents[0];
   btn.innerHTML=row(cur)+'<span class="caret">\u25be</span>';
   updateComposer(cur);
   list.innerHTML=agents.map(a=>'<div class="dditem'+(a.pid==current?' sel':'')+'" data-pid="'+a.pid+'">'+row(a)+'</div>').join("");
   list.querySelectorAll(".dditem").forEach(el=>el.onclick=ev=>{
-    ev.stopPropagation();current=+el.dataset.pid;offset=0;$("#log").innerHTML="";
+    ev.stopPropagation();current=+el.dataset.pid;offset=0;$("#log").innerHTML="";clearPending();
     document.getElementById("dd").classList.remove("open");renderAgents();refreshLog();
   });
 }
@@ -149,35 +151,62 @@ function updateAlertsButton(){
 async function refreshAgents(){
   agents=await api("/api/agents");const prev=current;
   notifyAttention(agents);
-  if(agents.length&&!agents.some(a=>a.pid==prev)){current=agents[0].pid;offset=0;$("#log").innerHTML=""}
+  if(agents.length&&!agents.some(a=>a.pid==prev)){current=agents[0].pid;offset=0;$("#log").innerHTML="";clearPending()}
   renderAgents();
   const a=agents.find(x=>x.pid==current), al=$("#alert");
   if(a&&a.attention){
     al.style.display="block";al.className=a.attention.kind=="question"?"q":"";
     const qs=a.attention.questions&&a.attention.questions.length?a.attention.questions
       :[{question:a.attention.prompt||"Agent is waiting on you",options:a.attention.options||[]}];
-    al.innerHTML=qs.map(q=>'<div class="qq">'+md(q.question||"")+"</div>"+
+    const head='<div class="ahead">'+(a.attention.kind=="permission"?"Needs your approval":"Agent is asking")+"</div>";
+    al.innerHTML=head+qs.map(q=>'<div class="qq">'+md(q.question||"")+"</div>"+
       (q.options||[]).map((o,i)=>
-        `<button class="opt" data-text="${i+1}"><b>${i+1}</b>&ensp;${esc(o)}</button>`).join("")).join("")+
+        `<button class="opt" data-text="${i+1}"><b>${i+1}</b><span>${esc(o)}</span></button>`).join("")).join("")+
       (a.attention.kind=="permission"?'<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>':"");
   } else al.style.display="none";
 }
 function nearBottom(){return window.innerHeight+window.scrollY>=document.body.scrollHeight-140}
 function scrollToLatest(){window.scrollTo(0,document.body.scrollHeight);$("#tolatest").hidden=true}
+// Optimistic echo + a typing indicator so a reply-in-progress is visible instead of a silent gap.
+let awaitingReply=false,pendingEcho=null;
+function addEcho(text){
+  const d=document.createElement("div");d.className="m user pending";d.textContent=text;
+  $("#log").appendChild(d);pendingEcho={node:d,text:text.trim()};
+}
+function markEchoFailed(){
+  if(!pendingEcho)return;
+  const n=pendingEcho.node;n.classList.remove("pending");n.classList.add("failed");
+  n.setAttribute("role","button");n.setAttribute("aria-label","Failed to send. Tap to retry.");
+  pendingEcho=null;
+}
+function showTyping(){
+  if($("#typing"))return;
+  const d=document.createElement("div");d.className="m assistant typing";d.id="typing";
+  d.setAttribute("role","status");d.setAttribute("aria-label","Agent is replying…");
+  d.innerHTML='<span class="td"></span><span class="td"></span><span class="td"></span>';
+  $("#log").appendChild(d);
+}
+function hideTyping(){const t=$("#typing");if(t)t.remove()}
+function clearPending(){pendingEcho=null;awaitingReply=false;hideTyping()}
 async function refreshLog(){
   if(!current)return;
   const r=await api(`/api/transcript?pid=${current}&offset=${offset}`);
-  if(r.reset){offset=0;$("#log").innerHTML="";return}
+  if(r.reset){offset=0;$("#log").innerHTML="";clearPending();return}
   offset=r.offset;
   const stick=nearBottom();let added=0;
   for(const e of r.entries){
     if(e.role=="meta"||e.role=="resolved")continue;
+    // The agent echoes back the message we optimistically showed; drop the placeholder so it isn't doubled.
+    if(e.role=="user"&&pendingEcho&&e.text.trim()==pendingEcho.text){pendingEcho.node.remove();pendingEcho=null}
+    if(e.role=="assistant"){awaitingReply=false;pendingEcho=null}
+    if(!added)hideTyping();
     const d=document.createElement("div");d.className="m "+e.role;
     if(e.role=="tool")d.innerHTML="&#128295; <b>"+esc(e.tool)+"</b> "+esc(e.text||"");
     else if(e.role=="assistant")d.innerHTML=md(e.text);
     else d.textContent=e.text;
     $("#log").appendChild(d);added++;
   }
+  if(awaitingReply)showTyping();
   if(added){if(stick)scrollToLatest();else $("#tolatest").hidden=false}
 }
 let sending=false,statusTimer=null;
@@ -192,12 +221,21 @@ async function send(body){
   try{const r=await api("/api/send",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({pid:current,...body})});
     feedback("success");setStatus("Sent \u2713 via "+r.how,"success");
+    // A reply is now on its way; show the indicator and pull the transcript now instead of
+    // waiting for the next poll, so the round trip feels immediate.
+    const stick=nearBottom();awaitingReply=true;showTyping();if(stick)scrollToLatest();
+    refreshLog().catch(()=>{});
     return true;
   }catch(e){feedback("error");setStatus("Couldn\u2019t send: "+e.message,"error");return false}
   finally{
     sending=false;updateComposer(agents.find(a=>a.pid==current)||null);
     statusTimer=setTimeout(()=>setStatus("",""),4000);
   }
+}
+// Show the message the instant it's sent, then hand off to the server round trip.
+function sendText(text){
+  addEcho(text);awaitingReply=true;showTyping();scrollToLatest();
+  send({text}).then(ok=>{if(!ok){markEchoFailed();awaitingReply=false;hideTyping()}});
 }
 document.addEventListener("pointerdown",e=>{
   const button=e.target.closest("button");if(button&&!button.disabled)feedback("tap");
@@ -206,9 +244,16 @@ document.addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.id=="send"){
     const input=$("#msg"),v=input.value.trim();
-    if(v&&await send({text:v})&&input.value.trim()==v){input.value="";resizeComposer()}
-  } else if(b.dataset.key)await send({key:b.dataset.key});
-  else if(b.dataset.text)await send({text:b.dataset.text,raw:true});
+    if(!v||sending)return;
+    input.value="";resizeComposer();
+    sendText(v);
+  } else if(b.dataset.key){$("#alert").style.display="none";await send({key:b.dataset.key});}
+  else if(b.dataset.text){$("#alert").style.display="none";await send({text:b.dataset.text,raw:true});}
+});
+// Tap a failed message to resend it.
+$("#log").addEventListener("click",e=>{
+  const f=e.target.closest(".m.user.failed");if(!f)return;
+  const text=f.textContent;f.remove();feedback("tap");sendText(text);
 });
 function resizeComposer(){
   const input=$("#msg");input.style.height="auto";
@@ -228,6 +273,15 @@ window.addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true
 $("#enablealerts").addEventListener("click",async()=>{
   try{await Notification.requestPermission()}catch(e){}
   updateAlertsButton();
+});
+$("#privacytoggle").addEventListener("click",()=>{
+  privacyMode=!privacyMode;feedback("tap");
+  document.body.classList.toggle("privacy",privacyMode);
+  const b=$("#privacytoggle");
+  b.setAttribute("aria-pressed",String(privacyMode));
+  b.setAttribute("aria-label",privacyMode?"Show agent names":"Hide agent names");
+  b.title=privacyMode?"Show agent names":"Hide agent names";
+  renderAgents();
 });
 
 // Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.
