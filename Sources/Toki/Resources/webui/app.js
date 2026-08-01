@@ -173,8 +173,8 @@ async function refreshAgents(){
       (a.attention.kind=="permission"?'<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>':"");
   } else al.style.display="none";
 }
-function nearBottom(){return window.innerHeight+window.scrollY>=document.body.scrollHeight-140}
-function scrollToLatest(){window.scrollTo(0,document.body.scrollHeight);$("#tolatest").hidden=true}
+function nearBottom(){const el=$("#log");return el.scrollHeight-el.scrollTop-el.clientHeight<140}
+function scrollToLatest(){const el=$("#log");el.scrollTop=el.scrollHeight;$("#tolatest").hidden=true}
 let awaitingReply=false,pendingEcho=null;
 function addEcho(text){
   const d=document.createElement("div");d.className="m user pending";d.textContent=text;
@@ -272,7 +272,7 @@ resizeComposer();
 $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElementById("dd").classList.toggle("open")});
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
 $("#tolatest").addEventListener("click",scrollToLatest);
-window.addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true},{passive:true});
+$("#log").addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true},{passive:true});
 $("#enablealerts").addEventListener("click",async()=>{
   try{await Notification.requestPermission()}catch(e){}
   updateAlertsButton();

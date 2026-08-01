@@ -13,6 +13,7 @@
 - Remote Control settings lead with a single **Reach** choice, "On my network" or "From anywhere", with the detailed host and app options tucked under Advanced.
 - When Toki can't read your Tailscale name automatically, Remote Control settings now let you type it in, so the Connect link and QR use your real `.ts.net` host (pair it with App -> Toki RC for an instant connect). The name you enter is remembered on this device.
 - Text fields across the app now support the standard Cut, Copy, Paste, and Select All shortcuts (the menu-bar app previously shipped no Edit menu, so Cmd+V did nothing).
+- Fixed the companion app layout on iPad (and other large screens): the composer no longer drifts up the page while scrolling. The shell is now pinned to the viewport height with the transcript scrolling inside it, so the header and reply bar stay put.
 - The companion app has an eye toggle in the header that masks agent names in the picker, handy for screen recordings, plus a subtle background grain.
 
 ### Fixed

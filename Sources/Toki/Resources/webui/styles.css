@@ -1,7 +1,9 @@
 :root{color-scheme:dark light}
 *{box-sizing:border-box;margin:0}
+/* Flex column pinned to the dynamic viewport height: the transcript scrolls inside #log while the
+   header and composer stay put. Avoids iOS/iPadOS Safari's position:fixed-on-body-scroll drift. */
 body{font:15px/1.45 -apple-system,system-ui,sans-serif;background:#111;color:#eee;
-     padding-bottom:calc(var(--footer-height,180px) + 8px)}
+     display:flex;flex-direction:column;height:100dvh;overflow:hidden}
 /* Subtle film grain over the whole app: an inline SVG noise field, fixed behind the content. */
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.05;
   background:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>")}
@@ -12,7 +14,8 @@ button:not(:disabled):active{transform:scale(.96);filter:brightness(1.16)}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #72a7e8;outline-offset:2px}
 .locked>header,.locked>#alert,.locked>#log,.locked>footer,
 .locked>#conn,.locked>#tolatest,.locked>#enablealerts{display:none}
-#pairing{display:none;min-height:100vh;align-items:center;justify-content:center;
+#pairing{display:none;position:fixed;inset:0;z-index:15;background:#111;overflow-y:auto;
+         align-items:center;justify-content:center;
          padding:calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom))}
 .locked #pairing{display:flex}
 #pairform{width:min(100%,360px);padding:22px;border:1px solid #444;border-radius:14px;
@@ -53,7 +56,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
 #scanstatus{color:#ef8e8e;font-size:13px;min-height:18px}
 #scancancel{padding:11px 22px;border-radius:10px;background:#222;color:#eee;
             border:1px solid #555;font-size:15px}
-header{position:sticky;top:0;background:#111c;backdrop-filter:blur(10px);
+header{flex:none;background:#111c;backdrop-filter:blur(10px);
        padding:calc(12px + env(safe-area-inset-top)) 14px 12px;border-bottom:1px solid #333;z-index:2}
 #conn{display:flex;align-items:center;gap:8px;margin:10px 14px;padding:9px 12px;
       border-radius:10px;background:#3a2a16;border:1px solid #7a5a2c;color:#e8c489;font-size:13px}
@@ -119,7 +122,7 @@ body.privacy .eye-off{display:inline}
 .decision{min-height:44px;border-radius:10px;color:#fff;font-weight:650}
 .decision.approve{background:#23563c;border:1px solid #3f8a65}
 .decision.reject{background:#5b2929;border:1px solid #a14a4a}
-#log{padding:8px 14px}
+#log{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 14px}
 .m{margin:8px 0;padding:9px 12px;border-radius:12px;max-width:92%;
    word-break:break-word;overflow-wrap:anywhere}
 .user{background:#2a4a2a;margin-left:auto;white-space:pre-wrap}
@@ -150,7 +153,7 @@ body.privacy .eye-off{display:inline}
 .assistant th:last-child,.assistant td:last-child{border-right:0}
 .assistant tbody tr:nth-child(even){background:#1b1b1b}
 .tool{background:#1a1a2e;color:#9ab;font-size:13px;font-family:ui-monospace,monospace}
-footer{position:fixed;bottom:0;left:0;right:0;background:#161616;
+footer{flex:none;background:#161616;
        border-top:1px solid #333;padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
 .keys{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-bottom:8px}
 .keys button{min-width:0;min-height:52px;padding:5px 2px;border-radius:10px;
