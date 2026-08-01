@@ -97,7 +97,8 @@ body.privacy .eye-off{display:inline}
 .dditem:hover,.dditem.sel{background:#2a2a2a}
 .plogo{width:16px;height:16px;flex:none}
 #alert{display:none;margin:10px 14px;padding:12px 14px;border-radius:12px;
-       background:#2a1616;border:1px solid #a33;box-shadow:0 2px 10px #0004}
+       background:#2a1616;border:1px solid #a33;box-shadow:0 2px 10px #0004;
+       min-height:0;max-height:60vh;overflow-y:auto}
 #alert.q{background:#16233a;border-color:#3a6aa0}
 #alert .ahead{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
               letter-spacing:.04em;text-transform:uppercase;color:#c99;margin-bottom:8px}

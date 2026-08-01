@@ -515,18 +515,31 @@ final class RemoteControlServer: ObservableObject {
 
     private nonisolated static func runTailscale(_ arguments: [String], timeout: TimeInterval = 6) -> TailscaleRun {
         let task = tailscaleProcess(arguments)
-        let output = Pipe()
-        let errors = Pipe()
-        task.standardOutput = output
-        task.standardError = errors
+        // Redirect to temp files, not Pipes: a large tailnet's status JSON can exceed the pipe
+        // buffer and block the child before it exits, which the timeout below would misread as a
+        // hang. Files never block the writer.
+        let tmp = FileManager.default.temporaryDirectory
+        let outURL = tmp.appendingPathComponent("toki-ts-\(UUID().uuidString).out")
+        let errURL = tmp.appendingPathComponent("toki-ts-\(UUID().uuidString).err")
+        FileManager.default.createFile(atPath: outURL.path, contents: nil)
+        FileManager.default.createFile(atPath: errURL.path, contents: nil)
+        let outHandle = try? FileHandle(forWritingTo: outURL)
+        let errHandle = try? FileHandle(forWritingTo: errURL)
+        defer {
+            try? outHandle?.close()
+            try? errHandle?.close()
+            try? FileManager.default.removeItem(at: outURL)
+            try? FileManager.default.removeItem(at: errURL)
+        }
+        task.standardOutput = outHandle ?? FileHandle.nullDevice
+        task.standardError = errHandle ?? FileHandle.nullDevice
         do {
             try task.run()
         } catch {
             return TailscaleRun(data: nil, launched: false, exitCode: -1, stderr: "")
         }
-        // Bound the wait: a hung `tailscale` (e.g. a GUI-app binary that doesn't act as a CLI) would
-        // otherwise block this worker forever, and the periodic refresh would pile up more, wedging
-        // the app. Read only after it exits - status output is well under the pipe buffer.
+        // Bound the wait so a hung `tailscale` (e.g. a GUI-app binary that doesn't act as a CLI)
+        // can't block this worker forever and pile up under the periodic refresh.
         let deadline = Date().addingTimeInterval(timeout)
         while task.isRunning, Date() < deadline {
             Thread.sleep(forTimeInterval: 0.05)
@@ -537,8 +550,10 @@ final class RemoteControlServer: ObservableObject {
                                            detail: arguments.joined(separator: " "))
             return TailscaleRun(data: nil, launched: true, exitCode: -1, stderr: "timed out after \(Int(timeout))s")
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        try? outHandle?.close()
+        try? errHandle?.close()
+        let data = (try? Data(contentsOf: outURL)) ?? Data()
+        let stderr = ((try? String(contentsOf: errURL, encoding: .utf8)) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let code = task.terminationStatus
         if code != 0 {
