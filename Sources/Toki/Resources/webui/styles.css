@@ -14,11 +14,13 @@ button:not(:disabled):active{transform:scale(.96);filter:brightness(1.16)}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #72a7e8;outline-offset:2px}
 .locked>header,.locked>#alert,.locked>#log,.locked>footer,
 .locked>#conn,.locked>#tolatest,.locked>#enablealerts{display:none}
+/* margin:auto on the form (below) centers it when there's room but aligns to the top and stays
+   scrollable when the form is taller than the viewport; justify-content:center would push its top
+   above the scroll origin and clip it. */
 #pairing{display:none;position:fixed;inset:0;z-index:15;background:#111;overflow-y:auto;
-         align-items:center;justify-content:center;
          padding:calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom))}
 .locked #pairing{display:flex}
-#pairform{width:min(100%,360px);padding:22px;border:1px solid #444;border-radius:14px;
+#pairform{width:min(100%,360px);margin:auto;padding:22px;border:1px solid #444;border-radius:14px;
           background:#1b1b1b;text-align:center}
 .pair-brand{display:flex;align-items:center;justify-content:center;gap:8px;
             color:#bbb;font-size:14px;font-weight:600;margin-bottom:14px}
