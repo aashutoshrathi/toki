@@ -19,6 +19,7 @@
 
 ### Fixed
 
+- Hardened the Remote Control companion server as defense in depth: its web app is now served with a strict Content-Security-Policy (plus `X-Content-Type-Options`, `Referrer-Policy`, and frame-denial headers), and request bodies are capped, so the surface that can inject terminal input stays locked down even if a rendering bug ever slipped through.
 - Sending a message to a terminal agent no longer occasionally inserts a newline instead of submitting: the message text and the Enter that submits it are now delivered as separate keypresses, which agents like Claude Code need to treat the Enter as "send".
 - The companion app renders an agent's question and its choices more clearly, with a labeled header and numbered options.
 - Remote Control now shows each agent's own transcript when several agents run in the same folder, instead of occasionally attributing one agent's conversation (and your reply) to another.
