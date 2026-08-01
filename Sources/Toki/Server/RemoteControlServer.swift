@@ -74,6 +74,9 @@ final class RemoteControlServer: ObservableObject {
     // nil until the first check completes; true when `tailscale serve` fronts our port on 443,
     // so the hosted Toki RC UI can actually reach this Mac from a phone.
     @Published private(set) var tailscaleServeReady: Bool?
+    // True when HTTPS :443 already serves a different app; auto-serve is suppressed so it can't
+    // clobber it, and the UI warns before a manual enable replaces it.
+    @Published private(set) var tailscaleServeConflict = false
     // Why the Tailscale DNS name couldn't be read (command missing, not logged in, MagicDNS off),
     // surfaced in settings so a failed lookup explains itself instead of silently using the IP.
     @Published private(set) var tailscaleStatusDiagnostic: String?
@@ -452,12 +455,14 @@ final class RemoteControlServer: ObservableObject {
         Task {
             let result = await Task.detached(priority: .utility) {
                 let status = Self.readTailscaleStatus()
+                let serve = Self.readTailscaleServe(port: checkPort)
                 return (name: status.name, diagnostic: status.diagnostic,
-                        serve: Self.readTailscaleServeReady(port: checkPort))
+                        ready: serve.ready, conflict: serve.conflict)
             }.value
             tailscaleDNSName = result.name
             tailscaleStatusDiagnostic = result.diagnostic
-            tailscaleServeReady = result.serve
+            tailscaleServeReady = result.ready
+            tailscaleServeConflict = result.conflict
             maybeAutoEnableServe()
         }
     }
@@ -466,8 +471,10 @@ final class RemoteControlServer: ObservableObject {
     // `tailscale serve` automatically once instead of making the user press a button. Only when
     // the server is up and we have a DNS name to serve; failures fall back to the manual button.
     private func maybeAutoEnableServe() {
+        // Never auto-serve over an existing :443 root handler - that would silently take the user's
+        // other Tailscale-served app offline. They can still replace it via the manual button.
         guard isRunning, hostMode == .tailscale, tailscaleDNSName != nil,
-              tailscaleServeReady == false,
+              tailscaleServeReady == false, !tailscaleServeConflict,
               !didAutoEnableServe, !isEnablingServe, serveSetupError == nil else { return }
         didAutoEnableServe = true
         enableTailscaleServe()
@@ -591,9 +598,9 @@ final class RemoteControlServer: ObservableObject {
         return "Tailscale is connected but MagicDNS is off, so there's no .ts.net name. Turn on MagicDNS, or enter the host by hand."
     }
 
-    private nonisolated static func readTailscaleServeReady(port: Int) -> Bool {
-        guard let data = runTailscale(["serve", "status", "--json"]).data else { return false }
-        return serveReady(from: data, port: port)
+    private nonisolated static func readTailscaleServe(port: Int) -> (ready: Bool, conflict: Bool) {
+        guard let data = runTailscale(["serve", "status", "--json"]).data else { return (false, false) }
+        return (serveReady(from: data, port: port), serveConflict(from: data, port: port))
     }
 
     // Run `tailscale serve` so the tailnet fronts our loopback port over HTTPS on 443. May fail if
@@ -762,6 +769,32 @@ final class RemoteControlServer: ObservableObject {
                     return true
                 }
             }
+        }
+        return false
+    }
+
+    // True when HTTPS :443 already serves a different app at the root path. Auto-serve must skip
+    // this case: `tailscale serve` at root would replace the user's other service silently.
+    nonisolated static func serveConflict(from data: Data, port: Int) -> Bool {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let root = object as? [String: Any],
+            let web = root["Web"] as? [String: Any]
+        else {
+            return false
+        }
+        let needle = "127.0.0.1:\(port)"
+        for (hostPort, value) in web {
+            guard
+                hostPort.hasSuffix(":443"),
+                let entry = value as? [String: Any],
+                let handlers = entry["Handlers"] as? [String: Any],
+                let rootHandler = handlers["/"] as? [String: Any],
+                let proxy = rootHandler["Proxy"] as? String
+            else {
+                continue
+            }
+            if !proxy.contains(needle) { return true }
         }
         return false
     }

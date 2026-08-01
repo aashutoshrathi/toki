@@ -744,7 +744,9 @@ struct SettingsPanel: View {
                 Text(ready == true
                     ? "Reachable from your phone."
                     : ready == false
-                        ? "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet."
+                        ? (remoteServer.tailscaleServeConflict
+                            ? "Tailscale already serves another app on HTTPS 443. Enabling here will replace it."
+                            : "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet.")
                         : "Checking whether your phone can reach this Mac…")
                     .foregroundStyle(ready == false ? Color.orange : Color.secondary)
             }
@@ -762,7 +764,7 @@ struct SettingsPanel: View {
                                 Text("Enabling…")
                             }
                         } else {
-                            Text("Enable HTTPS access")
+                            Text(remoteServer.tailscaleServeConflict ? "Replace and enable HTTPS" : "Enable HTTPS access")
                         }
                     }
                     .controlSize(.small)

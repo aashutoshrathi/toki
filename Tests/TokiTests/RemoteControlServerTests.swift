@@ -240,6 +240,24 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertFalse(RemoteControlServer.serveReady(from: Data("{}".utf8), port: 8765))
     }
 
+    func testServeConflictWhenRootServesAnotherApp() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}
+        """
+        XCTAssertTrue(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+    }
+
+    func testNoServeConflictWhenRootIsOurPort() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """
+        XCTAssertFalse(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+    }
+
+    func testNoServeConflictWhenNothingOn443() {
+        XCTAssertFalse(RemoteControlServer.serveConflict(from: Data("{}".utf8), port: 8765))
+    }
+
     func testParseTunnelHostFromCloudflaredOutput() {
         let text = """
         2026-07-29T10:00:00Z INF +----------------------------------------------------+
