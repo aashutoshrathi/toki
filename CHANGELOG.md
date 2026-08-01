@@ -23,6 +23,8 @@
 - The installed companion app (Add to Home Screen) reopens to your saved connection instead of an "invalid link" screen after it has been closed.
 - Running Toki from source with `swift run` can now start the Remote Control server; the bundled companion script is found in the SwiftPM resource bundle as well as a packaged app.
 - When the Tailscale DNS name can't be read, Remote Control settings now explain why (command not found, not signed in, or MagicDNS off) instead of quietly falling back to the tailnet IP.
+- Tailscale lookups can no longer wedge the app: each `tailscale` command now times out (and the timeout/failure is logged), so a misbehaving Tailscale binary can't leave the popover stuck.
+- Debug mode (now seven taps on the version badge) mirrors the diagnostic log live in the in-app debug panel, so agent, usage, and Remote Control events are visible without exporting a report.
 
 - Remote Control "From anywhere" now always shows the Connect QR when Tailscale is up. It points the phone straight at this Mac's Tailscale address with the session token in the URL (`https://<your-machine>.ts.net/?token=…`), and when the MagicDNS name can't be read it falls back to the tailnet IP so the QR and its verification code still work without extra setup.
 - Tailscale MagicDNS detection now looks in more locations for the `tailscale` CLI and searches a real PATH, so the machine's DNS name is found on more setups.

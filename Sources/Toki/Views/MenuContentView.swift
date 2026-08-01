@@ -130,7 +130,7 @@ struct MenuContentView: View {
                 .padding(.vertical, 4)
                 .functionalGlass(in: Capsule(), interactive: true)
                 .accessibilityLabel("Toki version \(appVersion)")
-                .onTapGesture(count: 5) {
+                .onTapGesture(count: 7) {
                     store.toggleDebug()
                 }
 

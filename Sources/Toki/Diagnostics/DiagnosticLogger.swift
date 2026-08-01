@@ -13,6 +13,8 @@ final class DiagnosticLogger: @unchecked Sendable {
     private let queue = DispatchQueue(label: "local.toki.diagnostics")
     private let fileManager = FileManager.default
     private let maximumBytes: UInt64 = 512 * 1024
+    // Set while debug mode is on so the in-app debug panel mirrors what's written to the log file.
+    nonisolated(unsafe) var observer: (@Sendable (String) -> Void)?
 
     var logDirectoryURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -24,6 +26,11 @@ final class DiagnosticLogger: @unchecked Sendable {
     }
 
     func record(_ level: DiagnosticLevel, component: String, code: String, detail: String? = nil) {
+        if let observer {
+            var summary = "\(level.rawValue) [\(component)] \(code)"
+            if let detail, !detail.isEmpty { summary += " \(redacted(detail))" }
+            observer(summary)
+        }
         queue.async { [self] in
             do {
                 try fileManager.createDirectory(at: logDirectoryURL, withIntermediateDirectories: true)

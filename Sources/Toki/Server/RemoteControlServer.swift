@@ -494,7 +494,7 @@ final class RemoteControlServer: ObservableObject {
         let stderr: String
     }
 
-    private nonisolated static func runTailscale(_ arguments: [String]) -> TailscaleRun {
+    private nonisolated static func runTailscale(_ arguments: [String], timeout: TimeInterval = 6) -> TailscaleRun {
         let task = tailscaleProcess(arguments)
         let output = Pipe()
         let errors = Pipe()
@@ -505,11 +505,27 @@ final class RemoteControlServer: ObservableObject {
         } catch {
             return TailscaleRun(data: nil, launched: false, exitCode: -1, stderr: "")
         }
+        // Bound the wait: a hung `tailscale` (e.g. a GUI-app binary that doesn't act as a CLI) would
+        // otherwise block this worker forever, and the periodic refresh would pile up more, wedging
+        // the app. Read only after it exits - status output is well under the pipe buffer.
+        let deadline = Date().addingTimeInterval(timeout)
+        while task.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if task.isRunning {
+            task.terminate()
+            DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "command_timeout",
+                                           detail: arguments.joined(separator: " "))
+            return TailscaleRun(data: nil, launched: true, exitCode: -1, stderr: "timed out after \(Int(timeout))s")
+        }
         let data = output.fileHandleForReading.readDataToEndOfFile()
         let stderr = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        task.waitUntilExit()
         let code = task.terminationStatus
+        if code != 0 {
+            DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "command_failed",
+                                           detail: "\(arguments.joined(separator: " ")) exit=\(code) \(stderr)")
+        }
         return TailscaleRun(data: code == 0 ? data : nil, launched: true, exitCode: code, stderr: stderr)
     }
 
