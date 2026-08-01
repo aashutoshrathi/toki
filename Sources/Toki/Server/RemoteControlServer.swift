@@ -768,12 +768,14 @@ final class RemoteControlServer: ObservableObject {
                 hostPort.hasSuffix(":443"),
                 let entry = value as? [String: Any],
                 let handlers = entry["Handlers"] as? [String: Any],
-                let rootHandler = handlers["/"] as? [String: Any],
-                let proxy = rootHandler["Proxy"] as? String
+                let rootHandler = handlers["/"] as? [String: Any]
             else {
                 continue
             }
-            if !proxy.contains(needle) { return true }
+            // Any root handler conflicts unless it's a proxy to our own port; a Path/Text static
+            // handler or a proxy elsewhere would be replaced by our serve command.
+            if let proxy = rootHandler["Proxy"] as? String, proxy.contains(needle) { continue }
+            return true
         }
         return false
     }

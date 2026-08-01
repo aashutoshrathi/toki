@@ -258,6 +258,13 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertFalse(RemoteControlServer.serveConflict(from: Data("{}".utf8), port: 8765))
     }
 
+    func testServeConflictWhenRootIsStaticHandler() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Path":"/var/www/site"}}}}}
+        """
+        XCTAssertTrue(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+    }
+
     func testParseTunnelHostFromCloudflaredOutput() {
         let text = """
         2026-07-29T10:00:00Z INF +----------------------------------------------------+
