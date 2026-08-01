@@ -90,8 +90,6 @@ final class RemoteControlServer: ObservableObject {
     @Published var hostMode: HostMode = .localhost {
         didSet {
             guard hostMode != oldValue else { return }
-            didAutoEnableServe = false
-            serveSetupError = nil
             if hostMode == .tailscale {
                 refreshTailscaleStatus()
             }
@@ -120,9 +118,6 @@ final class RemoteControlServer: ObservableObject {
     private var outputBuffer = ""
     private var activeAgents: [ActiveAgent] = []
     private var tunnelProcess: Process?
-    // Guards the automatic `tailscale serve` so it's attempted once per Tailscale selection, not
-    // re-run on every status refresh (and not retried in a loop after it fails).
-    private var didAutoEnableServe = false
 
     private init() {
         hostMode = Self.preferredHostMode(
@@ -340,8 +335,6 @@ final class RemoteControlServer: ObservableObject {
         token = nil
         pairingCode = nil
         outputBuffer = ""
-        didAutoEnableServe = false
-        serveSetupError = nil
     }
 
     func updateActiveAgents(_ agents: [ActiveAgent]) {
@@ -463,21 +456,7 @@ final class RemoteControlServer: ObservableObject {
             tailscaleStatusDiagnostic = result.diagnostic
             tailscaleServeReady = result.ready
             tailscaleServeConflict = result.conflict
-            maybeAutoEnableServe()
         }
-    }
-
-    // Choosing Tailscale for "from anywhere" implies wanting HTTPS reachability, so run
-    // `tailscale serve` automatically once instead of making the user press a button. Only when
-    // the server is up and we have a DNS name to serve; failures fall back to the manual button.
-    private func maybeAutoEnableServe() {
-        // Never auto-serve over an existing :443 root handler - that would silently take the user's
-        // other Tailscale-served app offline. They can still replace it via the manual button.
-        guard isRunning, hostMode == .tailscale, tailscaleDNSName != nil,
-              tailscaleServeReady == false, !tailscaleServeConflict,
-              !didAutoEnableServe, !isEnablingServe, serveSetupError == nil else { return }
-        didAutoEnableServe = true
-        enableTailscaleServe()
     }
 
     private nonisolated static func tailscaleExecutable() -> URL {
