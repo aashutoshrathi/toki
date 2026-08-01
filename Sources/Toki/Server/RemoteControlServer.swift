@@ -531,7 +531,15 @@ final class RemoteControlServer: ObservableObject {
             Thread.sleep(forTimeInterval: 0.05)
         }
         if task.isRunning {
-            task.terminate()
+            task.terminate() // SIGTERM
+            // Force-kill if it ignores SIGTERM, and reap it, so a hung tailscale can't survive and
+            // let the periodic refresh accumulate stuck processes.
+            let killDeadline = Date().addingTimeInterval(1)
+            while task.isRunning, Date() < killDeadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if task.isRunning { kill(task.processIdentifier, SIGKILL) }
+            task.waitUntilExit()
             DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "command_timeout",
                                            detail: arguments.joined(separator: " "))
             return TailscaleRun(data: nil, launched: true, exitCode: -1, stderr: "timed out after \(Int(timeout))s")
