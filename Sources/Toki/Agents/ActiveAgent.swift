@@ -61,6 +61,9 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     let sessionUsage: AgentSessionUsage?
     // Set when the session is parked waiting on the user (a question or a permission prompt).
     let attention: AgentAttention?
+    // The resolved session/transcript file, disambiguated by process start time. Passed to Remote
+    // Control so it shows each co-located agent's own transcript instead of re-guessing by cwd.
+    var sessionPath: String? = nil
     // A short marker (the terminal tty) appended to the title only when another agent would
     // otherwise show the same one - several agents in one project can resolve to the same
     // session, and identical rows can't be told apart. Set by a post-scan pass.
@@ -279,7 +282,8 @@ enum ActiveAgentScanner {
             memoryKB: c.memoryKB,
             command: c.command,
             sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
-            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
+            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
+            sessionPath: AgentSessionResolver.sessionPath(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
         )
         cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux)
         return agent

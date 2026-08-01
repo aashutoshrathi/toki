@@ -49,6 +49,18 @@ enum AgentSessionResolver {
         }
     }
 
+    // The transcript file backing this agent, resolved with the process start time so co-located
+    // agents map to their own session. Claude is the common co-located case; other providers let
+    // Remote Control keep resolving by cwd.
+    static func sessionPath(provider: Provider, command: String, cwd: String?, startTime: Date? = nil) -> String? {
+        switch provider {
+        case .claudeCode, .claude, .anthropic:
+            return newestClaudeSession(command: command, cwd: cwd, nearStart: startTime)?.path
+        default:
+            return nil
+        }
+    }
+
     struct ParsedClaudeSession: Sendable {
         var usage: AgentSessionUsage?
         /// Whether this counts as "blocked" depends on elapsed time, so that is left to the

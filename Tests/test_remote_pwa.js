@@ -76,4 +76,11 @@ assert.match(app, /showNotification\(title,opts\)/);
 assert.match(app, /requestPermission\(\)/);
 assert.match(sw, /addEventListener\("notificationclick"/);
 
+// --- Installed PWA relaunch restores the last connection instead of the invalid-link screen ---
+assert.match(app, /const CONN_KEY="toki-conn"/);
+assert.match(app, /function savedConn/);
+assert.match(app, /const REVIVE=PARAMS\.get\("token"\)\?null:savedConn\(\)/);
+assert.match(app, /localStorage\.setItem\(CONN_KEY/);
+assert.match(app, /localStorage\.removeItem\(CONN_KEY\)/);
+
 console.log("remote pwa + qr + ux tests passed");

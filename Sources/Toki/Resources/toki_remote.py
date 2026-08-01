@@ -331,7 +331,12 @@ def agents_from_snapshot(processes, snapshot):
         agent["cwd"] = item.get("cwd")
         agent["tty"] = item.get("tty")
         agent["title"] = item.get("title")
-        if agent["provider"] == "claude":
+        # Prefer the session Toki already resolved with the process start time; only fall back to
+        # resolving by cwd (which can't tell co-located agents apart) when it wasn't provided.
+        provided = item.get("session")
+        if provided:
+            agent["session"] = provided
+        elif agent["provider"] == "claude":
             agent["session"] = newest_claude_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "codex":
             agent["session"] = newest_codex_session(agent["command"], agent["cwd"])

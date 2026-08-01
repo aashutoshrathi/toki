@@ -195,8 +195,6 @@ final class RemoteControlServer: ObservableObject {
                     token: token
                 )
             }
-            // Tailscale is up but its MagicDNS name isn't resolvable (no CLI on PATH, MagicDNS off).
-            // The server binds 0.0.0.0, so a phone on the tailnet can still reach it at the 100.x IP.
             if hostMode == .tailscale {
                 return tailscaleDirectURL(ip: tailscaleIP, port: port, token: token)
             }
@@ -219,12 +217,12 @@ final class RemoteControlServer: ObservableObject {
                 components?.percentEncodedFragment = parameters.percentEncodedQuery
                 return components?.url?.absoluteString
             }
-            // The hosted UI needs a MagicDNS host; when it isn't available, fall back to the Mac's
-            // own UI served directly over the tailnet IP so the QR (and token) still work.
             return tailscaleDirectURL(ip: tailscaleIP, port: port, token: token)
         }
     }
 
+    // Fallback for when the MagicDNS name can't be read: the server binds 0.0.0.0, so a phone on
+    // the tailnet can still reach it directly at the 100.x address over HTTP.
     private static func tailscaleDirectURL(ip: String?, port: Int, token: String) -> String? {
         guard let ip else { return nil }
         return directConnectURL(host: ip, scheme: "http", port: port, token: token)
@@ -249,6 +247,18 @@ final class RemoteControlServer: ObservableObject {
         isRunning ? stop() : start()
     }
 
+    // Bundle.main holds the script in a packaged .app; `swift run` instead drops resources in an
+    // SPM bundle beside the executable (same fallback SVGLogoAsset uses), so check both.
+    private static func serverScriptURL() -> URL? {
+        if let url = Bundle.main.url(forResource: "toki_remote", withExtension: "py") { return url }
+        let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("toki_remote.py"),
+            executableDir?.appendingPathComponent("Toki_Toki.bundle/toki_remote.py")
+        ]
+        return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     func start() {
         guard !isRunning else { return }
         lastError = nil
@@ -256,7 +266,7 @@ final class RemoteControlServer: ObservableObject {
         pairingCode = nil
         outputBuffer = ""
 
-        guard let script = Bundle.main.url(forResource: "toki_remote", withExtension: "py") else {
+        guard let script = Self.serverScriptURL() else {
             lastError = "The companion server script is missing from the app bundle."
             return
         }
@@ -345,7 +355,8 @@ final class RemoteControlServer: ObservableObject {
                 "provider": provider,
                 "cwd": agent.directory.map { $0 as Any } ?? NSNull(),
                 "title": agent.title,
-                "tty": agent.terminalTTY.map { $0 as Any } ?? NSNull()
+                "tty": agent.terminalTTY.map { $0 as Any } ?? NSNull(),
+                "session": agent.sessionPath.map { $0 as Any } ?? NSNull()
             ]
         }
         guard
@@ -449,20 +460,26 @@ final class RemoteControlServer: ObservableObject {
         return URL(fileURLWithPath: "/usr/bin/env")
     }
 
-    private nonisolated static func runTailscale(_ arguments: [String]) -> Data? {
+    private nonisolated static func tailscaleProcess(_ arguments: [String]) -> Process {
         let executable = tailscaleExecutable()
         let task = Process()
         task.executableURL = executable
-        task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
-        // A menu-bar app launched from Finder inherits a bare PATH, so the env fallback needs the
-        // usual CLI directories spelled out to find a `tailscale` that isn't at a known path.
-        if executable.lastPathComponent == "env" {
-            var environment = ProcessInfo.processInfo.environment
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\(home)/.local/bin"
-            task.environment = environment
+        guard executable.lastPathComponent == "env" else {
+            task.arguments = arguments
+            return task
         }
+        // Finder-launched apps inherit a bare PATH, so the `env` fallback needs the usual CLI
+        // directories spelled out to find a `tailscale` that isn't at a known path.
+        task.arguments = ["tailscale"] + arguments
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\(home)/.local/bin"
+        task.environment = environment
+        return task
+    }
 
+    private nonisolated static func runTailscale(_ arguments: [String]) -> Data? {
+        let task = tailscaleProcess(arguments)
         let output = Pipe()
         task.standardOutput = output
         task.standardError = FileHandle.nullDevice
@@ -509,11 +526,7 @@ final class RemoteControlServer: ObservableObject {
 
     // Returns nil on success, or an error message to surface.
     private nonisolated static func runTailscaleServe(port: Int) -> String? {
-        let executable = tailscaleExecutable()
-        let arguments = ["serve", "--bg", "http://127.0.0.1:\(port)"]
-        let task = Process()
-        task.executableURL = executable
-        task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
+        let task = tailscaleProcess(["serve", "--bg", "http://127.0.0.1:\(port)"])
 
         // Capture stderr to a temp file, not a Pipe. `serve --bg` can leave a descriptor open,
         // and a blocking pipe read would then never reach EOF (hangs the caller forever).

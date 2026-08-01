@@ -18,6 +18,9 @@
 
 - Sending a message to a terminal agent no longer occasionally inserts a newline instead of submitting: the message text and the Enter that submits it are now delivered as separate keypresses, which agents like Claude Code need to treat the Enter as "send".
 - The companion app renders an agent's question and its choices more clearly, with a labeled header and numbered options.
+- Remote Control now shows each agent's own transcript when several agents run in the same folder, instead of occasionally attributing one agent's conversation (and your reply) to another.
+- The installed companion app (Add to Home Screen) reopens to your saved connection instead of an "invalid link" screen after it has been closed.
+- Running Toki from source with `swift run` can now start the Remote Control server; the bundled companion script is found in the SwiftPM resource bundle as well as a packaged app.
 
 - Remote Control "From anywhere" now always shows the Connect QR when Tailscale is up. It points the phone straight at this Mac's Tailscale address with the session token in the URL (`https://<your-machine>.ts.net/?token=…`), and when the MagicDNS name can't be read it falls back to the tailnet IP so the QR and its verification code still work without extra setup.
 - Tailscale MagicDNS detection now looks in more locations for the `tailscale` CLI and searches a real PATH, so the machine's DNS name is found on more setups.
