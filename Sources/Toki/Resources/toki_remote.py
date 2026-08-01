@@ -47,6 +47,10 @@ from urllib.parse import parse_qs, urlparse
 
 HOME = os.path.expanduser("~")
 QUIET_PERIOD = 10.0  # seconds; same reasoning as Toki's attentionQuietPeriod
+# Gap between delivering the message text and the submitting Enter. Sent together, a TUI like
+# Claude Code reads the trailing carriage return as part of the paste and inserts a newline
+# instead of submitting; a short pause makes the Enter register as its own keypress.
+SUBMIT_DELAY = 0.15
 AUTO_ACCEPTED_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 CANONICAL_AGENTS = None
 CANONICAL_AGENTS_LOCK = threading.Lock()
@@ -965,6 +969,7 @@ def send_input(tty, text=None, key=None, raw=False):
         else:
             ok = shell([tmux, "send-keys", "-t", pane, "-l", text]) is not None
             if not raw:
+                time.sleep(SUBMIT_DELAY)
                 ok = ok and shell([tmux, "send-keys", "-t", pane, "Enter"]) is not None
         return ok, "tmux"
     if key:
@@ -974,8 +979,10 @@ def send_input(tty, text=None, key=None, raw=False):
         if iterm_write(tty, seq):
             return True, "iterm"
     else:
-        expr = applescript_str(text) + ('' if raw else ' & (character id 13)')
-        if iterm_write(tty, expr):
+        if iterm_write(tty, applescript_str(text)):
+            if not raw:
+                time.sleep(SUBMIT_DELAY)
+                iterm_write(tty, "(character id 13)")
             return True, "iterm"
     if focus_terminal_tab(tty):
         time.sleep(0.3)
@@ -984,6 +991,7 @@ def send_input(tty, text=None, key=None, raw=False):
         else:
             ok = osascript(f'tell application "System Events" to keystroke {applescript_str(text)}')
             if not raw:
+                time.sleep(SUBMIT_DELAY)
                 ok = ok and osascript('tell application "System Events" to key code 36')
         return ok, "terminal+system-events"
     return False, "no route to tty (not tmux/iTerm/Terminal?)"

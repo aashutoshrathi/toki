@@ -96,6 +96,9 @@ final class RemoteControlServer: ObservableObject {
         }
     }
     @Published var customHost = ""
+    // A Tailscale DNS name typed by hand when `tailscale status` can't be read (e.g. the CLI
+    // isn't installed), so the Connect link can still carry the real .ts.net host.
+    @Published var manualTailscaleHost = ""
     @Published var companionAppMode: CompanionAppMode = .sameHost
     @Published var sessionLifetime: SessionLifetime = .twelveHours
 
@@ -122,7 +125,9 @@ final class RemoteControlServer: ObservableObject {
         case .localNetwork:
             return Self.localNetworkIP()
         case .tailscale:
-            return tailscaleDNSName
+            if let tailscaleDNSName { return tailscaleDNSName }
+            let manual = manualTailscaleHost.trimmingCharacters(in: .whitespacesAndNewlines)
+            return manual.isEmpty ? nil : manual
         case .tunnel:
             return tunnelHost
         case .custom:

@@ -2,6 +2,9 @@
 *{box-sizing:border-box;margin:0}
 body{font:15px/1.45 -apple-system,system-ui,sans-serif;background:#111;color:#eee;
      padding-bottom:calc(var(--footer-height,180px) + 8px)}
+/* Subtle film grain over the whole app: an inline SVG noise field, fixed behind the content. */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.05;
+  background:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>")}
 button{font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
        transition:transform .08s ease,filter .12s ease,background-color .12s ease,
                   border-color .12s ease,box-shadow .12s ease}
@@ -68,6 +71,16 @@ header{position:sticky;top:0;background:#111c;backdrop-filter:blur(10px);
               font-size:13px;font-weight:600;text-align:left}
 #enablealerts[hidden]{display:none}
 h1{font-size:16px;display:flex;align-items:center;gap:8px}
+.hdr-top{display:flex;align-items:center;gap:10px}
+.hdr-top h1{flex:1;min-width:0}
+#privacytoggle{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:9px;background:#222;border:1px solid #444;color:#bbb}
+#privacytoggle:not(:disabled):hover{color:#eee;border-color:#666}
+#privacytoggle[aria-pressed="true"]{background:#20304a;border-color:#3c5a82;color:#dce7f5}
+#privacytoggle svg{width:18px;height:18px}
+.eye-off{display:none}
+body.privacy .eye-open{display:none}
+body.privacy .eye-off{display:inline}
 #dd{position:relative;margin-top:8px}
 #ddbtn{width:100%;display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;
        background:#222;color:#eee;border:1px solid #444;font-size:15px;text-align:left}
@@ -80,14 +93,28 @@ h1{font-size:16px;display:flex;align-items:center;gap:8px}
 .dditem{display:flex;align-items:center;gap:8px;padding:10px;cursor:pointer}
 .dditem:hover,.dditem.sel{background:#2a2a2a}
 .plogo{width:16px;height:16px;flex:none}
-#alert{display:none;margin:10px 14px;padding:10px 12px;border-radius:10px;
-       background:#5c1f1f;border:1px solid #a33}
-#alert.q{background:#1f3a5c;border-color:#37a}
-#alert .qq{font-weight:600;margin:4px 0 6px}
+#alert{display:none;margin:10px 14px;padding:12px 14px;border-radius:12px;
+       background:#2a1616;border:1px solid #a33;box-shadow:0 2px 10px #0004}
+#alert.q{background:#16233a;border-color:#3a6aa0}
+#alert .ahead{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+              letter-spacing:.04em;text-transform:uppercase;color:#c99;margin-bottom:8px}
+#alert.q .ahead{color:#8fb4e0}
+#alert .ahead::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;
+                      box-shadow:0 0 0 4px color-mix(in srgb,currentColor 22%,transparent)}
+#alert .qq{font-weight:600;margin:2px 0 8px;font-size:15px;line-height:1.45}
+#alert .qq p{margin:5px 0}
+#alert .qq code{background:#0005;padding:1px 5px;border-radius:4px;
+                font-family:ui-monospace,monospace;font-size:13px}
+#alert .qq:not(:first-of-type){margin-top:14px;padding-top:12px;border-top:1px solid #ffffff1a}
 #readonly{display:none;margin:10px 14px;padding:10px 12px;border-radius:10px;
           background:#3c3218;border:1px solid #79652c;color:#e2cc8c;font-size:13px}
-.opt{display:block;width:100%;margin:7px 0 0;padding:10px 12px;border-radius:10px;
-     background:#263d59;border:1px solid #4d739e;color:#fff;font-size:14px;text-align:left}
+.opt{display:flex;align-items:flex-start;gap:10px;width:100%;margin:7px 0 0;padding:11px 12px;
+     border-radius:10px;background:#243a55;border:1px solid #45688f;color:#fff;font-size:14px;
+     text-align:left;line-height:1.4}
+.opt:not(:disabled):hover{background:#2c496b;border-color:#5a83b0}
+.opt b{flex:none;min-width:22px;height:22px;display:inline-flex;align-items:center;
+       justify-content:center;border-radius:6px;background:#ffffff26;font-size:12px;font-weight:700}
+.opt span{flex:1;min-width:0}
 .decision-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
 .decision{min-height:44px;border-radius:10px;color:#fff;font-weight:650}
 .decision.approve{background:#23563c;border:1px solid #3f8a65}

@@ -19,7 +19,9 @@ function feedback(kind="tap"){
 const SESSION_KEY="toki-session:"+API_BASE+":"+LINK_TOKEN;
 let TOKEN="";
 try{TOKEN=sessionStorage.getItem(SESSION_KEY)||""}catch(e){}
-let current=null, offset=0, agents=[];
+let current=null, offset=0, agents=[], privacyMode=false;
+// When privacy mode is on, agent names in the picker are masked so they stay out of recordings.
+function dispTitle(t){return privacyMode?"•".repeat(Math.min(Math.max((t||"").length,4),14)):esc(t)}
 async function api(p,o){const url=API_BASE+p+(p.includes("?")?"&":"?")+"token="+encodeURIComponent(TOKEN);
   const r=await fetch(url,o);
   if(r.status==403)lockApp();
@@ -98,7 +100,7 @@ function renderAgents(){
     btn.innerHTML='<span class="t">no agents found</span>';list.innerHTML="";
     updateComposer(null);return
   }
-  const row=a=>providerLogo(a.provider)+'<span class="t">'+(a.attention?'<span class="dot">\u25cf</span> ':'')+esc(a.title)+'</span>';
+  const row=a=>providerLogo(a.provider)+'<span class="t">'+(a.attention?'<span class="dot">\u25cf</span> ':'')+dispTitle(a.title)+'</span>';
   const cur=agents.find(a=>a.pid==current)||agents[0];
   btn.innerHTML=row(cur)+'<span class="caret">\u25be</span>';
   updateComposer(cur);
@@ -156,9 +158,10 @@ async function refreshAgents(){
     al.style.display="block";al.className=a.attention.kind=="question"?"q":"";
     const qs=a.attention.questions&&a.attention.questions.length?a.attention.questions
       :[{question:a.attention.prompt||"Agent is waiting on you",options:a.attention.options||[]}];
-    al.innerHTML=qs.map(q=>'<div class="qq">'+md(q.question||"")+"</div>"+
+    const head='<div class="ahead">'+(a.attention.kind=="permission"?"Needs your approval":"Agent is asking")+"</div>";
+    al.innerHTML=head+qs.map(q=>'<div class="qq">'+md(q.question||"")+"</div>"+
       (q.options||[]).map((o,i)=>
-        `<button class="opt" data-text="${i+1}"><b>${i+1}</b>&ensp;${esc(o)}</button>`).join("")).join("")+
+        `<button class="opt" data-text="${i+1}"><b>${i+1}</b><span>${esc(o)}</span></button>`).join("")).join("")+
       (a.attention.kind=="permission"?'<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>':"");
   } else al.style.display="none";
 }
@@ -270,6 +273,15 @@ window.addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true
 $("#enablealerts").addEventListener("click",async()=>{
   try{await Notification.requestPermission()}catch(e){}
   updateAlertsButton();
+});
+$("#privacytoggle").addEventListener("click",()=>{
+  privacyMode=!privacyMode;feedback("tap");
+  document.body.classList.toggle("privacy",privacyMode);
+  const b=$("#privacytoggle");
+  b.setAttribute("aria-pressed",String(privacyMode));
+  b.setAttribute("aria-label",privacyMode?"Show agent names":"Hide agent names");
+  b.title=privacyMode?"Show agent names":"Hide agent names";
+  renderAgents();
 });
 
 // Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.

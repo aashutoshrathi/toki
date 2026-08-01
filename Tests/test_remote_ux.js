@@ -39,6 +39,15 @@ assert.match(app, /\.m\.user\.failed/);
 assert.match(app, /f\.remove\(\);feedback\("tap"\);sendText\(text\)/);
 assert.match(app, /\$\("#alert"\)\.style\.display="none"/);
 assert.match(css, /Tap to retry/);
+// Privacy toggle masks agent names in the picker for recordings.
+assert.match(html, /id="privacytoggle"/);
+assert.match(app, /function dispTitle/);
+assert.match(app, /privacyMode/);
+assert.match(css, /body\.privacy/);
+// Restyled question banner (header label + badge/label option layout) and film grain.
+assert.match(app, /class="ahead"/);
+assert.match(app, /<b>\$\{i\+1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);
+assert.match(css, /feTurbulence/);
 assert.match(css, /button:not\(:disabled\):active/);
 assert.match(css, /\.decision\.reject/);
 assert.match(css, /min-height:44px/);
