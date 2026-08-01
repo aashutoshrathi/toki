@@ -202,6 +202,19 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(url)
     }
 
+    func testStatusDiagnosticReportsDisconnectedBackend() {
+        let json = #"{"BackendState":"Stopped","Self":{"DNSName":""}}"#
+        let message = RemoteControlServer.statusDiagnostic(from: Data(json.utf8))
+        XCTAssertTrue(message.contains("isn't connected"), message)
+        XCTAssertTrue(message.contains("Stopped"), message)
+    }
+
+    func testStatusDiagnosticReportsMagicDNSOffWhenRunningWithoutName() {
+        let json = #"{"BackendState":"Running","Self":{"DNSName":"macbook"}}"#
+        let message = RemoteControlServer.statusDiagnostic(from: Data(json.utf8))
+        XCTAssertTrue(message.contains("MagicDNS is off"), message)
+    }
+
     func testServeReadyDetectsHandlerForOurPort() {
         let json = """
         {"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
@@ -225,6 +238,31 @@ final class RemoteControlServerTests: XCTestCase {
 
     func testServeReadyFalseForEmptyConfig() {
         XCTAssertFalse(RemoteControlServer.serveReady(from: Data("{}".utf8), port: 8765))
+    }
+
+    func testServeConflictWhenRootServesAnotherApp() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}
+        """
+        XCTAssertTrue(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+    }
+
+    func testNoServeConflictWhenRootIsOurPort() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """
+        XCTAssertFalse(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+    }
+
+    func testNoServeConflictWhenNothingOn443() {
+        XCTAssertFalse(RemoteControlServer.serveConflict(from: Data("{}".utf8), port: 8765))
+    }
+
+    func testServeConflictWhenRootIsStaticHandler() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Path":"/var/www/site"}}}}}
+        """
+        XCTAssertTrue(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
     }
 
     func testParseTunnelHostFromCloudflaredOutput() {

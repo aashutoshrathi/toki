@@ -13,6 +13,14 @@ final class DiagnosticLogger: @unchecked Sendable {
     private let queue = DispatchQueue(label: "local.toki.diagnostics")
     private let fileManager = FileManager.default
     private let maximumBytes: UInt64 = 512 * 1024
+    // Mirrors log lines to the in-app debug panel while debug mode is on. Only touched on `queue`
+    // so reads (from record) and writes (from setObserver) never race.
+    private var observer: (@Sendable (String) -> Void)?
+
+    // Set to a handler while debug mode is on, or nil to detach; serialized on the log queue.
+    func setObserver(_ observer: (@Sendable (String) -> Void)?) {
+        queue.async { [self] in self.observer = observer }
+    }
 
     var logDirectoryURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -25,6 +33,11 @@ final class DiagnosticLogger: @unchecked Sendable {
 
     func record(_ level: DiagnosticLevel, component: String, code: String, detail: String? = nil) {
         queue.async { [self] in
+            if let observer {
+                var summary = "\(level.rawValue) [\(component)] \(code)"
+                if let detail, !detail.isEmpty { summary += " \(redacted(detail))" }
+                observer(summary)
+            }
             do {
                 try fileManager.createDirectory(at: logDirectoryURL, withIntermediateDirectories: true)
                 try rotateIfNeeded()

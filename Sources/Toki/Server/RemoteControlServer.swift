@@ -74,6 +74,12 @@ final class RemoteControlServer: ObservableObject {
     // nil until the first check completes; true when `tailscale serve` fronts our port on 443,
     // so the hosted Toki RC UI can actually reach this Mac from a phone.
     @Published private(set) var tailscaleServeReady: Bool?
+    // True when HTTPS :443 already serves a different app; auto-serve is suppressed so it can't
+    // clobber it, and the UI warns before a manual enable replaces it.
+    @Published private(set) var tailscaleServeConflict = false
+    // Why the Tailscale DNS name couldn't be read (command missing, not logged in, MagicDNS off),
+    // surfaced in settings so a failed lookup explains itself instead of silently using the IP.
+    @Published private(set) var tailscaleStatusDiagnostic: String?
     @Published private(set) var isEnablingServe = false
     @Published private(set) var serveSetupError: String?
     // Public HTTPS address from a Cloudflare quick tunnel, when Host is Cloudflare Tunnel.
@@ -97,8 +103,11 @@ final class RemoteControlServer: ObservableObject {
     }
     @Published var customHost = ""
     // A Tailscale DNS name typed by hand when `tailscale status` can't be read (e.g. the CLI
-    // isn't installed), so the Connect link can still carry the real .ts.net host.
-    @Published var manualTailscaleHost = ""
+    // isn't installed). Persisted per device so it survives relaunches; the name is stable per Mac.
+    private static let manualHostKey = "toki.remoteControl.manualTailscaleHost"
+    @Published var manualTailscaleHost = UserDefaults.standard.string(forKey: manualHostKey) ?? "" {
+        didSet { UserDefaults.standard.set(manualTailscaleHost, forKey: Self.manualHostKey) }
+    }
     @Published var companionAppMode: CompanionAppMode = .sameHost
     @Published var sessionLifetime: SessionLifetime = .twelveHours
 
@@ -195,8 +204,6 @@ final class RemoteControlServer: ObservableObject {
                     token: token
                 )
             }
-            // Tailscale is up but its MagicDNS name isn't resolvable (no CLI on PATH, MagicDNS off).
-            // The server binds 0.0.0.0, so a phone on the tailnet can still reach it at the 100.x IP.
             if hostMode == .tailscale {
                 return tailscaleDirectURL(ip: tailscaleIP, port: port, token: token)
             }
@@ -219,12 +226,12 @@ final class RemoteControlServer: ObservableObject {
                 components?.percentEncodedFragment = parameters.percentEncodedQuery
                 return components?.url?.absoluteString
             }
-            // The hosted UI needs a MagicDNS host; when it isn't available, fall back to the Mac's
-            // own UI served directly over the tailnet IP so the QR (and token) still work.
             return tailscaleDirectURL(ip: tailscaleIP, port: port, token: token)
         }
     }
 
+    // Fallback for when the MagicDNS name can't be read: the server binds 0.0.0.0, so a phone on
+    // the tailnet can still reach it directly at the 100.x address over HTTP.
     private static func tailscaleDirectURL(ip: String?, port: Int, token: String) -> String? {
         guard let ip else { return nil }
         return directConnectURL(host: ip, scheme: "http", port: port, token: token)
@@ -249,6 +256,18 @@ final class RemoteControlServer: ObservableObject {
         isRunning ? stop() : start()
     }
 
+    // Bundle.main holds the script in a packaged .app; `swift run` instead drops resources in an
+    // SPM bundle beside the executable (same fallback SVGLogoAsset uses), so check both.
+    private static func serverScriptURL() -> URL? {
+        if let url = Bundle.main.url(forResource: "toki_remote", withExtension: "py") { return url }
+        let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("toki_remote.py"),
+            executableDir?.appendingPathComponent("Toki_Toki.bundle/toki_remote.py")
+        ]
+        return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     func start() {
         guard !isRunning else { return }
         lastError = nil
@@ -256,7 +275,7 @@ final class RemoteControlServer: ObservableObject {
         pairingCode = nil
         outputBuffer = ""
 
-        guard let script = Bundle.main.url(forResource: "toki_remote", withExtension: "py") else {
+        guard let script = Self.serverScriptURL() else {
             lastError = "The companion server script is missing from the app bundle."
             return
         }
@@ -345,7 +364,8 @@ final class RemoteControlServer: ObservableObject {
                 "provider": provider,
                 "cwd": agent.directory.map { $0 as Any } ?? NSNull(),
                 "title": agent.title,
-                "tty": agent.terminalTTY.map { $0 as Any } ?? NSNull()
+                "tty": agent.terminalTTY.map { $0 as Any } ?? NSNull(),
+                "session": agent.sessionPath.map { $0 as Any } ?? NSNull()
             ]
         }
         guard
@@ -427,10 +447,15 @@ final class RemoteControlServer: ObservableObject {
         let checkPort = port
         Task {
             let result = await Task.detached(priority: .utility) {
-                (name: Self.readTailscaleDNSName(), serve: Self.readTailscaleServeReady(port: checkPort))
+                let status = Self.readTailscaleStatus()
+                let serve = Self.readTailscaleServe(port: checkPort)
+                return (name: status.name, diagnostic: status.diagnostic,
+                        ready: serve.ready, conflict: serve.conflict)
             }.value
             tailscaleDNSName = result.name
-            tailscaleServeReady = result.serve
+            tailscaleStatusDiagnostic = result.diagnostic
+            tailscaleServeReady = result.ready
+            tailscaleServeConflict = result.conflict
         }
     }
 
@@ -449,42 +474,120 @@ final class RemoteControlServer: ObservableObject {
         return URL(fileURLWithPath: "/usr/bin/env")
     }
 
-    private nonisolated static func runTailscale(_ arguments: [String]) -> Data? {
+    private nonisolated static func tailscaleProcess(_ arguments: [String]) -> Process {
         let executable = tailscaleExecutable()
         let task = Process()
         task.executableURL = executable
-        task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
-        // A menu-bar app launched from Finder inherits a bare PATH, so the env fallback needs the
-        // usual CLI directories spelled out to find a `tailscale` that isn't at a known path.
-        if executable.lastPathComponent == "env" {
-            var environment = ProcessInfo.processInfo.environment
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\(home)/.local/bin"
-            task.environment = environment
+        guard executable.lastPathComponent == "env" else {
+            task.arguments = arguments
+            return task
         }
+        // Finder-launched apps inherit a bare PATH, so the `env` fallback needs the usual CLI
+        // directories spelled out to find a `tailscale` that isn't at a known path.
+        task.arguments = ["tailscale"] + arguments
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\(home)/.local/bin"
+        task.environment = environment
+        return task
+    }
 
-        let output = Pipe()
-        task.standardOutput = output
-        task.standardError = FileHandle.nullDevice
+    struct TailscaleRun {
+        let data: Data?
+        let launched: Bool
+        let exitCode: Int32
+        let stderr: String
+    }
+
+    private nonisolated static func runTailscale(_ arguments: [String], timeout: TimeInterval = 6) -> TailscaleRun {
+        let task = tailscaleProcess(arguments)
+        // Redirect to temp files, not Pipes: a large tailnet's status JSON can exceed the pipe
+        // buffer and block the child before it exits, which the timeout below would misread as a
+        // hang. Files never block the writer.
+        let tmp = FileManager.default.temporaryDirectory
+        let outURL = tmp.appendingPathComponent("toki-ts-\(UUID().uuidString).out")
+        let errURL = tmp.appendingPathComponent("toki-ts-\(UUID().uuidString).err")
+        FileManager.default.createFile(atPath: outURL.path, contents: nil)
+        FileManager.default.createFile(atPath: errURL.path, contents: nil)
+        let outHandle = try? FileHandle(forWritingTo: outURL)
+        let errHandle = try? FileHandle(forWritingTo: errURL)
+        defer {
+            try? outHandle?.close()
+            try? errHandle?.close()
+            try? FileManager.default.removeItem(at: outURL)
+            try? FileManager.default.removeItem(at: errURL)
+        }
+        task.standardOutput = outHandle ?? FileHandle.nullDevice
+        task.standardError = errHandle ?? FileHandle.nullDevice
         do {
             try task.run()
         } catch {
-            return nil
+            return TailscaleRun(data: nil, launched: false, exitCode: -1, stderr: "")
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0 else { return nil }
-        return data
+        // Bound the wait so a hung `tailscale` (e.g. a GUI-app binary that doesn't act as a CLI)
+        // can't block this worker forever and pile up under the periodic refresh.
+        let deadline = Date().addingTimeInterval(timeout)
+        while task.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if task.isRunning {
+            task.terminate() // SIGTERM
+            // Force-kill if it ignores SIGTERM, and reap it, so a hung tailscale can't survive and
+            // let the periodic refresh accumulate stuck processes.
+            let killDeadline = Date().addingTimeInterval(1)
+            while task.isRunning, Date() < killDeadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if task.isRunning { kill(task.processIdentifier, SIGKILL) }
+            task.waitUntilExit()
+            DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "command_timeout",
+                                           detail: arguments.joined(separator: " "))
+            return TailscaleRun(data: nil, launched: true, exitCode: -1, stderr: "timed out after \(Int(timeout))s")
+        }
+        try? outHandle?.close()
+        try? errHandle?.close()
+        let data = (try? Data(contentsOf: outURL)) ?? Data()
+        let stderr = ((try? String(contentsOf: errURL, encoding: .utf8)) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let code = task.terminationStatus
+        if code != 0 {
+            DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "command_failed",
+                                           detail: "\(arguments.joined(separator: " ")) exit=\(code) \(stderr)")
+        }
+        return TailscaleRun(data: code == 0 ? data : nil, launched: true, exitCode: code, stderr: stderr)
     }
 
-    private nonisolated static func readTailscaleDNSName() -> String? {
-        guard let data = runTailscale(["status", "--json"]) else { return nil }
-        return tailscaleDNSName(from: data)
+    // Returns the MagicDNS name, or a short diagnostic explaining why it couldn't be read.
+    nonisolated static func readTailscaleStatus() -> (name: String?, diagnostic: String?) {
+        let run = runTailscale(["status", "--json"])
+        guard let data = run.data else {
+            if !run.launched {
+                return (nil, "Couldn't run the tailscale command. Is Tailscale installed?")
+            }
+            let detail = run.stderr.isEmpty ? "exit code \(run.exitCode)" : run.stderr
+            return (nil, "tailscale status failed: \(detail)")
+        }
+        if let name = tailscaleDNSName(from: data) {
+            return (name, nil)
+        }
+        return (nil, statusDiagnostic(from: data))
     }
 
-    private nonisolated static func readTailscaleServeReady(port: Int) -> Bool {
-        guard let data = runTailscale(["serve", "status", "--json"]) else { return false }
-        return serveReady(from: data, port: port)
+    // The command ran but yielded no usable .ts.net name: distinguish "not connected" from
+    // "connected but MagicDNS is off" so the settings hint points at the right fix.
+    nonisolated static func statusDiagnostic(from data: Data) -> String {
+        let object = try? JSONSerialization.jsonObject(with: data)
+        let status = object as? [String: Any]
+        let backend = status?["BackendState"] as? String
+        if let backend, backend != "Running" {
+            return "Tailscale isn't connected (state: \(backend)). Sign in, then try again."
+        }
+        return "Tailscale is connected but MagicDNS is off, so there's no .ts.net name. Turn on MagicDNS, or enter the host by hand."
+    }
+
+    private nonisolated static func readTailscaleServe(port: Int) -> (ready: Bool, conflict: Bool) {
+        guard let data = runTailscale(["serve", "status", "--json"]).data else { return (false, false) }
+        return (serveReady(from: data, port: port), serveConflict(from: data, port: port))
     }
 
     // Run `tailscale serve` so the tailnet fronts our loopback port over HTTPS on 443. May fail if
@@ -509,11 +612,7 @@ final class RemoteControlServer: ObservableObject {
 
     // Returns nil on success, or an error message to surface.
     private nonisolated static func runTailscaleServe(port: Int) -> String? {
-        let executable = tailscaleExecutable()
-        let arguments = ["serve", "--bg", "http://127.0.0.1:\(port)"]
-        let task = Process()
-        task.executableURL = executable
-        task.arguments = executable.lastPathComponent == "env" ? ["tailscale"] + arguments : arguments
+        let task = tailscaleProcess(["serve", "--bg", "http://127.0.0.1:\(port)"])
 
         // Capture stderr to a temp file, not a Pipe. `serve --bg` can leave a descriptor open,
         // and a blocking pipe read would then never reach EOF (hangs the caller forever).
@@ -657,6 +756,34 @@ final class RemoteControlServer: ObservableObject {
                     return true
                 }
             }
+        }
+        return false
+    }
+
+    // True when HTTPS :443 already serves a different app at the root path. Auto-serve must skip
+    // this case: `tailscale serve` at root would replace the user's other service silently.
+    nonisolated static func serveConflict(from data: Data, port: Int) -> Bool {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let root = object as? [String: Any],
+            let web = root["Web"] as? [String: Any]
+        else {
+            return false
+        }
+        let needle = "127.0.0.1:\(port)"
+        for (hostPort, value) in web {
+            guard
+                hostPort.hasSuffix(":443"),
+                let entry = value as? [String: Any],
+                let handlers = entry["Handlers"] as? [String: Any],
+                let rootHandler = handlers["/"] as? [String: Any]
+            else {
+                continue
+            }
+            // Any root handler conflicts unless it's a proxy to our own port; a Path/Text static
+            // handler or a proxy elsewhere would be replaced by our serve command.
+            if let proxy = rootHandler["Proxy"] as? String, proxy.contains(needle) { continue }
+            return true
         }
         return false
     }

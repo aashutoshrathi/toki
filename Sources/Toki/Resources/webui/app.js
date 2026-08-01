@@ -1,10 +1,20 @@
 // Fragments keep the token out of static-host access logs. Query params remain supported for
 // links created from the original hosting plan.
 const PARAMS=new URLSearchParams(location.hash.slice(1)||location.search);
-const LINK_TOKEN=PARAMS.get("token")||"";
-const REMOTE_HOST=PARAMS.get("host")||"";
+// An installed PWA relaunches at start_url with no fragment; fall back to the last connection so
+// it reopens on the verify screen (or resumes) instead of the invalid-link screen.
+const CONN_KEY="toki-conn";
+function savedConn(){try{return JSON.parse(localStorage.getItem(CONN_KEY)||"null")}catch(e){return null}}
+const REVIVE=PARAMS.get("token")?null:savedConn();
+const LINK_TOKEN=PARAMS.get("token")||(REVIVE&&REVIVE.token)||"";
+const REMOTE_HOST=PARAMS.get("host")||(REVIVE&&REVIVE.host)||"";
 let API_BASE="",CONFIG_ERROR="";
 try{API_BASE=REMOTE_HOST?remoteAPIBase(REMOTE_HOST):""}catch(e){CONFIG_ERROR=e.message}
+// Save whenever we have a link token, even with no host: the direct same-host flow serves the
+// PWA from the Mac's own origin, so an empty host restores to the same origin on relaunch.
+if(LINK_TOKEN&&!CONFIG_ERROR){
+  try{localStorage.setItem(CONN_KEY,JSON.stringify({host:REMOTE_HOST,token:LINK_TOKEN}))}catch(e){}
+}
 function remoteAPIBase(host){
   if(!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.ts\.net$/i.test(host))
     throw new Error("Invalid Tailscale host");
@@ -20,7 +30,6 @@ const SESSION_KEY="toki-session:"+API_BASE+":"+LINK_TOKEN;
 let TOKEN="";
 try{TOKEN=sessionStorage.getItem(SESSION_KEY)||""}catch(e){}
 let current=null, offset=0, agents=[], privacyMode=false;
-// When privacy mode is on, agent names in the picker are masked so they stay out of recordings.
 function dispTitle(t){return privacyMode?"•".repeat(Math.min(Math.max((t||"").length,4),14)):esc(t)}
 async function api(p,o){const url=API_BASE+p+(p.includes("?")?"&":"?")+"token="+encodeURIComponent(TOKEN);
   const r=await fetch(url,o);
@@ -37,6 +46,7 @@ function lockApp(){
 }
 function invalidLink(message){
   TOKEN="";try{sessionStorage.removeItem(SESSION_KEY)}catch(e){}
+  try{localStorage.removeItem(CONN_KEY)}catch(e){}
   document.body.classList.add("locked");
   $("#pairtitle").textContent="Open a new link from Toki";
   $("#pairinstructions").textContent=message;
@@ -165,9 +175,8 @@ async function refreshAgents(){
       (a.attention.kind=="permission"?'<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>':"");
   } else al.style.display="none";
 }
-function nearBottom(){return window.innerHeight+window.scrollY>=document.body.scrollHeight-140}
-function scrollToLatest(){window.scrollTo(0,document.body.scrollHeight);$("#tolatest").hidden=true}
-// Optimistic echo + a typing indicator so a reply-in-progress is visible instead of a silent gap.
+function nearBottom(){const el=$("#log");return el.scrollHeight-el.scrollTop-el.clientHeight<140}
+function scrollToLatest(){const el=$("#log");el.scrollTop=el.scrollHeight;$("#tolatest").hidden=true}
 let awaitingReply=false,pendingEcho=null;
 function addEcho(text){
   const d=document.createElement("div");d.className="m user pending";d.textContent=text;
@@ -221,8 +230,6 @@ async function send(body){
   try{const r=await api("/api/send",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({pid:current,...body})});
     feedback("success");setStatus("Sent \u2713 via "+r.how,"success");
-    // A reply is now on its way; show the indicator and pull the transcript now instead of
-    // waiting for the next poll, so the round trip feels immediate.
     const stick=nearBottom();awaitingReply=true;showTyping();if(stick)scrollToLatest();
     refreshLog().catch(()=>{});
     return true;
@@ -232,7 +239,6 @@ async function send(body){
     statusTimer=setTimeout(()=>setStatus("",""),4000);
   }
 }
-// Show the message the instant it's sent, then hand off to the server round trip.
 function sendText(text){
   addEcho(text);awaitingReply=true;showTyping();scrollToLatest();
   send({text}).then(ok=>{if(!ok){markEchoFailed();awaitingReply=false;hideTyping()}});
@@ -250,7 +256,6 @@ document.addEventListener("click",async e=>{
   } else if(b.dataset.key){$("#alert").style.display="none";await send({key:b.dataset.key});}
   else if(b.dataset.text){$("#alert").style.display="none";await send({text:b.dataset.text,raw:true});}
 });
-// Tap a failed message to resend it.
 $("#log").addEventListener("click",e=>{
   const f=e.target.closest(".m.user.failed");if(!f)return;
   const text=f.textContent;f.remove();feedback("tap");sendText(text);
@@ -269,7 +274,7 @@ resizeComposer();
 $("#ddbtn").addEventListener("click",e=>{e.stopPropagation();document.getElementById("dd").classList.toggle("open")});
 document.addEventListener("click",()=>document.getElementById("dd").classList.remove("open"));
 $("#tolatest").addEventListener("click",scrollToLatest);
-window.addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true},{passive:true});
+$("#log").addEventListener("scroll",()=>{if(nearBottom())$("#tolatest").hidden=true},{passive:true});
 $("#enablealerts").addEventListener("click",async()=>{
   try{await Notification.requestPermission()}catch(e){}
   updateAlertsButton();

@@ -5,3 +5,7 @@ DerivedData/
 *.xcuserstate
 __pycache__/
 *.pyc
+
+# Tailscale cert/key artifacts (never commit private keys)
+*.ts.net.crt
+*.ts.net.key

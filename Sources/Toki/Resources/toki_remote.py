@@ -331,7 +331,12 @@ def agents_from_snapshot(processes, snapshot):
         agent["cwd"] = item.get("cwd")
         agent["tty"] = item.get("tty")
         agent["title"] = item.get("title")
-        if agent["provider"] == "claude":
+        # Prefer the session Toki already resolved with the process start time; only fall back to
+        # resolving by cwd (which can't tell co-located agents apart) when it wasn't provided.
+        provided = item.get("session")
+        if provided:
+            agent["session"] = provided
+        elif agent["provider"] == "claude":
             agent["session"] = newest_claude_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "codex":
             agent["session"] = newest_codex_session(agent["command"], agent["cwd"])
@@ -1015,7 +1020,12 @@ SESSIONS = {}
 PAIRING_FAILURES = {}
 AUTH_LOCK = threading.Lock()
 
-WEBUI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webui")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+WEBUI_DIR = os.path.join(_SCRIPT_DIR, "webui")
+if not os.path.isdir(WEBUI_DIR):
+    # `swift run` flattens SwiftPM's processed resources beside the script rather than into a
+    # webui/ subdirectory, so serve them from the script's own directory in that case.
+    WEBUI_DIR = _SCRIPT_DIR
 
 
 def rotate_pairing_code():

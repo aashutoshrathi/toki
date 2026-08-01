@@ -7,17 +7,25 @@
 - **Remote Control (#64): follow and reply to your agents from your phone.** Toki can run a local Remote Control server and pair a browser over Tailscale (recommended), your local network, or this Mac, using a six-digit code that rotates every two minutes and a scoped session you can limit from 1 hour up to 2 days. The web app lists the same active agents as the menu bar, streams their transcripts with GitHub-style Markdown tables, and lets you reply, send terminal keys, and approve or reject prompts; non-terminal sessions such as Codex desktop are clearly read-only. It installs as a phone app (PWA) with an offline-capable shell and Add to Home Screen, and you can start a session by scanning the Connect QR or entering a host and token by hand. Agent data stays between your browser and your Mac; the hosted interface only serves the UI. A teal status icon in the header opens the Remote Control settings while the server is running.
 - Remote Control settings include a built-in Tailscale setup guide. An info button next to the Host picker walks through the one-time steps to connect from anywhere (MagicDNS, HTTPS certificates, and `tailscale serve`), with the links and a copyable command you need.
 - Remote Control shows a live reachability indicator for the connect-from-anywhere path: it tells you when your phone can actually reach this Mac, or that `tailscale serve` still needs to start, instead of handing you a QR that silently fails.
-- One-click HTTPS setup: when `tailscale serve` isn't running, an "Enable HTTPS access" button starts it for you and re-checks reachability.
+- One-click HTTPS setup: when `tailscale serve` isn't running, an "Enable HTTPS access" button starts it for you and re-checks reachability. If Tailscale already serves another app on 443, Toki warns you before replacing it rather than clobbering it.
 - New **Cloudflare Tunnel** host option (when `cloudflared` is installed) gives you a public HTTPS address with no Tailscale, account, or DNS setup.
 - The companion app can notify you when an agent needs your input or approval, with a one-tap prompt to turn alerts on. (Notifications fire while the app is open or backgrounded.)
 - Remote Control settings lead with a single **Reach** choice, "On my network" or "From anywhere", with the detailed host and app options tucked under Advanced.
-- When Toki can't read your Tailscale name automatically, Remote Control settings now let you type it in, so the Connect link and QR use your real `.ts.net` host (pair it with App -> Toki RC for an instant connect).
+- When Toki can't read your Tailscale name automatically, Remote Control settings now let you type it in, so the Connect link and QR use your real `.ts.net` host (pair it with App -> Toki RC for an instant connect). The name you enter is remembered on this device.
+- Text fields across the app now support the standard Cut, Copy, Paste, and Select All shortcuts (the menu-bar app previously shipped no Edit menu, so Cmd+V did nothing).
+- Fixed the companion app layout on iPad (and other large screens): the composer no longer drifts up the page while scrolling. The shell is now pinned to the viewport height with the transcript scrolling inside it, so the header and reply bar stay put.
 - The companion app has an eye toggle in the header that masks agent names in the picker, handy for screen recordings, plus a subtle background grain.
 
 ### Fixed
 
 - Sending a message to a terminal agent no longer occasionally inserts a newline instead of submitting: the message text and the Enter that submits it are now delivered as separate keypresses, which agents like Claude Code need to treat the Enter as "send".
 - The companion app renders an agent's question and its choices more clearly, with a labeled header and numbered options.
+- Remote Control now shows each agent's own transcript when several agents run in the same folder, instead of occasionally attributing one agent's conversation (and your reply) to another.
+- The installed companion app (Add to Home Screen) reopens to your saved connection instead of an "invalid link" screen after it has been closed.
+- Running Toki from source with `swift run` can now start the Remote Control server and serve its web UI; both the companion script and its assets are located whether they sit in a packaged app or SwiftPM's flattened resource bundle.
+- When the Tailscale DNS name can't be read, Remote Control settings now explain why (command not found, not signed in, or MagicDNS off) instead of quietly falling back to the tailnet IP.
+- Tailscale lookups can no longer wedge the app: each `tailscale` command now times out (and the timeout/failure is logged), so a misbehaving Tailscale binary can't leave the popover stuck.
+- Debug mode (now seven taps on the version badge) mirrors the diagnostic log live in the in-app debug panel, so agent, usage, and Remote Control events are visible without exporting a report.
 
 - Remote Control "From anywhere" now always shows the Connect QR when Tailscale is up. It points the phone straight at this Mac's Tailscale address with the session token in the URL (`https://<your-machine>.ts.net/?token=…`), and when the MagicDNS name can't be read it falls back to the tailnet IP so the QR and its verification code still work without extra setup.
 - Tailscale MagicDNS detection now looks in more locations for the `tailscale` CLI and searches a real PATH, so the machine's DNS name is found on more setups.
