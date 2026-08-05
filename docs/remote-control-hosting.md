@@ -40,6 +40,13 @@ LAN HTTP the hosted UI is a dead end; that path stays served directly from the M
   same-origin so the locally served path still works.
 - Hosted links put their parameters in the URL fragment so the static host never receives the
   connection token. Query parameters remain supported for links made from the original plan.
+- Connect links therefore come in two shapes, and they are interchangeable: hosted
+  (`https://rc.toki.aashutosh.dev/#host=<mac>.ts.net&token=…`, App set to Toki RC) and direct
+  (`https://<mac>.ts.net/?token=…`, App set to Same as host). The in-page QR scanner resolves both
+  into the host-plus-token pair the manual form asks for, so a QR built for one page still works
+  when scanned on the other. Only a LAN link (`http://<ip>:8765/?token=…`) is unusable from the
+  hosted page, because an HTTPS page cannot call a plain-HTTP address; the scanner names the host
+  it can't reach rather than rejecting the code.
 - Python server: send `Access-Control-Allow-Origin` (locked to the hosted origin), allow the
   `Content-Type` header, and answer `OPTIONS` preflight. The page origin (hosted) and the API
   origin (tailnet host) differ, so cross-origin handling is required.
