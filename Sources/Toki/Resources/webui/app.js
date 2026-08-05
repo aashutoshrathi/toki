@@ -15,8 +15,11 @@ try{API_BASE=REMOTE_HOST?remoteAPIBase(REMOTE_HOST):""}catch(e){CONFIG_ERROR=e.m
 if(LINK_TOKEN&&!CONFIG_ERROR){
   try{localStorage.setItem(CONN_KEY,JSON.stringify({host:REMOTE_HOST,token:LINK_TOKEN}))}catch(e){}
 }
+function isTailscaleHost(host){
+  return /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.ts\.net$/i.test(host);
+}
 function remoteAPIBase(host){
-  if(!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.ts\.net$/i.test(host))
+  if(!isTailscaleHost(host))
     throw new Error("Invalid Tailscale host");
   return "https://"+host;
 }
@@ -292,7 +295,9 @@ $("#privacytoggle").addEventListener("click",()=>{
 // Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.
 // Both reload with the params in the fragment so the normal verify flow takes over.
 function connectWith(host,token){
-  location.hash="host="+encodeURIComponent(host)+"&token="+encodeURIComponent(token);
+  const parts=host?["host="+encodeURIComponent(host)]:[];
+  parts.push("token="+encodeURIComponent(token));
+  location.hash=parts.join("&");
   location.reload();
 }
 function manualConnect(){
@@ -363,14 +368,34 @@ function scanError(msg){
   $("#scanstatus").textContent=msg;feedback("error");
   clearTimeout(scanErrTimer);scanErrTimer=setTimeout(()=>{$("#scanstatus").textContent=""},2600);
 }
-function handleScan(value){
-  let target;try{target=new URL(value,location.href)}catch(e){return scanError("That QR code isn\u2019t a Toki link.")}
+// Toki's Connect QR comes in two shapes: a hosted link that names the Mac in its fragment
+// (https://rc.toki.../#host=<mac>.ts.net&token=...), and a direct link to the Mac itself
+// (https://<mac>.ts.net/?token=... over Tailscale, http://<lan-ip>:8765/?token=... on the LAN).
+// Either one is usable here once it yields a token plus a host we're allowed to call, which is the
+// same pair the manual host + token form asks for. So resolve both shapes instead of demanding the
+// QR point at this exact page: on Tailscale the two shapes name the same Mac either way.
+function resolveScanLink(value,pageURL){
+  let pageOrigin="";try{pageOrigin=new URL(pageURL).origin}catch(e){}
+  let target;
+  try{target=new URL(value,pageURL)}catch(e){return{error:"That QR code isn\u2019t a Toki link."}}
   const params=new URLSearchParams(target.hash.slice(1)||target.search);
-  if(!params.get("token")||target.origin!=location.origin)
-    return scanError("That QR isn\u2019t a Toki Remote Control link for this page.");
+  const token=params.get("token");
+  if(!token)return{error:"That QR code isn\u2019t a Toki Remote Control link."};
+  const named=(params.get("host")||"").trim();
+  if(named)
+    return isTailscaleHost(named)?{host:named,token}
+      :{error:"That link\u2019s address isn\u2019t a Tailscale name. Open Connect in Toki and scan its current code."};
+  // A direct link. Same origin means this page already reaches that server; otherwise only the
+  // tailnet works, because an HTTPS page can't call a plain-HTTP address.
+  if(pageOrigin&&target.origin==pageOrigin)return{host:"",token};
+  if(isTailscaleHost(target.hostname))return{host:target.hostname,token};
+  return{error:"This page can\u2019t reach "+target.hostname+". Open that link directly on this device, or switch Toki\u2019s host to Tailscale."};
+}
+function handleScan(value){
+  const link=resolveScanLink(value,location.href);
+  if(link.error)return scanError(link.error);
   feedback("success");closeScanner();
-  location.hash=target.hash?target.hash.slice(1):target.search.slice(1);
-  location.reload();
+  connectWith(link.host,link.token);
 }
 $("#scanbtn").addEventListener("click",openScanner);
 $("#scancancel").addEventListener("click",closeScanner);
