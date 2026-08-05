@@ -78,7 +78,7 @@ enum ClaudeCodeCredentialReader {
     static func credentialFileCandidates(includeShellEnvironment: Bool = true) -> [String] {
         var paths: [String] = []
         func add(_ path: String?) {
-            guard let path, !path.isEmpty else { return }
+            guard let path, isUsableConfigDirectory(path) else { return }
             let normalized = path.hasSuffix("/") ? String(path.dropLast()) : path
             let candidate = "\(normalized)/.credentials.json"
             if !paths.contains(candidate) { paths.append(candidate) }
@@ -96,6 +96,15 @@ enum ClaudeCodeCredentialReader {
             add(shellEnvironment.xdgConfigHome.map { "\($0)/claude" })
         }
         return paths
+    }
+
+    // These two come from the environment, and one of them is read back out of a login shell, so
+    // they get checked before being turned into a path Toki will open. A relative value would
+    // resolve against whatever directory the app happens to be launched from, and control
+    // characters have no business in a config path.
+    static func isUsableConfigDirectory(_ path: String) -> Bool {
+        guard !path.isEmpty, path.hasPrefix("/") || path.hasPrefix("~/") || path == "~" else { return false }
+        return !path.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
     }
 
     private static let shellEnvironmentLock = NSLock()
@@ -124,10 +133,35 @@ enum ClaudeCodeCredentialReader {
         return result
     }
 
+    // A real .credentials.json is a few hundred bytes. The cap stops a file that only shares the
+    // name from being slurped into memory before anything has looked at whether it makes sense.
+    static let maximumCredentialFileBytes: off_t = 256 * 1024
+
+    // What comes out of this file is sent to api.anthropic.com as a Bearer token, so the search
+    // widening that made it reachable also has to make it trustworthy. A file someone else owns
+    // or can write is not this user's sign-in, whatever it is called, and following a symlink
+    // would let the name stand in for a file chosen somewhere else entirely.
     static func readCredentialsFile(at rawPath: String = credentialsFilePath) throws -> CredentialBundle {
         let path = expandedPath(rawPath)
-        guard FileManager.default.fileExists(atPath: path) else {
+        var info = stat()
+        // lstat, not stat: the symlink itself is the thing being judged, not its target.
+        guard lstat(path, &info) == 0 else {
             throw LocalizedErrorMessage("no such file")
+        }
+        guard info.st_mode & S_IFMT == S_IFREG else {
+            throw LocalizedErrorMessage("not a regular file")
+        }
+        guard info.st_uid == getuid() else {
+            throw LocalizedErrorMessage("owned by another user, so it isn't your sign-in")
+        }
+        guard info.st_mode & (mode_t(S_IWGRP) | mode_t(S_IWOTH)) == 0 else {
+            throw LocalizedErrorMessage("writable by other users, so its contents can't be trusted (chmod 600 it)")
+        }
+        guard info.st_size > 0 else {
+            throw LocalizedErrorMessage("the file is empty")
+        }
+        guard info.st_size <= maximumCredentialFileBytes else {
+            throw LocalizedErrorMessage("far bigger than a credentials file should be, so it wasn't read")
         }
         guard let credentials = try? String(contentsOfFile: path, encoding: .utf8) else {
             throw LocalizedErrorMessage("the file couldn't be read (check its permissions)")
@@ -135,6 +169,10 @@ enum ClaudeCodeCredentialReader {
         let trimmed = credentials.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw LocalizedErrorMessage("the file is empty")
+        }
+        if info.st_mode & (mode_t(S_IRGRP) | mode_t(S_IROTH)) != 0 {
+            DiagnosticLogger.shared.record(.warning, component: "claude_credentials", code: "world_readable",
+                                           detail: "\(rawPath) is readable by other users")
         }
         return CredentialBundle(credentials: trimmed, source: rawPath)
     }

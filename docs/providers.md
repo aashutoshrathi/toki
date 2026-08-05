@@ -14,6 +14,8 @@ Credentials come from your Claude Code sign-in. Toki searches, in order:
 
 `CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME` are read from Toki's own environment first. A Finder-launched app inherits none of your shell environment, so if they aren't set there, Toki asks your login shell for them once and caches the answer. If your setup is stranger still, point Toki at it directly with `apiKeyCommand`, which can be any command that prints the credential JSON.
 
+Whatever comes out of that file is sent to `api.anthropic.com` as a Bearer token, so it is checked before it is read. A candidate is skipped when the path isn't absolute (or `~`-rooted) or holds control characters, or when the file is a symlink, not a regular file, owned by another user, writable by group or other, empty, or larger than 256 KB. A file that is merely readable by others is still used, but the diagnostic log records it. `chmod 600` is what Claude Code writes and what Toki expects.
+
 Multi-account setups are discovered through [`claude-swap`](https://github.com/realiti4/claude-swap). Switching an inactive account runs:
 
 ```sh
