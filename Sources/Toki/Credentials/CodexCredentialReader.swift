@@ -12,17 +12,27 @@ enum CodexCredentialReader {
             )
         }
 
-        let path = expandedPath(account.codexAuthPath ?? "~/.codex/auth.json")
+        let rawPath = account.codexAuthPath ?? "~/.codex/auth.json"
+        let path = expandedPath(rawPath)
         guard FileManager.default.fileExists(atPath: path) else {
-            throw LocalizedErrorMessage("Codex auth file not found")
+            throw LocalizedErrorMessage(
+                "No Codex sign-in at \(rawPath). Install the Codex CLI and run `codex login`, then hit refresh in Toki."
+            )
         }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tokens = json["tokens"] as? [String: Any],
-              let accessToken = tokens["access_token"] as? String,
-              !accessToken.isEmpty else {
-            throw LocalizedErrorMessage("No Codex OAuth access token found")
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw LocalizedErrorMessage("\(rawPath) isn't valid JSON. Run `codex login` again, then hit refresh in Toki.")
+        }
+        guard let tokens = json["tokens"] as? [String: Any] else {
+            throw LocalizedErrorMessage(
+                "\(rawPath) has no \"tokens\" section. Run `codex login` and sign in with your ChatGPT account, then hit refresh in Toki."
+            )
+        }
+        guard let accessToken = tokens["access_token"] as? String, !accessToken.isEmpty else {
+            throw LocalizedErrorMessage(
+                "\(rawPath) has no access token in it. Run `codex login` again, then hit refresh in Toki."
+            )
         }
 
         let idToken = tokens["id_token"] as? String

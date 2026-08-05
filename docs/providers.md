@@ -2,7 +2,7 @@
 
 ## Claude Code
 
-Credentials come from the Keychain, and multi-account setups are discovered through [`claude-swap`](https://github.com/realiti4/claude-swap). Switching an inactive account runs:
+Credentials come from your Claude Code sign-in, read from the Keychain item `Claude Code-credentials` and, if that isn't there, from `~/.claude/.credentials.json`. Multi-account setups are discovered through [`claude-swap`](https://github.com/realiti4/claude-swap). Switching an inactive account runs:
 
 ```sh
 claude-swap --switch-to <slot>
@@ -11,6 +11,8 @@ claude-swap --switch-to <slot>
 then reloads discovery and refreshes usage. If `claude-swap` is not on your `PATH`, set `claudeSwapCommand` to its full path.
 
 macOS asks for Keychain access the first time Toki reads these credentials. The prompt blocks until you answer it, so nothing connects until it is granted.
+
+Toki reads usage from the subscription sign-in that `/login` writes, which is the `claudeAiOauth` section of those credentials. Installing the CLI alone is not enough, and an API key (`ANTHROPIC_API_KEY`) or a Bedrock/Vertex setup produces no such section, so no usage is reported for those. When the card says **Not connected**, expand it: the message names each place Toki looked and what it found there.
 
 ## Codex
 

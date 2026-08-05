@@ -1,6 +1,8 @@
 import Foundation
 
 enum ClaudeCodeCredentialReader {
+    static let credentialsFilePath = "~/.claude/.credentials.json"
+
     struct CredentialBundle {
         var credentials: String
         var source: String
@@ -19,7 +21,42 @@ enum ClaudeCodeCredentialReader {
             let credentials = try SecretResolver.runShell(command).trimmingCharacters(in: .whitespacesAndNewlines)
             return CredentialBundle(credentials: credentials, source: "Command")
         }
-        return try readMacOSKeychainCredentials()
+        return try readSignedInCredentials()
+    }
+
+    // Claude Code keeps its sign-in in the Keychain on macOS, but not always: a Keychain-less
+    // setup writes ~/.claude/.credentials.json instead. Reading only one of the two reported a
+    // signed-in install as not connected, so both are tried and a failure names both.
+    static func readSignedInCredentials() throws -> CredentialBundle {
+        var attempts: [String] = []
+        do {
+            return try readMacOSKeychainCredentials()
+        } catch {
+            attempts.append("Keychain item \"Claude Code-credentials\" (\(shortReason(error)))")
+        }
+        do {
+            return try readCredentialsFile()
+        } catch {
+            attempts.append("\(credentialsFilePath) (\(shortReason(error)))")
+        }
+        throw LocalizedErrorMessage(
+            "Couldn't find your Claude Code sign-in. Open Claude Code and run /login, then hit refresh in Toki. Toki looked in \(attempts.joined(separator: " and "))."
+        )
+    }
+
+    static func readCredentialsFile() throws -> CredentialBundle {
+        let path = expandedPath(credentialsFilePath)
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw LocalizedErrorMessage("no such file")
+        }
+        guard let credentials = try? String(contentsOfFile: path, encoding: .utf8) else {
+            throw LocalizedErrorMessage("the file couldn't be read (check its permissions)")
+        }
+        let trimmed = credentials.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw LocalizedErrorMessage("the file is empty")
+        }
+        return CredentialBundle(credentials: trimmed, source: credentialsFilePath)
     }
 
     static func extractAccessToken(from credentials: String) throws -> String {
@@ -29,12 +66,37 @@ enum ClaudeCodeCredentialReader {
               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw LocalizedErrorMessage("Claude Code credentials are not valid JSON - the credential source returned something other than the expected JSON payload")
         }
-        guard let oauth = json["claudeAiOauth"] as? [String: Any],
-              let token = oauth["accessToken"] as? String,
-              !token.isEmpty else {
-            throw LocalizedErrorMessage("No Claude Code OAuth access token found")
+        // Naming the keys that were there, and only the keys, turns "no token found" into
+        // something a user can act on without ever putting a secret on screen.
+        guard let oauth = json["claudeAiOauth"] as? [String: Any] else {
+            throw LocalizedErrorMessage(
+                "Your Claude Code credentials have no \"claudeAiOauth\" section, which is the subscription sign-in Toki reads usage from. Open Claude Code, run /login, and choose your Claude account (an API key or Bedrock/Vertex setup doesn't report usage). Found instead: \(keyList(json))."
+            )
+        }
+        guard let token = oauth["accessToken"] as? String, !token.isEmpty else {
+            throw LocalizedErrorMessage(
+                "Your Claude Code sign-in has no access token in it. Open Claude Code and run /login again, then hit refresh in Toki. The sign-in holds: \(keyList(oauth))."
+            )
         }
         return token
+    }
+
+    private static func keyList(_ json: [String: Any]) -> String {
+        let keys = json.keys.sorted()
+        return keys.isEmpty ? "nothing" : keys.joined(separator: ", ")
+    }
+
+    // The per-source messages are written to stand alone, so quoting them whole inside the
+    // combined "looked in A and B" sentence repeats its own advice back twice.
+    private static func shortReason(_ error: Error) -> String {
+        let detail = error.localizedDescription
+        if detail.lowercased().contains("could not be found") || detail.contains("No Claude Code credentials found") {
+            return "not there"
+        }
+        if let first = detail.split(separator: ".").first {
+            return String(first).trimmingCharacters(in: .whitespaces)
+        }
+        return detail
     }
 
     static func emailIdentifier(from credentials: String) -> String? {

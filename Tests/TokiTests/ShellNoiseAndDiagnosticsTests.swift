@@ -50,10 +50,39 @@ final class ShellNoiseAndDiagnosticsTests: XCTestCase {
         }
     }
 
-    func testCredentialsWithoutTokenFailWithMissingTokenMessage() {
-        let credentials = #"{"claudeAiOauth":{}}"#
+    func testCredentialsWithoutTokenSayWhatToDoAndWhatWasThere() {
+        let credentials = #"{"claudeAiOauth":{"refreshToken":"r","expiresAt":1}}"#
         XCTAssertThrowsError(try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)) { error in
-            XCTAssertEqual(error.localizedDescription, "No Claude Code OAuth access token found")
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("/login"), message)
+            XCTAssertTrue(message.contains("expiresAt, refreshToken"), message)
+        }
+    }
+
+    func testCredentialsWithoutOAuthSectionNameTheSectionAndTheKeysFound() {
+        let credentials = #"{"apiKey":"sk-ant-x","someOther":1}"#
+        XCTAssertThrowsError(try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)) { error in
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("claudeAiOauth"), message)
+            XCTAssertTrue(message.contains("/login"), message)
+            XCTAssertTrue(message.contains("apiKey, someOther"), message)
+        }
+    }
+
+    func testCredentialErrorsNeverEchoTheSecretValues() {
+        let credentials = #"{"apiKey":"sk-ant-super-secret","claudeAiOauthX":{}}"#
+        XCTAssertThrowsError(try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)) { error in
+            XCTAssertFalse(error.localizedDescription.contains("sk-ant-super-secret"), error.localizedDescription)
+        }
+    }
+
+    func testMissingCodexAuthFileNamesThePathAndTheCommand() {
+        var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
+        account.codexAuthPath = "~/.codex/definitely-not-here.json"
+        XCTAssertThrowsError(try CodexCredentialReader.readCredentials(account: account)) { error in
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("~/.codex/definitely-not-here.json"), message)
+            XCTAssertTrue(message.contains("codex login"), message)
         }
     }
 
