@@ -294,7 +294,15 @@ $("#privacytoggle").addEventListener("click",()=>{
 
 // Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.
 // Both reload with the params in the fragment so the normal verify flow takes over.
+//
+// Save the connection before reloading, not after. Scanning and manual entry are only reachable
+// from the invalid-link screen, which has just cleared the saved connection, so the fragment set
+// below would be the only copy of the link -- and a reload does not always come back with it (an
+// installed PWA relaunches at start_url, same reason REVIVE exists above). That dropped the freshly
+// scanned link and bounced straight back to the invalid-link screen. Writing it here means the
+// reload restores the same host and token whether or not the fragment survives.
 function connectWith(host,token){
+  try{localStorage.setItem(CONN_KEY,JSON.stringify({host,token}))}catch(e){}
   const parts=host?["host="+encodeURIComponent(host)]:[];
   parts.push("token="+encodeURIComponent(token));
   location.hash=parts.join("&");

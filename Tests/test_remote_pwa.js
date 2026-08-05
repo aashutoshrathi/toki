@@ -73,8 +73,43 @@ assert.match(resolve(HOSTED + "#host=evil.example.com&token=abc", HOSTED).error,
 assert.match(resolve("https://example.com/", HOSTED).error, /Remote Control link/);
 assert.match(resolve("just some scanned text", HOSTED).error, /Remote Control link/);
 assert.match(resolve("https://", HOSTED).error, /Toki link/);
-// An empty host must not leave a dangling "host=" in the fragment.
-assert.match(app, /const parts=host\?\["host="\+encodeURIComponent\(host\)\]:\[\]/);
+// --- A scanned or typed link is saved before the reload that applies it ---
+// Scan and manual entry are only reachable from the invalid-link screen, and that screen clears the
+// saved connection, so the fragment connectWith sets is the only copy of the link. A reload does not
+// always come back with the fragment (an installed PWA relaunches at start_url), which used to drop
+// a freshly scanned link and bounce straight back to the invalid-link screen.
+assert.match(app, /\$\("#connectmethods"\)\.hidden=false/);
+const connectSource = app.match(/^function connectWith\([\s\S]*?^}/m);
+assert.ok(connectSource, "connectWith must be a top-level function in app.js");
+const order = [];
+const stored = {};
+const conn = vm.createContext({
+  CONN_KEY: "toki-conn",
+  JSON,
+  localStorage: { setItem(k, v) { order.push("save"); stored[k] = v; } },
+  location: {
+    set hash(v) { order.push("hash:" + v); },
+    reload() { order.push("reload"); },
+  },
+});
+vm.runInContext(connectSource[0], conn);
+
+vm.runInContext("connectWith('my-mac.example-tailnet.ts.net','abc')", conn);
+assert.deepEqual(order, ["save", "hash:host=my-mac.example-tailnet.ts.net&token=abc", "reload"]);
+assert.deepEqual(JSON.parse(stored["toki-conn"]), { host: "my-mac.example-tailnet.ts.net", token: "abc" });
+
+// The same-origin case saves an empty host, which restores to this page's own origin, and must not
+// leave a dangling "host=" in the fragment.
+order.length = 0;
+vm.runInContext("connectWith('','abc')", conn);
+assert.deepEqual(order, ["save", "hash:token=abc", "reload"]);
+assert.deepEqual(JSON.parse(stored["toki-conn"]), { host: "", token: "abc" });
+
+// A storage failure (Safari private mode) must not stop the reload from applying the link.
+order.length = 0;
+vm.runInContext("localStorage.setItem=()=>{throw new Error('denied')}", conn);
+vm.runInContext("connectWith('my-mac.example-tailnet.ts.net','abc')", conn);
+assert.deepEqual(order, ["hash:host=my-mac.example-tailnet.ts.net&token=abc", "reload"]);
 
 // --- Manual entry for machines without a camera: host + token, same connect flow ---
 assert.match(html, /id="manualhost"/);
