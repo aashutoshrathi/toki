@@ -76,6 +76,36 @@ final class ShellNoiseAndDiagnosticsTests: XCTestCase {
         }
     }
 
+    func testCredentialSearchCoversEveryKnownConfigLocation() {
+        let candidates = ClaudeCodeCredentialReader.credentialFileCandidates(includeShellEnvironment: false)
+        XCTAssertTrue(candidates.contains("~/.claude/.credentials.json"), "\(candidates)")
+        XCTAssertTrue(candidates.contains("~/.config/claude/.credentials.json"), "\(candidates)")
+        XCTAssertEqual(Set(candidates).count, candidates.count, "duplicate candidates: \(candidates)")
+        for candidate in candidates {
+            XCTAssertTrue(candidate.hasSuffix("/.credentials.json"), candidate)
+            XCTAssertFalse(candidate.contains("//"), candidate)
+        }
+    }
+
+    func testKeychainSearchFallsBackToAServiceOnlyLookup() {
+        let accounts = ClaudeCodeCredentialReader.keychainAccountCandidates()
+        XCTAssertTrue(accounts.contains(where: { $0 != nil }), "\(accounts)")
+        XCTAssertEqual(accounts.last, .some(nil), "the service-only search must come last: \(accounts)")
+    }
+
+    func testDeniedKeychainPromptIsNotRetriedUnderEveryAccountName() {
+        let missing = LocalizedErrorMessage("No Claude Code credentials found in your Keychain. Sign in to Claude Code, then refresh.")
+        let denied = LocalizedErrorMessage("Couldn't read the Claude Code credentials from your Keychain: User canceled the operation.")
+        XCTAssertTrue(ClaudeCodeCredentialReader.isMissingKeychainItem(missing))
+        XCTAssertFalse(ClaudeCodeCredentialReader.isMissingKeychainItem(denied))
+    }
+
+    func testAgentSearchPathCoversVersionManagerBinDirectories() {
+        for directory in ["$HOME/.bun/bin", "$HOME/.volta/bin", "$HOME/.local/share/mise/shims", "/opt/homebrew/bin"] {
+            XCTAssertTrue(agentCommandSearchPath.contains(directory), "missing \(directory)")
+        }
+    }
+
     func testMissingCodexAuthFileNamesThePathAndTheCommand() {
         var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
         account.codexAuthPath = "~/.codex/definitely-not-here.json"

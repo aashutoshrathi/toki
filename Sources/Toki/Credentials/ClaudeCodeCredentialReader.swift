@@ -1,6 +1,7 @@
 import Foundation
 
 enum ClaudeCodeCredentialReader {
+    static let keychainService = "Claude Code-credentials"
     static let credentialsFilePath = "~/.claude/.credentials.json"
 
     struct CredentialBundle {
@@ -24,28 +25,107 @@ enum ClaudeCodeCredentialReader {
         return try readSignedInCredentials()
     }
 
-    // Claude Code keeps its sign-in in the Keychain on macOS, but not always: a Keychain-less
-    // setup writes ~/.claude/.credentials.json instead. Reading only one of the two reported a
-    // signed-in install as not connected, so both are tried and a failure names both.
+    // Claude Code keeps its sign-in in the Keychain on macOS, but not always, and not always
+    // where you'd expect: a Keychain-less setup writes .credentials.json instead, CLAUDE_CONFIG_DIR
+    // moves the whole config directory, and an XDG-style install puts it under ~/.config. Reading
+    // one fixed location reported a genuinely signed-in machine as not connected, so the search
+    // walks every known spot and a failure names each one it tried.
     static func readSignedInCredentials() throws -> CredentialBundle {
         var attempts: [String] = []
-        do {
-            return try readMacOSKeychainCredentials()
-        } catch {
-            attempts.append("Keychain item \"Claude Code-credentials\" (\(shortReason(error)))")
+        for account in keychainAccountCandidates() {
+            do {
+                return try keychainBundle(account: account)
+            } catch {
+                attempts.append("Keychain \(account.map { "item for \"\($0)\"" } ?? "item, any account") (\(shortReason(error)))")
+                // Only a missing item is worth retrying under another name. A denied or timed-out
+                // access prompt would put the same dialog up again for each remaining candidate,
+                // each one waiting out the same long timeout.
+                guard isMissingKeychainItem(error) else { break }
+            }
         }
-        do {
-            return try readCredentialsFile()
-        } catch {
-            attempts.append("\(credentialsFilePath) (\(shortReason(error)))")
+        for path in credentialFileCandidates() {
+            do {
+                return try readCredentialsFile(at: path)
+            } catch {
+                attempts.append("\(path) (\(shortReason(error)))")
+            }
         }
         throw LocalizedErrorMessage(
-            "Couldn't find your Claude Code sign-in. Open Claude Code and run /login, then hit refresh in Toki. Toki looked in \(attempts.joined(separator: " and "))."
+            "Couldn't find your Claude Code sign-in. Open Claude Code and run /login, then hit refresh in Toki. Toki looked in \(attempts.joined(separator: ", "))."
         )
     }
 
-    static func readCredentialsFile() throws -> CredentialBundle {
-        let path = expandedPath(credentialsFilePath)
+    // The Keychain item is stored under the account that created it, which is not always the name
+    // Toki computes: a renamed short name, a managed account, or a login under a different user
+    // all break the exact-account lookup. The final nil falls back to a service-only search, which
+    // finds the item whatever account it is filed under.
+    static func keychainAccountCandidates() -> [String?] {
+        var names: [String?] = []
+        if let user = ProcessInfo.processInfo.environment["USER"], !user.isEmpty {
+            names.append(user)
+        }
+        let nsUser = NSUserName()
+        if !nsUser.isEmpty, !names.contains(where: { $0 == nsUser }) {
+            names.append(nsUser)
+        }
+        names.append(nil)
+        return names
+    }
+
+    // Login-shell values are consulted only after the plain locations miss, so the usual case
+    // never pays for a subprocess. A Finder-launched app inherits none of the user's shell
+    // environment, so CLAUDE_CONFIG_DIR set in a profile is invisible without asking for it.
+    static func credentialFileCandidates(includeShellEnvironment: Bool = true) -> [String] {
+        var paths: [String] = []
+        func add(_ path: String?) {
+            guard let path, !path.isEmpty else { return }
+            let normalized = path.hasSuffix("/") ? String(path.dropLast()) : path
+            let candidate = "\(normalized)/.credentials.json"
+            if !paths.contains(candidate) { paths.append(candidate) }
+        }
+
+        let environment = ProcessInfo.processInfo.environment
+        add(environment["CLAUDE_CONFIG_DIR"])
+        add("~/.claude")
+        add(environment["XDG_CONFIG_HOME"].map { "\($0)/claude" })
+        add("~/.config/claude")
+
+        if includeShellEnvironment {
+            let shellEnvironment = loginShellConfigDirectories()
+            add(shellEnvironment.claudeConfigDir)
+            add(shellEnvironment.xdgConfigHome.map { "\($0)/claude" })
+        }
+        return paths
+    }
+
+    private static let shellEnvironmentLock = NSLock()
+    private nonisolated(unsafe) static var cachedShellEnvironment: (claudeConfigDir: String?, xdgConfigHome: String?)?
+
+    // One subprocess, both variables, and a short timeout: this runs on the failure path where
+    // the alternative is telling a signed-in user they are not connected. Cached because a
+    // not-connected account is re-read on every refresh, and a shell profile does not move.
+    static func loginShellConfigDirectories() -> (claudeConfigDir: String?, xdgConfigHome: String?) {
+        shellEnvironmentLock.lock()
+        defer { shellEnvironmentLock.unlock() }
+        if let cachedShellEnvironment { return cachedShellEnvironment }
+
+        let separator = "__TOKI_ENV__"
+        let command = "printf '%s\(separator)%s' \"$CLAUDE_CONFIG_DIR\" \"$XDG_CONFIG_HOME\""
+        let result: (claudeConfigDir: String?, xdgConfigHome: String?)
+        if let output = try? SecretResolver.runShell(command, timeout: 5) {
+            let parts = output.components(separatedBy: separator)
+            let claudeDir = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let xdgDir = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            result = (claudeDir?.isEmpty == false ? claudeDir : nil, xdgDir?.isEmpty == false ? xdgDir : nil)
+        } else {
+            result = (nil, nil)
+        }
+        cachedShellEnvironment = result
+        return result
+    }
+
+    static func readCredentialsFile(at rawPath: String = credentialsFilePath) throws -> CredentialBundle {
+        let path = expandedPath(rawPath)
         guard FileManager.default.fileExists(atPath: path) else {
             throw LocalizedErrorMessage("no such file")
         }
@@ -56,7 +136,7 @@ enum ClaudeCodeCredentialReader {
         guard !trimmed.isEmpty else {
             throw LocalizedErrorMessage("the file is empty")
         }
-        return CredentialBundle(credentials: trimmed, source: credentialsFilePath)
+        return CredentialBundle(credentials: trimmed, source: rawPath)
     }
 
     static func extractAccessToken(from credentials: String) throws -> String {
@@ -86,11 +166,17 @@ enum ClaudeCodeCredentialReader {
         return keys.isEmpty ? "nothing" : keys.joined(separator: ", ")
     }
 
+    static func isMissingKeychainItem(_ error: Error) -> Bool {
+        let detail = error.localizedDescription
+        return detail.lowercased().contains("could not be found")
+            || detail.contains("No Claude Code credentials found")
+    }
+
     // The per-source messages are written to stand alone, so quoting them whole inside the
     // combined "looked in A and B" sentence repeats its own advice back twice.
     private static func shortReason(_ error: Error) -> String {
         let detail = error.localizedDescription
-        if detail.lowercased().contains("could not be found") || detail.contains("No Claude Code credentials found") {
+        if isMissingKeychainItem(error) {
             return "not there"
         }
         if let first = detail.split(separator: ".").first {
@@ -143,16 +229,28 @@ enum ClaudeCodeCredentialReader {
     static func readMacOSKeychainCredentials() throws -> CredentialBundle {
         #if os(macOS)
         let user = ProcessInfo.processInfo.environment["USER"] ?? NSUserName()
-        let credentials = try readKeychain(service: "Claude Code-credentials", account: user)
-        return CredentialBundle(credentials: credentials, source: "Keychain \(user)")
+        return try keychainBundle(account: user)
         #else
         throw LocalizedErrorMessage("Claude Code Keychain lookup is macOS-only")
         #endif
     }
 
-    static func readKeychain(service: String, account: String) throws -> String {
+    static func keychainBundle(account: String?) throws -> CredentialBundle {
         #if os(macOS)
-        let command = "security find-generic-password -s '\(shellEscaped(service))' -a '\(shellEscaped(account))' -w"
+        let credentials = try readKeychain(service: keychainService, account: account)
+        return CredentialBundle(credentials: credentials, source: "Keychain \(account ?? "(any account)")")
+        #else
+        throw LocalizedErrorMessage("Claude Code Keychain lookup is macOS-only")
+        #endif
+    }
+
+    // A nil account searches the service alone. `security` matches the first item with that
+    // service whatever account it carries, which is the only way to reach an item filed under a
+    // name Toki cannot derive.
+    static func readKeychain(service: String, account: String?) throws -> String {
+        #if os(macOS)
+        let accountFlag = account.map { " -a '\(shellEscaped($0))'" } ?? ""
+        let command = "security find-generic-password -s '\(shellEscaped(service))'\(accountFlag) -w"
         // Deliberately a long timeout, not the default.
         //
         // The first read on a machine puts up the system's Keychain access prompt, and
