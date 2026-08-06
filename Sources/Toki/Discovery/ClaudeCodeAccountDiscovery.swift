@@ -39,7 +39,7 @@ enum ClaudeCodeAccountDiscovery {
                 organizationUUID: nil,
                 accountNumber: nil,
                 isActive: true,
-                source: "Claude Code Keychain",
+                source: "Claude Code sign-in",
                 credentials: nil,
                 loadError: error.localizedDescription,
                 label: nil
@@ -93,11 +93,11 @@ enum ClaudeCodeAccountDiscovery {
     private static func credentials(for number: Int, metadata: ClaudeSwapAccount, active: Bool) -> (credentials: String?, source: String, error: String?) {
         if active {
             do {
-                let activeBundle = try ClaudeCodeCredentialReader.readMacOSKeychainCredentials()
+                let activeBundle = try ClaudeCodeCredentialReader.readSignedInCredentials()
                 return (activeBundle.credentials, "\(activeBundle.source) active", nil)
             } catch {
                 DiagnosticLogger.shared.record(.error, component: "claude_discovery", code: "active_credentials_failed", detail: diagnosticErrorDetail(error))
-                return (nil, "Claude Code Keychain active", error.localizedDescription)
+                return (nil, "Claude Code sign-in", error.localizedDescription)
             }
         }
 
