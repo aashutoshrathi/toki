@@ -439,8 +439,28 @@ final class RemoteControlServer: ObservableObject {
         return name
     }
 
-    private nonisolated static func isTailscaleDNSHost(_ host: String) -> Bool {
+    nonisolated static func rawSelfDNSName(from statusData: Data) -> String? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: statusData),
+            let status = object as? [String: Any],
+            let selfNode = status["Self"] as? [String: Any]
+        else {
+            return nil
+        }
+        return selfNode["DNSName"] as? String
+    }
+
+    nonisolated static func isTailscaleDNSHost(_ host: String) -> Bool {
         !host.isEmpty && host.lowercased().hasSuffix(".ts.net")
+    }
+
+    nonisolated static func isUsableTailscaleHost(detected: String?, manual: String) -> Bool {
+        if detected != nil { return true }
+        return isTailscaleDNSHost(manual.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var hasUsableTailscaleHost: Bool {
+        Self.isUsableTailscaleHost(detected: tailscaleDNSName, manual: manualTailscaleHost)
     }
 
     func refreshTailscaleStatus() {
@@ -570,19 +590,36 @@ final class RemoteControlServer: ObservableObject {
         if let name = tailscaleDNSName(from: data) {
             return (name, nil)
         }
-        return (nil, statusDiagnostic(from: data))
+        let diagnostic = statusDiagnostic(from: data)
+        DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "no_dns_name",
+                                       detail: "\(diagnostic) raw=\(rawSelfDNSName(from: data) ?? "<absent>")")
+        return (nil, diagnostic)
     }
 
-    // The command ran but yielded no usable .ts.net name: distinguish "not connected" from
-    // "connected but MagicDNS is off" so the settings hint points at the right fix.
+    // The command ran but yielded no usable .ts.net name, so the settings hint has to point at the
+    // right fix. "MagicDNS is off" is claimed only for a running node that really reports no name;
+    // every other way of failing to read one says so instead of accusing a setting that may be on.
     nonisolated static func statusDiagnostic(from data: Data) -> String {
-        let object = try? JSONSerialization.jsonObject(with: data)
-        let status = object as? [String: Any]
-        let backend = status?["BackendState"] as? String
-        if let backend, backend != "Running" {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let status = object as? [String: Any]
+        else {
+            return "Couldn't read Tailscale's status. Enter the host by hand."
+        }
+        if let backend = status["BackendState"] as? String, backend != "Running" {
             return "Tailscale isn't connected (state: \(backend)). Sign in, then try again."
         }
-        return "Tailscale is connected but MagicDNS is off, so there's no .ts.net name. Turn on MagicDNS, or enter the host by hand."
+        guard
+            let selfNode = status["Self"] as? [String: Any],
+            let rawName = selfNode["DNSName"] as? String
+        else {
+            return "Tailscale didn't report a name for this Mac. Enter the host by hand."
+        }
+        let name = rawName.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        if name.isEmpty || !name.contains(".") {
+            return "Tailscale is connected but MagicDNS is off, so there's no .ts.net name. Turn on MagicDNS, or enter the host by hand."
+        }
+        return "Tailscale reports this Mac as \(name), which isn't a .ts.net name. Enter the host by hand."
     }
 
     private nonisolated static func readTailscaleServe(port: Int) -> (ready: Bool, conflict: Bool) {

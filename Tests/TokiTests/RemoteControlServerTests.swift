@@ -215,6 +215,52 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertTrue(message.contains("MagicDNS is off"), message)
     }
 
+    func testStatusDiagnosticDoesNotBlameMagicDNSForUnreadableStatus() {
+        for json in ["", "not json at all", "[]"] {
+            let message = RemoteControlServer.statusDiagnostic(from: Data(json.utf8))
+            XCTAssertFalse(message.contains("MagicDNS"), "\(json) -> \(message)")
+            XCTAssertTrue(message.contains("Couldn't read"), "\(json) -> \(message)")
+        }
+    }
+
+    func testStatusDiagnosticDoesNotBlameMagicDNSWhenSelfNodeIsAbsent() {
+        let json = #"{"BackendState":"Running"}"#
+        let message = RemoteControlServer.statusDiagnostic(from: Data(json.utf8))
+        XCTAssertFalse(message.contains("MagicDNS"), message)
+        XCTAssertTrue(message.contains("didn't report a name"), message)
+    }
+
+    func testStatusDiagnosticNamesANonTailnetHostInsteadOfBlamingMagicDNS() {
+        let json = #"{"BackendState":"Running","Self":{"DNSName":"my-mac.example.com."}}"#
+        let message = RemoteControlServer.statusDiagnostic(from: Data(json.utf8))
+        XCTAssertFalse(message.contains("MagicDNS"), message)
+        XCTAssertTrue(message.contains("my-mac.example.com"), message)
+    }
+
+    func testHandEnteredTailnetNameCountsAsAUsableHost() {
+        XCTAssertTrue(
+            RemoteControlServer.isUsableTailscaleHost(
+                detected: nil,
+                manual: "  sanji.tailaa723f.ts.net  "
+            )
+        )
+        XCTAssertTrue(
+            RemoteControlServer.isUsableTailscaleHost(detected: nil, manual: "SANJI.EXAMPLE.TS.NET")
+        )
+        XCTAssertTrue(
+            RemoteControlServer.isUsableTailscaleHost(detected: "auto.example.ts.net", manual: "")
+        )
+    }
+
+    func testBlankOrNonTailnetManualHostLeavesTheHintInPlace() {
+        XCTAssertFalse(RemoteControlServer.isUsableTailscaleHost(detected: nil, manual: ""))
+        XCTAssertFalse(RemoteControlServer.isUsableTailscaleHost(detected: nil, manual: "   "))
+        XCTAssertFalse(RemoteControlServer.isUsableTailscaleHost(detected: nil, manual: "my-mac"))
+        XCTAssertFalse(
+            RemoteControlServer.isUsableTailscaleHost(detected: nil, manual: "attacker.example.com")
+        )
+    }
+
     func testServeReadyDetectsHandlerForOurPort() {
         let json = """
         {"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
