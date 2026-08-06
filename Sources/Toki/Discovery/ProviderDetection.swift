@@ -35,12 +35,12 @@ enum ProviderDetection {
     }
 
     private static func detectClaudeCode() -> DetectedProvider? {
-        guard let bundle = try? ClaudeCodeCredentialReader.readMacOSKeychainCredentials() else { return nil }
+        guard let bundle = try? ClaudeCodeCredentialReader.readSignedInCredentials() else { return nil }
         let email = ClaudeCodeCredentialReader.emailIdentifier(from: bundle.credentials)
         return DetectedProvider(
             provider: .claudeCode,
             title: "Claude Code",
-            detail: email ?? "Signed in via Keychain",
+            detail: email ?? "Signed in via \(bundle.source)",
             makeAccount: {
                 var account = AccountConfig(id: "claude-code", name: "Claude Code", provider: .claudeCode)
                 account.claudeSwapCommand = "claude-swap"

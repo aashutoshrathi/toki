@@ -9,3 +9,4 @@ __pycache__/
 # Tailscale cert/key artifacts (never commit private keys)
 *.ts.net.crt
 *.ts.net.key
+graphify-out/

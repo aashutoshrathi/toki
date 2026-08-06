@@ -17,6 +17,36 @@ func expandedPath(_ rawPath: String) -> String {
     return (path as NSString).standardizingPath
 }
 
+// A login shell (-l) sources .zprofile but not .zshrc, and the version managers most agent CLIs
+// are installed through (nvm, fnm, volta, bun, pnpm, mise, asdf) put their shims on PATH from
+// .zshrc. Their bin directories are spelled out here so an agent installed that way is still
+// found, rather than reported as "command not found" on a machine where the user's own shell
+// runs it fine. $HOME is left unexpanded so this can be interpolated into a shell command.
+//
+// Prepend this to the inherited PATH rather than appending it: these are the known install
+// locations, and they should win over whatever an inherited PATH happens to put first. Deliberately
+// absent is $HOME/node_modules/.bin, which any stray `npm install` in the home directory creates
+// and fills with whatever a dependency shipped.
+let agentCommandSearchPath = [
+    "$HOME/.local/bin",
+    "$HOME/.bun/bin",
+    "$HOME/.volta/bin",
+    "$HOME/.deno/bin",
+    "$HOME/.cargo/bin",
+    "$HOME/.npm-global/bin",
+    "$HOME/.npm-packages/bin",
+    "$HOME/Library/pnpm",
+    "$HOME/.local/share/pnpm",
+    "$HOME/.local/share/mise/shims",
+    "$HOME/.asdf/shims",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin"
+].joined(separator: ":")
+
 enum SecureStore {
     static func write(data: Data, to url: URL) throws {
         let resolved = url.resolvingSymlinksInPath()

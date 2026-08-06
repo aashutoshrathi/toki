@@ -43,7 +43,7 @@ struct CodexUsageClient {
 }
 
 enum CodexAppServerClient {
-    private static let path = "$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    private static let path = agentCommandSearchPath
 
     static func fetch(account: AccountConfig) throws -> CodexAppServerPayload {
         let responses = try call(account: account, requests: [
@@ -126,7 +126,7 @@ enum CodexAppServerClient {
         printf '%s\\n' '\(shellEscaped(initialized))'; \
         sleep 0.2; \
         printf '%s\\n' \(printfArgs); \
-        sleep 11 ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path)" codex app-server --stdio > "$__toki_out" 2>&1 & \
+        sleep 11 ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" codex app-server --stdio > "$__toki_out" 2>&1 & \
         __toki_pid=$!; \
         for ((__toki_i = 1; __toki_i <= 100; __toki_i++)); do \
         sleep 0.1; \

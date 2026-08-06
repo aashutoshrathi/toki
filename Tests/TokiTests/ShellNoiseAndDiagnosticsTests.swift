@@ -50,10 +50,126 @@ final class ShellNoiseAndDiagnosticsTests: XCTestCase {
         }
     }
 
-    func testCredentialsWithoutTokenFailWithMissingTokenMessage() {
-        let credentials = #"{"claudeAiOauth":{}}"#
+    func testCredentialsWithoutTokenSayWhatToDoAndWhatWasThere() {
+        let credentials = #"{"claudeAiOauth":{"refreshToken":"r","expiresAt":1}}"#
         XCTAssertThrowsError(try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)) { error in
-            XCTAssertEqual(error.localizedDescription, "No Claude Code OAuth access token found")
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("/login"), message)
+            XCTAssertTrue(message.contains("expiresAt, refreshToken"), message)
+        }
+    }
+
+    func testCredentialsWithoutOAuthSectionNameTheSectionAndTheKeysFound() {
+        let credentials = #"{"apiKey":"sk-ant-x","someOther":1}"#
+        XCTAssertThrowsError(try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)) { error in
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("claudeAiOauth"), message)
+            XCTAssertTrue(message.contains("/login"), message)
+            XCTAssertTrue(message.contains("apiKey, someOther"), message)
+        }
+    }
+
+    func testCredentialErrorsNeverEchoTheSecretValues() {
+        let credentials = #"{"apiKey":"sk-ant-super-secret","claudeAiOauthX":{}}"#
+        XCTAssertThrowsError(try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)) { error in
+            XCTAssertFalse(error.localizedDescription.contains("sk-ant-super-secret"), error.localizedDescription)
+        }
+    }
+
+    func testCredentialSearchCoversEveryKnownConfigLocation() {
+        let candidates = ClaudeCodeCredentialReader.credentialFileCandidates(includeShellEnvironment: false)
+        XCTAssertTrue(candidates.contains("~/.claude/.credentials.json"), "\(candidates)")
+        XCTAssertTrue(candidates.contains("~/.config/claude/.credentials.json"), "\(candidates)")
+        XCTAssertEqual(Set(candidates).count, candidates.count, "duplicate candidates: \(candidates)")
+        for candidate in candidates {
+            XCTAssertTrue(candidate.hasSuffix("/.credentials.json"), candidate)
+            XCTAssertFalse(candidate.contains("//"), candidate)
+        }
+    }
+
+    func testKeychainSearchFallsBackToAServiceOnlyLookup() {
+        let accounts = ClaudeCodeCredentialReader.keychainAccountCandidates()
+        XCTAssertTrue(accounts.contains(where: { $0 != nil }), "\(accounts)")
+        XCTAssertEqual(accounts.last, .some(nil), "the service-only search must come last: \(accounts)")
+    }
+
+    func testDeniedKeychainPromptIsNotRetriedUnderEveryAccountName() {
+        let missing = LocalizedErrorMessage("No Claude Code credentials found in your Keychain. Sign in to Claude Code, then refresh.")
+        let denied = LocalizedErrorMessage("Couldn't read the Claude Code credentials from your Keychain: User canceled the operation.")
+        XCTAssertTrue(ClaudeCodeCredentialReader.isMissingKeychainItem(missing))
+        XCTAssertFalse(ClaudeCodeCredentialReader.isMissingKeychainItem(denied))
+    }
+
+    func testCredentialFileRejectsASymlinkStandingInForAnotherFile() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("toki-cred-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let target = directory.appendingPathComponent("elsewhere.json")
+        try #"{"claudeAiOauth":{"accessToken":"planted"}}"#.write(to: target, atomically: true, encoding: .utf8)
+        let link = directory.appendingPathComponent(".credentials.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        XCTAssertThrowsError(try ClaudeCodeCredentialReader.readCredentialsFile(at: link.path)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("not a regular file"), error.localizedDescription)
+        }
+    }
+
+    func testCredentialFileRejectsAWorldWritableFile() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("toki-cred-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let path = directory.appendingPathComponent(".credentials.json")
+        try #"{"claudeAiOauth":{"accessToken":"planted"}}"#.write(to: path, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o666], ofItemAtPath: path.path)
+
+        XCTAssertThrowsError(try ClaudeCodeCredentialReader.readCredentialsFile(at: path.path)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("writable by other users"), error.localizedDescription)
+        }
+    }
+
+    func testCredentialFileAcceptsAPrivateRegularFile() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("toki-cred-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let path = directory.appendingPathComponent(".credentials.json")
+        try #"{"claudeAiOauth":{"accessToken":"mine"}}"#.write(to: path, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+
+        let bundle = try ClaudeCodeCredentialReader.readCredentialsFile(at: path.path)
+        XCTAssertEqual(try ClaudeCodeCredentialReader.extractAccessToken(from: bundle.credentials), "mine")
+    }
+
+    func testRelativeOrControlCharacterConfigDirectoriesAreNotSearched() {
+        for bad in ["relative/path", "", "\u{1}/tmp/evil", "/tmp/ev\nil"] {
+            XCTAssertFalse(ClaudeCodeCredentialReader.isUsableConfigDirectory(bad), "accepted \(bad.debugDescription)")
+        }
+        for good in ["/opt/claude", "~/.claude", "~"] {
+            XCTAssertTrue(ClaudeCodeCredentialReader.isUsableConfigDirectory(good), "rejected \(good)")
+        }
+    }
+
+    func testAgentSearchPathCoversVersionManagerBinDirectories() {
+        for directory in ["$HOME/.bun/bin", "$HOME/.volta/bin", "$HOME/.local/share/mise/shims", "/opt/homebrew/bin"] {
+            XCTAssertTrue(agentCommandSearchPath.contains(directory), "missing \(directory)")
+        }
+        // Any stray `npm install` in the home directory creates this and fills it with whatever a
+        // dependency shipped, so it must never become a place Toki looks for an agent binary.
+        XCTAssertFalse(agentCommandSearchPath.contains("$HOME/node_modules"), agentCommandSearchPath)
+    }
+
+    func testMissingCodexAuthFileNamesThePathAndTheCommand() {
+        var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
+        account.codexAuthPath = "~/.codex/definitely-not-here.json"
+        XCTAssertThrowsError(try CodexCredentialReader.readCredentials(account: account)) { error in
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("~/.codex/definitely-not-here.json"), message)
+            XCTAssertTrue(message.contains("codex login"), message)
         }
     }
 
