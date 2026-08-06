@@ -597,7 +597,8 @@ struct SettingsPanel: View {
 
                     if remoteServer.hostMode == .tailscale, remoteServer.tailscaleDNSName == nil {
                         VStack(alignment: .leading, spacing: 4) {
-                            if let diagnostic = remoteServer.tailscaleStatusDiagnostic {
+                            if let diagnostic = remoteServer.tailscaleStatusDiagnostic,
+                               !remoteServer.hasUsableTailscaleHost {
                                 Text(diagnostic)
                                     .font(.system(size: 10))
                                     .foregroundStyle(.orange)
