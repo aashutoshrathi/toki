@@ -7,6 +7,7 @@ const path = require("node:path");
 const root = path.join(__dirname, "..", "Sources", "Toki", "Resources", "webui");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 
 assert.match(html, /Read-only session/);
 assert.match(html, /cannot send replies/);
@@ -15,5 +16,11 @@ assert.match(app, /enabled\s*=\s*writable\s*&&\s*!sending/);
 assert.match(app, /el\.disabled\s*=\s*!enabled/);
 assert.match(app, /footer textarea/);
 assert.match(app, /Read-only session/);
+
+// Read-only sessions sit below the ones you can reply to, under one group label rather than a
+// badge on every row. The label is emitted only where the read-only run begins.
+assert.match(app, /class="ddgroup">Read-only</);
+assert.match(app, /!a\.writable\s*&&\s*\(i\s*==\s*0\s*\|\|\s*agents\[i\s*-\s*1\]\.writable\)/);
+assert.match(css, /\.ddgroup\{/);
 
 console.log("remote read-only session tests passed");

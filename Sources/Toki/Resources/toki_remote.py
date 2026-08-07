@@ -933,6 +933,16 @@ def agent_is_writable(agent):
     return safe_tty(agent.get("tty"))
 
 
+def agent_order(agent):
+    """Most recent first, but every agent you can reply to ahead of every one you can't.
+
+    Read-only sessions (Codex desktop and friends) are only there to be watched, so a busy one
+    would otherwise sit at the top of the picker -- and be selected by default -- while the agent
+    actually waiting on you is further down.
+    """
+    return (agent_is_writable(agent), agent_recency(agent))
+
+
 def applescript_str(s):
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -1194,7 +1204,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/agents":
             result = []
             agents = discover_agents()
-            agents.sort(key=agent_recency, reverse=True)
+            agents.sort(key=agent_order, reverse=True)
             for a in agents:
                 att = None
                 if a["session"]:

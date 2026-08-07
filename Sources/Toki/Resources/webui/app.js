@@ -229,9 +229,13 @@ function renderAgents() {
   const cur = agents.find(a => a.pid == current) || agents[0];
   btn.innerHTML = agentRow(cur) + '<span class="caret">\u25be</span>';
   updateComposer(cur);
-  list.innerHTML = agents.map(a =>
-    '<div class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + a.pid + '">' + agentRow(a) + "</div>"
-  ).join("");
+  // The server hands agents back writable-first, so the read-only ones are a single run at the
+  // end. Label that run once, where it starts, rather than badging every row in it.
+  list.innerHTML = agents.map((a, i) => {
+    const startsReadOnly = !a.writable && (i == 0 || agents[i - 1].writable);
+    return (startsReadOnly ? '<div class="ddgroup">Read-only</div>' : "") +
+      '<div class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + a.pid + '">' + agentRow(a) + "</div>";
+  }).join("");
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
     current = +el.dataset.pid;

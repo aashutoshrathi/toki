@@ -6,6 +6,10 @@
 
 - The companion app's agent picker now shows the folder each agent is working in, under its title, with your home folder written as `~`. Several agents often carry the same title (or none worth reading), and the folder is what tells them apart. The eye toggle masks the folder along with the name.
 
+### Changed
+
+- The companion app's agent picker now lists every agent you can reply to before the read-only ones, which are grouped at the bottom under a single "Read-only" heading. A busy read-only session (Codex desktop and the like) used to sort to the top on recency and get selected by default, putting a session you can only watch in front of the one waiting on you.
+
 ## 2.5.4
 
 ### Added

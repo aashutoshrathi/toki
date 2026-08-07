@@ -131,6 +131,29 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(toki_remote.agent_is_writable({"tty": "ttys001"}))
 
 
+class RemoteControlAgentOrderTests(unittest.TestCase):
+    def order(self, agents):
+        with mock.patch.object(toki_remote, "agent_recency", lambda a: a["recency"]):
+            return [a["pid"] for a in sorted(agents, key=toki_remote.agent_order, reverse=True)]
+
+    def test_writable_agents_come_before_read_only_ones(self):
+        agents = [
+            {"pid": 1, "tty": None, "recency": 900},        # read-only, but the most recent
+            {"pid": 2, "tty": "ttys001", "recency": 100},
+            {"pid": 3, "tty": None, "recency": 800},
+            {"pid": 4, "tty": "ttys002", "recency": 200},
+        ]
+        self.assertEqual(self.order(agents), [4, 2, 1, 3])
+
+    def test_recency_still_orders_within_each_group(self):
+        agents = [
+            {"pid": 1, "tty": "ttys001", "recency": 100},
+            {"pid": 2, "tty": "ttys002", "recency": 300},
+            {"pid": 3, "tty": "ttys003", "recency": 200},
+        ]
+        self.assertEqual(self.order(agents), [2, 3, 1])
+
+
 class RemoteControlDisplayPathTests(unittest.TestCase):
     def test_home_is_collapsed_to_a_tilde(self):
         with mock.patch.object(toki_remote, "HOME", "/Users/someone"):
