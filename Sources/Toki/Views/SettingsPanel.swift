@@ -527,6 +527,15 @@ struct SettingsPanel: View {
                     title: "Remote Control Server",
                     subtitle: "Run a local server to check on and reply to your agents from your phone."
                 )
+                Link(destination: remoteControlGuideURL) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("How Remote Control works, and what to watch out for")
+                .accessibilityLabel("Remote Control guide")
+                .pointerOnHover()
                 Spacer(minLength: 8)
                 Toggle("", isOn: Binding(
                     get: { remoteServer.isRunning },

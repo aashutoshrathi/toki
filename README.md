@@ -89,6 +89,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 | [Configuration](docs/configuration.md) | Config file, accounts, labels, refresh cadence, state |
 | [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
 | [Features](docs/features.md) | Agents, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
+| [Remote Control](docs/remote-control.md) | Replying to agents from your phone: setup, how the three gates work, gotchas |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
 | [Release signing](docs/release-signing.md) | Apple secrets for signing and notarizing release builds |
 
