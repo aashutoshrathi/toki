@@ -96,8 +96,13 @@ final class RemoteControlServer: ObservableObject {
             if oldValue == .tunnel {
                 stopTunnel()
             }
-            if hostMode == .tunnel, isRunning {
-                startTunnel()
+            // The host mode decides which networks the server answers, and that is fixed when the
+            // process starts. Restarting is what makes a narrowed setting take effect; leaving the
+            // old process up would keep serving the wider one it was launched with. start() brings
+            // the tunnel up again too, when that is the new mode.
+            if isRunning {
+                stop()
+                start()
             }
         }
     }
@@ -268,6 +273,40 @@ final class RemoteControlServer: ObservableObject {
         return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
+    // How far the server should be reachable, derived from the Host setting.
+    //
+    // `bind` is only the first gate and cannot express every mode on its own: with Tailscale the
+    // same port has to answer `tailscale serve` over loopback and a phone at the 100.x address,
+    // and one bind() covers neither pair. `access` is the peer check the server applies per
+    // connection, and it is what keeps a port bound to 0.0.0.0 from being open to the coffee-shop
+    // Wi-Fi the Mac also happens to be on.
+    static func reach(for hostMode: HostMode) -> (bind: String, access: String) {
+        switch hostMode {
+        case .localhost:
+            return ("127.0.0.1", "loopback")
+        case .tunnel:
+            // cloudflared runs on this Mac and dials 127.0.0.1, so nothing else needs the port.
+            return ("127.0.0.1", "loopback")
+        case .tailscale:
+            return ("0.0.0.0", "tailnet")
+        case .localNetwork:
+            return ("0.0.0.0", "private")
+        case .custom:
+            // The user named a host we can't classify, so we can't narrow this for them.
+            return ("0.0.0.0", "any")
+        }
+    }
+
+    // Extra Host header values to answer to. Everything Toki hands out itself (loopback, literal
+    // IPs, .ts.net, .trycloudflare.com) the server already accepts; only a custom host is unknown
+    // to it, and it has to be named or the anti-rebinding check would reject the user's own link.
+    static func allowedHostArguments(for hostMode: HostMode, customHost: String) -> [String] {
+        guard hostMode == .custom else { return [] }
+        let trimmed = customHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return ["--allow-host", trimmed]
+    }
+
     func start() {
         guard !isRunning else { return }
         lastError = nil
@@ -280,15 +319,18 @@ final class RemoteControlServer: ObservableObject {
             return
         }
 
+        let reach = Self.reach(for: hostMode)
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = [
             "python3", "-u", script.path,
             "--port", "\(port)",
+            "--bind", reach.bind,
+            "--access", reach.access,
             "--session-ttl", "\(sessionLifetime.rawValue)",
             "--agent-snapshot-stdin",
             "--no-qr"
-        ]
+        ] + Self.allowedHostArguments(for: hostMode, customHost: customHost)
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONUNBUFFERED"] = "1"
         task.environment = environment

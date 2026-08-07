@@ -28,9 +28,21 @@ try {
 
 // Save whenever we have a link token, even with no host: the direct same-host flow serves the
 // PWA from the Mac's own origin, so an empty host restores to the same origin on relaunch.
+let connSaved = false;
 if (LINK_TOKEN && !CONFIG_ERROR) {
   try {
     localStorage.setItem(CONN_KEY, JSON.stringify({ host: REMOTE_HOST, token: LINK_TOKEN }));
+    connSaved = true;
+  } catch (e) {}
+}
+
+// The link token has been read and remembered, so take it back out of the address bar: on a phone
+// that URL is on screen, in history, and in whatever the browser syncs. Only once the connection
+// is safely in localStorage -- with storage unavailable, the address bar is the only copy left and
+// a reload would have nothing to come back to.
+if (connSaved && (location.hash || location.search)) {
+  try {
+    history.replaceState(null, "", location.pathname);
   } catch (e) {}
 }
 
@@ -79,9 +91,13 @@ function dispPath(p) {
   return privacyMode ? maskText(p) : esc(p);
 }
 
+// The session token rides in the Authorization header rather than the query string, so it stays
+// out of the phone's history and out of the request line any proxy in front of the Mac writes to
+// its log -- Cloudflare's, on the tunnel path.
 async function api(p, o) {
-  const url = API_BASE + p + (p.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN);
-  const r = await fetch(url, o);
+  const opts = Object.assign({}, o);
+  opts.headers = Object.assign({}, o && o.headers, { Authorization: "Bearer " + TOKEN });
+  const r = await fetch(API_BASE + p, opts);
   if (r.status == 403) lockApp();
   if (!r.ok) throw new Error(await r.text());
   return r.json();

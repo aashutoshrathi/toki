@@ -33,6 +33,7 @@ networks you trust (your tailnet qualifies; a coffee-shop LAN does not).
 """
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -965,7 +966,16 @@ def agent_order(agent):
 
 
 def applescript_str(s):
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    # A raw newline cannot appear inside an AppleScript string literal -- it makes the script fail
+    # to compile, so a multi-line reply from the phone was silently lost on the iTerm and Terminal
+    # routes. Send the escape sequence instead. Backslash first, or it would escape the others.
+    return '"' + (
+        s.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r\n", "\\n")
+        .replace("\n", "\\n")
+        .replace("\r", "\\n")
+    ) + '"'
 
 
 def iterm_write(tty, payload_expr):
@@ -1053,6 +1063,15 @@ def new_pairing_code():
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def int_param(q, name, default=0):
+    """A non-negative integer query parameter, or the default when it is missing or malformed."""
+    try:
+        value = int(q.get(name, [""])[0])
+    except (TypeError, ValueError, IndexError):
+        return default
+    return value if value >= 0 else default
+
+
 TOKEN = secrets.token_urlsafe(24)
 PAIRING_CODE = new_pairing_code()
 PAIRING_CODE_TTL = 2 * 60
@@ -1062,6 +1081,13 @@ SESSION_TTL_CHOICES = (60 * 60, 12 * 60 * 60, 24 * 60 * 60, 2 * 24 * 60 * 60)
 PAIRING_WINDOW = 60
 PAIRING_MAX_FAILURES = 5
 MAX_BODY_BYTES = 256 * 1024
+# A reply is a person typing on a phone, not a file transfer. The body cap above still lets a
+# quarter-megabyte of keystrokes be pushed into a terminal in one request; this bounds what any
+# single /api/send can inject.
+MAX_SEND_CHARS = 8_000
+# One phone is one session. Pairing is cheap once the code is known, so cap the table rather than
+# let a paired client mint sessions until the process runs out of memory.
+MAX_SESSIONS = 32
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; "
@@ -1070,6 +1096,96 @@ CSP = (
 SESSIONS = {}
 PAIRING_FAILURES = {}
 AUTH_LOCK = threading.Lock()
+
+# ------------------------------------------------------------- access control
+#
+# The listening socket stays on 0.0.0.0 for the modes that need it: `tailscale serve` reaches us
+# over loopback while a phone on the tailnet reaches the same port at the 100.x address, and one
+# bind() cannot cover both. So reachability is decided per connection instead, against the Host
+# setting the user actually chose. Without this, picking "Localhost" or "Tailscale" in Toki still
+# left the port open to every machine on whatever Wi-Fi the Mac happened to join.
+ACCESS_POLICIES = ("loopback", "tailnet", "private", "any")
+ACCESS_POLICY = "private"
+# Extra Host header values to trust, for the Custom host mode. Loopback, literal IPs, .ts.net and
+# .trycloudflare.com are always accepted.
+ALLOWED_HOSTS = set()
+
+TAILNET_NET = ipaddress.ip_network("100.64.0.0/10")
+PRIVATE_NETS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    TAILNET_NET,
+)
+
+
+def peer_allowed(ip, policy=None):
+    """Whether a client at this address may reach the API under the given Host setting."""
+    policy = ACCESS_POLICY if policy is None else policy
+    if policy == "any":
+        return True
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    if getattr(addr, "ipv4_mapped", None):
+        addr = addr.ipv4_mapped
+    # Loopback covers both a browser on this Mac and the two proxies that front us, `tailscale
+    # serve` and `cloudflared`, which both dial 127.0.0.1.
+    if addr.is_loopback:
+        return True
+    if policy == "loopback":
+        return False
+    if policy == "tailnet":
+        return addr in TAILNET_NET
+    return any(addr in net for net in PRIVATE_NETS)
+
+
+def split_host(host_header):
+    """Hostname from a Host header, minus the port and any brackets around an IPv6 literal."""
+    host = (host_header or "").strip()
+    if host.startswith("["):
+        return host[1:].split("]", 1)[0]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def host_allowed(host_header, extra=None):
+    """Whether this Host is one we are legitimately reachable at.
+
+    A name resolves to whatever its owner says it does, so a page on attacker.example can point
+    that name at this Mac and have the browser treat the result as same-origin (DNS rebinding),
+    slipping past the origin check below. Answering only to the addresses Toki actually hands out
+    closes that: an attacker cannot make a browser send a Host it does not control.
+    """
+    host = split_host(host_header).lower().rstrip(".")
+    if not host:
+        return False
+    if host in ("localhost", "localhost.localdomain"):
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    if host.endswith(".ts.net") or host.endswith(".trycloudflare.com"):
+        return True
+    return host in (ALLOWED_HOSTS if extra is None else extra)
+
+
+def origin_allowed(origin, host_header):
+    """Whether a browser at this Origin may make a state-changing call.
+
+    No Origin at all means a non-browser client (curl, a native app), which no website can forge
+    on a user's behalf. Everything else must be either the hosted UI or the page we served.
+    """
+    if not origin:
+        return True
+    if origin == HOSTED_ORIGIN:
+        return True
+    stripped = origin.split("://", 1)[-1].lower().rstrip(".")
+    host = (host_header or "").strip().lower().rstrip(".")
+    return bool(host) and stripped == host
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 WEBUI_DIR = os.path.join(_SCRIPT_DIR, "webui")
@@ -1094,9 +1210,11 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _cors(self):
+        # Always vary: whether this response carries an allow-origin header depends on the request
+        # origin, so a cache must not hand one origin's copy to another.
+        self.send_header("Vary", "Origin")
         if self.headers.get("Origin") == HOSTED_ORIGIN:
             self.send_header("Access-Control-Allow-Origin", HOSTED_ORIGIN)
-            self.send_header("Vary", "Origin")
 
     def _secure(self, document=False):
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -1104,6 +1222,19 @@ class Handler(BaseHTTPRequestHandler):
         if document:
             self.send_header("Content-Security-Policy", CSP)
             self.send_header("X-Frame-Options", "DENY")
+            # The connect link carries the token in its URL. Keep every copy of this page out of
+            # shared caches, which on the Cloudflare Tunnel path means Cloudflare's edge.
+            self.send_header("Cache-Control", "no-store")
+
+    def _gate(self):
+        """Reject the request unless the peer and the Host it asked for are both permitted."""
+        if not peer_allowed(self.client_address[0]):
+            self._json({"error": "not reachable from this network"}, 403)
+            return False
+        if not host_allowed(self.headers.get("Host")):
+            self._json({"error": "unrecognised host"}, 421)
+            return False
+        return True
 
     def _read_body(self):
         try:
@@ -1125,16 +1256,35 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _presented_token(self, q):
+        """Session token from the Authorization header, falling back to the query string.
+
+        The header is preferred because a query string is the one part of a request that gets
+        written down elsewhere: browser history on the phone, and the request line in any proxy
+        log between the two -- including Cloudflare's, on the tunnel path. Query tokens stay
+        supported so an opened connect link still authenticates before the app takes over.
+        """
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:].strip()
+        return q.get("token", [""])[0]
+
     def _authed(self, q):
-        candidate = q.get("token", [""])[0]
+        candidate = self._presented_token(q)
+        if not candidate:
+            return False
         now = time.time()
         with AUTH_LOCK:
             expired = [token for token, expiry in SESSIONS.items() if expiry <= now]
             for token in expired:
                 del SESSIONS[token]
-            return candidate in SESSIONS
+            # compare_digest against each live session rather than a dict lookup, so a wrong token
+            # takes the same time whatever prefix it shares with a real one.
+            return any(secrets.compare_digest(candidate, token) for token in SESSIONS)
 
     def _pair(self, q):
+        if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host")):
+            return self._json({"error": "cross-origin request not allowed"}, 403)
         link_token = q.get("token", [""])[0]
         if not secrets.compare_digest(link_token, TOKEN):
             return self._json({"error": "bad link token"}, 403)
@@ -1151,6 +1301,12 @@ class Handler(BaseHTTPRequestHandler):
         now = time.time()
 
         with AUTH_LOCK:
+            # Drop every bucket that has aged out, not just this client's. Keyed by address, the
+            # table would otherwise keep a row per peer that ever guessed wrong -- unbounded on
+            # the tunnel path, where the address can be anyone on the internet.
+            for address in [a for a, tries in PAIRING_FAILURES.items()
+                            if not any(t > now - PAIRING_WINDOW for t in tries)]:
+                del PAIRING_FAILURES[address]
             recent = [
                 attempt for attempt in PAIRING_FAILURES.get(client, [])
                 if attempt > now - PAIRING_WINDOW
@@ -1164,6 +1320,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "incorrect verification code"}, 403)
 
             PAIRING_FAILURES.pop(client, None)
+            for token, expiry in sorted(SESSIONS.items(), key=lambda item: item[1]):
+                if len(SESSIONS) < MAX_SESSIONS:
+                    break
+                del SESSIONS[token]
             session_token = secrets.token_urlsafe(32)
             SESSIONS[session_token] = now + SESSION_TTL
 
@@ -1183,6 +1343,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_OPTIONS(self):
+        if not self._gate():
+            return
         url = urlparse(self.path)
         requested_method = self.headers.get("Access-Control-Request-Method")
         if (
@@ -1195,11 +1357,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self._cors()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
 
     def do_GET(self):
+        if not self._gate():
+            return
         url = urlparse(self.path)
         q = parse_qs(url.query)
         if url.path in ("/", "/index.html"):
@@ -1245,8 +1409,10 @@ class Handler(BaseHTTPRequestHandler):
                 })
             self._json(result)
         elif url.path == "/api/transcript":
-            pid = int(q.get("pid", ["0"])[0])
-            offset = int(q.get("offset", ["0"])[0])
+            # Anything unparseable reads as "start from the beginning" rather than raising out of
+            # the handler, which would drop the connection mid-poll.
+            pid = int_param(q, "pid")
+            offset = int_param(q, "offset")
             agent = next((a for a in discover_agents() if a["pid"] == pid), None)
             session = transcript_id(agent)
             if not agent or not agent["session"]:
@@ -1275,6 +1441,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
 
     def do_POST(self):
+        if not self._gate():
+            return
         url = urlparse(self.path)
         q = parse_qs(url.query)
         if url.path == "/api/pair":
@@ -1283,6 +1451,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "bad token"}, 403)
         if url.path != "/api/send":
             return self._json({"error": "not found"}, 404)
+        # A POST carrying a simple content type is exempt from CORS preflight, so a page on any
+        # origin can fire one at this endpoint. The session token still has to be right, but keep
+        # a page that somehow learned it from driving the terminal anyway.
+        if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host")):
+            return self._json({"error": "cross-origin request not allowed"}, 403)
         raw = self._read_body()
         if raw is None:
             return self._json({"error": "request too large"}, 413)
@@ -1290,17 +1463,22 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw)
         except ValueError:
             return self._json({"error": "bad json"}, 400)
-        agent = next((a for a in discover_agents() if a["pid"] == body.get("pid")), None)
-        if not agent:
-            return self._json({"error": "agent gone"}, 410)
-        if not agent_is_writable(agent):
-            return self._json({"error": "This non-terminal session is read-only."}, 422)
+        # Validate the payload before resolving the agent: discovery shells out to ps and lsof, and
+        # a request that can never be delivered should not pay for that, let alone let a caller
+        # drive those scans in a loop.
         key = body.get("key")
         text = body.get("text")
         if key not in (None, "enter", "esc", "up", "down", "tab"):
             return self._json({"error": "unknown key"}, 400)
         if not key and not (isinstance(text, str) and text):
             return self._json({"error": "nothing to send"}, 400)
+        if isinstance(text, str) and len(text) > MAX_SEND_CHARS:
+            return self._json({"error": "message too long"}, 413)
+        agent = next((a for a in discover_agents() if a["pid"] == body.get("pid")), None)
+        if not agent:
+            return self._json({"error": "agent gone"}, 410)
+        if not agent_is_writable(agent):
+            return self._json({"error": "This non-terminal session is read-only."}, 422)
         raw = bool(body.get("raw")) and text is not None and len(text) == 1
         ok, how = send_input(agent["tty"], text=text, key=key, raw=raw)
         self._json({"ok": ok, "how": how}, 200 if ok else 502)
@@ -1326,22 +1504,28 @@ def local_ipv4s():
 
 
 def main():
-    global CANONICAL_AGENTS, SESSION_TTL
+    global CANONICAL_AGENTS, SESSION_TTL, ACCESS_POLICY, ALLOWED_HOSTS
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--bind", default="0.0.0.0")
+    ap.add_argument("--access", choices=ACCESS_POLICIES, default=ACCESS_POLICY,
+                    help="which peers may reach the API: loopback, tailnet, private, or any")
+    ap.add_argument("--allow-host", action="append", default=[],
+                    help="an extra Host header value to answer to (repeatable)")
     ap.add_argument("--session-ttl", type=int, choices=SESSION_TTL_CHOICES, default=SESSION_TTL)
     ap.add_argument("--agent-snapshot-stdin", action="store_true")
     ap.add_argument("--no-qr", action="store_true")
     args = ap.parse_args()
     SESSION_TTL = args.session_ttl
+    ACCESS_POLICY = args.access
+    ALLOWED_HOSTS = {h.strip().lower().rstrip(".") for h in args.allow_host if h.strip()}
     if args.agent_snapshot_stdin:
         CANONICAL_AGENTS = []
         threading.Thread(target=read_agent_snapshots, daemon=True).start()
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
 
-    ips = local_ipv4s()
-    print("toki-remote prototype\n")
+    ips = [ip for ip in local_ipv4s() if peer_allowed(ip)]
+    print(f"toki-remote prototype (access={ACCESS_POLICY}, bind={args.bind})\n")
     urls = [f"http://{ip}:{args.port}/?token={TOKEN}" for ip in ips]
     for u in urls:
         print("   " + u)

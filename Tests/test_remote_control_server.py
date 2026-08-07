@@ -93,6 +93,87 @@ class RemoteControlPairingTests(unittest.TestCase):
             self.assertEqual(toki_remote.new_pairing_code(), "000042")
 
 
+class RemoteControlAccessPolicyTests(unittest.TestCase):
+    def test_loopback_reaches_every_policy(self):
+        # tailscale serve and cloudflared both dial 127.0.0.1, so no policy may exclude it.
+        for policy in toki_remote.ACCESS_POLICIES:
+            self.assertTrue(toki_remote.peer_allowed("127.0.0.1", policy), policy)
+
+    def test_localhost_policy_excludes_the_local_network(self):
+        self.assertFalse(toki_remote.peer_allowed("192.168.1.20", "loopback"))
+        self.assertFalse(toki_remote.peer_allowed("100.101.102.103", "loopback"))
+
+    def test_tailnet_policy_admits_only_the_tailnet(self):
+        self.assertTrue(toki_remote.peer_allowed("100.101.102.103", "tailnet"))
+        # The whole point: choosing Tailscale must not leave the port open to the cafe Wi-Fi.
+        self.assertFalse(toki_remote.peer_allowed("192.168.1.20", "tailnet"))
+        self.assertFalse(toki_remote.peer_allowed("8.8.8.8", "tailnet"))
+
+    def test_private_policy_admits_lan_and_tailnet_but_not_the_internet(self):
+        for ip in ("192.168.1.20", "10.1.2.3", "172.16.5.5", "100.101.102.103"):
+            self.assertTrue(toki_remote.peer_allowed(ip, "private"), ip)
+        self.assertFalse(toki_remote.peer_allowed("8.8.8.8", "private"))
+
+    def test_ipv4_mapped_address_is_judged_as_ipv4(self):
+        self.assertFalse(toki_remote.peer_allowed("::ffff:192.168.1.20", "tailnet"))
+        self.assertTrue(toki_remote.peer_allowed("::ffff:100.101.102.103", "tailnet"))
+
+    def test_unparseable_peer_is_refused_unless_the_policy_is_open(self):
+        self.assertFalse(toki_remote.peer_allowed("not-an-address", "tailnet"))
+        self.assertTrue(toki_remote.peer_allowed("not-an-address", "any"))
+
+
+class RemoteControlHostAndOriginTests(unittest.TestCase):
+    def test_addresses_toki_hands_out_are_accepted(self):
+        for host in ("localhost:8765", "127.0.0.1:8765", "100.101.102.103:8765",
+                     "mac.tail1234.ts.net", "abc-def.trycloudflare.com"):
+            self.assertTrue(toki_remote.host_allowed(host, set()), host)
+
+    def test_a_name_the_attacker_owns_is_rejected(self):
+        # DNS rebinding: attacker.example resolves to this Mac, so the browser calls us with that
+        # Host and treats the reply as same-origin. Answering only to our own names stops it.
+        self.assertFalse(toki_remote.host_allowed("attacker.example", set()))
+        self.assertFalse(toki_remote.host_allowed("mac.ts.net.attacker.example", set()))
+        self.assertFalse(toki_remote.host_allowed("", set()))
+
+    def test_a_custom_host_is_accepted_once_named(self):
+        self.assertFalse(toki_remote.host_allowed("mac.internal", set()))
+        self.assertTrue(toki_remote.host_allowed("mac.internal:8765", {"mac.internal"}))
+
+    def test_the_hosted_ui_and_our_own_page_may_post(self):
+        self.assertTrue(toki_remote.origin_allowed(toki_remote.HOSTED_ORIGIN, "mac.ts.net"))
+        self.assertTrue(toki_remote.origin_allowed("https://mac.ts.net", "mac.ts.net"))
+        self.assertTrue(toki_remote.origin_allowed("http://127.0.0.1:8765", "127.0.0.1:8765"))
+
+    def test_any_other_page_may_not_post(self):
+        self.assertFalse(toki_remote.origin_allowed("https://evil.example", "mac.ts.net"))
+        self.assertFalse(toki_remote.origin_allowed("null", "mac.ts.net"))
+
+    def test_a_request_with_no_origin_is_not_a_browser_and_is_allowed(self):
+        self.assertTrue(toki_remote.origin_allowed(None, "mac.ts.net"))
+        self.assertTrue(toki_remote.origin_allowed("", "mac.ts.net"))
+
+
+class RemoteControlInputBoundsTests(unittest.TestCase):
+    def test_malformed_numbers_fall_back_instead_of_raising(self):
+        self.assertEqual(toki_remote.int_param({"pid": ["abc"]}, "pid"), 0)
+        self.assertEqual(toki_remote.int_param({}, "offset"), 0)
+        self.assertEqual(toki_remote.int_param({"offset": ["-5"]}, "offset"), 0)
+        self.assertEqual(toki_remote.int_param({"pid": ["4242"]}, "pid"), 4242)
+
+    def test_a_reply_is_bounded_well_below_the_body_cap(self):
+        self.assertLess(toki_remote.MAX_SEND_CHARS, toki_remote.MAX_BODY_BYTES)
+
+    def test_a_newline_survives_applescript_quoting(self):
+        # A raw newline is a compile error inside an AppleScript literal, which lost the message.
+        quoted = toki_remote.applescript_str("first\nsecond")
+        self.assertEqual(quoted, '"first\\nsecond"')
+        self.assertNotIn("\n", quoted)
+
+    def test_quotes_and_backslashes_cannot_end_the_literal(self):
+        self.assertEqual(toki_remote.applescript_str('a"b\\c'), '"a\\"b\\\\c"')
+
+
 class RemoteControlAgentDiscoveryTests(unittest.TestCase):
     def test_agents_resolving_to_same_session_are_collapsed(self):
         agents = [

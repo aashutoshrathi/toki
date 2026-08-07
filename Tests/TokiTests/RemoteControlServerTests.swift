@@ -12,6 +12,33 @@ final class RemoteControlServerTests: XCTestCase {
         )
     }
 
+    func testEachHostModeNarrowsTheServerToWhatItNeeds() {
+        // The Host setting is the user's statement about who should be able to reach this Mac, so
+        // it has to reach the server as an access policy. Binding alone cannot say it: Tailscale
+        // needs both loopback (for `tailscale serve`) and the 100.x address (for a phone).
+        XCTAssertEqual(RemoteControlServer.reach(for: .localhost).access, "loopback")
+        XCTAssertEqual(RemoteControlServer.reach(for: .localhost).bind, "127.0.0.1")
+        XCTAssertEqual(RemoteControlServer.reach(for: .tunnel).access, "loopback")
+        XCTAssertEqual(RemoteControlServer.reach(for: .tunnel).bind, "127.0.0.1")
+        XCTAssertEqual(RemoteControlServer.reach(for: .tailscale).access, "tailnet")
+        XCTAssertEqual(RemoteControlServer.reach(for: .localNetwork).access, "private")
+        XCTAssertEqual(RemoteControlServer.reach(for: .custom).access, "any")
+    }
+
+    func testOnlyACustomHostIsNamedToTheServer() {
+        // Everything else Toki hands out is a shape the server already recognises; a custom host
+        // is not, and would otherwise be rejected by the anti-rebinding check as an unknown name.
+        XCTAssertEqual(
+            RemoteControlServer.allowedHostArguments(for: .custom, customHost: " mac.internal "),
+            ["--allow-host", "mac.internal"]
+        )
+        XCTAssertEqual(RemoteControlServer.allowedHostArguments(for: .custom, customHost: "  "), [])
+        XCTAssertEqual(
+            RemoteControlServer.allowedHostArguments(for: .tailscale, customHost: "mac.internal"),
+            []
+        )
+    }
+
     func testRemoteProviderNamesMatchServerProtocol() {
         XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .codex), "codex")
         XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .claudeCode), "claude")
