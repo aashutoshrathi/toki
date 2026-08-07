@@ -50,6 +50,13 @@ assert.match(app, /function dispPath/);
 assert.match(app, /dispPath\(a\.path\)/);
 assert.match(app, /class="tp"/);
 assert.match(css, /#dd \.tp\{/);
+// A Clear button sends /clear, behind a confirm tap: it sits beside Send and cannot be undone.
+assert.match(html, /id="clear"/);
+assert.match(app, /function clearContext/);
+assert.match(app, /send\(\{\s*text:\s*"\/clear"\s*\}\)/);
+assert.match(app, /setClearArmed\(true\)/);
+assert.match(app, /if\s*\(!clearArmed\)/);
+assert.match(css, /#clear\.armed\{/);
 // Restyled question banner (header label + badge/label option layout) and film grain.
 assert.match(app, /class="ahead"/);
 assert.match(app, /<b>\$\{i\s*\+\s*1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);

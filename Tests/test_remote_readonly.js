@@ -23,4 +23,8 @@ assert.match(app, /class="ddgroup">Read-only</);
 assert.match(app, /!a\.writable\s*&&\s*\(i\s*==\s*0\s*\|\|\s*agents\[i\s*-\s*1\]\.writable\)/);
 assert.match(css, /\.ddgroup\{/);
 
+// Clear lives inside <footer>, so the same rule that disables the composer on a read-only session
+// disables it too -- there is no route to /clear on a session you cannot type into.
+assert.match(html, /<footer>[\s\S]*id="clear"[\s\S]*<\/footer>/);
+
 console.log("remote read-only session tests passed");

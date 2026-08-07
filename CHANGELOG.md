@@ -5,6 +5,7 @@
 ### Added
 
 - The companion app's agent picker now shows the folder each agent is working in, under its title, with your home folder written as `~`. Several agents often carry the same title (or none worth reading), and the folder is what tells them apart. The eye toggle masks the folder along with the name.
+- A **Clear** button beside Send in the companion app sends `/clear` to the agent, so you can drop a finished conversation and free up its context from your phone. Clearing can't be undone and the button sits next to Send, so the first tap arms it and a second tap within five seconds does it.
 
 ### Changed
 

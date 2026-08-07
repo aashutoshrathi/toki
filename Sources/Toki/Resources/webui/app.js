@@ -256,6 +256,35 @@ function updateComposer(agent) {
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
 }
 
+// Clearing an agent's context cannot be undone, and this button sits a thumb's width from Send on
+// a phone. So the first tap only arms it; the second one within a few seconds actually sends.
+let clearArmed = false;
+let clearTimer = null;
+
+function setClearArmed(on) {
+  clearArmed = on;
+  const b = $("#clear");
+  b.classList.toggle("armed", on);
+  b.setAttribute("aria-label", on ? "Tap again to clear the agent\u2019s context" : "Clear the agent\u2019s context");
+  b.title = on ? "Tap again to clear" : "Clear the agent\u2019s context (/clear)";
+  clearTimeout(clearTimer);
+  if (on) clearTimer = setTimeout(() => setClearArmed(false), 5000);
+}
+
+function clearContext() {
+  if (!clearArmed) {
+    setClearArmed(true);
+    setStatus("Tap again to clear this agent\u2019s context.", "");
+    statusTimer = setTimeout(() => setStatus("", ""), 5000);
+    return;
+  }
+  setClearArmed(false);
+  // No optimistic echo: /clear is a command to the agent, not a message in the conversation, and
+  // the transcript it belongs to is about to be replaced. The next poll sees the new session and
+  // resets the log on its own.
+  send({ text: "/clear" });
+}
+
 let notifiedAttention = {};
 let notifySeeded = false;
 
@@ -396,6 +425,7 @@ function clearPending() {
   pendingEcho = null;
   awaitingReply = false;
   hideTyping();
+  setClearArmed(false);
 }
 
 async function refreshLog() {
@@ -507,6 +537,8 @@ document.addEventListener("click", async e => {
     input.value = "";
     resizeComposer();
     sendText(v);
+  } else if (b.id == "clear") {
+    clearContext();
   } else if (b.dataset.key) {
     $("#alert").style.display = "none";
     await send({ key: b.dataset.key });
