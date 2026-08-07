@@ -119,6 +119,39 @@ class RemoteControlAccessPolicyTests(unittest.TestCase):
         self.assertFalse(toki_remote.peer_allowed("::ffff:192.168.1.20", "tailnet"))
         self.assertTrue(toki_remote.peer_allowed("::ffff:100.101.102.103", "tailnet"))
 
+    def test_a_proxy_cannot_smuggle_the_public_internet_into_the_tailnet(self):
+        # Tailscale Funnel and `tailscale serve` both arrive as 127.0.0.1, but Funnel is fronting
+        # the public internet. Accepting every loopback peer would admit the world through it.
+        self.assertFalse(
+            toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "tailnet")
+        )
+        self.assertTrue(
+            toki_remote.request_allowed("127.0.0.1", "100.101.102.103", "tailnet")
+        )
+        # A LAN address is not the tailnet either, however it reaches us.
+        self.assertFalse(
+            toki_remote.request_allowed("127.0.0.1", "192.168.1.20", "tailnet")
+        )
+
+    def test_a_proxy_with_nothing_to_declare_is_still_accepted(self):
+        # No forwarded address means nothing to judge; refusing here would break `tailscale serve`.
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", None, "tailnet"))
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "", "tailnet"))
+
+    def test_the_tunnel_mode_is_deliberately_exempt(self):
+        # Fronting a public address is the whole point of choosing Cloudflare Tunnel, which runs
+        # on this Mac under the loopback policy.
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "loopback"))
+
+    def test_a_direct_caller_cannot_talk_its_way_in_with_a_header(self):
+        # Believing a non-loopback peer's own header would let it claim any address it likes.
+        self.assertFalse(
+            toki_remote.request_allowed("203.0.113.9", "100.101.102.103", "tailnet")
+        )
+        self.assertTrue(
+            toki_remote.request_allowed("100.101.102.103", "203.0.113.9", "tailnet")
+        )
+
     def test_unparseable_peer_is_refused_unless_the_policy_is_open(self):
         self.assertFalse(toki_remote.peer_allowed("not-an-address", "tailnet"))
         self.assertTrue(toki_remote.peer_allowed("not-an-address", "any"))

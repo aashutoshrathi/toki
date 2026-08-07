@@ -59,6 +59,12 @@ So with **Tailscale** selected, joining an airport Wi-Fi does not expose the por
 even though the server is listening on all interfaces so `tailscale serve` and your phone can both
 reach it.
 
+This holds through a proxy too. `tailscale serve` relays from this Mac, so its requests arrive
+looking local; Toki reads the address it is relaying for and applies the same rule. If you have
+Tailscale **Funnel** enabled, or any other reverse proxy pointed at port 8765, a request from the
+public internet is refused under the Tailscale setting rather than admitted because it arrived
+over loopback.
+
 **Changing the Host restarts the server.** That is deliberate: a narrowed setting has to take
 effect immediately, and it also invalidates every paired session. You will need to reconnect your
 phone.

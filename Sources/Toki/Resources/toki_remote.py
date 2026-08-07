@@ -1204,6 +1204,31 @@ def peer_allowed(ip, policy=None):
     return any(addr in net for net in PRIVATE_NETS)
 
 
+def request_allowed(peer, forwarded_for, policy=None):
+    """The peer check, extended through a proxy that dialled us from loopback.
+
+    Accepting every loopback peer is not enough on its own. `tailscale serve` and Tailscale Funnel
+    both arrive as 127.0.0.1, but Funnel is fronting the public internet, so a tailnet-only setting
+    would have admitted the whole world through it. Any other reverse proxy on this Mac pointed at
+    port 8765 does the same. When the proxy tells us who it is relaying for, hold that address to
+    the same policy.
+
+    Only from a loopback peer: a direct caller writes its own headers, and believing one would let
+    it claim any address it likes. The Cloudflare Tunnel mode is deliberately exempt, because
+    fronting a public address is the entire point of choosing it.
+    """
+    policy = ACCESS_POLICY if policy is None else policy
+    if not peer_allowed(peer, policy):
+        return False
+    if policy in ("any", "loopback"):
+        return True
+    origin_ip, proxied = client_ip(peer, forwarded_for)
+    if proxied or origin_ip == peer:
+        # No forwarded address to judge, or a direct connection we already cleared.
+        return True
+    return peer_allowed(origin_ip, policy)
+
+
 def split_host(host_header):
     """Hostname from a Host header, minus the port and any brackets around an IPv6 literal."""
     host = (host_header or "").strip()
@@ -1264,6 +1289,10 @@ if not os.path.isdir(WEBUI_DIR):
 # paired phone can neither enumerate the other devices nor revoke them.
 
 _last_published = None
+# Serialises snapshot-then-print. Without it the timer thread can read the list, a revoke can
+# publish the shorter one, and the timer's older snapshot lands last, putting a revoked device
+# back on screen until the next tick. Always taken before AUTH_LOCK, never the other way round.
+PUBLISH_LOCK = threading.Lock()
 
 
 def device_list():
@@ -1291,11 +1320,12 @@ def device_list():
 def publish_devices(force=False):
     """Emit the device list when it has changed, for Toki to display."""
     global _last_published
-    payload = json.dumps({"devices": device_list()}, sort_keys=True)
-    if payload == _last_published and not force:
-        return
-    _last_published = payload
-    print("devices=" + payload, flush=True)
+    with PUBLISH_LOCK:
+        payload = json.dumps({"devices": device_list()}, sort_keys=True)
+        if payload == _last_published and not force:
+            return
+        _last_published = payload
+        print("devices=" + payload, flush=True)
 
 
 def revoke_device(device_id):
@@ -1349,7 +1379,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _gate(self):
         """Reject the request unless the peer and the Host it asked for are both permitted."""
-        if not peer_allowed(self.client_address[0]):
+        if not request_allowed(self.client_address[0], self.headers.get("X-Forwarded-For")):
             self._json({"error": "not reachable from this network"}, 403)
             return False
         if not host_allowed(self.headers.get("Host")):

@@ -128,11 +128,10 @@ final class RemoteControlServer: ObservableObject {
             }
             // The host mode decides which networks the server answers, and that is fixed when the
             // process starts. Restarting is what makes a narrowed setting take effect; leaving the
-            // old process up would keep serving the wider one it was launched with. start() brings
-            // the tunnel up again too, when that is the new mode.
+            // old process up would keep serving the wider one it was launched with. restart()
+            // brings the tunnel up again too, when that is the new mode.
             if isRunning {
-                stop()
-                start()
+                restart()
             }
         }
     }
@@ -292,6 +291,23 @@ final class RemoteControlServer: ObservableObject {
 
     func toggle() {
         isRunning ? stop() : start()
+    }
+
+    /// Relaunch so a changed setting takes effect, without racing the old process for the port.
+    ///
+    /// stop() only sends SIGTERM. Starting straight afterwards can bind port 8765 while the old
+    /// server still holds it, and the replacement exits with EADDRINUSE, which reads to the user
+    /// as Remote Control simply refusing to come back. Wait for the old process to actually go.
+    func restart() {
+        guard let previous = process else {
+            start()
+            return
+        }
+        stop()
+        Task { @MainActor in
+            await Task.detached { previous.waitUntilExit() }.value
+            start()
+        }
     }
 
     // Bundle.main holds the script in a packaged .app; `swift run` instead drops resources in an

@@ -597,9 +597,16 @@ struct SettingsPanel: View {
                             }
                         }
                         if remoteServer.hostMode == .custom {
+                            // The server is told which custom host to answer to when it launches,
+                            // so editing this while running would hand out a Connect link for a
+                            // name the running server rejects.
                             TextField("host or IP", text: $remoteServer.customHost)
                                 .textFieldStyle(.roundedBorder)
                                 .controlSize(.small)
+                                .disabled(remoteServer.isRunning)
+                                .help(remoteServer.isRunning
+                                    ? "Stop Remote Control to change the custom host"
+                                    : "The host your phone will use to reach this Mac")
                         }
                         Spacer(minLength: 0)
                     }
