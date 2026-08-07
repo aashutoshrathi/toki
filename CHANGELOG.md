@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.5.4
+## 2.5.4 - 2026-08-07
 
 ### Added
 
@@ -9,9 +9,9 @@
 - New **Cloudflare Tunnel** host option (when `cloudflared` is installed) gives you a public HTTPS address with no Tailscale, account, or DNS setup.
 - The companion app can notify you when an agent needs your input or approval, with a one-tap prompt to turn alerts on. (Notifications fire while the app is open or backgrounded.)
 - The companion app has an eye toggle in the header that masks agent names in the picker, handy for screen recordings.
-- An Edit menu, so text fields across the app support the standard Cut, Copy, Paste, and Select All shortcuts. The menu-bar app previously shipped none, so Cmd+V did nothing.
 - The companion app's agent picker now shows the folder each agent is working in, under its title, with your home folder written as `~`. Several agents often carry the same title (or none worth reading), and the folder is what tells them apart. The eye toggle masks the folder along with the name.
 - A **Clear** button beside Send in the companion app sends `/clear` to the agent, so you can drop a finished conversation and free up its context from your phone. Clearing can't be undone and the button sits next to Send, so the first tap arms it and a second tap within five seconds does it.
+- An Edit menu, so text fields across the app support the standard Cut, Copy, Paste, and Select All shortcuts. The menu-bar app previously shipped none, so Cmd+V did nothing.
 
 ### Changed
 
@@ -32,15 +32,15 @@
 - Sending a message to a terminal agent no longer occasionally inserts a newline instead of submitting: the message text and the Enter that submits it are now delivered as separate keypresses, which agents like Claude Code need to treat the Enter as "send".
 - Scanning Toki's Connect QR from inside the companion app works again. A scanned link is now saved before the reload that applies it, so it survives on an installed home-screen app, where a reload comes back at the app's start address and the freshly scanned link used to be lost; this also affected entering a host and token by hand. Separately, the scanner only accepted a code pointing at the exact page you were already on, so a direct Tailscale link (`https://<your-machine>.ts.net/?token=…`) scanned on the hosted Toki RC interface, or a Toki RC link scanned on the Mac's own page, was refused even though both name the same Mac. Either link now connects. A local-network link still can't be used from the hosted interface (an HTTPS page cannot call a plain-HTTP address), but it now says which address it couldn't reach instead of calling the code invalid.
 - Remote Control now shows each agent's own transcript when several agents run in the same folder, instead of occasionally attributing one agent's conversation (and your reply) to another.
+- The companion app no longer shows a stale conversation after an agent starts a new session. It tracked its place in a transcript by byte offset and only noticed a switch when the new transcript was shorter than that offset, so a session that overtook it between two polls left the old messages on screen and skipped the start of the new one. The server now names the transcript an offset belongs to, and the app starts over whenever that name changes.
 - The installed companion app (Add to Home Screen) reopens to your saved connection instead of an "invalid link" screen after it has been closed.
+- The companion app can no longer strand you on the verify screen. A link pointing at a Tailscale address your phone can't currently reach left the app asking for a six-digit code with no way back, and because the link is remembered on the device and repeated in the address bar, reloading or reopening the app only restored it. A home button is now always on screen (in the header once connected, on the connect screen otherwise) and starts you over on the landing page, where you can scan a fresh QR or type a different host.
 - The companion app layout no longer drifts on iPad and other large screens: the shell is pinned to the viewport height with the transcript scrolling inside it, so the header and reply bar stay put while the composer no longer creeps up the page.
 - Remote Control "From anywhere" now always shows the Connect QR when Tailscale is up, pointing the phone straight at this Mac's Tailscale address with the session token in the URL (`https://<your-machine>.ts.net/?token=…`). When the MagicDNS name can't be read it falls back to the tailnet IP so the QR and its verification code still work, and settings now explain why the name was unreadable (command not found, not signed in, or MagicDNS off) instead of failing over quietly. Detection also looks in more locations for the `tailscale` CLI and searches a real PATH, so the name is found on more setups.
 - Remote Control settings no longer keep telling you MagicDNS is off after you've dealt with it. The "Turn on MagicDNS, or enter the host by hand" warning stayed on screen even once a valid `.ts.net` name had been typed into the box right below it, and Toki was already using that name for the Connect link; it now clears as soon as the name is usable. The warning was also the fallback for every way of failing to read a Tailscale name, so an unreadable or unexpected `tailscale status` was reported as "MagicDNS is off" whether or not it actually was. Each case now says what really happened, and the underlying reason is recorded in the diagnostic log.
 - Tailscale lookups can no longer wedge the app: each `tailscale` command now times out (and the timeout or failure is logged), so a misbehaving Tailscale binary can't leave the popover stuck.
 - Running Toki from source with `swift run` can now start the Remote Control server and serve its web UI; both the companion script and its assets are located whether they sit in a packaged app or SwiftPM's flattened resource bundle.
 - The "Advanced" row in Remote Control settings now expands when you click anywhere on it, not only the disclosure triangle.
-- The companion app no longer shows a stale conversation after an agent starts a new session. It tracked its place in a transcript by byte offset and only noticed a switch when the new transcript was shorter than that offset, so a session that overtook it between two polls left the old messages on screen and skipped the start of the new one. The server now names the transcript an offset belongs to, and the app starts over whenever that name changes.
-- The companion app can no longer strand you on the verify screen. A link pointing at a Tailscale address your phone can't currently reach left the app asking for a six-digit code with no way back, and because the link is remembered on the device and repeated in the address bar, reloading or reopening the app only restored it. A home button is now always on screen (in the header once connected, on the connect screen otherwise) and starts you over on the landing page, where you can scan a fresh QR or type a different host.
 
 ## 2.5.3 - 2026-07-28
 
