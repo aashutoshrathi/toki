@@ -111,11 +111,14 @@ header{flex:none;background:color-mix(in srgb,var(--bg) 80%,transparent);backdro
 h1{font-size:16px;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
 .hdr-top{display:flex;align-items:center;gap:10px}
 .hdr-top h1{flex:1;min-width:0}
-#privacytoggle{flex:none;display:inline-flex;align-items:center;justify-content:center;
+#privacytoggle,.homebtn{flex:none;display:inline-flex;align-items:center;justify-content:center;
   width:36px;height:36px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);color:var(--text-2)}
-#privacytoggle:not(:disabled):hover{color:var(--text);border-color:var(--line-strong)}
+#privacytoggle:not(:disabled):hover,.homebtn:not(:disabled):hover{color:var(--text);border-color:var(--line-strong)}
 #privacytoggle[aria-pressed="true"]{background:var(--accent-surface);border-color:var(--accent-line);color:#dce7f5}
-#privacytoggle svg{width:18px;height:18px}
+#privacytoggle svg,.homebtn svg{width:18px;height:18px}
+/* The verify screen is where a wedged connection strands you, and .locked hides the header, so the
+   pairing overlay carries its own copy of the same control. */
+#pairhome{position:absolute;top:calc(16px + env(safe-area-inset-top));left:16px;z-index:16}
 .eye-off{display:none}
 body.privacy .eye-open{display:none}
 body.privacy .eye-off{display:inline}

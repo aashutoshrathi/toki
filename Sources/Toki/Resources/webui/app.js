@@ -641,6 +641,24 @@ function manualConnect() {
   connectWith(host, token);
 }
 
+// Start over from the landing screen. A link that points at a host the phone can no longer reach
+// leaves the app sitting on the verify screen with nothing to do -- and because the link is
+// remembered in localStorage and repeated in the address bar, reloading only restores it. So drop
+// both, and navigate to the bare page instead of reloading, or the fragment would revive the very
+// connection we were asked to leave. location.replace also keeps the tokened URL out of history.
+function goHome() {
+  try {
+    localStorage.removeItem(CONN_KEY);
+  } catch (e) {}
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+  location.replace(location.pathname);
+}
+
+$("#home").addEventListener("click", goHome);
+$("#pairhome").addEventListener("click", goHome);
+
 $("#manualconnect").addEventListener("click", manualConnect);
 [$("#manualhost"), $("#manualtoken")].forEach(el => el.addEventListener("keydown", e => {
   if (e.key == "Enter") {

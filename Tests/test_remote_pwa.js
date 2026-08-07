@@ -111,6 +111,39 @@ vm.runInContext("localStorage.setItem=()=>{throw new Error('denied')}", conn);
 vm.runInContext("connectWith('my-mac.example-tailnet.ts.net','abc')", conn);
 assert.deepEqual(order, ["hash:host=my-mac.example-tailnet.ts.net&token=abc", "reload"]);
 
+// --- A wedged connection can always be restarted, from either screen ---
+// A link naming a host the phone can no longer reach strands the app on the verify screen. Both
+// localStorage and the address bar still hold that link, so reloading only restores it; goHome has
+// to drop both and navigate to the bare path rather than reload.
+assert.match(html, /id="home"/);
+assert.match(html, /id="pairhome"/);
+assert.match(css, /#pairhome\{[^}]*position:absolute/);
+const homeSource = app.match(/^function goHome\([\s\S]*?^}/m);
+assert.ok(homeSource, "goHome must be a top-level function in app.js");
+const steps = [];
+const home = vm.createContext({
+  CONN_KEY: "toki-conn",
+  SESSION_KEY: "toki-session:https://my-mac.example-tailnet.ts.net:abc",
+  localStorage: { removeItem(k) { steps.push("local:" + k); } },
+  sessionStorage: { removeItem(k) { steps.push("session:" + k); } },
+  location: { pathname: "/", replace(url) { steps.push("replace:" + url); } },
+});
+vm.runInContext(homeSource[0], home);
+
+vm.runInContext("goHome()", home);
+assert.deepEqual(steps, [
+  "local:toki-conn",
+  "session:toki-session:https://my-mac.example-tailnet.ts.net:abc",
+  // The bare path: no query and no fragment, so nothing revives the connection we just left.
+  "replace:/",
+]);
+
+// A storage failure (Safari private mode) must not strand the user on the screen they're escaping.
+steps.length = 0;
+vm.runInContext("localStorage.removeItem=()=>{throw new Error('denied')}", home);
+vm.runInContext("goHome()", home);
+assert.deepEqual(steps.filter(s => s.startsWith("replace:")), ["replace:/"]);
+
 // --- Manual entry for machines without a camera: host + token, same connect flow ---
 assert.match(html, /id="manualhost"/);
 assert.match(html, /id="manualtoken"/);

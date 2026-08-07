@@ -65,4 +65,16 @@ assert.match(css, /button:not\(:disabled\):active/);
 assert.match(css, /\.decision\.reject/);
 assert.match(css, /min-height:44px/);
 
+// Every element app.js reaches for at load must exist in the page. A missing one throws on the
+// first line that touches it and takes the whole script down with it, which looks from the phone
+// like the app simply never started.
+const RUNTIME_IDS = new Set(["typing"]); // created by showTyping, never in the served HTML
+const pageIds = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
+const wanted = new Set([
+  ...[...app.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)].map(m => m[1]),
+  ...[...app.matchAll(/getElementById\("([a-zA-Z0-9_-]+)"\)/g)].map(m => m[1]),
+]);
+const missing = [...wanted].filter(id => !pageIds.has(id) && !RUNTIME_IDS.has(id));
+assert.deepEqual(missing, [], "app.js selects ids that index.html does not define: " + missing);
+
 console.log("remote mobile UX tests passed");
