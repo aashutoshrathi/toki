@@ -19,10 +19,10 @@ assert.match(app, /Approve<\/button>/);
 assert.match(app, /Reject<\/button>/);
 assert.match(app, /navigator\.vibrate/);
 assert.match(app, /e\.preventDefault\(\)/);
-assert.match(app, /e\.metaKey\|\|e\.ctrlKey/);
+assert.match(app, /e\.metaKey\s*\|\|\s*e\.ctrlKey/);
 assert.match(app, /function resizeComposer/);
 assert.match(app, /new ResizeObserver/);
-assert.match(app, /if\(!current\|\|sending\)return/);
+assert.match(app, /if\s*\(!current\s*\|\|\s*sending\)\s*return/);
 assert.match(app, /Sent \\u2713 via/);
 // Optimistic send: the message is echoed and the input cleared before the round trip resolves.
 assert.match(app, /function sendText/);
@@ -36,8 +36,8 @@ assert.match(css, /\.m\.typing/);
 assert.match(css, /@keyframes tblink/);
 // Tap-to-retry on a failed message, and the question/approval panel is dismissed on answer.
 assert.match(app, /\.m\.user\.failed/);
-assert.match(app, /f\.remove\(\);feedback\("tap"\);sendText\(text\)/);
-assert.match(app, /\$\("#alert"\)\.style\.display="none"/);
+assert.match(app, /f\.remove\(\);\s*feedback\("tap"\);\s*sendText\(text\)/);
+assert.match(app, /\$\("#alert"\)\.style\.display\s*=\s*"none"/);
 assert.match(css, /Tap to retry/);
 // Privacy toggle masks agent names in the picker for recordings.
 assert.match(html, /id="privacytoggle"/);
@@ -46,7 +46,7 @@ assert.match(app, /privacyMode/);
 assert.match(css, /body\.privacy/);
 // Restyled question banner (header label + badge/label option layout) and film grain.
 assert.match(app, /class="ahead"/);
-assert.match(app, /<b>\$\{i\+1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);
+assert.match(app, /<b>\$\{i\s*\+\s*1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);
 assert.match(css, /feTurbulence/);
 assert.match(css, /button:not\(:disabled\):active/);
 assert.match(css, /\.decision\.reject/);

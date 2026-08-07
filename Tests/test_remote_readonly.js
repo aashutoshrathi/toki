@@ -10,9 +10,9 @@ const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 
 assert.match(html, /Read-only session/);
 assert.match(html, /cannot send replies/);
-assert.match(app, /agent&&agent\.writable/);
-assert.match(app, /enabled=writable&&!sending/);
-assert.match(app, /el\.disabled=!enabled/);
+assert.match(app, /agent\s*&&\s*agent\.writable/);
+assert.match(app, /enabled\s*=\s*writable\s*&&\s*!sending/);
+assert.match(app, /el\.disabled\s*=\s*!enabled/);
 assert.match(app, /footer textarea/);
 assert.match(app, /Read-only session/);
 
