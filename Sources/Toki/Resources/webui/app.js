@@ -94,10 +94,30 @@ function dispPath(p) {
 // The session token rides in the Authorization header rather than the query string, so it stays
 // out of the phone's history and out of the request line any proxy in front of the Mac writes to
 // its log -- Cloudflare's, on the tunnel path.
-async function api(p, o) {
+//
+// Servers before 2.6.0 read the token only from the query string. This page is also served from
+// rc.toki.aashutosh.dev, which updates the moment a release lands while the Mac it talks to
+// updates whenever its owner gets round to it, so the two versions have to meet. Try the header,
+// and on the one status an old server answers with, fall back and remember for the session.
+let legacyTokenTransport = false;
+
+function tokenedRequest(p, o, inQuery) {
+  const url = API_BASE + p +
+    (inQuery ? (p.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN) : "");
   const opts = Object.assign({}, o);
-  opts.headers = Object.assign({}, o && o.headers, { Authorization: "Bearer " + TOKEN });
-  const r = await fetch(API_BASE + p, opts);
+  if (!inQuery) {
+    opts.headers = Object.assign({}, o && o.headers, { Authorization: "Bearer " + TOKEN });
+  }
+  return fetch(url, opts);
+}
+
+async function api(p, o) {
+  let r = await tokenedRequest(p, o, legacyTokenTransport);
+  if (r.status == 403 && !legacyTokenTransport) {
+    const retry = await tokenedRequest(p, o, true);
+    if (retry.ok) legacyTokenTransport = true;
+    r = retry;
+  }
   if (r.status == 403) lockApp();
   if (!r.ok) throw new Error(await r.text());
   return r.json();

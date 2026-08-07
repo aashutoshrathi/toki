@@ -58,8 +58,20 @@ Vercel or Cloudflare Pages, whichever the maintainer prefers (functionally equiv
 - New project, import the repo, set **Root Directory = `Sources/Toki/Resources/webui`**, framework
   preset "Other" (static, no build step).
 - Add the domain `rc.toki.aashutosh.dev` as a CNAME on the existing domain (no new domain).
-- Auto-deploys on every push to `main`; pull requests get preview URLs. This is the same source
-  the app bundles, so there is no drift.
+- Auto-deploys on every push to `main`; pull requests get preview URLs.
+
+The source is the same one the app bundles, but the two do not update together, and that is a
+compatibility constraint rather than a detail. The hosted page changes the moment a release lands
+on `main`; the Mac it talks to changes whenever its owner updates. During a beta the drift runs the
+other way, with `main` behind the release branch. So both directions have to work:
+
+- **Old page, new server.** The server keeps accepting the session token from the query string,
+  not only the `Authorization` header.
+- **New page, old server.** The page tries the header, and on the 403 an older server answers
+  with, falls back to the query string and remembers for the session.
+
+Neither fallback can be dropped until the older side is gone. `Tests/test_remote_cross_version.js`
+runs the page's real token-transport logic against a server of each vintage.
 
 ### 3. Tailscale HTTPS on the Mac
 
