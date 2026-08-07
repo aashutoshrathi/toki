@@ -844,6 +844,20 @@ def agent_recency(agent):
     return os.path.getmtime(session) if os.path.exists(session) else 0.0
 
 
+def display_path(cwd):
+    """The agent's folder written the way you'd write it: ~/Git/toki, not /Users/you/Git/toki."""
+    if not cwd:
+        return ""
+    home = HOME.rstrip("/")
+    if not home:
+        return cwd
+    if cwd == home:
+        return "~"
+    if cwd.startswith(home + "/"):
+        return "~" + cwd[len(home):]
+    return cwd
+
+
 def chat_title(provider, path, cwd):
     fallback = os.path.basename(cwd) if cwd else provider
     if provider == "opencode":
@@ -1192,6 +1206,7 @@ class Handler(BaseHTTPRequestHandler):
                         att = opencode_attention(a["session"])
                 result.append({
                     "pid": a["pid"], "tty": a["tty"], "cwd": a["cwd"],
+                    "path": display_path(a["cwd"]),
                     "provider": a["provider"],
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,

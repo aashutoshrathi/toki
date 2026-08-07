@@ -122,7 +122,10 @@ body.privacy .eye-off{display:inline}
 #dd{position:relative;margin-top:10px}
 #ddbtn{width:100%;display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:var(--r-sm);
        background:var(--surface-2);color:var(--text);border:1px solid var(--line);font-size:15px;text-align:left}
-#dd .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dd .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;
+       overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dd .tl,#dd .tp{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dd .tp{color:var(--text-3);font-size:11px;font-family:ui-monospace,monospace}
 #dd .caret{color:var(--text-3);flex:none}
 #dd .dot{color:var(--danger)}
 #ddlist{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:5;

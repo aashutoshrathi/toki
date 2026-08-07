@@ -131,5 +131,25 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(toki_remote.agent_is_writable({"tty": "ttys001"}))
 
 
+class RemoteControlDisplayPathTests(unittest.TestCase):
+    def test_home_is_collapsed_to_a_tilde(self):
+        with mock.patch.object(toki_remote, "HOME", "/Users/someone"):
+            self.assertEqual(toki_remote.display_path("/Users/someone/Git/toki"), "~/Git/toki")
+            self.assertEqual(toki_remote.display_path("/Users/someone"), "~")
+
+    def test_path_outside_home_is_left_alone(self):
+        with mock.patch.object(toki_remote, "HOME", "/Users/someone"):
+            self.assertEqual(toki_remote.display_path("/opt/work/api"), "/opt/work/api")
+
+    def test_a_sibling_home_is_not_mistaken_for_yours(self):
+        # "/Users/someone2" starts with "/Users/someone" but is a different account's folder.
+        with mock.patch.object(toki_remote, "HOME", "/Users/someone"):
+            self.assertEqual(toki_remote.display_path("/Users/someone2/Git"), "/Users/someone2/Git")
+
+    def test_an_agent_with_no_folder_has_no_path(self):
+        self.assertEqual(toki_remote.display_path(None), "")
+        self.assertEqual(toki_remote.display_path(""), "")
+
+
 if __name__ == "__main__":
     unittest.main()

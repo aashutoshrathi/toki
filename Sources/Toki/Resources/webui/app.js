@@ -64,8 +64,19 @@ let offset = 0;
 let agents = [];
 let privacyMode = false;
 
+function maskText(t) {
+  return "•".repeat(Math.min(Math.max((t || "").length, 4), 14));
+}
+
 function dispTitle(t) {
-  return privacyMode ? "•".repeat(Math.min(Math.max((t || "").length, 4), 14)) : esc(t);
+  return privacyMode ? maskText(t) : esc(t);
+}
+
+// The folder an agent is working in, masked alongside its title so the privacy toggle doesn't
+// leave your project names on screen.
+function dispPath(p) {
+  if (!p) return "";
+  return privacyMode ? maskText(p) : esc(p);
 }
 
 async function api(p, o) {
@@ -194,6 +205,18 @@ function providerLogo(p) {
   return '<svg class="plogo" viewBox="0 0 24 24" fill="#888"><circle cx="12" cy="12" r="8"/></svg>';
 }
 
+// Two lines: the chat's title, and under it the folder the agent is running in. Several agents
+// often share a title (or carry none worth reading), and the folder is what actually tells them
+// apart, so it belongs on the row you pick from rather than a screen away.
+function agentRow(a) {
+  const path = dispPath(a.path);
+  return providerLogo(a.provider) +
+    '<span class="t">' +
+    '<span class="tl">' + (a.attention ? '<span class="dot">\u25cf</span> ' : "") + dispTitle(a.title) + "</span>" +
+    (path ? '<span class="tp">' + path + "</span>" : "") +
+    "</span>";
+}
+
 function renderAgents() {
   const btn = $("#ddbtn");
   const list = $("#ddlist");
@@ -203,13 +226,11 @@ function renderAgents() {
     updateComposer(null);
     return;
   }
-  const row = a => providerLogo(a.provider) +
-    '<span class="t">' + (a.attention ? '<span class="dot">\u25cf</span> ' : "") + dispTitle(a.title) + "</span>";
   const cur = agents.find(a => a.pid == current) || agents[0];
-  btn.innerHTML = row(cur) + '<span class="caret">\u25be</span>';
+  btn.innerHTML = agentRow(cur) + '<span class="caret">\u25be</span>';
   updateComposer(cur);
   list.innerHTML = agents.map(a =>
-    '<div class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + a.pid + '">' + row(a) + "</div>"
+    '<div class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + a.pid + '">' + agentRow(a) + "</div>"
   ).join("");
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();

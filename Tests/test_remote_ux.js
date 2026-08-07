@@ -44,6 +44,12 @@ assert.match(html, /id="privacytoggle"/);
 assert.match(app, /function dispTitle/);
 assert.match(app, /privacyMode/);
 assert.match(css, /body\.privacy/);
+// The picker shows each agent's folder under its title, and the privacy toggle masks that too.
+assert.match(app, /function agentRow/);
+assert.match(app, /function dispPath/);
+assert.match(app, /dispPath\(a\.path\)/);
+assert.match(app, /class="tp"/);
+assert.match(css, /#dd \.tp\{/);
 // Restyled question banner (header label + badge/label option layout) and film grain.
 assert.match(app, /class="ahead"/);
 assert.match(app, /<b>\$\{i\s*\+\s*1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);

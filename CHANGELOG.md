@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The companion app's agent picker now shows the folder each agent is working in, under its title, with your home folder written as `~`. Several agents often carry the same title (or none worth reading), and the folder is what tells them apart. The eye toggle masks the folder along with the name.
+
 ## 2.5.4
 
 ### Added
