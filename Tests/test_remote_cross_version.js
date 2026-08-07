@@ -67,26 +67,40 @@ function startServer(script, port, extraArgs) {
   );
 }
 
-// The server prints its link token and pairing code on stdout as it comes up.
+// The server prints its link token and pairing code on stdout as it comes up. Be generous about
+// how long that takes: HTTPServer.server_bind resolves the bound address with getfqdn(), which on
+// a CI runner with unhelpful DNS can sit there for a while before anything is printed.
+const STARTUP_TIMEOUT_MS = Number(process.env.TOKI_TEST_STARTUP_TIMEOUT_MS || 90000);
+
 function credentials(server) {
   return new Promise((resolve, reject) => {
     let seen = "";
+    const done = outcome => {
+      clearTimeout(timer);
+      outcome();
+    };
     const timer = setTimeout(
-      () => reject(new Error(`server never announced itself:\n${seen}`)),
-      20000
+      () => done(() => reject(new Error(
+        `server never announced itself within ${STARTUP_TIMEOUT_MS}ms. Output so far:\n${seen || "(nothing)"}`
+      ))),
+      STARTUP_TIMEOUT_MS
     );
-    server.stderr.on("data", chunk => {
-      seen += chunk.toString();
-    });
-    server.stdout.on("data", chunk => {
+    // Report a server that dies on startup straight away, rather than as a timeout that says
+    // nothing about why.
+    server.on("error", err => done(() => reject(new Error(`could not spawn python3: ${err.message}`))));
+    server.on("exit", (code, signal) => done(() => reject(new Error(
+      `server exited early (code ${code}, signal ${signal}). Output:\n${seen || "(nothing)"}`
+    ))));
+    const read = chunk => {
       seen += chunk.toString();
       const token = seen.match(/token=([\w-]+)/);
       const code = seen.match(/pairing_code=(\d{6})/);
       if (token && code) {
-        clearTimeout(timer);
-        resolve({ token: token[1], code: code[1] });
+        done(() => resolve({ token: token[1], code: code[1] }));
       }
-    });
+    };
+    server.stdout.on("data", read);
+    server.stderr.on("data", read);
   });
 }
 

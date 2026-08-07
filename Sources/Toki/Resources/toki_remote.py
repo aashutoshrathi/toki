@@ -38,6 +38,7 @@ import json
 import os
 import re
 import secrets
+import socketserver
 import sqlite3
 import subprocess
 import sys
@@ -1657,6 +1658,22 @@ class Handler(BaseHTTPRequestHandler):
 
 # --------------------------------------------------------------------- main
 
+class RemoteControlHTTPServer(ThreadingHTTPServer):
+    """Threading server that binds without a reverse DNS lookup.
+
+    HTTPServer.server_bind() resolves the address it just bound with getfqdn(), and on a network
+    whose DNS does not answer -- a captive portal, a hotel, a CI runner -- that call can sit there
+    for many seconds. It happens before anything is served or printed, so Toki sees a server that
+    launched and then went quiet, with no token and no error to show. Nothing here uses the name.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 def local_ipv4s():
     """All usable IPv4 addresses, Tailscale (100.64/10) first."""
     out = None
@@ -1694,7 +1711,7 @@ def main():
         CANONICAL_AGENTS = []
         threading.Thread(target=read_control_messages, daemon=True).start()
         threading.Thread(target=watch_devices, daemon=True).start()
-    server = ThreadingHTTPServer((args.bind, args.port), Handler)
+    server = RemoteControlHTTPServer((args.bind, args.port), Handler)
 
     ips = [ip for ip in local_ipv4s() if peer_allowed(ip)]
     print(f"toki-remote prototype (access={ACCESS_POLICY}, bind={args.bind})\n")

@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- The Remote Control server no longer stalls on startup behind a reverse DNS lookup. Python's HTTP server resolves the address it just bound before serving anything, which on a network whose DNS does not answer (a captive portal, a hotel) left Toki with a server that had launched and gone quiet, showing no Connect link and no error. Nothing used the resolved name.
 - Changing the Remote Control host while the server is running restarts it reliably. The replacement used to race the outgoing process for the port and could exit immediately, leaving Remote Control off. The custom host field is now fixed while the server runs, matching the session lifetime, since the running server is told which host to answer to when it launches.
 - A multi-line reply sent from the companion app reaches agents running in iTerm2 and Terminal. The newline broke the AppleScript that delivers it, so the message was silently lost; agents in tmux were unaffected.
 
