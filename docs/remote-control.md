@@ -14,7 +14,8 @@ only you can do it.
 1. Open **Settings → Remote Control Server** and turn it on.
 2. Pick a **Reach**:
    - **On my network** — the phone must be on the same Wi-Fi. No setup.
-   - **From anywhere** — over Tailscale (recommended) or a Cloudflare tunnel.
+   - **From anywhere** — [Tailscale](https://tailscale.com/download). This is the recommended
+     path and the one the rest of this page assumes.
 3. Click **Connect**. Toki shows a QR code and a six-digit verification code.
 4. Scan the QR with your phone's camera.
 5. Type the six-digit code from your Mac's screen into the phone.
@@ -62,6 +63,63 @@ reach it.
 effect immediately, and it also invalidates every paired session. You will need to reconnect your
 phone.
 
+### Why Tailscale is the recommendation
+
+Tailscale is the only option that is private by construction. Your Mac and your phone join a
+network only your devices are on, traffic between them is encrypted end to end, and no part of it
+is reachable from the public internet. Every other "from anywhere" option works by putting your
+Mac behind an address strangers can at least send packets to.
+
+If you can run Tailscale, run Tailscale. The other options exist for when you cannot.
+
+### Where the app itself comes from
+
+Under **Advanced → App** you choose where the phone loads the interface from:
+
+| App | Where the code comes from |
+|:---|:---|
+| **Same as host** (recommended) | This Mac, over the same connection |
+| Toki RC (hosted) | `rc.toki.aashutosh.dev`, a static web host |
+| Local / Local network | This Mac, at a specific address |
+
+**Same as host** is the safer default because there is no third party in it at all. The hosted
+option exists because it is convenient: it works before you have `tailscale serve` running, and a
+phone can reach it without the Mac serving HTTPS.
+
+The tradeoff is worth stating plainly. The hosted page only serves the interface, and your agent
+data never touches it: transcripts and replies travel directly between your phone and your Mac
+over the tailnet. But it is still JavaScript loaded from a web server, and that JavaScript is
+handed your connection token. If that host were ever compromised, the code it served could use
+your token against your Mac. Serving the app from your own machine removes that possibility
+rather than mitigating it.
+
+## Paired devices
+
+While the server is running, Settings lists every device currently holding a session, with a
+**Revoke** button on each. Revoking ends that one session immediately: the phone's next request
+fails and it drops back to the verification screen. Other devices are unaffected.
+
+Each row shows:
+
+- **Name** — worked out from the browser the device identifies itself as, for example
+  "iPhone (Safari)". This is a convenience for telling two of your own devices apart, not proof of
+  identity: a client writes its own User-Agent and can claim to be anything.
+- **ID** — a random identifier Toki assigns at pairing. This is what actually names the session.
+  The device never sees it and cannot influence it.
+- **Address** — where the device connected from, when that is knowable. It reads **via proxy**
+  when it is not: `tailscale serve` and `cloudflared` both relay from this Mac, so the address
+  Toki sees is the relay, not the phone. Toki says so rather than showing you `127.0.0.1` and
+  letting you read it as the device.
+- **Last seen** and **expires**.
+
+There is deliberately no way to see or revoke devices from the phone. The list travels over the
+private pipe between Toki and its server, never over HTTP, so a paired phone cannot enumerate your
+other devices or cut them off.
+
+**There is no MAC address, and there cannot be.** MAC addresses are link-layer: they do not
+survive routing, and over Tailscale the peer is an encrypted tunnel endpoint that has none at all.
+Nothing in an HTTP request carries one. The device ID is the durable identifier here.
+
 ## Gotchas
 
 ### The verification code rotates every two minutes
@@ -72,8 +130,8 @@ already changed. Look at the Mac again. The code on screen is always the current
 ### Toki must stay running, and the Mac must stay awake
 
 Sessions live in the server process. Quitting Toki, or turning Remote Control off, ends every
-session immediately — which is the fastest way to revoke a phone you no longer trust. A sleeping
-Mac is unreachable; if you rely on this, set the Mac not to sleep on power.
+session immediately. A sleeping Mac is unreachable; if you rely on this, set the Mac not to sleep
+on power.
 
 ### Read-only sessions
 
@@ -101,11 +159,15 @@ command for you, but it will not overwrite an existing handler on port 443 — i
 already served there, Toki warns instead of silently replacing it. If `tailscale status` cannot be
 read, you can type the `.ts.net` host by hand in Settings.
 
-### Cloudflare Tunnel is a public URL
+### Cloudflare Tunnel is a public URL, and is not recommended
 
 A quick tunnel puts your Mac behind an address anyone on the internet can reach. The link token
-and verification code still gate it, but this is the widest option available and the only one
-where a stranger can even attempt the door. Prefer Tailscale, which is private by construction.
+and rotating code still gate it, and Toki restricts the server to accepting only the tunnel
+process itself, so this is not an open door. But it is the only option where a stranger can
+attempt the door at all, and the only one where your requests pass through a third party's edge.
+
+It is offered last in the Host list, labelled **public**, and Toki warns while it is selected.
+Use it when you genuinely cannot run Tailscale, and turn Remote Control off when you are done.
 Requires `brew install cloudflared`.
 
 ### The phone remembers the link
@@ -128,7 +190,9 @@ shoulder-surfing, but it does not redact transcript bodies.
 ## Turning it off
 
 The toggle in **Settings → Remote Control Server** stops the server, which ends every session and
-invalidates the link. Remote Control is off by default and stays off until you turn it on.
+invalidates the link. To cut off one device without disturbing the others, use **Revoke** on its
+row in the paired devices list. Remote Control is off by default and stays off until you turn it
+on.
 
 ## Related
 

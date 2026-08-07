@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -152,6 +153,68 @@ class RemoteControlHostAndOriginTests(unittest.TestCase):
     def test_a_request_with_no_origin_is_not_a_browser_and_is_allowed(self):
         self.assertTrue(toki_remote.origin_allowed(None, "mac.ts.net"))
         self.assertTrue(toki_remote.origin_allowed("", "mac.ts.net"))
+
+
+class RemoteControlDeviceRegistryTests(unittest.TestCase):
+    def setUp(self):
+        toki_remote.SESSIONS.clear()
+
+    tearDown = setUp
+
+    def test_a_device_is_named_from_what_its_browser_reports(self):
+        iphone = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+                  "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+        self.assertEqual(toki_remote.device_name(iphone), "iPhone (Safari)")
+        # Chrome and Edge both claim Safari in their User-Agent, so order decides correctness.
+        chrome = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+        self.assertEqual(toki_remote.device_name(chrome), "Mac (Chrome)")
+        self.assertEqual(toki_remote.device_name(""), "Device")
+
+    def test_a_proxy_is_not_reported_as_the_device(self):
+        # tailscale serve and cloudflared dial us from loopback and forward the real address.
+        self.assertEqual(toki_remote.client_ip("127.0.0.1", "100.64.1.2"), ("100.64.1.2", False))
+        # No forwarded address to fall back on, so say it is a proxy rather than claim loopback.
+        self.assertEqual(toki_remote.client_ip("127.0.0.1", None), ("127.0.0.1", True))
+
+    def test_a_direct_peer_cannot_spoof_its_own_address(self):
+        # Trusting the header from a non-loopback peer would let a caller pick which rate-limit
+        # bucket it lands in.
+        self.assertEqual(
+            toki_remote.client_ip("192.168.1.20", "10.0.0.1"), ("192.168.1.20", False)
+        )
+
+    def test_a_garbled_forwarded_address_is_not_believed(self):
+        self.assertEqual(toki_remote.client_ip("127.0.0.1", "not-an-ip"), ("127.0.0.1", True))
+
+    def test_the_published_list_never_carries_a_session_token(self):
+        toki_remote.SESSIONS["super-secret-token"] = {
+            "id": "a1b2c3d4", "name": "iPhone (Safari)", "ip": "100.64.1.2", "proxied": False,
+            "paired": 1000.0, "seen": 1200.4, "expires": time.time() + 600,
+        }
+        listed = toki_remote.device_list()
+        self.assertEqual(len(listed), 1)
+        self.assertNotIn("super-secret-token", json.dumps(listed))
+        self.assertEqual(listed[0]["id"], "a1b2c3d4")
+        self.assertEqual(listed[0]["seen"], 1200)
+
+    def test_an_expired_session_drops_off_the_list(self):
+        toki_remote.SESSIONS["stale"] = {
+            "id": "dead", "name": "iPad", "ip": "100.64.1.3", "proxied": False,
+            "paired": 0.0, "seen": 0.0, "expires": time.time() - 1,
+        }
+        self.assertEqual(toki_remote.device_list(), [])
+
+    def test_revoking_removes_exactly_one_device(self):
+        for token, ident in (("t1", "keep0001"), ("t2", "drop0002")):
+            toki_remote.SESSIONS[token] = {
+                "id": ident, "name": "iPhone", "ip": "100.64.1.2", "proxied": False,
+                "paired": 1000.0, "seen": 1000.0, "expires": time.time() + 600,
+            }
+        self.assertTrue(toki_remote.revoke_device("drop0002"))
+        self.assertEqual([d["id"] for d in toki_remote.device_list()], ["keep0001"])
+        # A second revoke of the same id is a no-op rather than an error.
+        self.assertFalse(toki_remote.revoke_device("drop0002"))
 
 
 class RemoteControlInputBoundsTests(unittest.TestCase):

@@ -347,15 +347,23 @@ def agents_from_snapshot(processes, snapshot):
     return result
 
 
-def read_agent_snapshots():
+def read_control_messages():
+    """Toki's side of the pipe: agent snapshots to display, and revocations to act on."""
     global CANONICAL_AGENTS
     for line in sys.stdin:
         try:
             payload = json.loads(line)
-            agents = payload.get("agents")
-            if not isinstance(agents, list):
-                continue
-        except (ValueError, AttributeError):
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        revoke = payload.get("revoke")
+        if isinstance(revoke, str) and revoke:
+            if revoke_device(revoke):
+                publish_devices()
+            continue
+        agents = payload.get("agents")
+        if not isinstance(agents, list):
             continue
         with CANONICAL_AGENTS_LOCK:
             CANONICAL_AGENTS = agents
@@ -1063,6 +1071,60 @@ def new_pairing_code():
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def device_name(user_agent):
+    """A label a person can recognise their own phone by, from the User-Agent.
+
+    This is a convenience for telling two paired devices apart in Toki's list, not an identity: a
+    client writes its own User-Agent and can claim anything. What actually distinguishes a session
+    is the id minted at pairing, which the device never sees and cannot influence.
+    """
+    ua = user_agent or ""
+    if "iPhone" in ua:
+        kind = "iPhone"
+    elif "iPad" in ua:
+        kind = "iPad"
+    elif "Android" in ua:
+        kind = "Android device"
+    elif "Macintosh" in ua or "Mac OS X" in ua:
+        kind = "Mac"
+    elif "Windows" in ua:
+        kind = "Windows PC"
+    elif "Linux" in ua:
+        kind = "Linux device"
+    else:
+        kind = "Device"
+    # Order matters: Chrome and Edge both claim Safari, Edge also claims Chrome.
+    for token, browser in (("Edg/", "Edge"), ("CriOS", "Chrome"), ("Chrome/", "Chrome"),
+                           ("FxiOS", "Firefox"), ("Firefox/", "Firefox"), ("Safari/", "Safari")):
+        if token in ua:
+            return f"{kind} ({browser})"
+    return kind
+
+
+def client_ip(peer, forwarded_for):
+    """The device's address, and whether it is really a proxy standing in for one.
+
+    `tailscale serve` and `cloudflared` both dial us from 127.0.0.1, so the peer address says
+    nothing about the phone behind them. They forward the original address instead; trust that
+    header only when the peer is loopback, or any caller could spoof its own address and defeat
+    the rate limiting keyed on it.
+    """
+    try:
+        direct = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer, False
+    if not direct.is_loopback:
+        return peer, False
+    first = (forwarded_for or "").split(",")[0].strip()
+    if not first:
+        return peer, True
+    try:
+        ipaddress.ip_address(first)
+    except ValueError:
+        return peer, True
+    return first, False
+
+
 def int_param(q, name, default=0):
     """A non-negative integer query parameter, or the default when it is missing or malformed."""
     try:
@@ -1195,6 +1257,65 @@ if not os.path.isdir(WEBUI_DIR):
     WEBUI_DIR = _SCRIPT_DIR
 
 
+# ------------------------------------------------------- paired device registry
+#
+# Toki drives the server over the pipe it already owns: agent snapshots and revocations go in on
+# stdin, the device list comes back out on stdout. That keeps the list off the HTTP surface, so a
+# paired phone can neither enumerate the other devices nor revoke them.
+
+_last_published = None
+
+
+def device_list():
+    now = time.time()
+    with AUTH_LOCK:
+        for token in [t for t, d in SESSIONS.items() if d["expires"] <= now]:
+            del SESSIONS[token]
+        return sorted(
+            (
+                {
+                    "id": d["id"],
+                    "name": d["name"],
+                    "ip": d["ip"],
+                    "proxied": d["proxied"],
+                    "paired": int(d["paired"]),
+                    "seen": int(d["seen"]),
+                    "expires": int(d["expires"]),
+                }
+                for d in SESSIONS.values()
+            ),
+            key=lambda d: d["paired"],
+        )
+
+
+def publish_devices(force=False):
+    """Emit the device list when it has changed, for Toki to display."""
+    global _last_published
+    payload = json.dumps({"devices": device_list()}, sort_keys=True)
+    if payload == _last_published and not force:
+        return
+    _last_published = payload
+    print("devices=" + payload, flush=True)
+
+
+def revoke_device(device_id):
+    """Drop the session with this id. Its next request fails auth and the phone returns to pairing."""
+    with AUTH_LOCK:
+        for token, entry in list(SESSIONS.items()):
+            if entry["id"] == device_id:
+                del SESSIONS[token]
+                return True
+    return False
+
+
+def watch_devices():
+    # Last-seen moves on its own as a phone polls, and an expiry passes with nothing to trigger it,
+    # so the list is republished on a timer rather than only when a request changes it.
+    while True:
+        time.sleep(5)
+        publish_devices()
+
+
 def rotate_pairing_code():
     global PAIRING_CODE
     while True:
@@ -1274,13 +1395,23 @@ class Handler(BaseHTTPRequestHandler):
         if not candidate:
             return False
         now = time.time()
+        ip, _ = client_ip(self.client_address[0], self.headers.get("X-Forwarded-For"))
         with AUTH_LOCK:
-            expired = [token for token, expiry in SESSIONS.items() if expiry <= now]
-            for token in expired:
+            for token in [t for t, d in SESSIONS.items() if d["expires"] <= now]:
                 del SESSIONS[token]
             # compare_digest against each live session rather than a dict lookup, so a wrong token
             # takes the same time whatever prefix it shares with a real one.
-            return any(secrets.compare_digest(candidate, token) for token in SESSIONS)
+            match = next(
+                (d for t, d in SESSIONS.items() if secrets.compare_digest(candidate, t)),
+                None,
+            )
+            if match is None:
+                return False
+            # Keep the entry Toki lists fresh, so "last seen" tells you whether a device you don't
+            # recognise is still active or a leftover from days ago.
+            match["seen"] = now
+            match["ip"] = ip
+            return True
 
     def _pair(self, q):
         if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host")):
@@ -1320,12 +1451,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "incorrect verification code"}, 403)
 
             PAIRING_FAILURES.pop(client, None)
-            for token, expiry in sorted(SESSIONS.items(), key=lambda item: item[1]):
+            for token, _ in sorted(SESSIONS.items(), key=lambda item: item[1]["expires"]):
                 if len(SESSIONS) < MAX_SESSIONS:
                     break
                 del SESSIONS[token]
             session_token = secrets.token_urlsafe(32)
-            SESSIONS[session_token] = now + SESSION_TTL
+            ip, via_proxy = client_ip(client, self.headers.get("X-Forwarded-For"))
+            SESSIONS[session_token] = {
+                "id": secrets.token_hex(4),
+                "name": device_name(self.headers.get("User-Agent")),
+                "ip": ip,
+                "proxied": via_proxy,
+                "paired": now,
+                "seen": now,
+                "expires": now + SESSION_TTL,
+            }
+        publish_devices()
 
         return self._json({"token": session_token, "expiresIn": SESSION_TTL})
 
@@ -1521,7 +1662,8 @@ def main():
     ALLOWED_HOSTS = {h.strip().lower().rstrip(".") for h in args.allow_host if h.strip()}
     if args.agent_snapshot_stdin:
         CANONICAL_AGENTS = []
-        threading.Thread(target=read_agent_snapshots, daemon=True).start()
+        threading.Thread(target=read_control_messages, daemon=True).start()
+        threading.Thread(target=watch_devices, daemon=True).start()
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
 
     ips = [ip for ip in local_ipv4s() if peer_allowed(ip)]

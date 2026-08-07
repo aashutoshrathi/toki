@@ -24,7 +24,7 @@ final class RemoteControlServer: ObservableObject {
             case .localhost: return "Localhost"
             case .localNetwork: return "Local network"
             case .tailscale: return "Tailscale (Recommended)"
-            case .tunnel: return "Cloudflare Tunnel"
+            case .tunnel: return "Cloudflare Tunnel (public)"
             case .custom: return "Custom"
             }
         }
@@ -40,10 +40,10 @@ final class RemoteControlServer: ObservableObject {
 
         var label: String {
             switch self {
-            case .sameHost: return "Same as host"
+            case .sameHost: return "Same as host (Recommended)"
             case .localhost: return "Local"
             case .localNetwork: return "Local network"
-            case .hosted: return "Toki RC (Recommended)"
+            case .hosted: return "Toki RC (hosted)"
             }
         }
     }
@@ -66,7 +66,37 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
+    // A phone that has passed pairing. Toki learns about these over the server's stdout rather
+    // than an HTTP endpoint, so one paired phone can neither enumerate the others nor revoke them.
+    struct PairedDevice: Identifiable, Equatable, Decodable {
+        let id: String
+        let name: String
+        let ip: String
+        // True when `ip` is the proxy that fronted the request rather than the device itself,
+        // which is what `tailscale serve` and `cloudflared` look like from here.
+        let proxied: Bool
+        let paired: Date
+        let seen: Date
+        let expires: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case id, name, ip, proxied, paired, seen, expires
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            ip = try container.decode(String.self, forKey: .ip)
+            proxied = try container.decode(Bool.self, forKey: .proxied)
+            paired = Date(timeIntervalSince1970: try container.decode(Double.self, forKey: .paired))
+            seen = Date(timeIntervalSince1970: try container.decode(Double.self, forKey: .seen))
+            expires = Date(timeIntervalSince1970: try container.decode(Double.self, forKey: .expires))
+        }
+    }
+
     @Published private(set) var isRunning = false
+    @Published private(set) var pairedDevices: [PairedDevice] = []
     @Published private(set) var token: String?
     @Published private(set) var pairingCode: String?
     @Published private(set) var lastError: String?
@@ -157,13 +187,16 @@ final class RemoteControlServer: ObservableObject {
         )
     }
 
+    // Ordered by how much they expose. A Cloudflare quick tunnel puts this Mac behind an address
+    // anyone on the internet can reach, so it sits last rather than first: it is the fallback for
+    // someone who cannot run Tailscale, not the shape to reach for.
     static func orderedHostModes(
         tailscaleAvailable: Bool,
         cloudflaredAvailable: Bool = false
     ) -> [HostMode] {
         var modes: [HostMode] = [.localNetwork, .localhost, .custom]
-        if cloudflaredAvailable { modes.insert(.tunnel, at: 0) }
         if tailscaleAvailable { modes.insert(.tailscale, at: 0) }
+        if cloudflaredAvailable { modes.append(.tunnel) }
         return modes
     }
 
@@ -312,6 +345,7 @@ final class RemoteControlServer: ObservableObject {
         lastError = nil
         token = nil
         pairingCode = nil
+        pairedDevices = []
         outputBuffer = ""
 
         guard let script = Self.serverScriptURL() else {
@@ -376,6 +410,7 @@ final class RemoteControlServer: ObservableObject {
         isRunning = false
         token = nil
         pairingCode = nil
+        pairedDevices = []
         outputBuffer = ""
     }
 
@@ -429,7 +464,33 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
+    nonisolated static func parseDeviceLine(_ text: String) -> [PairedDevice]? {
+        guard text.hasPrefix("devices=") else { return nil }
+        let payload = Data(text.dropFirst("devices=".count).utf8)
+        struct Envelope: Decodable { let devices: [PairedDevice] }
+        return try? JSONDecoder().decode(Envelope.self, from: payload).devices
+    }
+
+    /// End one device's session. Its next request fails auth and the phone returns to pairing.
+    func revoke(_ device: PairedDevice) {
+        guard isRunning, let inputPipe else { return }
+        guard
+            let data = try? JSONSerialization.data(withJSONObject: ["revoke": device.id]),
+            var line = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        line.append("\n")
+        try? inputPipe.fileHandleForWriting.write(contentsOf: Data(line.utf8))
+        // Drop it locally too, so the row disappears on the click rather than on the next publish.
+        pairedDevices.removeAll { $0.id == device.id }
+    }
+
     private func parseOutputLine(_ text: String) {
+        if let devices = Self.parseDeviceLine(text) {
+            pairedDevices = devices
+            return
+        }
         if token == nil, let range = text.range(of: "token=") {
             let value = text[range.upperBound...].prefix {
                 $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-"
@@ -450,6 +511,7 @@ final class RemoteControlServer: ObservableObject {
         isRunning = false
         token = nil
         pairingCode = nil
+        pairedDevices = []
         outputBuffer = ""
         if status != 0 {
             lastError = "The remote control server stopped (exit code \(status))."

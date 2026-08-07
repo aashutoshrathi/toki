@@ -74,7 +74,7 @@ Vercel or Cloudflare Pages, whichever the maintainer prefers (functionally equiv
 - Host and App are separate settings. App can use the selected host, localhost,
   the detected local-network address, or the hosted Toki RC interface at
   `rc.toki.aashutosh.dev`.
-- When App is `Toki RC (Recommended)`, build the QR and connect URL as
+- When App is `Toki RC (hosted)`, build the QR and connect URL as
   `https://rc.toki.aashutosh.dev/#host=<tailnet-host>&token=<token>`.
 - The Mac's tailnet hostname comes from `tailscale status --json`.
 - `rc.toki.aashutosh.dev` serves only static interface files. Agent discovery, transcripts, and replies
@@ -84,7 +84,7 @@ Vercel or Cloudflare Pages, whichever the maintainer prefers (functionally equiv
 
 1. Start Toki's Remote Control Server and select **Tailscale** as the host.
 2. Run `tailscale serve --bg 443 http://127.0.0.1:8765` on the Mac.
-3. Select `Toki RC (Recommended)` under App, then open Connect and copy its URL.
+3. Select `Toki RC (hosted)` under App, then open Connect and copy its URL.
 4. On a phone connected to the same tailnet, open the URL and enter the six-digit code shown
    separately in Toki.
 5. Confirm agents load, then send a reply and verify it reaches the selected terminal agent.

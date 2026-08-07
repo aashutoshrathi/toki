@@ -10,13 +10,19 @@
 - Session tokens travel in an `Authorization` header instead of the URL, keeping them out of your phone's history and out of the request logs of anything between the phone and the Mac (Cloudflare's, on the tunnel path). The companion app also clears the token from the address bar once it has been stored.
 - A single reply is capped well below the request-body limit, so one call can no longer push a quarter-megabyte of keystrokes into a terminal. Sessions and the failed-pairing table are capped too, and a malformed `pid` or `offset` no longer drops the connection mid-poll.
 
+### Added
+
+- **Paired devices, with per-device revoke.** Settings now lists every phone currently holding a Remote Control session, showing the name its browser reports, the random ID Toki assigned it at pairing, where it connected from, and when it was last seen. **Revoke** ends that one session immediately and leaves your other devices alone; previously the only way to cut off a device was stopping the server on all of them. The list travels over Toki's private pipe to its server, never over HTTP, so a paired phone cannot enumerate your other devices or revoke them. Where a request came through `tailscale serve` or `cloudflared` the address reads "via proxy" rather than claiming an address Toki cannot actually know.
+- A guide covering Remote Control setup, the three gates a phone passes to connect, what each host option exposes, and the gotchas worth knowing. An info button beside the Remote Control heading in Settings opens it.
+
+### Changed
+
+- **Toki now recommends the options with no third party in them.** Serving the companion app from your own Mac ("Same as host") is the recommended App choice rather than the hosted `rc.toki.aashutosh.dev` interface, which is now labelled "Toki RC (hosted)". The hosted page never receives your agent data, but it is still code loaded from a web server and handed your connection token, and serving it from your Mac removes that exposure instead of mitigating it.
+- **Cloudflare Tunnel is presented as the last resort it is.** It is labelled "public", offered last in the Host list instead of first, and Toki warns while it is selected. A quick tunnel puts your Mac behind an address anyone on the internet can reach; Tailscale keeps it off the public internet entirely and is recommended everywhere the choice comes up.
+
 ### Fixed
 
 - A multi-line reply sent from the companion app reaches agents running in iTerm2 and Terminal. The newline broke the AppleScript that delivers it, so the message was silently lost; agents in tmux were unaffected.
-
-### Added
-
-- A guide covering Remote Control setup, the three gates a phone passes to connect, what each host option exposes, and the gotchas worth knowing. An info button beside the Remote Control heading in Settings opens it.
 
 ## 2.5.4 - 2026-08-07
 
