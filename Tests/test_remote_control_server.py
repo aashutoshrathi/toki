@@ -154,6 +154,32 @@ class RemoteControlAgentOrderTests(unittest.TestCase):
         self.assertEqual(self.order(agents), [2, 3, 1])
 
 
+class RemoteControlTranscriptIdTests(unittest.TestCase):
+    def test_two_transcripts_have_different_ids(self):
+        with tempfile.NamedTemporaryFile(suffix=".jsonl") as first, \
+             tempfile.NamedTemporaryFile(suffix=".jsonl") as second:
+            a = toki_remote.transcript_id({"session": first.name})
+            b = toki_remote.transcript_id({"session": second.name})
+            self.assertNotEqual(a, b)
+
+    def test_id_is_stable_while_the_file_grows(self):
+        # The point of using the inode: /clear has to be detectable even when the new transcript
+        # overtakes the old offset between polls, which size comparisons miss.
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+            before = toki_remote.transcript_id({"session": transcript.name})
+            transcript.write("x" * 4096)
+            transcript.flush()
+            self.assertEqual(toki_remote.transcript_id({"session": transcript.name}), before)
+
+    def test_an_id_survives_a_session_that_is_not_a_file(self):
+        # OpenCode's "session" is a database id, not a path, and already identifies itself.
+        self.assertEqual(toki_remote.transcript_id({"session": "ses_abc123"}), "ses_abc123")
+
+    def test_no_agent_and_no_session_have_no_id(self):
+        self.assertEqual(toki_remote.transcript_id(None), "")
+        self.assertEqual(toki_remote.transcript_id({"session": None}), "")
+
+
 class RemoteControlDisplayPathTests(unittest.TestCase):
     def test_home_is_collapsed_to_a_tilde(self):
         with mock.patch.object(toki_remote, "HOME", "/Users/someone"):

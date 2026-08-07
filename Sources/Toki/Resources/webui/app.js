@@ -239,9 +239,7 @@ function renderAgents() {
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
     current = +el.dataset.pid;
-    offset = 0;
-    $("#log").innerHTML = "";
-    clearPending();
+    resetTranscript();
     document.getElementById("dd").classList.remove("open");
     renderAgents();
     refreshLog();
@@ -280,9 +278,11 @@ function clearContext() {
   }
   setClearArmed(false);
   // No optimistic echo: /clear is a command to the agent, not a message in the conversation, and
-  // the transcript it belongs to is about to be replaced. The next poll sees the new session and
-  // resets the log on its own.
-  send({ text: "/clear" });
+  // the transcript it belongs to is about to be replaced. Drop the log as soon as the command is
+  // away rather than waiting to be told, so the conversation you just cleared doesn't linger.
+  send({ text: "/clear" }).then(ok => {
+    if (ok) resetTranscript();
+  });
 }
 
 let notifiedAttention = {};
@@ -345,9 +345,7 @@ async function refreshAgents() {
   notifyAttention(agents);
   if (agents.length && !agents.some(a => a.pid == prev)) {
     current = agents[0].pid;
-    offset = 0;
-    $("#log").innerHTML = "";
-    clearPending();
+    resetTranscript();
   }
   renderAgents();
   const a = agents.find(x => x.pid == current);
@@ -428,14 +426,41 @@ function clearPending() {
   setClearArmed(false);
 }
 
+// Which transcript the offset below counts into, and how many times we've thrown that offset away.
+// A poll that was already in flight when the transcript changed carries an offset into a log that
+// no longer exists, so it has to be dropped instead of appended.
+let logSession = null;
+let logEpoch = 0;
+
+function resetTranscript() {
+  logEpoch++;
+  logSession = null;
+  offset = 0;
+  $("#log").innerHTML = "";
+  clearPending();
+}
+
 async function refreshLog() {
   if (!current) return;
+  const epoch = logEpoch;
   const r = await api(`/api/transcript?pid=${current}&offset=${offset}`);
+  if (epoch != logEpoch) return;
   if (r.reset) {
-    offset = 0;
-    $("#log").innerHTML = "";
-    clearPending();
+    resetTranscript();
     return;
+  }
+  // The server names the transcript this offset belongs to. When that name changes the agent has
+  // moved to a new session (/clear, or a new conversation started on the Mac) and the offset we
+  // hold points into a file that is gone -- start over rather than parse one file at another's
+  // position. The size check the server does catches this only while the new transcript is still
+  // shorter than the old offset.
+  if (r.session != null && r.session !== logSession) {
+    const rotated = logSession !== null;
+    logSession = r.session;
+    if (rotated) {
+      resetTranscript();
+      return;
+    }
   }
   offset = r.offset;
   const stick = nearBottom();

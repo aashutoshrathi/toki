@@ -57,6 +57,13 @@ assert.match(app, /send\(\{\s*text:\s*"\/clear"\s*\}\)/);
 assert.match(app, /setClearArmed\(true\)/);
 assert.match(app, /if\s*\(!clearArmed\)/);
 assert.match(css, /#clear\.armed\{/);
+// Clearing drops the log itself rather than waiting for the server to notice the new session, and
+// a poll already in flight against the old transcript is discarded instead of appended.
+assert.match(app, /function resetTranscript/);
+assert.match(app, /if\s*\(ok\)\s*resetTranscript\(\)/);
+assert.match(app, /const epoch = logEpoch/);
+assert.match(app, /if\s*\(epoch\s*!=\s*logEpoch\)\s*return/);
+assert.match(app, /r\.session\s*!==\s*logSession/);
 // Restyled question banner (header label + badge/label option layout) and film grain.
 assert.match(app, /class="ahead"/);
 assert.match(app, /<b>\$\{i\s*\+\s*1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);

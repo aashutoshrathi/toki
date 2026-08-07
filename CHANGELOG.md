@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- The companion app no longer shows a stale conversation after an agent starts a new session. It tracked its place in a transcript by byte offset and only noticed a switch when the new transcript was shorter than that offset, so a session that overtook it between two polls left the old messages on screen and skipped the start of the new one. The server now names the transcript an offset belongs to, and the app starts over whenever that name changes.
 - The companion app can no longer strand you on the verify screen. A link pointing at a Tailscale address your phone can't currently reach left the app asking for a six-digit code with no way back, and because the link is remembered on the device and repeated in the address bar, reloading or reopening the app only restored it. A home button is now always on screen (in the header once connected, on the connect screen otherwise) and starts you over on the landing page, where you can scan a fresh QR or type a different host.
 
 ### Changed
