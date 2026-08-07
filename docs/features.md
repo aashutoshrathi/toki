@@ -8,6 +8,34 @@ Clicking an agent with a terminal TTY selects its tab in iTerm2 or Terminal; oth
 
 **Agents waiting on you** are marked with a red dot and the question they asked — on the card, on the Agents tab, and in the menu bar. Supported for Claude Code and OpenCode. The signal is a tool call that has gone unanswered for at least ten seconds: a tool that is genuinely running writes its result promptly, so quiet time is what separates "working" from "blocked on you".
 
+## Remote Control
+
+Follow a running agent from your phone and answer it: send a message, approve or reject a permission prompt, tap one of the options it offered, send a bare terminal key, or clear the session. Claude Code, Codex, and OpenCode sessions are supported. Off by default; turn it on in Settings.
+
+**Replies go to the agent's TTY.** The same terminal discovery the Agents tab uses to jump to a session is what delivers input to it, in order of preference:
+
+1. `tmux send-keys` against the pane whose `pane_tty` matches, where the agent runs under tmux.
+2. iTerm2, addressed by tty through AppleScript, which does not steal focus or disturb the window you are looking at.
+3. Terminal.app, by selecting the tab with that tty and sending keystrokes through System Events.
+
+The text and the submitting Return are sent as two events with a short gap. Sent together, a TUI like Claude Code reads the trailing carriage return as part of the paste and inserts a newline instead of submitting.
+
+Because this is terminal input, a reply lands in the conversation already running rather than starting a new one, and works with any agent whose interface is a terminal, including ones with no remote API of their own. It also means an agent without a TTY cannot be replied to: Codex desktop, editor extensions, and anything not attached to a terminal appear in the list as **read-only**, grouped below the ones you can answer so the agent actually waiting on you is the one selected by default.
+
+**Reach is a setting, not a side effect.** The host you pick decides which networks the server will answer, enforced per connection before authentication:
+
+| Host | Answers requests from |
+|:---|:---|
+| Localhost | this Mac only |
+| Tailscale (recommended) | your tailnet, plus this Mac |
+| Local network | your LAN and tailnet, plus this Mac |
+| Cloudflare Tunnel (public) | the tunnel process on this Mac |
+| Custom | anywhere, since Toki cannot classify the host you named |
+
+Tailscale is recommended because it is private by construction: your Mac and phone join a network only your devices are on, and nothing is reachable from the public internet. A phone connects by scanning a QR code and entering a six-digit code shown on the Mac, which rotates every two minutes; that exchange grants a session lasting between one hour and two days, and every paired device is listed in Settings with its own Revoke button.
+
+[Remote Control](remote-control.md) covers the setup, the gates in full, and the gotchas.
+
 ## Daily usage heatmap
 
 Thirty days of activity, filterable by provider, covering Claude Code, OpenCode, and Pi. Read from each tool's own session history, so it reflects work done before Toki was installed. Hover a day for its detail.
