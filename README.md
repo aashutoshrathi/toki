@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.5.4" src="https://img.shields.io/badge/version-2.5.4-2f80ed">
+  <img alt="Version 2.6.0" src="https://img.shields.io/badge/version-2.6.0-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">

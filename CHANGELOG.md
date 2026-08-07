@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.6.0 - Unreleased
+
+### Security
+
+- **The Remote Control host setting now decides who can reach the server, not just what the Connect link says.** The companion server listened on every network interface regardless of the host you picked, so choosing **Localhost** or **Tailscale** still left its port open to whatever Wi-Fi the Mac had joined; only the link token stood in the way. Each host mode now carries an access policy the server enforces on every connection: **Localhost** and **Cloudflare Tunnel** answer this Mac only, **Tailscale** answers your tailnet, **Local network** answers your LAN and tailnet. Changing the host restarts the server so a narrowed setting takes effect immediately, which also ends any paired sessions.
+- The companion server answers only to the addresses Toki hands out, so a hostname someone else controls cannot be pointed at your Mac and treated as same-origin by a browser. A **Custom** host is trusted once you name it.
+- Replies and pairing attempts are rejected unless they come from the companion app itself or a non-browser client, closing the cross-origin POST that CORS preflight does not cover.
+- Session tokens travel in an `Authorization` header instead of the URL, keeping them out of your phone's history and out of the request logs of anything between the phone and the Mac (Cloudflare's, on the tunnel path). The companion app also clears the token from the address bar once it has been stored.
+- A single reply is capped well below the request-body limit, so one call can no longer push a quarter-megabyte of keystrokes into a terminal. Sessions and the failed-pairing table are capped too, and a malformed `pid` or `offset` no longer drops the connection mid-poll.
+
+### Fixed
+
+- A multi-line reply sent from the companion app reaches agents running in iTerm2 and Terminal. The newline broke the AppleScript that delivers it, so the message was silently lost; agents in tmux were unaffected.
+
+### Added
+
+- A guide covering Remote Control setup, the three gates a phone passes to connect, what each host option exposes, and the gotchas worth knowing. An info button beside the Remote Control heading in Settings opens it.
+
 ## 2.5.4 - 2026-08-07
 
 ### Added
