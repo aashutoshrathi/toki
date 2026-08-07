@@ -29,4 +29,6 @@ jobs:
       - name: Test companion server
         run: python3 -m unittest discover -s Tests -p 'test_*.py'
       - name: Test companion app
-        run: for test in Tests/test_*.js; do node "$test"; done
+        # Explicit exit rather than relying on the step's bash -e, so a failure early in the loop
+        # can never be reported as the last test's success.
+        run: for test in Tests/test_*.js; do node "$test" || exit 1; done
