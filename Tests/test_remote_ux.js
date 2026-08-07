@@ -19,10 +19,10 @@ assert.match(app, /Approve<\/button>/);
 assert.match(app, /Reject<\/button>/);
 assert.match(app, /navigator\.vibrate/);
 assert.match(app, /e\.preventDefault\(\)/);
-assert.match(app, /e\.metaKey\|\|e\.ctrlKey/);
+assert.match(app, /e\.metaKey\s*\|\|\s*e\.ctrlKey/);
 assert.match(app, /function resizeComposer/);
 assert.match(app, /new ResizeObserver/);
-assert.match(app, /if\(!current\|\|sending\)return/);
+assert.match(app, /if\s*\(!current\s*\|\|\s*sending\)\s*return/);
 assert.match(app, /Sent \\u2713 via/);
 // Optimistic send: the message is echoed and the input cleared before the round trip resolves.
 assert.match(app, /function sendText/);
@@ -36,20 +36,52 @@ assert.match(css, /\.m\.typing/);
 assert.match(css, /@keyframes tblink/);
 // Tap-to-retry on a failed message, and the question/approval panel is dismissed on answer.
 assert.match(app, /\.m\.user\.failed/);
-assert.match(app, /f\.remove\(\);feedback\("tap"\);sendText\(text\)/);
-assert.match(app, /\$\("#alert"\)\.style\.display="none"/);
+assert.match(app, /f\.remove\(\);\s*feedback\("tap"\);\s*sendText\(text\)/);
+assert.match(app, /\$\("#alert"\)\.style\.display\s*=\s*"none"/);
 assert.match(css, /Tap to retry/);
 // Privacy toggle masks agent names in the picker for recordings.
 assert.match(html, /id="privacytoggle"/);
 assert.match(app, /function dispTitle/);
 assert.match(app, /privacyMode/);
 assert.match(css, /body\.privacy/);
+// The picker shows each agent's folder under its title, and the privacy toggle masks that too.
+assert.match(app, /function agentRow/);
+assert.match(app, /function dispPath/);
+assert.match(app, /dispPath\(a\.path\)/);
+assert.match(app, /class="tp"/);
+assert.match(css, /#dd \.tp\{/);
+// A Clear button sends /clear, behind a confirm tap: it sits beside Send and cannot be undone.
+assert.match(html, /id="clear"/);
+assert.match(app, /function clearContext/);
+assert.match(app, /send\(\{\s*text:\s*"\/clear"\s*\}\)/);
+assert.match(app, /setClearArmed\(true\)/);
+assert.match(app, /if\s*\(!clearArmed\)/);
+assert.match(css, /#clear\.armed\{/);
+// Clearing drops the log itself rather than waiting for the server to notice the new session, and
+// a poll already in flight against the old transcript is discarded instead of appended.
+assert.match(app, /function resetTranscript/);
+assert.match(app, /if\s*\(ok\)\s*resetTranscript\(\)/);
+assert.match(app, /const epoch = logEpoch/);
+assert.match(app, /if\s*\(epoch\s*!=\s*logEpoch\)\s*return/);
+assert.match(app, /r\.session\s*!==\s*logSession/);
 // Restyled question banner (header label + badge/label option layout) and film grain.
 assert.match(app, /class="ahead"/);
-assert.match(app, /<b>\$\{i\+1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);
+assert.match(app, /<b>\$\{i\s*\+\s*1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);
 assert.match(css, /feTurbulence/);
 assert.match(css, /button:not\(:disabled\):active/);
 assert.match(css, /\.decision\.reject/);
 assert.match(css, /min-height:44px/);
+
+// Every element app.js reaches for at load must exist in the page. A missing one throws on the
+// first line that touches it and takes the whole script down with it, which looks from the phone
+// like the app simply never started.
+const RUNTIME_IDS = new Set(["typing"]); // created by showTyping, never in the served HTML
+const pageIds = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
+const wanted = new Set([
+  ...[...app.matchAll(/\$\("#([a-zA-Z0-9_-]+)"\)/g)].map(m => m[1]),
+  ...[...app.matchAll(/getElementById\("([a-zA-Z0-9_-]+)"\)/g)].map(m => m[1]),
+]);
+const missing = [...wanted].filter(id => !pageIds.has(id) && !RUNTIME_IDS.has(id));
+assert.deepEqual(missing, [], "app.js selects ids that index.html does not define: " + missing);
 
 console.log("remote mobile UX tests passed");

@@ -43,7 +43,7 @@ assert.match(app, /getUserMedia/);
 assert.match(app, /"BarcodeDetector" in window/);
 assert.match(app, /window\.jsQR/);
 assert.match(app, /function handleScan/);
-assert.match(app, /connectWith\(link\.host,link\.token\)/);
+assert.match(app, /connectWith\(link\.host,\s*link\.token\)/);
 
 // --- Scanned links resolve to host + token, whichever shape Toki's Connect QR uses ---
 // Both shapes name the same Mac, so a QR built for one page must still work on the other:
@@ -78,7 +78,7 @@ assert.match(resolve("https://", HOSTED).error, /Toki link/);
 // saved connection, so the fragment connectWith sets is the only copy of the link. A reload does not
 // always come back with the fragment (an installed PWA relaunches at start_url), which used to drop
 // a freshly scanned link and bounce straight back to the invalid-link screen.
-assert.match(app, /\$\("#connectmethods"\)\.hidden=false/);
+assert.match(app, /\$\("#connectmethods"\)\.hidden\s*=\s*false/);
 const connectSource = app.match(/^function connectWith\([\s\S]*?^}/m);
 assert.ok(connectSource, "connectWith must be a top-level function in app.js");
 const order = [];
@@ -111,6 +111,39 @@ vm.runInContext("localStorage.setItem=()=>{throw new Error('denied')}", conn);
 vm.runInContext("connectWith('my-mac.example-tailnet.ts.net','abc')", conn);
 assert.deepEqual(order, ["hash:host=my-mac.example-tailnet.ts.net&token=abc", "reload"]);
 
+// --- A wedged connection can always be restarted, from either screen ---
+// A link naming a host the phone can no longer reach strands the app on the verify screen. Both
+// localStorage and the address bar still hold that link, so reloading only restores it; goHome has
+// to drop both and navigate to the bare path rather than reload.
+assert.match(html, /id="home"/);
+assert.match(html, /id="pairhome"/);
+assert.match(css, /#pairhome\{[^}]*position:absolute/);
+const homeSource = app.match(/^function goHome\([\s\S]*?^}/m);
+assert.ok(homeSource, "goHome must be a top-level function in app.js");
+const steps = [];
+const home = vm.createContext({
+  CONN_KEY: "toki-conn",
+  SESSION_KEY: "toki-session:https://my-mac.example-tailnet.ts.net:abc",
+  localStorage: { removeItem(k) { steps.push("local:" + k); } },
+  sessionStorage: { removeItem(k) { steps.push("session:" + k); } },
+  location: { pathname: "/", replace(url) { steps.push("replace:" + url); } },
+});
+vm.runInContext(homeSource[0], home);
+
+vm.runInContext("goHome()", home);
+assert.deepEqual(steps, [
+  "local:toki-conn",
+  "session:toki-session:https://my-mac.example-tailnet.ts.net:abc",
+  // The bare path: no query and no fragment, so nothing revives the connection we just left.
+  "replace:/",
+]);
+
+// A storage failure (Safari private mode) must not strand the user on the screen they're escaping.
+steps.length = 0;
+vm.runInContext("localStorage.removeItem=()=>{throw new Error('denied')}", home);
+vm.runInContext("goHome()", home);
+assert.deepEqual(steps.filter(s => s.startsWith("replace:")), ["replace:/"]);
+
 // --- Manual entry for machines without a camera: host + token, same connect flow ---
 assert.match(html, /id="manualhost"/);
 assert.match(html, /id="manualtoken"/);
@@ -118,7 +151,7 @@ assert.match(html, /id="manualconnect"/);
 assert.match(html, /id="connectmethods"/);
 assert.match(app, /function manualConnect/);
 assert.match(app, /remoteAPIBase\(host\)/);
-assert.match(app, /connectmethods"\)\.hidden=false/);
+assert.match(app, /connectmethods"\)\.hidden\s*=\s*false/);
 assert.match(css, /#manualfields input\{[^}]*16px/);
 const jsqr = fs.readFileSync(path.join(root, "jsqr.js"), "utf8");
 const sandbox = {}; sandbox.self = sandbox; sandbox.window = sandbox;
@@ -128,7 +161,7 @@ assert.equal(typeof sandbox.jsQR, "function", "vendored jsqr.js must expose wind
 
 // --- Scroll no longer yanks; connection loss is surfaced ---
 assert.match(app, /function nearBottom/);
-assert.match(app, /if\(added\)\{if\(stick\)scrollToLatest\(\)/);
+assert.match(app, /if\s*\(added\)\s*\{\s*if\s*\(stick\)\s*scrollToLatest\(\)/);
 assert.match(html, /id="tolatest"/);
 assert.match(html, /id="conn"/);
 assert.match(app, /function setConnected/);
@@ -137,16 +170,16 @@ assert.match(css, /\.conn-dot/);
 // --- Attention notifications: permission affordance, transition-only firing, SW click handler ---
 assert.match(html, /id="enablealerts"/);
 assert.match(app, /function notifyAttention/);
-assert.match(app, /Notification\.permission!="granted"/);
-assert.match(app, /notifySeeded&&notifiedAttention\[a\.pid\]!=key/);
-assert.match(app, /showNotification\(title,opts\)/);
+assert.match(app, /Notification\.permission\s*!=\s*"granted"/);
+assert.match(app, /notifySeeded\s*&&\s*notifiedAttention\[a\.pid\]\s*!=\s*key/);
+assert.match(app, /showNotification\(title,\s*opts\)/);
 assert.match(app, /requestPermission\(\)/);
 assert.match(sw, /addEventListener\("notificationclick"/);
 
 // --- Installed PWA relaunch restores the last connection instead of the invalid-link screen ---
-assert.match(app, /const CONN_KEY="toki-conn"/);
+assert.match(app, /const CONN_KEY\s*=\s*"toki-conn"/);
 assert.match(app, /function savedConn/);
-assert.match(app, /const REVIVE=PARAMS\.get\("token"\)\?null:savedConn\(\)/);
+assert.match(app, /const REVIVE\s*=\s*PARAMS\.get\("token"\)\s*\?\s*null\s*:\s*savedConn\(\)/);
 assert.match(app, /localStorage\.setItem\(CONN_KEY/);
 assert.match(app, /localStorage\.removeItem\(CONN_KEY\)/);
 

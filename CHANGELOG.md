@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The companion app's agent picker now shows the folder each agent is working in, under its title, with your home folder written as `~`. Several agents often carry the same title (or none worth reading), and the folder is what tells them apart. The eye toggle masks the folder along with the name.
+- A **Clear** button beside Send in the companion app sends `/clear` to the agent, so you can drop a finished conversation and free up its context from your phone. Clearing can't be undone and the button sits next to Send, so the first tap arms it and a second tap within five seconds does it.
+
+### Fixed
+
+- The companion app no longer shows a stale conversation after an agent starts a new session. It tracked its place in a transcript by byte offset and only noticed a switch when the new transcript was shorter than that offset, so a session that overtook it between two polls left the old messages on screen and skipped the start of the new one. The server now names the transcript an offset belongs to, and the app starts over whenever that name changes.
+- The companion app can no longer strand you on the verify screen. A link pointing at a Tailscale address your phone can't currently reach left the app asking for a six-digit code with no way back, and because the link is remembered on the device and repeated in the address bar, reloading or reopening the app only restored it. A home button is now always on screen (in the header once connected, on the connect screen otherwise) and starts you over on the landing page, where you can scan a fresh QR or type a different host.
+
+### Changed
+
+- The companion app's agent picker now lists every agent you can reply to before the read-only ones, which are grouped at the bottom under a single "Read-only" heading. A busy read-only session (Codex desktop and the like) used to sort to the top on recency and get selected by default, putting a session you can only watch in front of the one waiting on you.
+
 ## 2.5.4
 
 ### Added

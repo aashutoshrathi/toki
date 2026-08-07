@@ -844,6 +844,20 @@ def agent_recency(agent):
     return os.path.getmtime(session) if os.path.exists(session) else 0.0
 
 
+def display_path(cwd):
+    """The agent's folder written the way you'd write it: ~/Git/toki, not /Users/you/Git/toki."""
+    if not cwd:
+        return ""
+    home = HOME.rstrip("/")
+    if not home:
+        return cwd
+    if cwd == home:
+        return "~"
+    if cwd.startswith(home + "/"):
+        return "~" + cwd[len(home):]
+    return cwd
+
+
 def chat_title(provider, path, cwd):
     fallback = os.path.basename(cwd) if cwd else provider
     if provider == "opencode":
@@ -917,6 +931,37 @@ def safe_tty(tty):
 
 def agent_is_writable(agent):
     return safe_tty(agent.get("tty"))
+
+
+def transcript_id(agent):
+    """Identify the transcript an offset belongs to, so a client can tell when it was replaced.
+
+    An offset is a position inside one particular file and means nothing in another. /clear starts
+    a fresh session, and the old offset then indexes into the middle of the new transcript. Size
+    alone can't catch that: it only shows up as `offset > size` while the new file is still shorter
+    than the old offset, and a session that outgrows it between two polls slips through.
+
+    Device and inode name the file itself, so a swap is visible however the two compare in length.
+    OpenCode's "session" is an id rather than a path, so it already identifies itself.
+    """
+    session = agent.get("session") if agent else None
+    if not session:
+        return ""
+    try:
+        st = os.stat(session)
+    except OSError:
+        return session
+    return f"{st.st_dev}:{st.st_ino}"
+
+
+def agent_order(agent):
+    """Most recent first, but every agent you can reply to ahead of every one you can't.
+
+    Read-only sessions (Codex desktop and friends) are only there to be watched, so a busy one
+    would otherwise sit at the top of the picker -- and be selected by default -- while the agent
+    actually waiting on you is further down.
+    """
+    return (agent_is_writable(agent), agent_recency(agent))
 
 
 def applescript_str(s):
@@ -1180,7 +1225,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/agents":
             result = []
             agents = discover_agents()
-            agents.sort(key=agent_recency, reverse=True)
+            agents.sort(key=agent_order, reverse=True)
             for a in agents:
                 att = None
                 if a["session"]:
@@ -1192,6 +1237,7 @@ class Handler(BaseHTTPRequestHandler):
                         att = opencode_attention(a["session"])
                 result.append({
                     "pid": a["pid"], "tty": a["tty"], "cwd": a["cwd"],
+                    "path": display_path(a["cwd"]),
                     "provider": a["provider"],
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,
@@ -1202,28 +1248,29 @@ class Handler(BaseHTTPRequestHandler):
             pid = int(q.get("pid", ["0"])[0])
             offset = int(q.get("offset", ["0"])[0])
             agent = next((a for a in discover_agents() if a["pid"] == pid), None)
+            session = transcript_id(agent)
             if not agent or not agent["session"]:
-                return self._json({"entries": [], "offset": offset})
+                return self._json({"entries": [], "offset": offset, "session": session})
             if agent["provider"] == "opencode":
                 entries = opencode_entries(agent["session"])
                 if offset > len(entries):  # session changed under us
-                    return self._json({"entries": [], "offset": 0, "reset": True})
+                    return self._json({"entries": [], "offset": 0, "reset": True, "session": session})
                 shown = entries[offset:]
                 if offset == 0:
                     shown = [e for e in shown if e["role"] in ("user", "assistant", "tool")][-60:]
-                return self._json({"entries": shown, "offset": len(entries)})
+                return self._json({"entries": shown, "offset": len(entries), "session": session})
             try:
                 size = os.path.getsize(agent["session"])
             except OSError:
                 size = 0
             if offset > size:  # session file rotated/replaced
-                return self._json({"entries": [], "offset": 0, "reset": True})
+                return self._json({"entries": [], "offset": 0, "reset": True, "session": session})
             parse = parse_claude_transcript if agent["provider"] == "claude" else parse_codex_transcript
             entries, new_offset = parse(agent["session"], offset)
             if offset == 0:
                 shown = [e for e in entries if e["role"] in ("user", "assistant", "tool")]
                 entries = shown[-60:]
-            self._json({"entries": entries, "offset": new_offset})
+            self._json({"entries": entries, "offset": new_offset, "session": session})
         else:
             self._json({"error": "not found"}, 404)
 
