@@ -131,5 +131,74 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(toki_remote.agent_is_writable({"tty": "ttys001"}))
 
 
+class RemoteControlAgentOrderTests(unittest.TestCase):
+    def order(self, agents):
+        with mock.patch.object(toki_remote, "agent_recency", lambda a: a["recency"]):
+            return [a["pid"] for a in sorted(agents, key=toki_remote.agent_order, reverse=True)]
+
+    def test_writable_agents_come_before_read_only_ones(self):
+        agents = [
+            {"pid": 1, "tty": None, "recency": 900},        # read-only, but the most recent
+            {"pid": 2, "tty": "ttys001", "recency": 100},
+            {"pid": 3, "tty": None, "recency": 800},
+            {"pid": 4, "tty": "ttys002", "recency": 200},
+        ]
+        self.assertEqual(self.order(agents), [4, 2, 1, 3])
+
+    def test_recency_still_orders_within_each_group(self):
+        agents = [
+            {"pid": 1, "tty": "ttys001", "recency": 100},
+            {"pid": 2, "tty": "ttys002", "recency": 300},
+            {"pid": 3, "tty": "ttys003", "recency": 200},
+        ]
+        self.assertEqual(self.order(agents), [2, 3, 1])
+
+
+class RemoteControlTranscriptIdTests(unittest.TestCase):
+    def test_two_transcripts_have_different_ids(self):
+        with tempfile.NamedTemporaryFile(suffix=".jsonl") as first, \
+             tempfile.NamedTemporaryFile(suffix=".jsonl") as second:
+            a = toki_remote.transcript_id({"session": first.name})
+            b = toki_remote.transcript_id({"session": second.name})
+            self.assertNotEqual(a, b)
+
+    def test_id_is_stable_while_the_file_grows(self):
+        # The point of using the inode: /clear has to be detectable even when the new transcript
+        # overtakes the old offset between polls, which size comparisons miss.
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+            before = toki_remote.transcript_id({"session": transcript.name})
+            transcript.write("x" * 4096)
+            transcript.flush()
+            self.assertEqual(toki_remote.transcript_id({"session": transcript.name}), before)
+
+    def test_an_id_survives_a_session_that_is_not_a_file(self):
+        # OpenCode's "session" is a database id, not a path, and already identifies itself.
+        self.assertEqual(toki_remote.transcript_id({"session": "ses_abc123"}), "ses_abc123")
+
+    def test_no_agent_and_no_session_have_no_id(self):
+        self.assertEqual(toki_remote.transcript_id(None), "")
+        self.assertEqual(toki_remote.transcript_id({"session": None}), "")
+
+
+class RemoteControlDisplayPathTests(unittest.TestCase):
+    def test_home_is_collapsed_to_a_tilde(self):
+        with mock.patch.object(toki_remote, "HOME", "/Users/someone"):
+            self.assertEqual(toki_remote.display_path("/Users/someone/Git/toki"), "~/Git/toki")
+            self.assertEqual(toki_remote.display_path("/Users/someone"), "~")
+
+    def test_path_outside_home_is_left_alone(self):
+        with mock.patch.object(toki_remote, "HOME", "/Users/someone"):
+            self.assertEqual(toki_remote.display_path("/opt/work/api"), "/opt/work/api")
+
+    def test_a_sibling_home_is_not_mistaken_for_yours(self):
+        # "/Users/someone2" starts with "/Users/someone" but is a different account's folder.
+        with mock.patch.object(toki_remote, "HOME", "/Users/someone"):
+            self.assertEqual(toki_remote.display_path("/Users/someone2/Git"), "/Users/someone2/Git")
+
+    def test_an_agent_with_no_folder_has_no_path(self):
+        self.assertEqual(toki_remote.display_path(None), "")
+        self.assertEqual(toki_remote.display_path(""), "")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -111,24 +111,34 @@ header{flex:none;background:color-mix(in srgb,var(--bg) 80%,transparent);backdro
 h1{font-size:16px;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
 .hdr-top{display:flex;align-items:center;gap:10px}
 .hdr-top h1{flex:1;min-width:0}
-#privacytoggle{flex:none;display:inline-flex;align-items:center;justify-content:center;
+#privacytoggle,.homebtn{flex:none;display:inline-flex;align-items:center;justify-content:center;
   width:36px;height:36px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);color:var(--text-2)}
-#privacytoggle:not(:disabled):hover{color:var(--text);border-color:var(--line-strong)}
+#privacytoggle:not(:disabled):hover,.homebtn:not(:disabled):hover{color:var(--text);border-color:var(--line-strong)}
 #privacytoggle[aria-pressed="true"]{background:var(--accent-surface);border-color:var(--accent-line);color:#dce7f5}
-#privacytoggle svg{width:18px;height:18px}
+#privacytoggle svg,.homebtn svg{width:18px;height:18px}
+/* The verify screen is where a wedged connection strands you, and .locked hides the header, so the
+   pairing overlay carries its own copy of the same control. */
+#pairhome{position:absolute;top:calc(16px + env(safe-area-inset-top));left:16px;z-index:16}
 .eye-off{display:none}
 body.privacy .eye-open{display:none}
 body.privacy .eye-off{display:inline}
 #dd{position:relative;margin-top:10px}
 #ddbtn{width:100%;display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:var(--r-sm);
        background:var(--surface-2);color:var(--text);border:1px solid var(--line);font-size:15px;text-align:left}
-#dd .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dd .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;
+       overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dd .tl,#dd .tp{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dd .tp{color:var(--text-3);font-size:11px;font-family:ui-monospace,monospace}
 #dd .caret{color:var(--text-3);flex:none}
 #dd .dot{color:var(--danger)}
 #ddlist{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:5;
         background:var(--surface-1);border:1px solid var(--line-strong);border-radius:var(--r);
         overflow-y:auto;max-height:60vh;box-shadow:0 12px 32px #0009}
 #dd.open #ddlist{display:block}
+.ddgroup{padding:8px 10px 6px;background:var(--surface-2);color:var(--text-3);
+         font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+         border-bottom:1px solid var(--line)}
+.ddgroup:not(:first-child){border-top:1px solid var(--line-strong)}
 .dditem{display:flex;align-items:center;gap:8px;padding:11px 10px;cursor:pointer}
 .dditem:not(:last-child){border-bottom:1px solid var(--line)}
 .dditem:hover,.dditem.sel{background:var(--surface-3)}
@@ -212,6 +222,11 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
             box-shadow:0 1px 0 #ffffff40 inset,0 3px 10px #0d2a4d55;font-size:15px;font-weight:650;
             display:flex;align-items:center;justify-content:center;gap:6px}
 .row button svg{width:22px;height:22px;fill:currentColor}
+/* Secondary next to Send, and unmistakably a warning once armed: the second tap wipes context. */
+#clear{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
+       box-shadow:0 1px 0 #ffffff0d inset}
+#clear svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#clear.armed{background:var(--danger-surface);border-color:var(--danger-line);color:#eda0a0}
 .composer-hint{margin-top:5px;color:var(--text-3);font-size:10px;text-align:right}
 #status{font-size:12px;color:var(--text-2);margin-top:3px;min-height:18px;
         transition:color .15s ease}
