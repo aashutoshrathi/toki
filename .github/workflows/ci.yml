@@ -22,3 +22,7 @@ jobs:
         run: swift build
       - name: Test
         run: swift test
+      - name: Test companion server
+        run: python3 -m unittest discover -s Tests -p 'test_*.py'
+      - name: Test companion app
+        run: for test in Tests/test_*.js; do node "$test"; done
