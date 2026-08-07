@@ -1,21 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- The companion app's agent picker now shows the folder each agent is working in, under its title, with your home folder written as `~`. Several agents often carry the same title (or none worth reading), and the folder is what tells them apart. The eye toggle masks the folder along with the name.
-- A **Clear** button beside Send in the companion app sends `/clear` to the agent, so you can drop a finished conversation and free up its context from your phone. Clearing can't be undone and the button sits next to Send, so the first tap arms it and a second tap within five seconds does it.
-
-### Fixed
-
-- The companion app no longer shows a stale conversation after an agent starts a new session. It tracked its place in a transcript by byte offset and only noticed a switch when the new transcript was shorter than that offset, so a session that overtook it between two polls left the old messages on screen and skipped the start of the new one. The server now names the transcript an offset belongs to, and the app starts over whenever that name changes.
-- The companion app can no longer strand you on the verify screen. A link pointing at a Tailscale address your phone can't currently reach left the app asking for a six-digit code with no way back, and because the link is remembered on the device and repeated in the address bar, reloading or reopening the app only restored it. A home button is now always on screen (in the header once connected, on the connect screen otherwise) and starts you over on the landing page, where you can scan a fresh QR or type a different host.
-
-### Changed
-
-- The companion app's agent picker now lists every agent you can reply to before the read-only ones, which are grouped at the bottom under a single "Read-only" heading. A busy read-only session (Codex desktop and the like) used to sort to the top on recency and get selected by default, putting a session you can only watch in front of the one waiting on you.
-
 ## 2.5.4
 
 ### Added
@@ -26,6 +10,8 @@
 - The companion app can notify you when an agent needs your input or approval, with a one-tap prompt to turn alerts on. (Notifications fire while the app is open or backgrounded.)
 - The companion app has an eye toggle in the header that masks agent names in the picker, handy for screen recordings.
 - An Edit menu, so text fields across the app support the standard Cut, Copy, Paste, and Select All shortcuts. The menu-bar app previously shipped none, so Cmd+V did nothing.
+- The companion app's agent picker now shows the folder each agent is working in, under its title, with your home folder written as `~`. Several agents often carry the same title (or none worth reading), and the folder is what tells them apart. The eye toggle masks the folder along with the name.
+- A **Clear** button beside Send in the companion app sends `/clear` to the agent, so you can drop a finished conversation and free up its context from your phone. Clearing can't be undone and the button sits next to Send, so the first tap arms it and a second tap within five seconds does it.
 
 ### Changed
 
@@ -34,6 +20,7 @@
 - The companion chat now feels immediate: your message appears the instant you send it (with a subtle typing indicator while the agent replies) instead of waiting for the next poll, and sending refreshes the transcript right away. Answering a question or approving a prompt dismisses it at once, and a message that fails to send can be resent with a tap.
 - The companion app renders an agent's question and its choices more clearly, with a labeled header and numbered options.
 - Debug mode (now seven taps on the version badge) mirrors the diagnostic log live in the in-app debug panel, so agent, usage, and Remote Control events are visible without exporting a report.
+- The companion app's agent picker now lists every agent you can reply to before the read-only ones, which are grouped at the bottom under a single "Read-only" heading. A busy read-only session (Codex desktop and the like) used to sort to the top on recency and get selected by default, putting a session you can only watch in front of the one waiting on you.
 
 ### Fixed
 
@@ -52,6 +39,8 @@
 - Tailscale lookups can no longer wedge the app: each `tailscale` command now times out (and the timeout or failure is logged), so a misbehaving Tailscale binary can't leave the popover stuck.
 - Running Toki from source with `swift run` can now start the Remote Control server and serve its web UI; both the companion script and its assets are located whether they sit in a packaged app or SwiftPM's flattened resource bundle.
 - The "Advanced" row in Remote Control settings now expands when you click anywhere on it, not only the disclosure triangle.
+- The companion app no longer shows a stale conversation after an agent starts a new session. It tracked its place in a transcript by byte offset and only noticed a switch when the new transcript was shorter than that offset, so a session that overtook it between two polls left the old messages on screen and skipped the start of the new one. The server now names the transcript an offset belongs to, and the app starts over whenever that name changes.
+- The companion app can no longer strand you on the verify screen. A link pointing at a Tailscale address your phone can't currently reach left the app asking for a six-digit code with no way back, and because the link is remembered on the device and repeated in the address bar, reloading or reopening the app only restored it. A home button is now always on screen (in the header once connected, on the connect screen otherwise) and starts you over on the landing page, where you can scan a fresh QR or type a different host.
 
 ## 2.5.3 - 2026-07-28
 
