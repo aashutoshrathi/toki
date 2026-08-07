@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away.
+  <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away, and lets you answer a waiting agent from your phone.
 </p>
 
 | Menu bar | Widget |
@@ -33,6 +33,8 @@ Toki is built for people who jump between Claude Code, Codex, Copilot, Gemini, G
 It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
 
 Toki stays local. Credentials are read from your Mac, your configured commands, or provider auth files. The app does not run a cloud service.
+
+When an agent is waiting on you and you are not at your desk, Remote Control lets your phone answer it over your own tailnet, typing into the terminal the agent is already running in.
 
 ## Install
 
@@ -72,6 +74,8 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 **Agents waiting on you.** A session parked on a permission prompt or a question is called out with a red dot and the question itself — on the card, the tab, and the menu bar — so you don't discover it twenty minutes later.
 
+**Remote Control from your phone, over Tailscale.** Follow a running agent's transcript from another room and answer it: send a message, approve or reject a permission prompt, pick an option, or clear the session. Replies are delivered to the agent's own TTY — `tmux send-keys` where there is a pane, iTerm2 by tty otherwise, Terminal as a fallback — so they land in the session already running rather than starting a new one, and the agent cannot tell the difference. Tailscale is the recommended route and keeps this off the public internet entirely; the host setting decides which networks the server will answer at all. Off by default. See [Remote Control](docs/remote-control.md).
+
 **Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed.
 
 **Insights and notifications.** An on-device Apple Intelligence summary on macOS 26+ (deterministic recommendation elsewhere), low-quota and session warnings with cooldowns and DND, and a session mode for tracking burn during a focused run. The insight card can be hidden from Settings.
@@ -88,14 +92,16 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 |---|---|
 | [Configuration](docs/configuration.md) | Config file, accounts, labels, refresh cadence, state |
 | [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
-| [Features](docs/features.md) | Agents, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
-| [Remote Control](docs/remote-control.md) | Replying to agents from your phone: setup, how the three gates work, gotchas |
+| [Features](docs/features.md) | Agents, Remote Control, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
+| [Remote Control](docs/remote-control.md) | Answering agents from your phone over Tailscale: setup, the three gates, paired devices, gotchas |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
 | [Release signing](docs/release-signing.md) | Apple secrets for signing and notarizing release builds |
 
 ## Privacy
 
 Toki stays local. Credentials are read from your Mac's Keychain or the provider auth files already on it; there is no cloud service and no telemetry. Session history is read for token counts, costs, timestamps, and titles — never message content. Diagnostics contain error categories and status codes only.
+
+Remote Control is the one feature that reads message content, because showing you a transcript is the point of it. It is off by default. When it is on, the transcript travels from your Mac straight to your phone and nowhere else: there is no relay and no account. If you use the hosted companion interface, that host serves the page only and never receives your agent data — and serving the page from your own Mac instead removes it from the picture entirely, which is why that is the recommended setting.
 
 Backwards-compatible fallbacks for the old TokenBar config paths are still honoured.
 
