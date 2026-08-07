@@ -99,7 +99,8 @@ function dispPath(p) {
 // rc.toki.aashutosh.dev, which updates the moment a release lands while the Mac it talks to
 // updates whenever its owner gets round to it, so the two versions have to meet. Try the header,
 // and on the one status an old server answers with, fall back and remember for the session.
-let legacyTokenTransport = false;
+// null until proven, then "header" or "query" for the rest of the session.
+let tokenTransport = null;
 
 function tokenedRequest(p, o, inQuery) {
   const url = API_BASE + p +
@@ -111,26 +112,58 @@ function tokenedRequest(p, o, inQuery) {
   return fetch(url, opts);
 }
 
-async function api(p, o) {
-  let r = null;
-  if (!legacyTokenTransport) {
-    try {
-      r = await tokenedRequest(p, o, false);
-    } catch (e) {
-      // Not merely a failure to answer. Authorization is not a CORS-safelisted header, so from
-      // the hosted origin this request is preflighted, and a server predating the header does not
-      // list it in Access-Control-Allow-Headers. The browser then blocks the call outright and
-      // there is no response to read a status from -- the fallback has to trigger on the throw,
-      // not on a 403 that never arrives.
-      r = null;
+// Settle the question with a GET, before it can be asked with something that types into a
+// terminal. A server predating the header refuses it two different ways: cross-origin it is
+// preflighted and the browser blocks the call outright, with no response to read a status from;
+// same-origin the request goes through and comes back 403, because the token was never seen.
+// Treat both as a reason to try the query string.
+async function resolveTokenTransport() {
+  if (tokenTransport) return tokenTransport;
+  try {
+    const probe = await tokenedRequest("/api/agents", undefined, false);
+    // Anything other than a refusal means the header was read, whatever else went wrong.
+    if (probe.status != 403) {
+      tokenTransport = "header";
+      return tokenTransport;
     }
+  } catch (blocked) {
+    // Preflight rejected. Nothing to inspect; fall through and try the older shape.
   }
-  if (legacyTokenTransport || r === null || r.status == 403) {
-    const retry = await tokenedRequest(p, o, true);
-    if (retry.ok) legacyTokenTransport = true;
-    // Keep the header attempt's 403 when the query does no better: the token is simply bad.
-    r = r !== null && r.status == 403 && retry.status == 403 ? r : retry;
+  try {
+    const probe = await tokenedRequest("/api/agents", undefined, true);
+    if (probe.ok) {
+      tokenTransport = "query";
+      return tokenTransport;
+    }
+  } catch (unreachable) {
+    // Neither shape got through.
   }
+  // No evidence either way: an expired token refused both ways, or the Mac is unreachable. Latch
+  // nothing, and let the caller's own request produce the real error. Deciding here on a dropped
+  // connection would put the token back in URLs for the rest of the session.
+  return "header";
+}
+
+// The agent and transcript polls both start at once, so share one probe between them rather than
+// asking twice.
+let transportProbe = null;
+
+function tokenTransportOnce() {
+  if (tokenTransport) return Promise.resolve(tokenTransport);
+  if (!transportProbe) {
+    transportProbe = resolveTokenTransport().finally(() => {
+      transportProbe = null;
+    });
+  }
+  return transportProbe;
+}
+
+async function api(p, o) {
+  // Never retry the caller's request. A reply, an approval key and /clear are all delivered to
+  // the terminal before the response is written, so a retry after a lost answer types them a
+  // second time. The probe above is a GET and is the only thing repeated.
+  const transport = await tokenTransportOnce();
+  const r = await tokenedRequest(p, o, transport === "query");
   if (r.status == 403) lockApp();
   if (!r.ok) throw new Error(await r.text());
   return r.json();

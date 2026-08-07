@@ -21,17 +21,20 @@ const appSource = fs.readFileSync(
 
 // Lift the token transport out of the browser file: everything from the fallback flag up to the
 // first function that touches the DOM.
-const start = appSource.indexOf("let legacyTokenTransport");
+const start = appSource.indexOf("let tokenTransport");
 const end = appSource.indexOf("function lockApp");
 assert.ok(start > -1 && end > start, "app.js no longer exposes the token transport as expected");
 const transport = appSource.slice(start, end);
 
 const currentServer = path.join(repo, "Sources", "Toki", "Resources", "toki_remote.py");
 
-// The last released server, read straight out of git so the test tracks whatever shipped rather
-// than a copy that quietly rots. Skipped where that history is unavailable (shallow CI clones).
+// The last server released without the Authorization header, read straight out of git so the
+// test tracks what actually shipped rather than a copy that quietly rots. Pinned to the release
+// tag, not to main: once this branch merges, main is the current server, and pointing at it would
+// leave the test asserting a fallback that correctly no longer happens. Move this when the oldest
+// server still in the wild does. Skipped where the tag is unavailable (shallow CI clones).
 function previousServer() {
-  const ref = process.env.TOKI_PREVIOUS_SERVER_REF || "origin/main";
+  const ref = process.env.TOKI_PREVIOUS_SERVER_REF || "v2.5.4";
   const target = path.join(os.tmpdir(), `toki-prev-server-${process.pid}.py`);
   try {
     const body = execFileSync(
@@ -110,17 +113,32 @@ function credentials(server) {
 // preflights, and a server that does not list it blocks the call with no response to inspect.
 // Wrap fetch in the part of the CORS protocol that matters here.
 const SAFELISTED = new Set(["accept", "accept-language", "content-language", "content-type"]);
+// Content-Type is only safelisted for these values. application/json, which this app posts, is
+// not among them and preflights on its own.
+const SAFELISTED_CONTENT_TYPES = new Set([
+  "application/x-www-form-urlencoded",
+  "multipart/form-data",
+  "text/plain",
+]);
 
-function corsEnforcingFetch(pageOrigin) {
+function isSafelisted(name, value) {
+  if (!SAFELISTED.has(name)) return false;
+  if (name !== "content-type") return true;
+  return SAFELISTED_CONTENT_TYPES.has(String(value).split(";")[0].trim().toLowerCase());
+}
+
+function corsEnforcingFetch(pageOrigin, onRequest) {
   return async (url, options = {}) => {
     const target = new URL(url);
     const headers = Object.assign({}, options.headers);
     const names = Object.keys(headers).map(h => h.toLowerCase());
+    const safelisted = Object.keys(headers).every(h => isSafelisted(h.toLowerCase(), headers[h]));
+    if (onRequest) onRequest((options.method || "GET").toUpperCase(), target.pathname);
 
     if (target.origin !== pageOrigin) {
       const needsPreflight =
         (options.method && !["GET", "HEAD", "POST"].includes(options.method.toUpperCase())) ||
-        names.some(n => !SAFELISTED.has(n));
+        !safelisted;
 
       if (needsPreflight) {
         const preflight = await fetch(url, {
@@ -139,7 +157,7 @@ function corsEnforcingFetch(pageOrigin) {
         const ok =
           preflight.ok &&
           (allowedOrigin === "*" || allowedOrigin === pageOrigin) &&
-          names.every(n => SAFELISTED.has(n) || allowedHeaders.includes(n));
+          names.every(n => isSafelisted(n, headers[n]) || allowedHeaders.includes(n));
         // What the browser surfaces to fetch() when preflight fails: a bare TypeError.
         if (!ok) throw new TypeError("Failed to fetch");
       }
@@ -166,7 +184,7 @@ function pageTransport(apiBase, token, fetchImpl) {
     "TOKEN",
     "fetch",
     "lockApp",
-    `${transport}\nreturn { api, get legacy() { return legacyTokenTransport; } };`
+    `${transport}\nreturn { api, get legacy() { return tokenTransport === "query"; } };`
   );
   const mod = build(apiBase, token, fetchImpl, () => {
     lockedOut = true;
@@ -214,21 +232,76 @@ async function check(name, script, extraArgs, expectFallback, { hosted = false }
   });
 
   const previous = previousServer();
-  if (!previous) {
-    console.log("skip  previous server unavailable (no git history for origin/main)");
-    return;
+  if (previous) {
+    try {
+      // A server from before the header existed reads the query string only. The page must notice
+      // and fall back, or every hosted user on an older Toki is locked out the day rc redeploys.
+      await check("same-origin page, previous server", previous, [], true);
+      // The one that actually bites: cross-origin, the header is preflighted, and a server that
+      // does not allow it makes the browser block the request with no status to branch on.
+      await check("hosted page, previous server", previous, [], true, { hosted: true });
+    } finally {
+      fs.rmSync(previous, { force: true });
+    }
+  } else {
+    console.log("skip  previous server unavailable (no git history for the release tag)");
   }
-  try {
-    // A server from before the header existed reads the query string only. The page must notice
-    // and fall back, or every hosted user on an older Toki is locked out the day rc redeploys.
-    await check("same-origin page, previous server", previous, [], true);
-    // The one that actually bites: cross-origin, the header is preflighted, and a server that
-    // does not allow it makes the browser block the request with no status to branch on.
-    await check("hosted page, previous server", previous, [], true, { hosted: true });
-  } finally {
-    fs.rmSync(previous, { force: true });
-  }
+
+  await checkSendIsNeverRepeated();
 })().catch(err => {
   console.error(err);
   process.exit(1);
 });
+
+// The reason the transport is settled with a GET rather than by retrying whatever was asked for.
+// /api/send delivers to the terminal before it writes a response, so a request replayed after a
+// lost answer types the message, approval key or /clear a second time. Nothing the page sends may
+// reach the server more than once, however the first attempt fails.
+async function checkSendIsNeverRepeated() {
+  const port = await freePort();
+  const server = startServer(currentServer, port, ["--access", "loopback"]);
+  try {
+    const { token, code } = await credentials(server);
+    const apiBase = `http://127.0.0.1:${port}`;
+    const paired = await fetch(`${apiBase}/api/pair?token=${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: HOSTED_ORIGIN },
+      body: JSON.stringify({ code }),
+    }).then(r => r.json());
+
+    const sends = [];
+    const browserFetch = corsEnforcingFetch(HOSTED_ORIGIN, (method, pathname) => {
+      if (pathname === "/api/send") sends.push(method);
+    });
+    // Deliver the send, then destroy the answer: what a connection dropped mid-reply looks like
+    // to the page. The terminal already has the keystrokes; the page never finds out.
+    let dropped = false;
+    const flakyFetch = async (url, options) => {
+      const response = await browserFetch(url, options);
+      if (new URL(url).pathname === "/api/send" && !dropped) {
+        dropped = true;
+        throw new TypeError("Failed to fetch");
+      }
+      return response;
+    };
+
+    const { mod } = pageTransport(apiBase, paired.token, flakyFetch);
+    await mod.api("/api/agents");
+    await mod
+      .api("/api/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pid: 1, text: "hello" }),
+      })
+      .catch(() => {});
+
+    assert.equal(
+      sends.length,
+      1,
+      `a lost response made the page send ${sends.length} times; it must never repeat one`
+    );
+    console.log("ok  a send whose response is lost is not repeated");
+  } finally {
+    server.kill();
+  }
+}
