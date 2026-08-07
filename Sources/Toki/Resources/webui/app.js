@@ -112,11 +112,24 @@ function tokenedRequest(p, o, inQuery) {
 }
 
 async function api(p, o) {
-  let r = await tokenedRequest(p, o, legacyTokenTransport);
-  if (r.status == 403 && !legacyTokenTransport) {
+  let r = null;
+  if (!legacyTokenTransport) {
+    try {
+      r = await tokenedRequest(p, o, false);
+    } catch (e) {
+      // Not merely a failure to answer. Authorization is not a CORS-safelisted header, so from
+      // the hosted origin this request is preflighted, and a server predating the header does not
+      // list it in Access-Control-Allow-Headers. The browser then blocks the call outright and
+      // there is no response to read a status from -- the fallback has to trigger on the throw,
+      // not on a 403 that never arrives.
+      r = null;
+    }
+  }
+  if (legacyTokenTransport || r === null || r.status == 403) {
     const retry = await tokenedRequest(p, o, true);
     if (retry.ok) legacyTokenTransport = true;
-    r = retry;
+    // Keep the header attempt's 403 when the query does no better: the token is simply bad.
+    r = r !== null && r.status == 403 && retry.status == 403 ? r : retry;
   }
   if (r.status == 403) lockApp();
   if (!r.ok) throw new Error(await r.text());

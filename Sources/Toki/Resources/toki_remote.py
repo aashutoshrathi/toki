@@ -1167,7 +1167,11 @@ AUTH_LOCK = threading.Lock()
 # bind() cannot cover both. So reachability is decided per connection instead, against the Host
 # setting the user actually chose. Without this, picking "Localhost" or "Tailscale" in Toki still
 # left the port open to every machine on whatever Wi-Fi the Mac happened to join.
-ACCESS_POLICIES = ("loopback", "tailnet", "private", "any")
+#
+# "loopback" and "tunnel" both describe a server only this Mac dials, but they are not the same
+# promise. Localhost means this Mac and nothing else, so a proxy relaying someone in is a
+# violation. Cloudflare Tunnel means exactly that relay, chosen deliberately.
+ACCESS_POLICIES = ("loopback", "tunnel", "tailnet", "private", "any")
 ACCESS_POLICY = "private"
 # Extra Host header values to trust, for the Custom host mode. Loopback, literal IPs, .ts.net and
 # .trycloudflare.com are always accepted.
@@ -1198,7 +1202,7 @@ def peer_allowed(ip, policy=None):
     # serve` and `cloudflared`, which both dial 127.0.0.1.
     if addr.is_loopback:
         return True
-    if policy == "loopback":
+    if policy in ("loopback", "tunnel"):
         return False
     if policy == "tailnet":
         return addr in TAILNET_NET
@@ -1215,13 +1219,14 @@ def request_allowed(peer, forwarded_for, policy=None):
     the same policy.
 
     Only from a loopback peer: a direct caller writes its own headers, and believing one would let
-    it claim any address it likes. The Cloudflare Tunnel mode is deliberately exempt, because
-    fronting a public address is the entire point of choosing it.
+    it claim any address it likes. The Cloudflare Tunnel mode is exempt, because fronting a public
+    address is the entire point of choosing it; Localhost is not, because "this Mac only" has to
+    mean that even when something on this Mac is relaying for someone else.
     """
     policy = ACCESS_POLICY if policy is None else policy
     if not peer_allowed(peer, policy):
         return False
-    if policy in ("any", "loopback"):
+    if policy in ("any", "tunnel"):
         return True
     origin_ip, proxied = client_ip(peer, forwarded_for)
     if proxied or origin_ip == peer:
@@ -1463,9 +1468,16 @@ class Handler(BaseHTTPRequestHandler):
         now = time.time()
 
         with AUTH_LOCK:
-            # Drop every bucket that has aged out, not just this client's. Keyed by address, the
-            # table would otherwise keep a row per peer that ever guessed wrong -- unbounded on
-            # the tunnel path, where the address can be anyone on the internet.
+            # Drop every bucket that has aged out, not just this client's, so the table cannot
+            # keep a row for every address that ever guessed wrong.
+            #
+            # The key is the direct peer, which behind `tailscale serve` or `cloudflared` is this
+            # Mac for every phone, so they share one bucket and can lock each other out for a
+            # minute. Keying on the forwarded address instead would separate them, and is wrong:
+            # a proxy that appends to an existing header leaves the first entry under the
+            # caller's control, and a key an attacker chooses is a key they can rotate for
+            # unlimited guesses at a six-digit code. A shared bucket is a denial of service; a
+            # spoofable one is a brute force.
             for address in [a for a, tries in PAIRING_FAILURES.items()
                             if not any(t > now - PAIRING_WINDOW for t in tries)]:
                 del PAIRING_FAILURES[address]

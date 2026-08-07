@@ -335,7 +335,9 @@ final class RemoteControlServer: ObservableObject {
             return ("127.0.0.1", "loopback")
         case .tunnel:
             // cloudflared runs on this Mac and dials 127.0.0.1, so nothing else needs the port.
-            return ("127.0.0.1", "loopback")
+            // Its own policy rather than loopback's: this is the one mode where a relay carrying
+            // someone in from the public internet is the intended behaviour, not a breach of it.
+            return ("127.0.0.1", "tunnel")
         case .tailscale:
             return ("0.0.0.0", "tailnet")
         case .localNetwork:

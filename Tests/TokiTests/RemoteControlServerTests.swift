@@ -80,7 +80,10 @@ final class RemoteControlServerTests: XCTestCase {
         // needs both loopback (for `tailscale serve`) and the 100.x address (for a phone).
         XCTAssertEqual(RemoteControlServer.reach(for: .localhost).access, "loopback")
         XCTAssertEqual(RemoteControlServer.reach(for: .localhost).bind, "127.0.0.1")
-        XCTAssertEqual(RemoteControlServer.reach(for: .tunnel).access, "loopback")
+        // The tunnel only ever sees loopback peers too, but it needs its own policy: it is the
+        // one mode where a relay carrying someone in from the internet is the point, and
+        // Localhost must keep meaning this Mac even when something here relays for a stranger.
+        XCTAssertEqual(RemoteControlServer.reach(for: .tunnel).access, "tunnel")
         XCTAssertEqual(RemoteControlServer.reach(for: .tunnel).bind, "127.0.0.1")
         XCTAssertEqual(RemoteControlServer.reach(for: .tailscale).access, "tailnet")
         XCTAssertEqual(RemoteControlServer.reach(for: .localNetwork).access, "private")

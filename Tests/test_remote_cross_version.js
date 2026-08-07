@@ -104,8 +104,62 @@ function credentials(server) {
   });
 }
 
+// Node's fetch does not enforce CORS, so on its own it will happily complete a request a browser
+// would have refused to send. The hosted app is cross-origin by definition, and the difference is
+// exactly where this went wrong once: Authorization is not a safelisted header, so the browser
+// preflights, and a server that does not list it blocks the call with no response to inspect.
+// Wrap fetch in the part of the CORS protocol that matters here.
+const SAFELISTED = new Set(["accept", "accept-language", "content-language", "content-type"]);
+
+function corsEnforcingFetch(pageOrigin) {
+  return async (url, options = {}) => {
+    const target = new URL(url);
+    const headers = Object.assign({}, options.headers);
+    const names = Object.keys(headers).map(h => h.toLowerCase());
+
+    if (target.origin !== pageOrigin) {
+      const needsPreflight =
+        (options.method && !["GET", "HEAD", "POST"].includes(options.method.toUpperCase())) ||
+        names.some(n => !SAFELISTED.has(n));
+
+      if (needsPreflight) {
+        const preflight = await fetch(url, {
+          method: "OPTIONS",
+          headers: {
+            Origin: pageOrigin,
+            "Access-Control-Request-Method": (options.method || "GET").toUpperCase(),
+            "Access-Control-Request-Headers": names.join(", "),
+          },
+        });
+        const allowedOrigin = preflight.headers.get("access-control-allow-origin");
+        const allowedHeaders = (preflight.headers.get("access-control-allow-headers") || "")
+          .split(",")
+          .map(h => h.trim().toLowerCase())
+          .filter(Boolean);
+        const ok =
+          preflight.ok &&
+          (allowedOrigin === "*" || allowedOrigin === pageOrigin) &&
+          names.every(n => SAFELISTED.has(n) || allowedHeaders.includes(n));
+        // What the browser surfaces to fetch() when preflight fails: a bare TypeError.
+        if (!ok) throw new TypeError("Failed to fetch");
+      }
+
+      const response = await fetch(url, {
+        ...options,
+        headers: Object.assign({}, headers, { Origin: pageOrigin }),
+      });
+      const allowedOrigin = response.headers.get("access-control-allow-origin");
+      if (allowedOrigin !== "*" && allowedOrigin !== pageOrigin) {
+        throw new TypeError("Failed to fetch");
+      }
+      return response;
+    }
+    return fetch(url, options);
+  };
+}
+
 // Instantiate the page's transport with the globals it expects, and report whether it fell back.
-function pageTransport(apiBase, token) {
+function pageTransport(apiBase, token, fetchImpl) {
   let lockedOut = false;
   const build = new Function(
     "API_BASE",
@@ -114,26 +168,32 @@ function pageTransport(apiBase, token) {
     "lockApp",
     `${transport}\nreturn { api, get legacy() { return legacyTokenTransport; } };`
   );
-  const mod = build(apiBase, token, fetch, () => {
+  const mod = build(apiBase, token, fetchImpl, () => {
     lockedOut = true;
   });
   return { mod, lockedOut: () => lockedOut };
 }
 
-async function check(name, script, extraArgs, expectFallback) {
+// The hosted origin the server is built to allow. Requests from it are genuinely cross-origin.
+const HOSTED_ORIGIN = "https://rc.toki.aashutosh.dev";
+
+async function check(name, script, extraArgs, expectFallback, { hosted = false } = {}) {
   const port = await freePort();
   const server = startServer(script, port, extraArgs);
   try {
     const { token, code } = await credentials(server);
     const apiBase = `http://127.0.0.1:${port}`;
+    // Pairing sends the link token in the query string on every version, so it is not the part
+    // that can break; get a session the plain way and test what the page does with it.
     const paired = await fetch(`${apiBase}/api/pair?token=${token}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Origin: HOSTED_ORIGIN },
       body: JSON.stringify({ code }),
     }).then(r => r.json());
     assert.ok(paired.token, `${name}: pairing did not return a session token`);
 
-    const { mod, lockedOut } = pageTransport(apiBase, paired.token);
+    const fetchImpl = hosted ? corsEnforcingFetch(HOSTED_ORIGIN) : fetch;
+    const { mod, lockedOut } = pageTransport(apiBase, paired.token, fetchImpl);
     const agents = await mod.api("/api/agents");
 
     assert.ok(Array.isArray(agents), `${name}: the page could not read agents`);
@@ -148,7 +208,10 @@ async function check(name, script, extraArgs, expectFallback) {
 (async () => {
   // Against the server it ships with, the token must stay in the header: the whole point is
   // keeping it out of URLs, and a needless fallback would put it back.
-  await check("current page against the current server", currentServer, ["--access", "loopback"], false);
+  await check("same-origin page, current server", currentServer, ["--access", "loopback"], false);
+  await check("hosted page, current server", currentServer, ["--access", "loopback"], false, {
+    hosted: true,
+  });
 
   const previous = previousServer();
   if (!previous) {
@@ -158,7 +221,10 @@ async function check(name, script, extraArgs, expectFallback) {
   try {
     // A server from before the header existed reads the query string only. The page must notice
     // and fall back, or every hosted user on an older Toki is locked out the day rc redeploys.
-    await check("current page against the previous server", previous, [], true);
+    await check("same-origin page, previous server", previous, [], true);
+    // The one that actually bites: cross-origin, the header is preflighted, and a server that
+    // does not allow it makes the browser block the request with no status to branch on.
+    await check("hosted page, previous server", previous, [], true, { hosted: true });
   } finally {
     fs.rmSync(previous, { force: true });
   }

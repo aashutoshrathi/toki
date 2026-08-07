@@ -139,9 +139,18 @@ class RemoteControlAccessPolicyTests(unittest.TestCase):
         self.assertTrue(toki_remote.request_allowed("127.0.0.1", "", "tailnet"))
 
     def test_the_tunnel_mode_is_deliberately_exempt(self):
-        # Fronting a public address is the whole point of choosing Cloudflare Tunnel, which runs
-        # on this Mac under the loopback policy.
-        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "loopback"))
+        # Fronting a public address is the whole point of choosing Cloudflare Tunnel.
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "tunnel"))
+
+    def test_localhost_means_this_mac_even_through_a_relay(self):
+        # Localhost and the tunnel both only ever see loopback peers, but they promise different
+        # things. Something on this Mac relaying a stranger in breaks "this Mac only".
+        self.assertFalse(toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "loopback"))
+        self.assertFalse(toki_remote.request_allowed("127.0.0.1", "192.168.1.20", "loopback"))
+        self.assertFalse(toki_remote.request_allowed("127.0.0.1", "100.101.102.103", "loopback"))
+        # A browser on this Mac, relayed or not, is still this Mac.
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "127.0.0.1", "loopback"))
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", None, "loopback"))
 
     def test_a_direct_caller_cannot_talk_its_way_in_with_a_header(self):
         # Believing a non-loopback peer's own header would let it claim any address it likes.
