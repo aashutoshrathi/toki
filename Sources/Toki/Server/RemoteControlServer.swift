@@ -24,7 +24,7 @@ final class RemoteControlServer: ObservableObject {
             case .localhost: return "Localhost"
             case .localNetwork: return "Local network"
             case .tailscale: return "Tailscale (Recommended)"
-            case .tunnel: return "Cloudflare Tunnel"
+            case .tunnel: return "Cloudflare Tunnel (public)"
             case .custom: return "Custom"
             }
         }
@@ -40,10 +40,10 @@ final class RemoteControlServer: ObservableObject {
 
         var label: String {
             switch self {
-            case .sameHost: return "Same as host"
+            case .sameHost: return "Same as host (Recommended)"
             case .localhost: return "Local"
             case .localNetwork: return "Local network"
-            case .hosted: return "Toki RC (Recommended)"
+            case .hosted: return "Toki RC (hosted)"
             }
         }
     }
@@ -66,7 +66,37 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
+    // A phone that has passed pairing. Toki learns about these over the server's stdout rather
+    // than an HTTP endpoint, so one paired phone can neither enumerate the others nor revoke them.
+    struct PairedDevice: Identifiable, Equatable, Decodable {
+        let id: String
+        let name: String
+        let ip: String
+        // True when `ip` is the proxy that fronted the request rather than the device itself,
+        // which is what `tailscale serve` and `cloudflared` look like from here.
+        let proxied: Bool
+        let paired: Date
+        let seen: Date
+        let expires: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case id, name, ip, proxied, paired, seen, expires
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            ip = try container.decode(String.self, forKey: .ip)
+            proxied = try container.decode(Bool.self, forKey: .proxied)
+            paired = Date(timeIntervalSince1970: try container.decode(Double.self, forKey: .paired))
+            seen = Date(timeIntervalSince1970: try container.decode(Double.self, forKey: .seen))
+            expires = Date(timeIntervalSince1970: try container.decode(Double.self, forKey: .expires))
+        }
+    }
+
     @Published private(set) var isRunning = false
+    @Published private(set) var pairedDevices: [PairedDevice] = []
     @Published private(set) var token: String?
     @Published private(set) var pairingCode: String?
     @Published private(set) var lastError: String?
@@ -96,8 +126,12 @@ final class RemoteControlServer: ObservableObject {
             if oldValue == .tunnel {
                 stopTunnel()
             }
-            if hostMode == .tunnel, isRunning {
-                startTunnel()
+            // The host mode decides which networks the server answers, and that is fixed when the
+            // process starts. Restarting is what makes a narrowed setting take effect; leaving the
+            // old process up would keep serving the wider one it was launched with. restart()
+            // brings the tunnel up again too, when that is the new mode.
+            if isRunning {
+                restart()
             }
         }
     }
@@ -152,13 +186,16 @@ final class RemoteControlServer: ObservableObject {
         )
     }
 
+    // Ordered by how much they expose. A Cloudflare quick tunnel puts this Mac behind an address
+    // anyone on the internet can reach, so it sits last rather than first: it is the fallback for
+    // someone who cannot run Tailscale, not the shape to reach for.
     static func orderedHostModes(
         tailscaleAvailable: Bool,
         cloudflaredAvailable: Bool = false
     ) -> [HostMode] {
         var modes: [HostMode] = [.localNetwork, .localhost, .custom]
-        if cloudflaredAvailable { modes.insert(.tunnel, at: 0) }
         if tailscaleAvailable { modes.insert(.tailscale, at: 0) }
+        if cloudflaredAvailable { modes.append(.tunnel) }
         return modes
     }
 
@@ -256,6 +293,23 @@ final class RemoteControlServer: ObservableObject {
         isRunning ? stop() : start()
     }
 
+    /// Relaunch so a changed setting takes effect, without racing the old process for the port.
+    ///
+    /// stop() only sends SIGTERM. Starting straight afterwards can bind port 8765 while the old
+    /// server still holds it, and the replacement exits with EADDRINUSE, which reads to the user
+    /// as Remote Control simply refusing to come back. Wait for the old process to actually go.
+    func restart() {
+        guard let previous = process else {
+            start()
+            return
+        }
+        stop()
+        Task { @MainActor in
+            await Task.detached { previous.waitUntilExit() }.value
+            start()
+        }
+    }
+
     // Bundle.main holds the script in a packaged .app; `swift run` instead drops resources in an
     // SPM bundle beside the executable (same fallback SVGLogoAsset uses), so check both.
     private static func serverScriptURL() -> URL? {
@@ -268,11 +322,48 @@ final class RemoteControlServer: ObservableObject {
         return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
+    // How far the server should be reachable, derived from the Host setting.
+    //
+    // `bind` is only the first gate and cannot express every mode on its own: with Tailscale the
+    // same port has to answer `tailscale serve` over loopback and a phone at the 100.x address,
+    // and one bind() covers neither pair. `access` is the peer check the server applies per
+    // connection, and it is what keeps a port bound to 0.0.0.0 from being open to the coffee-shop
+    // Wi-Fi the Mac also happens to be on.
+    static func reach(for hostMode: HostMode) -> (bind: String, access: String) {
+        switch hostMode {
+        case .localhost:
+            return ("127.0.0.1", "loopback")
+        case .tunnel:
+            // cloudflared runs on this Mac and dials 127.0.0.1, so nothing else needs the port.
+            // Its own policy rather than loopback's: this is the one mode where a relay carrying
+            // someone in from the public internet is the intended behaviour, not a breach of it.
+            return ("127.0.0.1", "tunnel")
+        case .tailscale:
+            return ("0.0.0.0", "tailnet")
+        case .localNetwork:
+            return ("0.0.0.0", "private")
+        case .custom:
+            // The user named a host we can't classify, so we can't narrow this for them.
+            return ("0.0.0.0", "any")
+        }
+    }
+
+    // Extra Host header values to answer to. Everything Toki hands out itself (loopback, literal
+    // IPs, .ts.net, .trycloudflare.com) the server already accepts; only a custom host is unknown
+    // to it, and it has to be named or the anti-rebinding check would reject the user's own link.
+    static func allowedHostArguments(for hostMode: HostMode, customHost: String) -> [String] {
+        guard hostMode == .custom else { return [] }
+        let trimmed = customHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return ["--allow-host", trimmed]
+    }
+
     func start() {
         guard !isRunning else { return }
         lastError = nil
         token = nil
         pairingCode = nil
+        pairedDevices = []
         outputBuffer = ""
 
         guard let script = Self.serverScriptURL() else {
@@ -280,15 +371,18 @@ final class RemoteControlServer: ObservableObject {
             return
         }
 
+        let reach = Self.reach(for: hostMode)
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = [
             "python3", "-u", script.path,
             "--port", "\(port)",
+            "--bind", reach.bind,
+            "--access", reach.access,
             "--session-ttl", "\(sessionLifetime.rawValue)",
             "--agent-snapshot-stdin",
             "--no-qr"
-        ]
+        ] + Self.allowedHostArguments(for: hostMode, customHost: customHost)
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONUNBUFFERED"] = "1"
         task.environment = environment
@@ -334,6 +428,7 @@ final class RemoteControlServer: ObservableObject {
         isRunning = false
         token = nil
         pairingCode = nil
+        pairedDevices = []
         outputBuffer = ""
     }
 
@@ -387,7 +482,33 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
+    nonisolated static func parseDeviceLine(_ text: String) -> [PairedDevice]? {
+        guard text.hasPrefix("devices=") else { return nil }
+        let payload = Data(text.dropFirst("devices=".count).utf8)
+        struct Envelope: Decodable { let devices: [PairedDevice] }
+        return try? JSONDecoder().decode(Envelope.self, from: payload).devices
+    }
+
+    /// End one device's session. Its next request fails auth and the phone returns to pairing.
+    func revoke(_ device: PairedDevice) {
+        guard isRunning, let inputPipe else { return }
+        guard
+            let data = try? JSONSerialization.data(withJSONObject: ["revoke": device.id]),
+            var line = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        line.append("\n")
+        try? inputPipe.fileHandleForWriting.write(contentsOf: Data(line.utf8))
+        // Drop it locally too, so the row disappears on the click rather than on the next publish.
+        pairedDevices.removeAll { $0.id == device.id }
+    }
+
     private func parseOutputLine(_ text: String) {
+        if let devices = Self.parseDeviceLine(text) {
+            pairedDevices = devices
+            return
+        }
         if token == nil, let range = text.range(of: "token=") {
             let value = text[range.upperBound...].prefix {
                 $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-"
@@ -408,6 +529,7 @@ final class RemoteControlServer: ObservableObject {
         isRunning = false
         token = nil
         pairingCode = nil
+        pairedDevices = []
         outputBuffer = ""
         if status != 0 {
             lastError = "The remote control server stopped (exit code \(status))."

@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.6.0 - 2026-08-08
+
+### Security
+
+- **The Remote Control host setting now decides who can reach the server, not just what the Connect link says.** The companion server listened on every network interface regardless of the host you picked, so choosing **Localhost** or **Tailscale** still left its port open to whatever Wi-Fi the Mac had joined; only the link token stood in the way. Each host mode now carries an access policy the server enforces on every connection: **Localhost** and **Cloudflare Tunnel** answer this Mac only, **Tailscale** answers your tailnet, **Local network** answers your LAN and tailnet. Changing the host restarts the server so a narrowed setting takes effect immediately, which also ends any paired sessions.
+- The companion server answers only to the addresses Toki hands out, so a hostname someone else controls cannot be pointed at your Mac and treated as same-origin by a browser. A **Custom** host is trusted once you name it.
+- Replies and pairing attempts are rejected unless they come from the companion app itself or a non-browser client, closing the cross-origin POST that CORS preflight does not cover.
+- Session tokens travel in an `Authorization` header instead of the URL, keeping them out of your phone's history and out of the request logs of anything between the phone and the Mac (Cloudflare's, on the tunnel path). The companion app also clears the token from the address bar once it has been stored.
+- **A proxy cannot smuggle the public internet past the host setting.** `tailscale serve` relays from this Mac, so its requests arrive looking local. Tailscale **Funnel**, or any other reverse proxy pointed at the port, looks identical. Toki now applies the host setting to the address the proxy says it is relaying for, so a public request is refused under **Tailscale** or **Localhost** instead of admitted for having arrived over loopback. **Cloudflare Tunnel** is the one exception, because relaying the internet to your Mac is what that option is for. Only a proxy on this Mac is believed; a direct caller cannot claim an address with a header.
+- A single reply is capped well below the request-body limit, so one call can no longer push a quarter-megabyte of keystrokes into a terminal. Sessions and the failed-pairing table are capped too, and a malformed `pid` or `offset` no longer drops the connection mid-poll.
+
+### Added
+
+- **Paired devices, with per-device revoke.** Settings now lists every phone currently holding a Remote Control session, showing the name its browser reports, the random ID Toki assigned it at pairing, where it connected from, and when it was last seen. **Revoke** ends that one session immediately and leaves your other devices alone; previously the only way to cut off a device was stopping the server on all of them. The list travels over Toki's private pipe to its server, never over HTTP, so a paired phone cannot enumerate your other devices or revoke them. Where a request came through `tailscale serve` or `cloudflared` the address reads "via proxy" rather than claiming an address Toki cannot actually know.
+- A guide covering Remote Control setup, the three gates a phone passes to connect, what each host option exposes, and the gotchas worth knowing. An info button beside the Remote Control heading in Settings opens it.
+
+### Changed
+
+- **Toki now recommends the options with no third party in them.** Serving the companion app from your own Mac ("Same as host") is the recommended App choice rather than the hosted `rc.toki.aashutosh.dev` interface, which is now labelled "Toki RC (hosted)". The hosted page never receives your agent data, but it is still code loaded from a web server and handed your connection token, and serving it from your Mac removes that exposure instead of mitigating it.
+- **Cloudflare Tunnel is presented as the last resort it is.** It is labelled "public", offered last in the Host list instead of first, and Toki warns while it is selected. A quick tunnel puts your Mac behind an address anyone on the internet can reach; Tailscale keeps it off the public internet entirely and is recommended everywhere the choice comes up.
+
+### Fixed
+
+- The Remote Control server no longer stalls on startup behind a reverse DNS lookup. Python's HTTP server resolves the address it just bound before serving anything, which on a network whose DNS does not answer (a captive portal, a hotel) left Toki with a server that had launched and gone quiet, showing no Connect link and no error. Nothing used the resolved name.
+- Changing the Remote Control host while the server is running restarts it reliably. The replacement used to race the outgoing process for the port and could exit immediately, leaving Remote Control off. The custom host field is now fixed while the server runs, matching the session lifetime, since the running server is told which host to answer to when it launches.
+- A multi-line reply sent from the companion app reaches agents running in iTerm2 and Terminal. The newline broke the AppleScript that delivers it, so the message was silently lost; agents in tmux were unaffected.
+
 ## 2.5.4 - 2026-08-07
 
 ### Added

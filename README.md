@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 2.5.4" src="https://img.shields.io/badge/version-2.5.4-2f80ed">
+  <img alt="Version 2.6.0" src="https://img.shields.io/badge/version-2.6.0-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -89,6 +89,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 | [Configuration](docs/configuration.md) | Config file, accounts, labels, refresh cadence, state |
 | [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
 | [Features](docs/features.md) | Agents, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
+| [Remote Control](docs/remote-control.md) | Replying to agents from your phone: setup, how the three gates work, gotchas |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
 | [Release signing](docs/release-signing.md) | Apple secrets for signing and notarizing release builds |
 

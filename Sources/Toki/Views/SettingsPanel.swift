@@ -527,6 +527,15 @@ struct SettingsPanel: View {
                     title: "Remote Control Server",
                     subtitle: "Run a local server to check on and reply to your agents from your phone."
                 )
+                Link(destination: remoteControlGuideURL) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("How Remote Control works, and what to watch out for")
+                .accessibilityLabel("Remote Control guide")
+                .pointerOnHover()
                 Spacer(minLength: 8)
                 Toggle("", isOn: Binding(
                     get: { remoteServer.isRunning },
@@ -549,7 +558,7 @@ struct SettingsPanel: View {
 
             Text(reachBinding.wrappedValue == .network
                 ? "Your phone connects over Wi-Fi on the same network. No setup."
-                : "Reach this Mac from any network over HTTPS via Tailscale or a Cloudflare tunnel.")
+                : "Reach this Mac from any network over HTTPS. Tailscale is recommended: it stays off the public internet.")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -588,9 +597,16 @@ struct SettingsPanel: View {
                             }
                         }
                         if remoteServer.hostMode == .custom {
+                            // The server is told which custom host to answer to when it launches,
+                            // so editing this while running would hand out a Connect link for a
+                            // name the running server rejects.
                             TextField("host or IP", text: $remoteServer.customHost)
                                 .textFieldStyle(.roundedBorder)
                                 .controlSize(.small)
+                                .disabled(remoteServer.isRunning)
+                                .help(remoteServer.isRunning
+                                    ? "Stop Remote Control to change the custom host"
+                                    : "The host your phone will use to reach this Mac")
                         }
                         Spacer(minLength: 0)
                     }
@@ -608,7 +624,7 @@ struct SettingsPanel: View {
                                 .textFieldStyle(.roundedBorder)
                                 .controlSize(.small)
                                 .autocorrectionDisabled()
-                            Text("Enter your Mac's Tailscale name to build a Connect link; pick App -> Toki RC for an instant connect.")
+                            Text("Enter your Mac's Tailscale name to build a Connect link.")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -691,12 +707,20 @@ struct SettingsPanel: View {
                 .padding(.horizontal, 4)
             }
 
+            pairedDevicesSection
+
+            if remoteServer.hostMode == .tunnel {
+                exposureNote(
+                    "A quick tunnel puts this Mac behind an address anyone on the internet can reach. Your link and code still gate it, but Tailscale keeps it off the public internet entirely.",
+                    level: .warning
+                )
+            }
+
             if remoteServer.companionAppMode == .hosted {
-                Text("Toki RC only serves the interface. Agent data stays on this Mac and travels directly over your tailnet.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
+                exposureNote(
+                    "Toki RC only serves the interface, and agent data travels directly to this Mac over your tailnet. It is still code loaded from a web server, so \"Same as host\" is safer: it serves the same app from this Mac and involves no third party.",
+                    level: .info
+                )
             }
 
             if remoteServer.isRunning, remoteServer.tailscaleDNSName != nil,
@@ -849,6 +873,76 @@ struct SettingsPanel: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private enum ExposureLevel {
+        case info
+        case warning
+    }
+
+    private func exposureNote(_ text: String, level: ExposureLevel) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: level == .warning ? "exclamationmark.triangle.fill" : "info.circle")
+                .font(.system(size: 10))
+                .foregroundStyle(level == .warning ? Color.orange : Color.secondary)
+            Text(text)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    // Every phone currently holding a session, so a device you no longer recognise can be cut off
+    // without stopping the server on everyone else.
+    @ViewBuilder
+    private var pairedDevicesSection: some View {
+        if remoteServer.isRunning, !remoteServer.pairedDevices.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Paired devices")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                ForEach(remoteServer.pairedDevices) { device in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "iphone")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.teal)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(device.name)
+                                .font(.system(size: 11, weight: .medium))
+                            Text(Self.deviceDetail(device))
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 8)
+                        Button("Revoke", role: .destructive) {
+                            remoteServer.revoke(device)
+                        }
+                        .controlSize(.small)
+                        .fixedSize()
+                        .help("End this device's session; it returns to the verification screen")
+                        .pointerOnHover()
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    // The address is best effort and says so. Behind `tailscale serve` or `cloudflared` the peer
+    // is the proxy on this Mac, not the phone, and no header is trustworthy enough to claim
+    // otherwise. The id is what actually names the session.
+    static func deviceDetail(_ device: RemoteControlServer.PairedDevice) -> String {
+        let address = device.proxied ? "via proxy" : device.ip
+        return "\(device.id) · \(address) · seen \(relativeTime(device.seen)) · expires \(relativeTime(device.expires))"
+    }
+
+    private static func relativeTime(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     private func sectionHeader(_ title: String) -> some View {

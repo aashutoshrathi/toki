@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -91,6 +92,191 @@ class RemoteControlPairingTests(unittest.TestCase):
     def test_pairing_code_is_always_six_digits(self):
         with mock.patch.object(toki_remote.secrets, "randbelow", return_value=42):
             self.assertEqual(toki_remote.new_pairing_code(), "000042")
+
+
+class RemoteControlAccessPolicyTests(unittest.TestCase):
+    def test_loopback_reaches_every_policy(self):
+        # tailscale serve and cloudflared both dial 127.0.0.1, so no policy may exclude it.
+        for policy in toki_remote.ACCESS_POLICIES:
+            self.assertTrue(toki_remote.peer_allowed("127.0.0.1", policy), policy)
+
+    def test_localhost_policy_excludes_the_local_network(self):
+        self.assertFalse(toki_remote.peer_allowed("192.168.1.20", "loopback"))
+        self.assertFalse(toki_remote.peer_allowed("100.101.102.103", "loopback"))
+
+    def test_tailnet_policy_admits_only_the_tailnet(self):
+        self.assertTrue(toki_remote.peer_allowed("100.101.102.103", "tailnet"))
+        # The whole point: choosing Tailscale must not leave the port open to the cafe Wi-Fi.
+        self.assertFalse(toki_remote.peer_allowed("192.168.1.20", "tailnet"))
+        self.assertFalse(toki_remote.peer_allowed("8.8.8.8", "tailnet"))
+
+    def test_private_policy_admits_lan_and_tailnet_but_not_the_internet(self):
+        for ip in ("192.168.1.20", "10.1.2.3", "172.16.5.5", "100.101.102.103"):
+            self.assertTrue(toki_remote.peer_allowed(ip, "private"), ip)
+        self.assertFalse(toki_remote.peer_allowed("8.8.8.8", "private"))
+
+    def test_ipv4_mapped_address_is_judged_as_ipv4(self):
+        self.assertFalse(toki_remote.peer_allowed("::ffff:192.168.1.20", "tailnet"))
+        self.assertTrue(toki_remote.peer_allowed("::ffff:100.101.102.103", "tailnet"))
+
+    def test_a_proxy_cannot_smuggle_the_public_internet_into_the_tailnet(self):
+        # Tailscale Funnel and `tailscale serve` both arrive as 127.0.0.1, but Funnel is fronting
+        # the public internet. Accepting every loopback peer would admit the world through it.
+        self.assertFalse(
+            toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "tailnet")
+        )
+        self.assertTrue(
+            toki_remote.request_allowed("127.0.0.1", "100.101.102.103", "tailnet")
+        )
+        # A LAN address is not the tailnet either, however it reaches us.
+        self.assertFalse(
+            toki_remote.request_allowed("127.0.0.1", "192.168.1.20", "tailnet")
+        )
+
+    def test_a_proxy_with_nothing_to_declare_is_still_accepted(self):
+        # No forwarded address means nothing to judge; refusing here would break `tailscale serve`.
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", None, "tailnet"))
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "", "tailnet"))
+
+    def test_the_tunnel_mode_is_deliberately_exempt(self):
+        # Fronting a public address is the whole point of choosing Cloudflare Tunnel.
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "tunnel"))
+
+    def test_localhost_means_this_mac_even_through_a_relay(self):
+        # Localhost and the tunnel both only ever see loopback peers, but they promise different
+        # things. Something on this Mac relaying a stranger in breaks "this Mac only".
+        self.assertFalse(toki_remote.request_allowed("127.0.0.1", "203.0.113.9", "loopback"))
+        self.assertFalse(toki_remote.request_allowed("127.0.0.1", "192.168.1.20", "loopback"))
+        self.assertFalse(toki_remote.request_allowed("127.0.0.1", "100.101.102.103", "loopback"))
+        # A browser on this Mac, relayed or not, is still this Mac.
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", "127.0.0.1", "loopback"))
+        self.assertTrue(toki_remote.request_allowed("127.0.0.1", None, "loopback"))
+
+    def test_a_direct_caller_cannot_talk_its_way_in_with_a_header(self):
+        # Believing a non-loopback peer's own header would let it claim any address it likes.
+        self.assertFalse(
+            toki_remote.request_allowed("203.0.113.9", "100.101.102.103", "tailnet")
+        )
+        self.assertTrue(
+            toki_remote.request_allowed("100.101.102.103", "203.0.113.9", "tailnet")
+        )
+
+    def test_unparseable_peer_is_refused_unless_the_policy_is_open(self):
+        self.assertFalse(toki_remote.peer_allowed("not-an-address", "tailnet"))
+        self.assertTrue(toki_remote.peer_allowed("not-an-address", "any"))
+
+
+class RemoteControlHostAndOriginTests(unittest.TestCase):
+    def test_addresses_toki_hands_out_are_accepted(self):
+        for host in ("localhost:8765", "127.0.0.1:8765", "100.101.102.103:8765",
+                     "mac.tail1234.ts.net", "abc-def.trycloudflare.com"):
+            self.assertTrue(toki_remote.host_allowed(host, set()), host)
+
+    def test_a_name_the_attacker_owns_is_rejected(self):
+        # DNS rebinding: attacker.example resolves to this Mac, so the browser calls us with that
+        # Host and treats the reply as same-origin. Answering only to our own names stops it.
+        self.assertFalse(toki_remote.host_allowed("attacker.example", set()))
+        self.assertFalse(toki_remote.host_allowed("mac.ts.net.attacker.example", set()))
+        self.assertFalse(toki_remote.host_allowed("", set()))
+
+    def test_a_custom_host_is_accepted_once_named(self):
+        self.assertFalse(toki_remote.host_allowed("mac.internal", set()))
+        self.assertTrue(toki_remote.host_allowed("mac.internal:8765", {"mac.internal"}))
+
+    def test_the_hosted_ui_and_our_own_page_may_post(self):
+        self.assertTrue(toki_remote.origin_allowed(toki_remote.HOSTED_ORIGIN, "mac.ts.net"))
+        self.assertTrue(toki_remote.origin_allowed("https://mac.ts.net", "mac.ts.net"))
+        self.assertTrue(toki_remote.origin_allowed("http://127.0.0.1:8765", "127.0.0.1:8765"))
+
+    def test_any_other_page_may_not_post(self):
+        self.assertFalse(toki_remote.origin_allowed("https://evil.example", "mac.ts.net"))
+        self.assertFalse(toki_remote.origin_allowed("null", "mac.ts.net"))
+
+    def test_a_request_with_no_origin_is_not_a_browser_and_is_allowed(self):
+        self.assertTrue(toki_remote.origin_allowed(None, "mac.ts.net"))
+        self.assertTrue(toki_remote.origin_allowed("", "mac.ts.net"))
+
+
+class RemoteControlDeviceRegistryTests(unittest.TestCase):
+    def setUp(self):
+        toki_remote.SESSIONS.clear()
+
+    tearDown = setUp
+
+    def test_a_device_is_named_from_what_its_browser_reports(self):
+        iphone = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+                  "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+        self.assertEqual(toki_remote.device_name(iphone), "iPhone (Safari)")
+        # Chrome and Edge both claim Safari in their User-Agent, so order decides correctness.
+        chrome = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+        self.assertEqual(toki_remote.device_name(chrome), "Mac (Chrome)")
+        self.assertEqual(toki_remote.device_name(""), "Device")
+
+    def test_a_proxy_is_not_reported_as_the_device(self):
+        # tailscale serve and cloudflared dial us from loopback and forward the real address.
+        self.assertEqual(toki_remote.client_ip("127.0.0.1", "100.64.1.2"), ("100.64.1.2", False))
+        # No forwarded address to fall back on, so say it is a proxy rather than claim loopback.
+        self.assertEqual(toki_remote.client_ip("127.0.0.1", None), ("127.0.0.1", True))
+
+    def test_a_direct_peer_cannot_spoof_its_own_address(self):
+        # Trusting the header from a non-loopback peer would let a caller pick which rate-limit
+        # bucket it lands in.
+        self.assertEqual(
+            toki_remote.client_ip("192.168.1.20", "10.0.0.1"), ("192.168.1.20", False)
+        )
+
+    def test_a_garbled_forwarded_address_is_not_believed(self):
+        self.assertEqual(toki_remote.client_ip("127.0.0.1", "not-an-ip"), ("127.0.0.1", True))
+
+    def test_the_published_list_never_carries_a_session_token(self):
+        toki_remote.SESSIONS["super-secret-token"] = {
+            "id": "a1b2c3d4", "name": "iPhone (Safari)", "ip": "100.64.1.2", "proxied": False,
+            "paired": 1000.0, "seen": 1200.4, "expires": time.time() + 600,
+        }
+        listed = toki_remote.device_list()
+        self.assertEqual(len(listed), 1)
+        self.assertNotIn("super-secret-token", json.dumps(listed))
+        self.assertEqual(listed[0]["id"], "a1b2c3d4")
+        self.assertEqual(listed[0]["seen"], 1200)
+
+    def test_an_expired_session_drops_off_the_list(self):
+        toki_remote.SESSIONS["stale"] = {
+            "id": "dead", "name": "iPad", "ip": "100.64.1.3", "proxied": False,
+            "paired": 0.0, "seen": 0.0, "expires": time.time() - 1,
+        }
+        self.assertEqual(toki_remote.device_list(), [])
+
+    def test_revoking_removes_exactly_one_device(self):
+        for token, ident in (("t1", "keep0001"), ("t2", "drop0002")):
+            toki_remote.SESSIONS[token] = {
+                "id": ident, "name": "iPhone", "ip": "100.64.1.2", "proxied": False,
+                "paired": 1000.0, "seen": 1000.0, "expires": time.time() + 600,
+            }
+        self.assertTrue(toki_remote.revoke_device("drop0002"))
+        self.assertEqual([d["id"] for d in toki_remote.device_list()], ["keep0001"])
+        # A second revoke of the same id is a no-op rather than an error.
+        self.assertFalse(toki_remote.revoke_device("drop0002"))
+
+
+class RemoteControlInputBoundsTests(unittest.TestCase):
+    def test_malformed_numbers_fall_back_instead_of_raising(self):
+        self.assertEqual(toki_remote.int_param({"pid": ["abc"]}, "pid"), 0)
+        self.assertEqual(toki_remote.int_param({}, "offset"), 0)
+        self.assertEqual(toki_remote.int_param({"offset": ["-5"]}, "offset"), 0)
+        self.assertEqual(toki_remote.int_param({"pid": ["4242"]}, "pid"), 4242)
+
+    def test_a_reply_is_bounded_well_below_the_body_cap(self):
+        self.assertLess(toki_remote.MAX_SEND_CHARS, toki_remote.MAX_BODY_BYTES)
+
+    def test_a_newline_survives_applescript_quoting(self):
+        # A raw newline is a compile error inside an AppleScript literal, which lost the message.
+        quoted = toki_remote.applescript_str("first\nsecond")
+        self.assertEqual(quoted, '"first\\nsecond"')
+        self.assertNotIn("\n", quoted)
+
+    def test_quotes_and_backslashes_cannot_end_the_literal(self):
+        self.assertEqual(toki_remote.applescript_str('a"b\\c'), '"a\\"b\\\\c"')
 
 
 class RemoteControlAgentDiscoveryTests(unittest.TestCase):

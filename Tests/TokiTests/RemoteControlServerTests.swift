@@ -4,11 +4,103 @@ import XCTest
 
 @MainActor
 final class RemoteControlServerTests: XCTestCase {
-    func testRecommendedHostAndAppLabels() {
+    func testTheRecommendedOptionsAreTheOnesWithNoThirdParty() {
+        // Tailscale is private by construction, and serving the app from this Mac means no web
+        // server sits between the phone and the terminal it can type into.
         XCTAssertEqual(RemoteControlServer.HostMode.tailscale.label, "Tailscale (Recommended)")
         XCTAssertEqual(
-            RemoteControlServer.CompanionAppMode.hosted.label,
-            "Toki RC (Recommended)"
+            RemoteControlServer.CompanionAppMode.sameHost.label,
+            "Same as host (Recommended)"
+        )
+        // The two that widen exposure say so in the name rather than reading as neutral choices.
+        XCTAssertEqual(RemoteControlServer.HostMode.tunnel.label, "Cloudflare Tunnel (public)")
+        XCTAssertEqual(RemoteControlServer.CompanionAppMode.hosted.label, "Toki RC (hosted)")
+    }
+
+    func testThePublicTunnelIsOfferedLastNotFirst() {
+        XCTAssertEqual(
+            RemoteControlServer.orderedHostModes(
+                tailscaleAvailable: true,
+                cloudflaredAvailable: true
+            ),
+            [.tailscale, .localNetwork, .localhost, .custom, .tunnel]
+        )
+        // Even with nothing private available it stays the last resort, never the default.
+        XCTAssertEqual(
+            RemoteControlServer.orderedHostModes(
+                tailscaleAvailable: false,
+                cloudflaredAvailable: true
+            ).last,
+            .tunnel
+        )
+        XCTAssertEqual(
+            RemoteControlServer.preferredHostMode(
+                tailscaleAvailable: false,
+                localNetworkAvailable: false
+            ),
+            .localhost
+        )
+    }
+
+    func testPairedDevicesArriveOnTheServersOwnPipe() {
+        let line = """
+        devices={"devices": [{"id": "a1b2c3d4", "name": "iPhone (Safari)", "ip": "100.101.102.103", \
+        "proxied": false, "paired": 1000, "seen": 1200, "expires": 44200}]}
+        """
+        let devices = RemoteControlServer.parseDeviceLine(line)
+        XCTAssertEqual(devices?.count, 1)
+        XCTAssertEqual(devices?.first?.id, "a1b2c3d4")
+        XCTAssertEqual(devices?.first?.name, "iPhone (Safari)")
+        XCTAssertEqual(devices?.first?.seen, Date(timeIntervalSince1970: 1200))
+        XCTAssertFalse(devices?.first?.proxied ?? true)
+
+        XCTAssertNil(RemoteControlServer.parseDeviceLine("token=abc123"))
+        XCTAssertNil(RemoteControlServer.parseDeviceLine("devices=not json"))
+    }
+
+    func testAProxiedDeviceDoesNotClaimAnAddressItCannotKnow() {
+        // Behind `tailscale serve` the peer is this Mac, so showing 127.0.0.1 as the phone's
+        // address would be a lie. The id is what actually names the session.
+        let line = """
+        devices={"devices": [{"id": "ff00ff00", "name": "iPad (Safari)", "ip": "127.0.0.1", \
+        "proxied": true, "paired": 1000, "seen": 1200, "expires": 44200}]}
+        """
+        guard let device = RemoteControlServer.parseDeviceLine(line)?.first else {
+            return XCTFail("expected one device")
+        }
+        let detail = SettingsPanel.deviceDetail(device)
+        XCTAssertTrue(detail.contains("via proxy"), detail)
+        XCTAssertFalse(detail.contains("127.0.0.1"), detail)
+        XCTAssertTrue(detail.contains("ff00ff00"), detail)
+    }
+
+    func testEachHostModeNarrowsTheServerToWhatItNeeds() {
+        // The Host setting is the user's statement about who should be able to reach this Mac, so
+        // it has to reach the server as an access policy. Binding alone cannot say it: Tailscale
+        // needs both loopback (for `tailscale serve`) and the 100.x address (for a phone).
+        XCTAssertEqual(RemoteControlServer.reach(for: .localhost).access, "loopback")
+        XCTAssertEqual(RemoteControlServer.reach(for: .localhost).bind, "127.0.0.1")
+        // The tunnel only ever sees loopback peers too, but it needs its own policy: it is the
+        // one mode where a relay carrying someone in from the internet is the point, and
+        // Localhost must keep meaning this Mac even when something here relays for a stranger.
+        XCTAssertEqual(RemoteControlServer.reach(for: .tunnel).access, "tunnel")
+        XCTAssertEqual(RemoteControlServer.reach(for: .tunnel).bind, "127.0.0.1")
+        XCTAssertEqual(RemoteControlServer.reach(for: .tailscale).access, "tailnet")
+        XCTAssertEqual(RemoteControlServer.reach(for: .localNetwork).access, "private")
+        XCTAssertEqual(RemoteControlServer.reach(for: .custom).access, "any")
+    }
+
+    func testOnlyACustomHostIsNamedToTheServer() {
+        // Everything else Toki hands out is a shape the server already recognises; a custom host
+        // is not, and would otherwise be rejected by the anti-rebinding check as an unknown name.
+        XCTAssertEqual(
+            RemoteControlServer.allowedHostArguments(for: .custom, customHost: " mac.internal "),
+            ["--allow-host", "mac.internal"]
+        )
+        XCTAssertEqual(RemoteControlServer.allowedHostArguments(for: .custom, customHost: "  "), [])
+        XCTAssertEqual(
+            RemoteControlServer.allowedHostArguments(for: .tailscale, customHost: "mac.internal"),
+            []
         )
     }
 
@@ -35,6 +127,7 @@ final class RemoteControlServerTests: XCTestCase {
             RemoteControlServer.orderedHostModes(tailscaleAvailable: true),
             [.tailscale, .localNetwork, .localhost, .custom]
         )
+
         XCTAssertEqual(
             RemoteControlServer.preferredHostMode(
                 tailscaleAvailable: true,
