@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.1 - 2026-08-08
+
+### Fixed
+
+- **A Claude Code account no longer reads "Not connected" just because Claude Code has not run for a while.** Toki sent whatever access token was sitting in the Keychain without ever looking at the `expiresAt` beside it. Claude Code renews that token lazily, when it next runs, so overnight the stored token goes stale and every Toki refresh replayed it and collected an HTTP 401. Toki now checks the expiry first and skips the request entirely when the token is past it, showing "Signed out" with what to do about it rather than a raw `authentication_error` payload.
+- **Toki recovers on its own the moment the token is renewed.** An expired token records no API call, so the usual refresh interval never gates the retry: the next tick, or opening Toki, re-reads the Keychain and picks up a token Claude Code has just renewed. That re-read is local and costs nothing until the sign-in is usable again.
+- A stored `claude-swap` account that is not the active one says so plainly. Nothing renews the copy Toki reads for an inactive account, so it expires within hours of being stored and stays that way; the card now points at `claude-swap` instead of reporting a failure with no remedy.
+- Repeatedly replaying a dead token no longer gets the usage endpoint to rate-limit the account, which used to hide the real state behind a stale reading once the 401s turned into 429s.
+- An error whose request ID happens to contain "429" is no longer misread as a rate limit. The check matched that substring anywhere in the response body, so an unrelated failure could be quietly papered over with the previous snapshot instead of surfaced.
+
 ## 2.6.0 - 2026-08-08
 
 ### Security

@@ -131,7 +131,12 @@ enum UsageFetcher {
                let previous = previousSnapshots(for: account, previousByID: previousByID) {
                 return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
             }
+            if suppressesAPICallTimestamp(snapshots) {
+                return AccountFetchResult(snapshots: snapshots, apiCallKeys: [])
+            }
             return AccountFetchResult(snapshots: snapshots, apiCallKeys: attemptedKeys)
+        } catch is ClaudeSignInExpiredError {
+            return AccountFetchResult(snapshots: [expiredSnapshot(for: account)], apiCallKeys: [])
         } catch let error as HTTPStatusError where error.statusCode == 429 {
             if let previous = previousSnapshots(for: account, previousByID: previousByID) {
                 return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
@@ -221,11 +226,31 @@ enum UsageFetcher {
         return isRateLimitDescription(error.localizedDescription)
     }
 
-    private static func isRateLimitDescription(_ value: String) -> Bool {
+    static func suppressesAPICallTimestamp(_ snapshots: [AccountSnapshot]) -> Bool {
+        !snapshots.isEmpty && snapshots.allSatisfy(\.isSignInExpired)
+    }
+
+    static func isRateLimitDescription(_ value: String) -> Bool {
         let normalized = value.lowercased()
         return normalized.contains("http 429")
             || normalized.contains("status 429")
-            || normalized.contains("429")
+            || normalized.contains("rate_limit_error")
+            || normalized.contains("rate limited")
+    }
+
+    private static func expiredSnapshot(for account: AccountConfig) -> AccountSnapshot {
+        let expiry = ClaudeSignInExpiredError(accountLabel: account.name, isActiveAccount: true)
+        return AccountSnapshot(
+            id: account.id,
+            name: account.name,
+            provider: account.provider,
+            primary: "Signed out",
+            subtitle: expiry.localizedDescription,
+            remainingRatio: nil,
+            metrics: [MetricLine(label: "Sign-in", value: expiry.localizedDescription)],
+            isError: true,
+            isSignInExpired: true
+        )
     }
 
     private static func errorSnapshot(for account: AccountConfig, error: Error) -> AccountSnapshot {

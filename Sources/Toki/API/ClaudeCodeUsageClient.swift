@@ -28,6 +28,25 @@ struct ClaudeCodeUsageClient {
     private func snapshotOrError(for record: ClaudeCodeAccountRecord) async -> AccountSnapshot {
         do {
             return try await snapshot(for: record)
+        } catch let expiry as ClaudeSignInExpiredError {
+            DiagnosticLogger.shared.record(.info, component: "usage", code: "claude_sign_in_expired",
+                                           detail: "account=\(record.email ?? record.id) active=\(record.isActive)")
+            return AccountSnapshot(
+                id: record.id,
+                name: record.displayName,
+                provider: .claudeCode,
+                primary: "Signed out",
+                subtitle: record.email ?? expiry.localizedDescription,
+                remainingRatio: nil,
+                metrics: [MetricLine(label: "Sign-in", value: expiry.localizedDescription)],
+                accountInfo: accountInfoLines(for: record),
+                isError: true,
+                switchTarget: switchTarget(for: record),
+                switchCommand: account.claudeSwapCommand,
+                emoji: record.label?.emoji,
+                colorHex: record.label?.color,
+                isSignInExpired: true
+            )
         } catch {
             DiagnosticLogger.shared.record(.error, component: "usage", code: "claude_account_failed", detail: diagnosticErrorDetail(error))
             return AccountSnapshot(
@@ -35,9 +54,9 @@ struct ClaudeCodeUsageClient {
                 name: record.displayName,
                 provider: .claudeCode,
                 primary: "Unavailable",
-                subtitle: record.email ?? error.localizedDescription,
+                subtitle: record.email ?? describe(error),
                 remainingRatio: nil,
-                metrics: [MetricLine(label: "Error", value: error.localizedDescription)],
+                metrics: [MetricLine(label: "Error", value: describe(error))],
                 accountInfo: accountInfoLines(for: record),
                 isError: true,
                 switchTarget: switchTarget(for: record),
@@ -48,15 +67,40 @@ struct ClaudeCodeUsageClient {
         }
     }
 
-    private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
+    private func describe(_ error: Error) -> String {
+        guard let http = error as? HTTPStatusError, http.statusCode == 401 else {
+            return error.localizedDescription
+        }
+        return "Anthropic rejected this sign-in. Open Claude Code and run /login, then refresh Toki."
+    }
+
+    enum Disposition: Equatable {
+        case useToken(String)
+        case expired(ClaudeSignInExpiredError)
+    }
+
+    static func disposition(for record: ClaudeCodeAccountRecord, now: Date = Date()) throws -> Disposition {
         if let loadError = record.loadError {
             throw LocalizedErrorMessage(loadError)
         }
         guard let credentials = record.credentials, !credentials.isEmpty else {
             throw LocalizedErrorMessage("No credentials found")
         }
+        let token = try ClaudeCodeCredentialReader.extractToken(from: credentials)
+        guard !token.isExpired(asOf: now) else {
+            return .expired(ClaudeSignInExpiredError(accountLabel: record.email, isActiveAccount: record.isActive))
+        }
+        return .useToken(token.accessToken)
+    }
 
-        let accessToken = try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)
+    private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
+        let accessToken: String
+        switch try Self.disposition(for: record) {
+        case .expired(let expiry):
+            throw expiry
+        case .useToken(let token):
+            accessToken = token
+        }
         let json = try await requestJSON(
             url: URL(string: "https://api.anthropic.com/api/oauth/usage")!,
             headers: [
@@ -74,7 +118,7 @@ struct ClaudeCodeUsageClient {
         let remainingRatio = max(0, min(1, 1 - usedRatio))
         let percentLeft = Int((remainingRatio * 100).rounded())
         let primary = "\(percentLeft)% left"
-        let email = record.email ?? ClaudeCodeCredentialReader.emailIdentifier(from: credentials)
+        let email = record.email ?? record.credentials.flatMap(ClaudeCodeCredentialReader.emailIdentifier)
 
         // Surface Claude Code's single rolling window the same way Codex exposes its windows,
         // so consumers like the quota-rings panel can show "resets in <time>" beside it. The
@@ -92,7 +136,7 @@ struct ClaudeCodeUsageClient {
             remainingRatio: remainingRatio,
             progressRatio: usedRatio,
             metrics: usage.metrics,
-            accountInfo: accountInfoLines(for: record, credentials: credentials),
+            accountInfo: accountInfoLines(for: record, credentials: record.credentials),
             switchTarget: switchTarget(for: record),
             switchCommand: account.claudeSwapCommand,
             emoji: record.label?.emoji,
