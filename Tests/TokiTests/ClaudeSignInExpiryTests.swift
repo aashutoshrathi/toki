@@ -31,6 +31,16 @@ final class ClaudeSignInExpiryTests: XCTestCase {
         }
     }
 
+    // A JSON boolean bridges to NSNumber; `true` would otherwise read as 1ms past the epoch and
+    // report a usable token as long expired.
+    func testBooleanExpiryIsNotMistakenForAnEpoch() throws {
+        for raw in ["true", "false"] {
+            let token = try ClaudeCodeCredentialReader.extractToken(from: credentials(expiresAt: raw))
+            XCTAssertNil(token.expiresAt, "expiresAt \(raw) should not produce a date")
+            XCTAssertFalse(token.isExpired(), "expiresAt \(raw) should leave the token usable")
+        }
+    }
+
     // MARK: - Expiry decisions
 
     func testTokenWithoutExpiryIsNeverTreatedAsExpired() throws {
@@ -141,6 +151,39 @@ final class ClaudeSignInExpiryTests: XCTestCase {
         XCTAssertThrowsError(try ClaudeCodeUsageClient.disposition(for: record(credentials: credentialBlob(expiresAt: 3600), loadError: "Keychain locked"))) { error in
             XCTAssertTrue(error.localizedDescription.contains("Keychain locked"), error.localizedDescription)
         }
+    }
+
+    // MARK: - Throttle: an expired sibling must not un-throttle a working account
+
+    private func snapshot(expired: Bool) -> AccountSnapshot {
+        AccountSnapshot(
+            id: expired ? "claude-2" : "claude-1",
+            name: "Claude",
+            provider: .claudeCode,
+            primary: expired ? "Signed out" : "80% left",
+            subtitle: "a@b.com",
+            remainingRatio: expired ? nil : 0.8,
+            metrics: [],
+            isError: expired,
+            switchTarget: nil,
+            switchCommand: nil,
+            emoji: nil,
+            colorHex: nil,
+            isSignInExpired: expired
+        )
+    }
+
+    func testTimestampIsSuppressedOnlyWhenEveryAccountExpired() {
+        XCTAssertTrue(UsageFetcher.suppressesAPICallTimestamp([snapshot(expired: true)]))
+        XCTAssertTrue(UsageFetcher.suppressesAPICallTimestamp([snapshot(expired: true), snapshot(expired: true)]))
+    }
+
+    func testTimestampIsRecordedWhenAnyAccountMadeACall() {
+        // The user's exact setup: one working account, one expired stored account. The working
+        // account's call must be timestamped so it is not re-polled every tick.
+        XCTAssertFalse(UsageFetcher.suppressesAPICallTimestamp([snapshot(expired: false), snapshot(expired: true)]))
+        XCTAssertFalse(UsageFetcher.suppressesAPICallTimestamp([snapshot(expired: false)]))
+        XCTAssertFalse(UsageFetcher.suppressesAPICallTimestamp([]))
     }
 
     // MARK: - Rate-limit classification

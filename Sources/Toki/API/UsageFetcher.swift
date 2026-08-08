@@ -131,7 +131,7 @@ enum UsageFetcher {
                let previous = previousSnapshots(for: account, previousByID: previousByID) {
                 return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
             }
-            if snapshots.contains(where: \.isSignInExpired) {
+            if suppressesAPICallTimestamp(snapshots) {
                 return AccountFetchResult(snapshots: snapshots, apiCallKeys: [])
             }
             return AccountFetchResult(snapshots: snapshots, apiCallKeys: attemptedKeys)
@@ -224,6 +224,10 @@ enum UsageFetcher {
             return httpError.statusCode == 429
         }
         return isRateLimitDescription(error.localizedDescription)
+    }
+
+    static func suppressesAPICallTimestamp(_ snapshots: [AccountSnapshot]) -> Bool {
+        !snapshots.isEmpty && snapshots.allSatisfy(\.isSignInExpired)
     }
 
     static func isRateLimitDescription(_ value: String) -> Bool {

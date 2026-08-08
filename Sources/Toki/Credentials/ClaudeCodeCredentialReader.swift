@@ -219,6 +219,7 @@ enum ClaudeCodeCredentialReader {
         let milliseconds: Double
         switch value {
         case let number as NSNumber:
+            guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
             milliseconds = number.doubleValue
         case let text as String:
             guard let parsed = Double(text) else { return nil }

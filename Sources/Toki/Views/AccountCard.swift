@@ -115,7 +115,7 @@ struct AccountCard: View {
                 if let switchTarget = snapshot.switchTarget {
                     VStack(alignment: .trailing, spacing: 4) {
                         if snapshot.isError {
-                            StatusBadge(text: "not connected")
+                            StatusBadge(text: snapshot.isSignInExpired ? "signed out" : "not connected")
                         }
                         Button {
                             store.switchClaudeAccount(target: switchTarget, command: snapshot.switchCommand)
@@ -394,7 +394,8 @@ struct AccountCard: View {
     }
 
     private var collapsedStatus: String {
-        snapshot.isError ? "Not connected" : snapshot.primary
+        if snapshot.isSignInExpired { return snapshot.primary }
+        return snapshot.isError ? "Not connected" : snapshot.primary
     }
 
     /// The failure reason, gathered from wherever the provider happened to record it.
@@ -403,7 +404,7 @@ struct AccountCard: View {
     /// The subtitle is only usable when it isn't an email address, since Claude fills it with
     /// the account's address whenever it knows one.
     private var errorDetail: String {
-        if let recorded = snapshot.metrics.first(where: { $0.label == "Error" })?.value,
+        if let recorded = snapshot.metrics.first(where: { $0.label == "Error" || $0.label == "Sign-in" })?.value,
            !recorded.isEmpty {
             return recorded
         }
