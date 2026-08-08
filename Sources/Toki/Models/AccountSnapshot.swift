@@ -41,6 +41,7 @@ struct AccountSnapshot: Identifiable, Hashable {
     // True for providers with no usage/quota API at all (Grok, Copilot) - the card still
     // shows identity and active-session count, but never a percentage or progress bar.
     var isAgentDetectionOnly: Bool = false
+    var isSignInExpired: Bool = false
 
     static let loadingPrimary = "Refreshing"
 

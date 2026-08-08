@@ -28,6 +28,25 @@ struct ClaudeCodeUsageClient {
     private func snapshotOrError(for record: ClaudeCodeAccountRecord) async -> AccountSnapshot {
         do {
             return try await snapshot(for: record)
+        } catch let expiry as ClaudeSignInExpiredError {
+            DiagnosticLogger.shared.record(.info, component: "usage", code: "claude_sign_in_expired",
+                                           detail: "account=\(record.email ?? record.id) active=\(record.isActive)")
+            return AccountSnapshot(
+                id: record.id,
+                name: record.displayName,
+                provider: .claudeCode,
+                primary: "Signed out",
+                subtitle: record.email ?? expiry.localizedDescription,
+                remainingRatio: nil,
+                metrics: [MetricLine(label: "Sign-in", value: expiry.localizedDescription)],
+                accountInfo: accountInfoLines(for: record),
+                isError: true,
+                switchTarget: switchTarget(for: record),
+                switchCommand: account.claudeSwapCommand,
+                emoji: record.label?.emoji,
+                colorHex: record.label?.color,
+                isSignInExpired: true
+            )
         } catch {
             DiagnosticLogger.shared.record(.error, component: "usage", code: "claude_account_failed", detail: diagnosticErrorDetail(error))
             return AccountSnapshot(
@@ -35,9 +54,9 @@ struct ClaudeCodeUsageClient {
                 name: record.displayName,
                 provider: .claudeCode,
                 primary: "Unavailable",
-                subtitle: record.email ?? error.localizedDescription,
+                subtitle: record.email ?? describe(error),
                 remainingRatio: nil,
-                metrics: [MetricLine(label: "Error", value: error.localizedDescription)],
+                metrics: [MetricLine(label: "Error", value: describe(error))],
                 accountInfo: accountInfoLines(for: record),
                 isError: true,
                 switchTarget: switchTarget(for: record),
@@ -48,6 +67,13 @@ struct ClaudeCodeUsageClient {
         }
     }
 
+    private func describe(_ error: Error) -> String {
+        guard let http = error as? HTTPStatusError, http.statusCode == 401 else {
+            return error.localizedDescription
+        }
+        return "Anthropic rejected this sign-in. Open Claude Code and run /login, then refresh Toki."
+    }
+
     private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
         if let loadError = record.loadError {
             throw LocalizedErrorMessage(loadError)
@@ -56,11 +82,14 @@ struct ClaudeCodeUsageClient {
             throw LocalizedErrorMessage("No credentials found")
         }
 
-        let accessToken = try ClaudeCodeCredentialReader.extractAccessToken(from: credentials)
+        let token = try ClaudeCodeCredentialReader.extractToken(from: credentials)
+        guard !token.isExpired() else {
+            throw ClaudeSignInExpiredError(accountLabel: record.email, isActiveAccount: record.isActive)
+        }
         let json = try await requestJSON(
             url: URL(string: "https://api.anthropic.com/api/oauth/usage")!,
             headers: [
-                "Authorization": "Bearer \(accessToken)",
+                "Authorization": "Bearer \(token.accessToken)",
                 "anthropic-beta": "oauth-2025-04-20"
             ]
         )

@@ -177,7 +177,23 @@ enum ClaudeCodeCredentialReader {
         return CredentialBundle(credentials: trimmed, source: rawPath)
     }
 
+    struct OAuthToken {
+        var accessToken: String
+        var expiresAt: Date?
+
+        static let expiryLeeway: TimeInterval = 60
+
+        func isExpired(asOf now: Date = Date()) -> Bool {
+            guard let expiresAt else { return false }
+            return expiresAt.timeIntervalSince(now) <= OAuthToken.expiryLeeway
+        }
+    }
+
     static func extractAccessToken(from credentials: String) throws -> String {
+        try extractToken(from: credentials).accessToken
+    }
+
+    static func extractToken(from credentials: String) throws -> OAuthToken {
         // try? rather than try: a parse failure must not escape as the raw Cocoa error
         // ("The data couldn't be read..."), which names neither the data nor a remedy.
         guard let data = credentials.data(using: .utf8),
@@ -196,7 +212,22 @@ enum ClaudeCodeCredentialReader {
                 "Your Claude Code sign-in has no access token in it. Open Claude Code and run /login again, then hit refresh in Toki. The sign-in holds: \(keyList(oauth))."
             )
         }
-        return token
+        return OAuthToken(accessToken: token, expiresAt: expiryDate(from: oauth["expiresAt"]))
+    }
+
+    static func expiryDate(from value: Any?) -> Date? {
+        let milliseconds: Double
+        switch value {
+        case let number as NSNumber:
+            milliseconds = number.doubleValue
+        case let text as String:
+            guard let parsed = Double(text) else { return nil }
+            milliseconds = parsed
+        default:
+            return nil
+        }
+        guard milliseconds > 0, milliseconds.isFinite else { return nil }
+        return Date(timeIntervalSince1970: milliseconds / 1000)
     }
 
     private static func keyList(_ json: [String: Any]) -> String {
