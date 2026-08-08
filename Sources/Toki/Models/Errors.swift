@@ -6,7 +6,7 @@ struct LocalizedErrorMessage: LocalizedError {
     var errorDescription: String? { message }
 }
 
-struct ClaudeSignInExpiredError: LocalizedError {
+struct ClaudeSignInExpiredError: LocalizedError, Equatable {
     var accountLabel: String?
     var isActiveAccount: Bool
 

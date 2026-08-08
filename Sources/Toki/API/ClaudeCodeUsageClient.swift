@@ -74,22 +74,37 @@ struct ClaudeCodeUsageClient {
         return "Anthropic rejected this sign-in. Open Claude Code and run /login, then refresh Toki."
     }
 
-    private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
+    enum Disposition: Equatable {
+        case useToken(String)
+        case expired(ClaudeSignInExpiredError)
+    }
+
+    static func disposition(for record: ClaudeCodeAccountRecord, now: Date = Date()) throws -> Disposition {
         if let loadError = record.loadError {
             throw LocalizedErrorMessage(loadError)
         }
         guard let credentials = record.credentials, !credentials.isEmpty else {
             throw LocalizedErrorMessage("No credentials found")
         }
-
         let token = try ClaudeCodeCredentialReader.extractToken(from: credentials)
-        guard !token.isExpired() else {
-            throw ClaudeSignInExpiredError(accountLabel: record.email, isActiveAccount: record.isActive)
+        guard !token.isExpired(asOf: now) else {
+            return .expired(ClaudeSignInExpiredError(accountLabel: record.email, isActiveAccount: record.isActive))
+        }
+        return .useToken(token.accessToken)
+    }
+
+    private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
+        let accessToken: String
+        switch try Self.disposition(for: record) {
+        case .expired(let expiry):
+            throw expiry
+        case .useToken(let token):
+            accessToken = token
         }
         let json = try await requestJSON(
             url: URL(string: "https://api.anthropic.com/api/oauth/usage")!,
             headers: [
-                "Authorization": "Bearer \(token.accessToken)",
+                "Authorization": "Bearer \(accessToken)",
                 "anthropic-beta": "oauth-2025-04-20"
             ]
         )
@@ -103,7 +118,7 @@ struct ClaudeCodeUsageClient {
         let remainingRatio = max(0, min(1, 1 - usedRatio))
         let percentLeft = Int((remainingRatio * 100).rounded())
         let primary = "\(percentLeft)% left"
-        let email = record.email ?? ClaudeCodeCredentialReader.emailIdentifier(from: credentials)
+        let email = record.email ?? record.credentials.flatMap(ClaudeCodeCredentialReader.emailIdentifier)
 
         // Surface Claude Code's single rolling window the same way Codex exposes its windows,
         // so consumers like the quota-rings panel can show "resets in <time>" beside it. The
@@ -121,7 +136,7 @@ struct ClaudeCodeUsageClient {
             remainingRatio: remainingRatio,
             progressRatio: usedRatio,
             metrics: usage.metrics,
-            accountInfo: accountInfoLines(for: record, credentials: credentials),
+            accountInfo: accountInfoLines(for: record, credentials: record.credentials),
             switchTarget: switchTarget(for: record),
             switchCommand: account.claudeSwapCommand,
             emoji: record.label?.emoji,

@@ -78,6 +78,71 @@ final class ClaudeSignInExpiryTests: XCTestCase {
         }
     }
 
+    // MARK: - Disposition: what the client does before ever touching the network
+
+    private func record(credentials: String?, isActive: Bool = true, email: String? = "a@b.com", loadError: String? = nil) -> ClaudeCodeAccountRecord {
+        ClaudeCodeAccountRecord(
+            id: "claude-1-a@b.com",
+            name: email ?? "Claude",
+            email: email,
+            organizationName: nil,
+            organizationUUID: nil,
+            accountNumber: 1,
+            isActive: isActive,
+            source: "test",
+            credentials: credentials,
+            loadError: loadError,
+            label: nil
+        )
+    }
+
+    private func credentialBlob(expiresAt: TimeInterval) -> String {
+        let millis = Int((Date().timeIntervalSince1970 + expiresAt) * 1000)
+        return #"{"claudeAiOauth":{"accessToken":"live-token","expiresAt":\#(millis)}}"#
+    }
+
+    // The regression that shipped: an expired token was sent anyway and came back 401. The
+    // decision must reach `.expired` without ever yielding a token to send.
+    func testExpiredTokenIsNeverOfferedForUse() throws {
+        let disposition = try ClaudeCodeUsageClient.disposition(for: record(credentials: credentialBlob(expiresAt: -3600)))
+        guard case .expired(let expiry) = disposition else {
+            return XCTFail("expected .expired, got \(disposition)")
+        }
+        XCTAssertTrue(expiry.isActiveAccount)
+    }
+
+    // The mirror-image regression to guard against: a good token must NOT be misread as expired,
+    // or a working account would show "Signed out" and never call the API.
+    func testValidTokenIsOfferedForUse() throws {
+        let disposition = try ClaudeCodeUsageClient.disposition(for: record(credentials: credentialBlob(expiresAt: 3600)))
+        XCTAssertEqual(disposition, .useToken("live-token"))
+    }
+
+    func testTokenWithNoExpiryIsOfferedForUse() throws {
+        let blob = #"{"claudeAiOauth":{"accessToken":"live-token"}}"#
+        XCTAssertEqual(try ClaudeCodeUsageClient.disposition(for: record(credentials: blob)), .useToken("live-token"))
+    }
+
+    func testInactiveStoredAccountReportsTheSwapRemedyWhenExpired() throws {
+        let disposition = try ClaudeCodeUsageClient.disposition(for: record(credentials: credentialBlob(expiresAt: -60), isActive: false))
+        guard case .expired(let expiry) = disposition else {
+            return XCTFail("expected .expired, got \(disposition)")
+        }
+        XCTAssertFalse(expiry.isActiveAccount)
+        XCTAssertTrue(expiry.localizedDescription.contains("claude-swap"), expiry.localizedDescription)
+    }
+
+    func testMissingCredentialsThrowRatherThanReportingExpiry() {
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.disposition(for: record(credentials: nil)))
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.disposition(for: record(credentials: "")))
+    }
+
+    func testLoadErrorSurfacesRatherThanReportingExpiry() {
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.disposition(for: record(credentials: credentialBlob(expiresAt: 3600), loadError: "Keychain locked"))) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Keychain locked"), error.localizedDescription)
+        }
+    }
+
     // MARK: - Rate-limit classification
 
     func testRequestIdThatMerelyContains429IsNotMistakenForARateLimit() {
