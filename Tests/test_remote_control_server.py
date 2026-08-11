@@ -442,5 +442,34 @@ class ClaudeToolEntryTests(unittest.TestCase):
         self.assertLessEqual(len(detail), 240)
 
 
+class UsageSnapshotTests(unittest.TestCase):
+    """Usage reaches the phone over the same pipe as agents, and ages the same way."""
+
+    def setUp(self):
+        toki_remote.USAGE_SNAPSHOT = []
+        toki_remote.USAGE_SNAPSHOT_AT = 0.0
+
+    def test_nothing_published_yet_is_waiting_not_empty(self):
+        # An empty list and "the Mac has not told us yet" are different things to draw.
+        result = toki_remote.current_usage()
+        self.assertTrue(result["waiting"])
+        self.assertFalse(result["stale"])
+        self.assertEqual(result["accounts"], [])
+
+    def test_a_fresh_publish_is_served_verbatim(self):
+        toki_remote.USAGE_SNAPSHOT = [{"id": "claude-code", "name": "Claude Code", "remaining": 0.42}]
+        toki_remote.USAGE_SNAPSHOT_AT = time.time()
+        result = toki_remote.current_usage()
+        self.assertFalse(result["stale"])
+        self.assertFalse(result["waiting"])
+        self.assertEqual(result["accounts"][0]["remaining"], 0.42)
+
+    def test_a_reading_the_mac_stopped_refreshing_is_marked_stale(self):
+        # Worse than no reading, because it looks current: the phone is told so it can say so.
+        toki_remote.USAGE_SNAPSHOT = [{"id": "codex", "name": "Codex", "remaining": 0.9}]
+        toki_remote.USAGE_SNAPSHOT_AT = time.time() - toki_remote.CANONICAL_MAX_AGE - 1
+        self.assertTrue(toki_remote.current_usage()["stale"])
+
+
 if __name__ == "__main__":
     unittest.main()

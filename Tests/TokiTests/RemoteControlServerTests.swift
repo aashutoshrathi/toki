@@ -457,6 +457,36 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(RemoteControlServer.servedTailscaleHost(from: nil))
     }
 
+    // The phone is shown the same reading the menu bar has, so the payload is built from the
+    // snapshots rather than re-derived.
+    func testUsagePayloadCarriesTheReadingTheMenuBarShows() {
+        var snapshot = AccountSnapshot(
+            id: "claude-code", name: "Claude Code", provider: .claudeCode,
+            primary: "62%", subtitle: "resets in 2h", remainingRatio: 0.62, metrics: []
+        )
+        snapshot.menuBarValue = nil
+        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+        XCTAssertEqual(payload.count, 1)
+        XCTAssertEqual(payload[0]["id"] as? String, "claude-code")
+        XCTAssertEqual(payload[0]["remaining"] as? Double, 0.62)
+        XCTAssertEqual(payload[0]["detail"] as? String, "resets in 2h")
+        XCTAssertEqual(payload[0]["error"] as? Bool, false)
+    }
+
+    // Grok and Copilot have no quota API at all, and a cost-based provider has a figure instead.
+    // Sending a placeholder ratio would have the phone draw a bar for a number nobody has.
+    func testAnAccountWithNoQuotaSendsNoRatio() {
+        var snapshot = AccountSnapshot(
+            id: "grok", name: "Grok", provider: .grok,
+            primary: "active", subtitle: "", remainingRatio: nil, metrics: []
+        )
+        snapshot.menuBarValue = "$1.20"
+        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+        XCTAssertNil(payload[0]["remaining"])
+        XCTAssertNil(payload[0]["detail"])
+        XCTAssertEqual(payload[0]["value"] as? String, "$1.20")
+    }
+
     func testParseTunnelHostFromCloudflaredOutput() {
         let text = """
         2026-07-29T10:00:00Z INF +----------------------------------------------------+

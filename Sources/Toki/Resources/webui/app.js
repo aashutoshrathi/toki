@@ -258,6 +258,71 @@ function setConnected(ok) {
   if (++failCount >= 2) $("#conn").hidden = false;
 }
 
+// Quota, from the same reading the menu bar shows. One line by default - the transcript is what
+// the phone is for - and the whole list when asked.
+let usageOpen = false;
+
+// Red is exactly the point Toki would send a low-quota notification (lowQuotaThreshold, 20% by
+// default), so the strip and the alerts agree about what "low" means. Amber is the warning shot
+// before it.
+function usageClass(remaining) {
+  if (remaining <= 0.2) return "low";
+  if (remaining <= 0.35) return "warn";
+  return "";
+}
+
+function renderUsage(data) {
+  const toggle = $("#usagetoggle");
+  const panel = $("#usage");
+  const accounts = (data && data.accounts) || [];
+  if (!accounts.length) {
+    toggle.hidden = true;
+    panel.hidden = true;
+    return;
+  }
+  toggle.hidden = false;
+  // The summary line is the account with least left, because that is the one about to bite.
+  const withRatio = accounts.filter(a => typeof a.remaining == "number");
+  const lowest = withRatio.length
+    ? withRatio.reduce((a, b) => (a.remaining <= b.remaining ? a : b))
+    : accounts[0];
+  const lowestValue = typeof lowest.remaining == "number"
+    ? Math.round(lowest.remaining * 100) + "% left"
+    : (lowest.value || lowest.primary || "");
+  $("#usagesummary").textContent = accounts.length > 1
+    ? dispTitle(lowest.name) + " " + lowestValue + " · " + accounts.length + " accounts"
+    : dispTitle(lowest.name) + " " + lowestValue;
+  toggle.setAttribute("aria-expanded", usageOpen ? "true" : "false");
+  panel.hidden = !usageOpen;
+  if (!usageOpen) return;
+
+  panel.innerHTML = accounts.map(a => {
+    const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
+    if (typeof a.remaining != "number") {
+      // No quota API for this provider, or a cost figure instead: show the figure, not a bar
+      // drawn from a number nobody has.
+      return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+        '<span class="u-track"></span><span class="u-value">' +
+        esc(a.value || a.primary || "") + "</span></div>";
+    }
+    const pct = Math.max(0, Math.min(100, Math.round(a.remaining * 100)));
+    return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+      '<span class="u-track"><span class="u-fill ' + usageClass(a.remaining) +
+      '" style="width:' + pct + '%"></span></span>' +
+      '<span class="u-value">' + pct + "%</span></div>";
+  }).join("") + (data.stale
+    ? '<div class="u-stale">Toki stopped sending updates, so this may be out of date.</div>'
+    : "");
+}
+
+async function refreshUsage() {
+  renderUsage(await api("/api/usage"));
+}
+
+function pollUsage() {
+  if (TOKEN) refreshUsage().then(() => setConnected(true), () => {});
+}
+
 function pollAgents() {
   if (TOKEN) refreshAgents().then(() => setConnected(true), () => setConnected(false));
 }
@@ -273,9 +338,18 @@ function startApp() {
   started = true;
   pollAgents();
   pollLog();
+  pollUsage();
   setInterval(pollAgents, 4000);
   setInterval(pollLog, 2500);
+  // Quota moves in minutes, not seconds; polling it like a transcript would be noise.
+  setInterval(pollUsage, 20000);
 }
+
+$("#usagetoggle").addEventListener("click", () => {
+  usageOpen = !usageOpen;
+  feedback();
+  refreshUsage();
+});
 
 // A backgrounded tab has its timers throttled to a crawl or stopped outright, so returning to the
 // app showed whatever was on screen when you left until the next tick happened to fire. Poll the
@@ -284,6 +358,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState != "visible" || !started || !TOKEN) return;
   pollAgents();
   pollLog();
+  pollUsage();
 });
 
 $("#pairform").addEventListener("submit", async e => {
