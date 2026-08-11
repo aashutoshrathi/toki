@@ -66,10 +66,55 @@ function feedback(kind = "tap") {
 
 const SESSION_KEY = "toki-session:" + API_BASE + ":" + LINK_TOKEN;
 
-let TOKEN = "";
-try {
-  TOKEN = sessionStorage.getItem(SESSION_KEY) || "";
-} catch (e) {}
+// The session lives in localStorage, not sessionStorage, because sessionStorage dies with the tab:
+// closing the browser -- or iOS discarding a backgrounded tab, which it does within minutes --
+// threw away a session the Mac still considered valid and sent you back to the six-digit code. The
+// server decides how long a session lasts (an hour to two days, chosen in Settings); the phone's
+// copy should last exactly as long, and no longer, so the expiry is stored with it and honoured on
+// load. Revoke on the Mac still ends it immediately, since the token stops being accepted.
+function loadSession() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(SESSION_KEY);
+  } catch (e) {}
+  if (!raw) return "";
+  // Sessions stored before this change were bare tokens with no expiry; treat them as valid and
+  // let the server be the judge, rather than dropping a working session on upgrade.
+  let saved;
+  try {
+    saved = JSON.parse(raw);
+  } catch (e) {
+    return raw;
+  }
+  if (!saved || !saved.token) return "";
+  if (saved.expires && Date.now() >= saved.expires) {
+    clearSession();
+    return "";
+  }
+  return saved.token;
+}
+
+function saveSession(token, expiresInSeconds) {
+  const record = { token };
+  // /api/pair reports the lifetime it granted; without it the token is kept until the server
+  // rejects it.
+  if (expiresInSeconds > 0) record.expires = Date.now() + expiresInSeconds * 1000;
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(record));
+  } catch (e) {}
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+  // Older builds kept it here; clear both so an upgrade cannot leave a stale copy behind.
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+}
+
+let TOKEN = loadSession();
 
 let current = null;
 let offset = 0;
@@ -164,16 +209,20 @@ async function api(p, o) {
   // second time. The probe above is a GET and is the only thing repeated.
   const transport = await tokenTransportOnce();
   const r = await tokenedRequest(p, o, transport === "query");
-  if (r.status == 403) lockApp();
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const detail = await r.text();
+    // 403 covers more than a dead session: the host setting refuses networks it was not meant to
+    // answer, and that is a "you are on the wrong Wi-Fi" which fixes itself. Only a token the Mac
+    // rejects should end the session -- otherwise walking out of the house would sign you out.
+    if (r.status == 403 && detail.includes("bad token")) lockApp();
+    throw new Error(detail);
+  }
   return r.json();
 }
 
 function lockApp() {
   TOKEN = "";
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch (e) {}
+  clearSession();
   document.body.classList.add("locked");
   $("#paircontrols").hidden = false;
   $("#connectmethods").hidden = true;
@@ -184,9 +233,7 @@ function lockApp() {
 
 function invalidLink(message) {
   TOKEN = "";
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch (e) {}
+  clearSession();
   try {
     localStorage.removeItem(CONN_KEY);
   } catch (e) {}
@@ -230,6 +277,15 @@ function startApp() {
   setInterval(pollLog, 2500);
 }
 
+// A backgrounded tab has its timers throttled to a crawl or stopped outright, so returning to the
+// app showed whatever was on screen when you left until the next tick happened to fire. Poll the
+// moment it is visible again.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState != "visible" || !started || !TOKEN) return;
+  pollAgents();
+  pollLog();
+});
+
 $("#pairform").addEventListener("submit", async e => {
   e.preventDefault();
   const code = $("#paircode").value.replace(/\s/g, "");
@@ -255,9 +311,7 @@ $("#pairform").addEventListener("submit", async e => {
       throw new Error(body.error || "verification failed");
     }
     TOKEN = body.token;
-    try {
-      sessionStorage.setItem(SESSION_KEY, TOKEN);
-    } catch (e) {}
+    saveSession(TOKEN, body.expiresIn);
     $("#pairstatus").textContent = "";
     startApp();
   } catch (err) {
@@ -757,9 +811,7 @@ function goHome() {
   try {
     localStorage.removeItem(CONN_KEY);
   } catch (e) {}
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch (e) {}
+  clearSession();
   location.replace(location.pathname);
 }
 
