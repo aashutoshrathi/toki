@@ -568,12 +568,54 @@ function clearPending() {
 let logSession = null;
 let logEpoch = 0;
 
+// Tool calls arrive before their results, so the row has to be found again when the result turns
+// up. Keyed by the tool_use id the transcript already carries.
+let toolNodes = {};
+
 function resetTranscript() {
   logEpoch++;
   logSession = null;
   offset = 0;
+  toolNodes = {};
   $("#log").innerHTML = "";
   clearPending();
+}
+
+// Whole seconds up to a minute, then minutes: a tool call's duration is interesting at a glance,
+// not to three decimal places.
+function shortDuration(ms) {
+  if (!(ms > 0)) return "";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 1) return "";
+  if (seconds < 60) return seconds + "s";
+  return Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
+}
+
+function toolRow(e) {
+  const detail = e.detail && e.detail != e.text
+    ? '<span class="tool-detail">' + dispTitle(e.detail) + "</span>"
+    : "";
+  return '<span class="tool-state" aria-hidden="true"></span>&#128295; <b>' + esc(e.tool) + "</b> " +
+    dispTitle(e.text || "") + detail;
+}
+
+// The result carries no output - only that the call ended, when, and whether it failed. That is
+// enough to stop a finished call looking like one still running.
+function resolveToolNode(entry) {
+  const node = toolNodes[entry.id];
+  if (!node) return;
+  delete toolNodes[entry.id];
+  node.el.classList.remove("running");
+  node.el.classList.add(entry.failed ? "failed" : "ok");
+  const started = Date.parse(node.ts || "");
+  const ended = Date.parse(entry.ts || "");
+  const took = shortDuration(ended - started);
+  if (took) {
+    const stamp = document.createElement("span");
+    stamp.className = "tool-took";
+    stamp.textContent = took;
+    node.el.appendChild(stamp);
+  }
 }
 
 async function refreshLog() {
@@ -602,7 +644,11 @@ async function refreshLog() {
   const stick = nearBottom();
   let added = 0;
   for (const e of r.entries) {
-    if (e.role == "meta" || e.role == "resolved") continue;
+    if (e.role == "resolved") {
+      resolveToolNode(e);
+      continue;
+    }
+    if (e.role == "meta") continue;
     // The agent echoes back the message we optimistically showed; drop the placeholder so it isn't doubled.
     if (e.role == "user" && pendingEcho && e.text.trim() == pendingEcho.text) {
       pendingEcho.node.remove();
@@ -615,7 +661,11 @@ async function refreshLog() {
     if (!added) hideTyping();
     const d = document.createElement("div");
     d.className = "m " + e.role;
-    if (e.role == "tool") d.innerHTML = "&#128295; <b>" + esc(e.tool) + "</b> " + esc(e.text || "");
+    if (e.role == "tool") {
+      d.innerHTML = toolRow(e);
+      d.classList.add("running");
+      if (e.id) toolNodes[e.id] = { el: d, ts: e.ts };
+    }
     else if (e.role == "assistant") d.innerHTML = md(e.text);
     else d.textContent = e.text;
     $("#log").appendChild(d);
