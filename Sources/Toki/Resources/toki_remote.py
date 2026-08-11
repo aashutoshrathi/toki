@@ -57,6 +57,11 @@ AUTO_ACCEPTED_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 CANONICAL_AGENTS = None
 CANONICAL_AGENTS_AT = 0.0
 CANONICAL_AGENTS_LOCK = threading.Lock()
+# Usage arrives on the same pipe as the agent snapshot and goes stale the same way: a reading the
+# Mac stopped refreshing is worse than no reading, because it looks current.
+USAGE_SNAPSHOT = []
+USAGE_SNAPSHOT_AT = 0.0
+USAGE_LOCK = threading.Lock()
 # Toki republishes its agent snapshot every 15s. Past this age the pipe has gone quiet - the app
 # quit, hung, or the write failed - and serving the last snapshot would pin the phone to agents
 # and titles that stopped being true; discovering them here is stale-but-live instead.
@@ -356,7 +361,7 @@ def agents_from_snapshot(processes, snapshot):
 
 def read_control_messages():
     """Toki's side of the pipe: agent snapshots to display, and revocations to act on."""
-    global CANONICAL_AGENTS, CANONICAL_AGENTS_AT
+    global CANONICAL_AGENTS, CANONICAL_AGENTS_AT, USAGE_SNAPSHOT, USAGE_SNAPSHOT_AT
     for line in sys.stdin:
         try:
             payload = json.loads(line)
@@ -369,12 +374,32 @@ def read_control_messages():
             if revoke_device(revoke):
                 publish_devices()
             continue
+        usage = payload.get("usage")
+        if isinstance(usage, list):
+            with USAGE_LOCK:
+                USAGE_SNAPSHOT = usage
+                USAGE_SNAPSHOT_AT = time.time()
+            continue
         agents = payload.get("agents")
         if not isinstance(agents, list):
             continue
         with CANONICAL_AGENTS_LOCK:
             CANONICAL_AGENTS = agents
             CANONICAL_AGENTS_AT = time.time()
+
+
+def current_usage():
+    """The last usage Toki published, and whether it is old enough to distrust."""
+    with USAGE_LOCK:
+        accounts = list(USAGE_SNAPSHOT)
+        published = USAGE_SNAPSHOT_AT
+    if not published:
+        return {"accounts": [], "stale": False, "waiting": True}
+    return {
+        "accounts": accounts,
+        "stale": time.time() - published > CANONICAL_MAX_AGE,
+        "waiting": False,
+    }
 
 
 def dedupe_agents(agents):
@@ -1642,6 +1667,8 @@ class Handler(BaseHTTPRequestHandler):
                     "writable": agent_is_writable(a),
                 })
             self._json(result)
+        elif url.path == "/api/usage":
+            self._json(current_usage())
         elif url.path == "/api/transcript":
             # Anything unparseable reads as "start from the beginning" rather than raising out of
             # the handler, which would drop the connection mid-poll.
