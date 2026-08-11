@@ -267,4 +267,58 @@ assert.equal(took(200), "");
 assert.equal(took(NaN), "");
 assert.equal(took(-5), "");
 
+// --- Usage strip: same reading as the menu bar, one line until asked ---
+assert.match(html, /id="usagetoggle"/);
+assert.match(html, /id="usage"/);
+assert.match(app, /setInterval\(pollUsage/);
+assert.match(css, /#usagetoggle/);
+
+const usageSources = ["usageClass", "renderUsage"].map(name => {
+  const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
+  assert.ok(found, name + " must be a top-level function in app.js");
+  return found[0];
+});
+
+// Colour follows how close the account is to running out, not the provider.
+const usage = vm.createContext({ Math });
+vm.runInContext(usageSources[0], usage);
+const band = r => vm.runInContext("usageClass", usage)(r);
+assert.equal(band(0.8), "");
+assert.equal(band(0.3), "warn");
+// 20% is where Toki itself calls an account low and notifies, so the bar agrees with the alert.
+assert.equal(band(0.2), "low");
+assert.equal(band(0.05), "low");
+
+// The summary names the account with least left, since that is the one about to bite, and an
+// account with no quota API shows its figure rather than a bar drawn from a number nobody has.
+const nodes = {};
+const el = () => ({ hidden: true, textContent: "", innerHTML: "", attrs: {},
+  setAttribute(k, v) { this.attrs[k] = v; } });
+["#usagetoggle", "#usage", "#usagesummary"].forEach(id => { nodes[id] = el(); });
+const render = vm.createContext({
+  Math,
+  $: id => nodes[id],
+  dispTitle: t => t,
+  esc: t => t,
+  usageOpen: true,
+});
+vm.runInContext(usageSources[0], render);
+vm.runInContext(usageSources[1], render);
+vm.runInContext(`renderUsage({accounts:[
+  {id:"a",name:"Claude Code",remaining:0.62},
+  {id:"b",name:"Codex",remaining:0.11},
+  {id:"c",name:"Grok",primary:"no quota API"}
+],stale:true})`, render);
+assert.match(nodes["#usagesummary"].textContent, /^Codex 11% left/);
+assert.match(nodes["#usagesummary"].textContent, /3 accounts/);
+assert.match(nodes["#usage"].innerHTML, /width:62%/);
+assert.match(nodes["#usage"].innerHTML, /u-fill low/);
+assert.match(nodes["#usage"].innerHTML, /no quota API/);
+// A reading the Mac stopped refreshing says so rather than looking current.
+assert.match(nodes["#usage"].innerHTML, /out of date/);
+
+// Nothing to show means no strip at all, rather than an empty panel.
+vm.runInContext("renderUsage({accounts:[]})", render);
+assert.equal(nodes["#usagetoggle"].hidden, true);
+
 console.log("remote pwa + qr + ux tests passed");
