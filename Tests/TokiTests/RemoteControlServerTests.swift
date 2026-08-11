@@ -421,6 +421,57 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(RemoteControlServer.parseTunnelHost(from: "2026-07-29 INF starting tunnel"))
     }
 
+    // Every refusal Toki can name should come back with the fix, not with Tailscale's stderr and
+    // an invitation to work out which failure it was.
+    func testNotBeingTheTailnetOperatorComesBackWithTheCommandThatFixesIt() {
+        let failure = RemoteControlServer.serveFailure(
+            launched: true,
+            exitCode: 1,
+            stderr: "access denied: serve config denied: this command must be run as root, or by the tailscale operator"
+        )
+        XCTAssertEqual(failure.remedy, "sudo tailscale set --operator=$USER")
+        XCTAssertFalse(failure.isUnrecognized)
+    }
+
+    func testTailnetWithoutHTTPSCertificatesIsNamedAsTheCause() {
+        let failure = RemoteControlServer.serveFailure(
+            launched: true,
+            exitCode: 1,
+            stderr: "HTTPS is not enabled in the admin panel"
+        )
+        XCTAssertTrue(failure.message.contains("HTTPS certificates"))
+        XCTAssertNil(failure.remedy)
+        XCTAssertFalse(failure.isUnrecognized)
+    }
+
+    func testSignedOutTailscaleAsksForASignInRatherThanAnOperatorChange() {
+        let failure = RemoteControlServer.serveFailure(
+            launched: true, exitCode: 1, stderr: "not logged in, run `tailscale up`"
+        )
+        XCTAssertEqual(failure.remedy, "tailscale up")
+    }
+
+    func testAMissingCLIIsNotPresentedAsSomethingToRetry() {
+        let failure = RemoteControlServer.serveFailure(launched: false, exitCode: -1, stderr: "")
+        XCTAssertFalse(failure.isUnrecognized)
+        XCTAssertNil(failure.remedy)
+    }
+
+    // Only an unattributable failure earns the second attempt with the older command form; a
+    // refusal Toki understands would refuse that form too.
+    func testAnUnfamiliarFailureIsTheOnlyOneWorthRetrying() {
+        let unknown = RemoteControlServer.serveFailure(
+            launched: true, exitCode: 1, stderr: "flag provided but not defined: -bg"
+        )
+        XCTAssertTrue(unknown.isUnrecognized)
+        XCTAssertEqual(unknown.message, "flag provided but not defined: -bg")
+
+        let timedOut = RemoteControlServer.serveFailure(
+            launched: true, exitCode: -1, stderr: "timed out after 25s"
+        )
+        XCTAssertFalse(timedOut.isUnrecognized)
+    }
+
     func testTunnelHostBuildsHTTPSConnectURL() {
         let url = RemoteControlServer.makeConnectURL(
             companionAppMode: .sameHost,

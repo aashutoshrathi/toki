@@ -111,7 +111,13 @@ final class RemoteControlServer: ObservableObject {
     // surfaced in settings so a failed lookup explains itself instead of silently using the IP.
     @Published private(set) var tailscaleStatusDiagnostic: String?
     @Published private(set) var isEnablingServe = false
-    @Published private(set) var serveSetupError: String?
+    @Published private(set) var serveSetupFailure: ServeSetupFailure?
+    // nil until the first status check completes. False means no runnable `tailscale` was found,
+    // so Toki cannot enable HTTPS for you - the Mac App Store build ships no usable CLI.
+    @Published private(set) var tailscaleCLIAvailable: Bool?
+    // Toki enables HTTPS once per running server rather than on every status poll, so a refusal
+    // (not the operator, certificates off) is reported once instead of retried every 20 seconds.
+    private var didAttemptAutoServe = false
     // Public HTTPS address from a Cloudflare quick tunnel, when Host is Cloudflare Tunnel.
     @Published private(set) var tunnelHost: String?
     @Published private(set) var isStartingTunnel = false
@@ -412,6 +418,10 @@ final class RemoteControlServer: ObservableObject {
         process = task
         inputPipe = input
         isRunning = true
+        // A fresh server is a fresh chance to front it with HTTPS, including after a host change
+        // that made Tailscale the route.
+        didAttemptAutoServe = false
+        serveSetupFailure = nil
         refreshTailscaleStatus()
         if hostMode == .tunnel { startTunnel() }
         sendActiveAgentSnapshot()
@@ -591,14 +601,28 @@ final class RemoteControlServer: ObservableObject {
             let result = await Task.detached(priority: .utility) {
                 let status = Self.readTailscaleStatus()
                 let serve = Self.readTailscaleServe(port: checkPort)
-                return (name: status.name, diagnostic: status.diagnostic,
+                return (name: status.name, diagnostic: status.diagnostic, cli: status.cliAvailable,
                         ready: serve.ready, conflict: serve.conflict)
             }.value
             tailscaleDNSName = result.name
             tailscaleStatusDiagnostic = result.diagnostic
+            tailscaleCLIAvailable = result.cli
             tailscaleServeReady = result.ready
             tailscaleServeConflict = result.conflict
+            enableTailscaleServeIfNeeded()
         }
+    }
+
+    // Choosing Tailscale and starting the server is the whole request: without `tailscale serve`
+    // fronting the port there is no HTTPS and no phone can connect, so Toki runs it rather than
+    // showing a warning and a button. A handler already serving :443 is left alone - replacing
+    // someone else's service is a decision, and the UI asks for it explicitly.
+    private func enableTailscaleServeIfNeeded() {
+        guard !didAttemptAutoServe, isRunning, tailscaleServeReady == false, !tailscaleServeConflict,
+              tailscaleCLIAvailable == true, hasUsableTailscaleHost,
+              hostMode == .tailscale || companionAppMode == .hosted else { return }
+        didAttemptAutoServe = true
+        enableTailscaleServe()
     }
 
     private nonisolated static func tailscaleExecutable() -> URL {
@@ -699,23 +723,25 @@ final class RemoteControlServer: ObservableObject {
         return TailscaleRun(data: code == 0 ? data : nil, launched: true, exitCode: code, stderr: stderr)
     }
 
-    // Returns the MagicDNS name, or a short diagnostic explaining why it couldn't be read.
-    nonisolated static func readTailscaleStatus() -> (name: String?, diagnostic: String?) {
+    // Returns the MagicDNS name, or a short diagnostic explaining why it couldn't be read, plus
+    // whether a `tailscale` CLI could be run at all - the Mac App Store build ships none, and
+    // without one Toki can read nothing and enable nothing, which the UI has to say out loud.
+    nonisolated static func readTailscaleStatus() -> (name: String?, diagnostic: String?, cliAvailable: Bool) {
         let run = runTailscale(["status", "--json"])
         guard let data = run.data else {
             if !run.launched {
-                return (nil, "Couldn't run the tailscale command. Is Tailscale installed?")
+                return (nil, "Couldn't run the tailscale command. Is Tailscale installed?", false)
             }
             let detail = run.stderr.isEmpty ? "exit code \(run.exitCode)" : run.stderr
-            return (nil, "tailscale status failed: \(detail)")
+            return (nil, "tailscale status failed: \(detail)", true)
         }
         if let name = tailscaleDNSName(from: data) {
-            return (name, nil)
+            return (name, nil, true)
         }
         let diagnostic = statusDiagnostic(from: data)
         DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "no_dns_name",
                                        detail: "\(diagnostic) raw=\(rawSelfDNSName(from: data) ?? "<absent>")")
-        return (nil, diagnostic)
+        return (nil, diagnostic, true)
     }
 
     // The command ran but yielded no usable .ts.net name, so the settings hint has to point at the
@@ -749,12 +775,23 @@ final class RemoteControlServer: ObservableObject {
         return (serveReady(from: data, port: port), serveConflict(from: data, port: port))
     }
 
-    // Run `tailscale serve` so the tailnet fronts our loopback port over HTTPS on 443. May fail if
-    // the user is not the tailnet operator; the captured stderr is surfaced with a link to the guide.
+    // Why `tailscale serve` refused, in words, plus the one command that clears it where there is
+    // one. Every failure worth naming has a specific remedy; handing back raw stderr and "try
+    // Terminal" leaves the user to work out which of them they hit.
+    struct ServeSetupFailure: Equatable, Sendable {
+        let message: String
+        /// A command to run in Terminal that clears this particular refusal, when one exists.
+        let remedy: String?
+        /// True when the cause could not be identified, which is the only case where retrying
+        /// with an older command form is worth anything.
+        let isUnrecognized: Bool
+    }
+
+    // Run `tailscale serve` so the tailnet fronts our loopback port over HTTPS on 443.
     func enableTailscaleServe() {
         guard !isEnablingServe else { return }
         isEnablingServe = true
-        serveSetupError = nil
+        serveSetupFailure = nil
         let checkPort = port
         Task {
             let failure = await Task.detached(priority: .userInitiated) {
@@ -762,54 +799,79 @@ final class RemoteControlServer: ObservableObject {
             }.value
             isEnablingServe = false
             if let failure {
-                serveSetupError = failure
+                serveSetupFailure = failure
+                DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "serve_failed",
+                                               detail: failure.message)
             } else {
                 refreshTailscaleStatus()
             }
         }
     }
 
-    // Returns nil on success, or an error message to surface.
-    private nonisolated static func runTailscaleServe(port: Int) -> String? {
-        let task = tailscaleProcess(["serve", "--bg", "http://127.0.0.1:\(port)"])
+    /// The command Toki runs, offered for copying when it has to be run by hand.
+    var tailscaleServeCommand: String {
+        "tailscale serve --bg http://127.0.0.1:\(port)"
+    }
 
-        // Capture stderr to a temp file, not a Pipe. `serve --bg` can leave a descriptor open,
-        // and a blocking pipe read would then never reach EOF (hangs the caller forever).
-        let logURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("toki-serve-\(UUID().uuidString).log")
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        let logHandle = try? FileHandle(forWritingTo: logURL)
-        defer {
-            try? logHandle?.close()
-            try? FileManager.default.removeItem(at: logURL)
-        }
-        task.standardError = logHandle ?? FileHandle.nullDevice
-        task.standardOutput = FileHandle.nullDevice
+    // A cert can take a while to provision on first use, so this waits far longer than a status
+    // read - but never indefinitely, since the UI is waiting on it.
+    private static let serveTimeout: TimeInterval = 25
 
-        do {
-            try task.run()
-        } catch {
-            return "Couldn't run tailscale. Make sure Tailscale is installed."
-        }
+    // Returns nil on success, or the failure to surface.
+    private nonisolated static func runTailscaleServe(port: Int) -> ServeSetupFailure? {
+        let target = "http://127.0.0.1:\(port)"
+        let run = runTailscale(["serve", "--bg", target], timeout: serveTimeout)
+        if run.launched, run.exitCode == 0 { return nil }
 
-        // Never block the UI indefinitely: `tailscale serve` can stall while provisioning a cert.
-        let deadline = Date().addingTimeInterval(25)
-        while task.isRunning, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.2)
-        }
-        if task.isRunning {
-            task.terminate()
-            return "Enabling HTTPS timed out. Make sure Tailscale is running and HTTPS Certificates are enabled, or run the command in Terminal (see the guide)."
-        }
+        let failure = serveFailure(launched: run.launched, exitCode: run.exitCode, stderr: run.stderr)
+        // Tailscale releases before 1.58 want the port spelled out. Only an unattributable failure
+        // is worth a second attempt: an operator or certificate refusal refuses either form.
+        guard failure.isUnrecognized else { return failure }
+        let retry = runTailscale(["serve", "--bg", "443", target], timeout: serveTimeout)
+        if retry.launched, retry.exitCode == 0 { return nil }
+        return serveFailure(launched: retry.launched, exitCode: retry.exitCode, stderr: retry.stderr)
+    }
 
-        try? logHandle?.close()
-        if task.terminationStatus == 0 { return nil }
-        let message = (try? String(contentsOf: logURL, encoding: .utf8))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let message, !message.isEmpty {
-            return message
+    // Pure so the mapping from Tailscale's wording to a remedy can be tested without a tailnet.
+    nonisolated static func serveFailure(launched: Bool, exitCode: Int32, stderr: String) -> ServeSetupFailure {
+        guard launched else {
+            return ServeSetupFailure(
+                message: "Toki couldn't run the tailscale command. Install Tailscale, or use the guide to set HTTPS up by hand.",
+                remedy: nil,
+                isUnrecognized: false
+            )
         }
-        return "tailscale serve did not start. Try running it in Terminal (see the guide)."
+        let text = stderr.lowercased()
+        if text.contains("timed out") {
+            return ServeSetupFailure(
+                message: "Enabling HTTPS timed out, which usually means Tailscale is still provisioning a certificate. Try again in a moment.",
+                remedy: nil,
+                isUnrecognized: false
+            )
+        }
+        if text.contains("operator") || text.contains("access denied") || text.contains("must be run as root") {
+            return ServeSetupFailure(
+                message: "Tailscale only lets its operator change serve settings, and that isn't this account yet. Run this once in Terminal, then try again.",
+                remedy: "sudo tailscale set --operator=$USER",
+                isUnrecognized: false
+            )
+        }
+        if text.contains("logged out") || text.contains("not logged in") || text.contains("needslogin") {
+            return ServeSetupFailure(
+                message: "Tailscale isn't signed in on this Mac, so it can't serve anything. Sign in, then try again.",
+                remedy: "tailscale up",
+                isUnrecognized: false
+            )
+        }
+        if text.contains("cert") || text.contains("https") {
+            return ServeSetupFailure(
+                message: "This tailnet doesn't have HTTPS certificates enabled, so there's no certificate to serve with. Turn on HTTPS Certificates in the Tailscale admin console, then try again.",
+                remedy: nil,
+                isUnrecognized: false
+            )
+        }
+        let detail = stderr.isEmpty ? "exit code \(exitCode)" : stderr
+        return ServeSetupFailure(message: detail, remedy: nil, isUnrecognized: true)
     }
 
     // A Cloudflare quick tunnel gives this Mac a public HTTPS address with no account or DNS setup;

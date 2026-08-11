@@ -164,10 +164,19 @@ are "on the same Wi-Fi". Nothing on the Mac can fix this. Use Tailscale.
 ### Tailscale needs MagicDNS and HTTPS certificates
 
 "From anywhere" over Tailscale needs both enabled in the tailnet admin console, and
-`tailscale serve` fronting the port so the phone gets a real certificate. Toki can run the serve
-command for you, but it will not overwrite an existing handler on port 443 — if something else is
-already served there, Toki warns instead of silently replacing it. If `tailscale status` cannot be
-read, you can type the `.ts.net` host by hand in Settings.
+`tailscale serve` fronting the port so the phone gets a real certificate. Toki runs the serve
+command for you when you start the server with Tailscale as the host — it does not wait to be
+asked. It will not overwrite an existing handler on port 443, though: if something else is already
+served there, Toki warns and leaves the replacement to an explicit click.
+
+Two things stop Toki from enabling it, and it says which one you hit and what clears it. Tailscale
+only lets its *operator* change serve settings, which is fixed once with
+`sudo tailscale set --operator=$USER`. And a tailnet without HTTPS Certificates has no certificate
+to serve with, which is a switch in the admin console. If Toki cannot find a `tailscale` command at
+all — the Mac App Store build ships no usable CLI — it hands you the exact command to run instead.
+
+If `tailscale status` cannot be read, you can type the `.ts.net` host by hand in Settings, and the
+HTTPS status and its Enable button still appear.
 
 ### Cloudflare Tunnel is a public URL, and is not recommended
 
