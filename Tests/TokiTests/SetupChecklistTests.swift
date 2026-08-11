@@ -92,7 +92,12 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertEqual(row?.status, .unknown)
         XCTAssertEqual(row?.actionLabel, "Allow")
         XCTAssertTrue(row?.isRequestable ?? false, "asking is what opens it and settles the question")
-        XCTAssertTrue(SetupChecklist.outstanding(steps(facts)).isEmpty, "unknown is not a chore")
+        // Other rows in a bare fixture are legitimately outstanding; what matters is that a
+        // terminal macOS refuses to answer for is not one of them.
+        XCTAssertFalse(
+            SetupChecklist.outstanding(steps(facts)).contains { $0.kind == .automation },
+            "a closed terminal is unknown, not an outstanding chore"
+        )
     }
 
     func testAccessibilityIsOnlyRaisedWhileAnEditorThatNeedsItIsRunning() {
