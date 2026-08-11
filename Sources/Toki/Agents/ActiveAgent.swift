@@ -138,7 +138,21 @@ enum ActiveAgentScanner {
                     possibleParent.pid == candidate.parentPID && possibleParent.provider == candidate.provider
                 }
             }
-            let agents = disambiguate(roots.map(enrich))
+            // Transcripts are assigned across the whole scan, not per agent: telling co-located
+            // Claude agents apart needs to know about the siblings sharing their project folder.
+            let contexts = roots.map(resolveContext)
+            let sessions = AgentSessionResolver.assignClaudeSessions(
+                contexts.compactMap { context -> AgentSessionResolver.ClaudeAgentIdentity? in
+                    guard isClaudeFamily(context.candidate.provider) else { return nil }
+                    return AgentSessionResolver.ClaudeAgentIdentity(
+                        id: context.candidate.pid,
+                        command: context.candidate.command,
+                        cwd: context.directory,
+                        startTime: context.startTime
+                    )
+                }
+            )
+            let agents = disambiguate(contexts.map { buildAgent($0, session: sessions[$0.candidate.pid]) })
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
             cache = cache.filter { alive.contains($0.key) }
@@ -242,8 +256,23 @@ enum ActiveAgentScanner {
         return Date().addingTimeInterval(-TimeInterval(days * 86400 + hms))
     }
 
-    // cwd and host app are cached; title and activity change as the session evolves.
-    private static func enrich(_ c: Candidate) -> ActiveAgent {
+    // The per-process facts that don't change as the conversation does, resolved once so the
+    // session assignment can see every agent's folder before any agent is built.
+    private struct ProcessContext {
+        let candidate: Candidate
+        let directory: String?
+        let hostApp: HostApp?
+        let hostProcessID: Int32?
+        let startTime: Date?
+    }
+
+    private static func isClaudeFamily(_ provider: Provider) -> Bool {
+        provider == .claudeCode || provider == .claude || provider == .anthropic
+    }
+
+    // cwd and host app are cached here; title, usage and activity are read per scan in
+    // buildAgent, since those change as the conversation evolves.
+    private static func resolveContext(_ c: Candidate) -> ProcessContext {
         let cached = cache[c.pid]
         let reusable = cached?.command == c.command ? cached : nil
         let cwd = reusable?.directory
@@ -264,29 +293,51 @@ enum ActiveAgentScanner {
         let hostApp = cachedHost?.hostApp ?? resolvedHost?.app
         let hostProcessID = cachedHost?.hostProcessID ?? resolvedHost?.processID
         let hostViaTmux = cachedHost?.hostViaTmux ?? (resolvedHost?.viaTmux ?? false)
-        // When agents share a project folder, the session file created nearest this process's
-        // launch is the one it opened; pass the start time so each resolves its own session.
-        let startTime = startDate(fromETime: c.runtime)
-        let chatTitle = AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
-        let agent = ActiveAgent(
+        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux)
+        return ProcessContext(
+            candidate: c,
+            directory: cwd,
+            hostApp: hostApp,
+            hostProcessID: hostProcessID,
+            // The launch time is what separates two agents sharing one project folder.
+            startTime: startDate(fromETime: c.runtime)
+        )
+    }
+
+    // `session` is Claude's assigned transcript; every field it backs is read from that one file
+    // rather than re-resolved four times, which also keeps them describing the same conversation.
+    private static func buildAgent(_ context: ProcessContext, session: AgentSessionResolver.ResolvedSession?) -> ActiveAgent {
+        let c = context.candidate
+        let cwd = context.directory
+        let isClaude = isClaudeFamily(c.provider)
+        let now = Date()
+        return ActiveAgent(
             id: c.pid,
             provider: c.provider,
             directory: cwd,
-            chatTitle: chatTitle,
-            hostApp: hostApp,
-            hostProcessID: hostProcessID,
-            lastActivity: AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
+            chatTitle: isClaude
+                ? session.flatMap(AgentSessionResolver.claudeTitle(of:))
+                : AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
+            hostApp: context.hostApp,
+            hostProcessID: context.hostProcessID,
+            lastActivity: isClaude
+                ? session?.modified
+                : AgentSessionResolver.lastActivity(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
             processID: c.pid,
             runtime: c.runtime,
             terminalTTY: c.tty,
             memoryKB: c.memoryKB,
             command: c.command,
-            sessionUsage: AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
-            attention: AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime),
-            sessionPath: AgentSessionResolver.sessionPath(provider: c.provider, command: c.command, cwd: cwd, startTime: startTime)
+            sessionUsage: isClaude
+                ? session.flatMap(AgentSessionResolver.claudeUsage(of:))
+                : AgentSessionResolver.sessionUsage(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
+            attention: isClaude
+                ? session.flatMap { AgentSessionResolver.claudeAttention(of: $0, now: now) }
+                : AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
+            sessionPath: isClaude
+                ? session?.path
+                : AgentSessionResolver.sessionPath(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime)
         )
-        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux)
-        return agent
     }
 }
 
