@@ -42,6 +42,12 @@ chose in Settings (12 hours by default, 2 days maximum). The session token is se
 `Authorization` header, so it stays out of your phone's browser history and out of the logs of
 anything sitting between the phone and the Mac.
 
+That session lasts as long as it says it does: the phone keeps it until the lifetime you chose runs
+out, so closing the browser, locking the phone, or leaving the tab in the background does not send
+you back to the six-digit code. It is stored on the device that paired, which is what a session of
+hours-to-days means in practice — **Revoke** in Settings is what ends one early, and it takes
+effect on that device's next request.
+
 ### Who can reach the server
 
 The **Host** setting is not just a display preference — it decides which networks the server will
