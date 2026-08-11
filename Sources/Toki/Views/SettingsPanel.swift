@@ -723,7 +723,10 @@ struct SettingsPanel: View {
                 )
             }
 
-            if remoteServer.isRunning, remoteServer.tailscaleDNSName != nil,
+            // A hand-typed host counts: the Mac App Store build of Tailscale ships no usable CLI,
+            // so `tailscale status` reads nothing and the DNS name is entered by hand - which is
+            // exactly when someone needs to be told HTTPS isn't up yet.
+            if remoteServer.isRunning, remoteServer.hasUsableTailscaleHost,
                remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale {
                 tailscaleReadinessRow
             }
@@ -757,6 +760,20 @@ struct SettingsPanel: View {
         }
     }
 
+    private func copyCommandButton(_ command: String, label: String) -> some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(command, forType: .string)
+        } label: {
+            Label(label, systemImage: "doc.on.doc")
+        }
+        .controlSize(.small)
+        .fixedSize()
+        .help(command)
+        .accessibilityLabel("Copy \(command)")
+        .pointerOnHover()
+    }
+
     @ViewBuilder
     private var tailscaleReadinessRow: some View {
         let ready = remoteServer.tailscaleServeReady
@@ -769,45 +786,71 @@ struct SettingsPanel: View {
                 Text(ready == true
                     ? "Reachable from your phone."
                     : ready == false
-                        ? (remoteServer.tailscaleServeConflict
-                            ? "Tailscale already serves another app on HTTPS 443. Enabling here will replace it."
-                            : "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet.")
+                        ? (remoteServer.isEnablingServe
+                            ? "Turning on HTTPS access with `tailscale serve`…"
+                            : remoteServer.tailscaleServeConflict
+                                ? "Tailscale already serves another app on HTTPS 443. Enabling here will replace it."
+                                : "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet.")
                         : "Checking whether your phone can reach this Mac…")
-                    .foregroundStyle(ready == false ? Color.orange : Color.secondary)
+                    .foregroundStyle(ready == false && !remoteServer.isEnablingServe ? Color.orange : Color.secondary)
             }
             .font(.system(size: 11))
             .fixedSize(horizontal: false, vertical: true)
 
             if ready == false {
-                HStack(spacing: 8) {
-                    Button {
-                        remoteServer.enableTailscaleServe()
-                    } label: {
-                        if remoteServer.isEnablingServe {
-                            HStack(spacing: 5) {
-                                ProgressView().controlSize(.small).scaleEffect(0.7)
-                                Text("Enabling…")
-                            }
-                        } else {
-                            Text(remoteServer.tailscaleServeConflict ? "Replace and enable HTTPS" : "Enable HTTPS access")
-                        }
+                if remoteServer.tailscaleCLIAvailable == false {
+                    // Nothing to click: with no CLI Toki cannot run serve at all, so hand over the
+                    // exact command instead of a button that would only fail.
+                    HStack(spacing: 8) {
+                        copyCommandButton(remoteServer.tailscaleServeCommand, label: "Copy serve command")
+                        Text("Toki can't find the tailscale command, so run this on the Mac yourself.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .controlSize(.small)
-                    .fixedSize()
-                    .disabled(remoteServer.isEnablingServe)
-                    .help("Run tailscale serve so your phone can reach this Mac over HTTPS")
-                    .pointerOnHover()
+                } else {
+                    HStack(spacing: 8) {
+                        Button {
+                            remoteServer.enableTailscaleServe()
+                        } label: {
+                            if remoteServer.isEnablingServe {
+                                HStack(spacing: 5) {
+                                    ProgressView().controlSize(.small).scaleEffect(0.7)
+                                    Text("Enabling…")
+                                }
+                            } else {
+                                Text(remoteServer.tailscaleServeConflict ? "Replace and enable HTTPS" : "Enable HTTPS access")
+                            }
+                        }
+                        .controlSize(.small)
+                        .fixedSize()
+                        .disabled(remoteServer.isEnablingServe)
+                        .help("Run tailscale serve so your phone can reach this Mac over HTTPS")
+                        .pointerOnHover()
 
-                    Text("or set it up by hand with the guide next to Host.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        Text("or set it up by hand with the guide next to Host.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
-                if let error = remoteServer.serveSetupError {
-                    Text("Couldn't enable it automatically: \(error) You may need to run the command in Terminal (see the guide).")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                if let failure = remoteServer.serveSetupFailure {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(failure.message)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let remedy = failure.remedy {
+                            HStack(spacing: 6) {
+                                Text(remedy)
+                                    .font(.system(size: 10).monospaced())
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                copyCommandButton(remedy, label: "Copy")
+                            }
+                        }
+                    }
                 }
             }
         }
