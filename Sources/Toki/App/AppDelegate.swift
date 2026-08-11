@@ -115,6 +115,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
+        // The phone gets the same readings the menu bar has, from the same publisher, so the two
+        // cannot drift apart.
+        Task { @MainActor in
+            for await snapshots in store.$snapshots.values {
+                RemoteControlServer.shared.updateUsage(snapshots)
+            }
+        }
+
         Task { @MainActor in
             for await agents in store.$activeAgents.values {
                 agentsAwaitingInput = agents.filter(\.needsInput).count

@@ -175,6 +175,7 @@ final class RemoteControlServer: ObservableObject {
     private var inputPipe: Pipe?
     private var outputBuffer = ""
     private var activeAgents: [ActiveAgent] = []
+    private var usageSnapshots: [AccountSnapshot] = []
     private var tunnelProcess: Process?
 
     private init() {
@@ -443,6 +444,7 @@ final class RemoteControlServer: ObservableObject {
         refreshTailscaleStatus()
         if hostMode == .tunnel { startTunnel() }
         sendActiveAgentSnapshot()
+        sendUsageSnapshot()
     }
 
     func stop() {
@@ -463,6 +465,44 @@ final class RemoteControlServer: ObservableObject {
     func updateActiveAgents(_ agents: [ActiveAgent]) {
         activeAgents = agents
         sendActiveAgentSnapshot()
+    }
+
+    func updateUsage(_ snapshots: [AccountSnapshot]) {
+        usageSnapshots = snapshots
+        sendUsageSnapshot()
+    }
+
+    /// What the phone is told about an account. Deliberately the same numbers the menu bar shows -
+    /// this is a second window onto the reading Toki already has, not a second source of truth.
+    nonisolated static func usagePayload(from snapshots: [AccountSnapshot]) -> [[String: Any]] {
+        snapshots.map { snapshot in
+            var entry: [String: Any] = [
+                "id": snapshot.id,
+                "name": snapshot.name,
+                "provider": snapshot.provider.rawValue,
+                "primary": snapshot.primary,
+                "error": snapshot.isError
+            ]
+            // Providers with no quota API (Grok, Copilot) have no ratio at all, and a cost-based
+            // one has a figure instead. Sending a placeholder would make the phone draw a bar for
+            // a number nobody has.
+            if let remaining = snapshot.remainingRatio { entry["remaining"] = remaining }
+            if !snapshot.subtitle.isEmpty { entry["detail"] = snapshot.subtitle }
+            if let value = snapshot.menuBarValue { entry["value"] = value }
+            return entry
+        }
+    }
+
+    private func sendUsageSnapshot() {
+        guard isRunning, let inputPipe else { return }
+        guard
+            let data = try? JSONSerialization.data(withJSONObject: ["usage": Self.usagePayload(from: usageSnapshots)]),
+            var line = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        line.append("\n")
+        try? inputPipe.fileHandleForWriting.write(contentsOf: Data(line.utf8))
     }
 
     static func remoteProviderName(for provider: Provider) -> String? {
