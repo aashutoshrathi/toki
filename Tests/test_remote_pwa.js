@@ -245,4 +245,26 @@ assert.match(app, /detail\.includes\("bad token"\)/);
 // --- Coming back to a backgrounded tab polls immediately ---
 assert.match(app, /addEventListener\("visibilitychange"/);
 
+// --- Tool calls show that they finished, and how long they took ---
+// The transcript already carried tool_result entries; the client dropped them, so every call sat
+// looking like it was still running.
+assert.match(app, /function resolveToolNode/);
+assert.match(app, /toolNodes\[entry\.id\]/);
+assert.match(app, /classList\.add\(entry\.failed \? "failed" : "ok"\)/);
+assert.match(css, /\.tool\.running \.tool-state/);
+assert.match(css, /\.tool\.failed \.tool-state/);
+
+const durationSource = app.match(/^function shortDuration\([\s\S]*?^}/m);
+assert.ok(durationSource, "shortDuration must be a top-level function in app.js");
+const duration = vm.createContext({ Math });
+vm.runInContext(durationSource[0], duration);
+const took = ms => vm.runInContext("shortDuration", duration)(ms);
+assert.equal(took(2400), "2s");
+assert.equal(took(65000), "1m 5s");
+// A call that returned instantly says nothing rather than "0s", and a missing timestamp on either
+// end must not render "NaN".
+assert.equal(took(200), "");
+assert.equal(took(NaN), "");
+assert.equal(took(-5), "");
+
 console.log("remote pwa + qr + ux tests passed");
