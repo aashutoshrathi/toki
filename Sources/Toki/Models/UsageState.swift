@@ -115,6 +115,12 @@ struct AppPreferences: Codable, Equatable {
     /// Off by default - it relocates the whole app, so it is opt-in.
     var notchModeEnabled = false
     var notchPlacement = NotchPlacement.hanging
+    /// Whether Toki may read the Claude Code sign-in out of the Keychain, which puts up the
+    /// system's Keychain dialog. Off until the setup checklist asks for it, so a fresh install
+    /// doesn't raise that dialog just because someone opened the menu.
+    var keychainReadsApproved = false
+    /// Set once the setup checklist has been worked through, so it stops taking up the panel.
+    var setupChecklistCompleted = false
 
     enum CodingKeys: String, CodingKey {
         case notificationsEnabled
@@ -128,6 +134,8 @@ struct AppPreferences: Codable, Equatable {
         case quotaRingsEnabled
         case notchModeEnabled
         case notchPlacement
+        case keychainReadsApproved
+        case setupChecklistCompleted
     }
 
     init() {}
@@ -156,6 +164,8 @@ struct AppPreferences: Codable, Equatable {
         quotaRingsEnabled = try container.decodeIfPresent(Bool.self, forKey: .quotaRingsEnabled) ?? defaults.quotaRingsEnabled
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled
         notchPlacement = try container.decodeIfPresent(NotchPlacement.self, forKey: .notchPlacement) ?? defaults.notchPlacement
+        keychainReadsApproved = try container.decodeIfPresent(Bool.self, forKey: .keychainReadsApproved) ?? defaults.keychainReadsApproved
+        setupChecklistCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupChecklistCompleted) ?? defaults.setupChecklistCompleted
     }
 }
 

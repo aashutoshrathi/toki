@@ -131,6 +131,8 @@ struct SettingsPanel: View {
                     remoteControlCard
                         .id(SettingsAnchor.remoteControl)
 
+                    permissionsCard
+
                     sectionHeader("General")
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -986,6 +988,22 @@ struct SettingsPanel: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    // The same checklist onboarding shows, kept permanently: a permission can be revoked in
+    // System Settings long after setup, and this is where you find out that it was.
+    private var permissionsCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            cardLabel(
+                icon: "checklist",
+                iconColor: .green,
+                title: "Permissions",
+                subtitle: "What Toki asks macOS for, and what each one is used for."
+            )
+            SetupChecklistView(store: store, showsHeader: false)
+        }
+        .padding(8)
+        .settingsCard()
     }
 
     private func sectionHeader(_ title: String) -> some View {
