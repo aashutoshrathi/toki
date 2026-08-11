@@ -824,7 +824,9 @@ final class RemoteControlServer: ObservableObject {
 
     // A cert can take a while to provision on first use, so this waits far longer than a status
     // read - but never indefinitely, since the UI is waiting on it.
-    private static let serveTimeout: TimeInterval = 25
+    // nonisolated: the server is @MainActor, so its statics are too by default, and the serve
+    // runner that reads this is deliberately off the main actor.
+    private nonisolated static let serveTimeout: TimeInterval = 25
 
     // Returns nil on success, or the failure to surface.
     private nonisolated static func runTailscaleServe(port: Int) -> ServeSetupFailure? {
