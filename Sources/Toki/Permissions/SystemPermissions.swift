@@ -82,7 +82,10 @@ struct SetupFacts: Equatable {
     var hasConnectedAccount = false
     /// Whether the user has agreed to Toki reading the Claude Code sign-in out of the Keychain.
     var keychainApproved = false
-    var claudeCodeDetected = false
+    /// A Claude Code sign-in was actually read - the row reports this rather than the gate.
+    var claudeSignInFound = false
+    /// A Claude account exists in config, so failing to read a sign-in is a problem worth naming.
+    var claudeAccountConfigured = false
     var notificationsEnabled = true
     /// Terminals installed on this Mac that Toki types replies into, with where each one stands.
     var automation: [AutomationTarget] = []
@@ -124,16 +127,36 @@ enum SetupChecklist {
 
         // Reading the sign-in Claude Code stored puts up the system's Keychain dialog, so on a
         // fresh install Toki waits to be told to look rather than doing it while you open a menu.
-        if isFirstRun || !facts.keychainApproved || facts.claudeCodeDetected {
+        // Once it is allowed the row reports what the read actually produced: saying "done" purely
+        // because the gate is open claimed success for a dialog that may have been refused.
+        if !facts.keychainApproved {
             steps.append(SetupStep(
                 kind: .claudeKeychain,
                 title: "Read your Claude Code sign-in",
-                detail: facts.keychainApproved
-                    ? "Toki reads the token Claude Code stored in your Keychain to show its quota."
-                    : "Claude Code keeps its token in your Keychain, and macOS asks you to allow Toki once. Without it, Claude Code quota can't be shown.",
-                status: facts.keychainApproved ? .done : .pending,
-                actionLabel: facts.keychainApproved ? nil : "Allow",
-                isRequestable: !facts.keychainApproved
+                detail: "Claude Code keeps its token in your Keychain, and macOS asks you to allow Toki once. Without it, Claude Code quota can't be shown.",
+                status: .pending,
+                actionLabel: "Allow",
+                isRequestable: true
+            ))
+        } else if facts.claudeSignInFound {
+            steps.append(SetupStep(
+                kind: .claudeKeychain,
+                title: "Read your Claude Code sign-in",
+                detail: "Toki is reading the token Claude Code stored in your Keychain.",
+                status: .done,
+                actionLabel: nil
+            ))
+        } else if facts.claudeAccountConfigured || isFirstRun {
+            // Allowed, but nothing came back. A refused Keychain dialog looks exactly like this,
+            // and so does a Claude Code that was never signed in - both are worth another look
+            // rather than a row claiming everything is fine.
+            steps.append(SetupStep(
+                kind: .claudeKeychain,
+                title: "Read your Claude Code sign-in",
+                detail: "Toki couldn't read a Claude Code sign-in. If macOS asked and the answer was Deny, try again and choose Always Allow; if Claude Code isn't signed in, run /login there first.",
+                status: .unknown,
+                actionLabel: "Try again",
+                isRequestable: true
             ))
         }
 
@@ -155,13 +178,13 @@ enum SetupChecklist {
                 kind: .automation,
                 subject: target.bundleID,
                 title: "Control \(target.name)",
-                detail: target.status == .blocked
-                    ? "Refused earlier, so replies can't reach agents running in \(target.name). Allow Toki under Privacy & Security › Automation."
-                    : "Lets Toki jump to an agent's tab, and type your replies from Remote Control into it.",
+                detail: automationDetail(for: target),
                 status: target.status,
                 actionLabel: target.status == .done ? nil : (target.status == .blocked ? "Open Settings" : "Allow"),
                 isOptional: true,
-                isRequestable: target.status == .pending
+                // `.unknown` means the app is closed and macOS would not say; asking is still the
+                // way to find out, and asking launches it.
+                isRequestable: target.status == .pending || target.status == .unknown
             ))
         }
 
@@ -213,6 +236,17 @@ enum SetupChecklist {
         }
 
         return steps
+    }
+
+    private static func automationDetail(for target: AutomationTarget) -> String {
+        switch target.status {
+        case .blocked:
+            return "Refused earlier, so replies can't reach agents running in \(target.name). Allow Toki under Privacy & Security › Automation."
+        case .unknown:
+            return "\(target.name) isn't running, so macOS won't say yet. Allow opens it and asks."
+        default:
+            return "Lets Toki jump to an agent's tab, and type your replies from Remote Control into it."
+        }
     }
 
     /// Steps still worth acting on - what the badge counts.
@@ -269,7 +303,10 @@ enum SetupChecklist {
         // read happens regardless, and a row reading "pending" for something already working
         // would be a lie with a button attached.
         facts.keychainApproved = store.allowsKeychainReads
-        facts.claudeCodeDetected = store.snapshots.contains { $0.provider.isClaudeAccount }
+        facts.claudeAccountConfigured = store.snapshots.contains { $0.provider.isClaudeAccount }
+        // What the read produced, from either route: a connected account or a live detection.
+        facts.claudeSignInFound = facts.claudeAccountConfigured
+            || store.detectedProviders.contains { $0.provider.isClaudeAccount }
         facts.notificationsEnabled = store.preferences.notificationsEnabled
         // Off the main actor: this is a TCC lookup per terminal, and the list is rebuilt every
         // time the app becomes active - which is exactly when TCC is least likely to answer fast.
@@ -330,7 +367,11 @@ enum SystemPermissions {
         let status = automationPermission(bundleID: bundleID, askUserIfNeeded: false)
         if status == noErr { return .done }
         if status == notPermitted { return .blocked }
-        if status == wouldRequireConsent || status == targetNotRunning { return .pending }
+        if status == wouldRequireConsent { return .pending }
+        // The app is not running, so macOS will not say. Reporting "not granted yet" there was
+        // wrong for every terminal that happened to be closed - including ones already allowed -
+        // and it is the state most terminals are in when the checklist is read.
+        if status == targetNotRunning { return .unknown }
         return .unknown
     }
 
@@ -358,6 +399,13 @@ enum SystemPermissions {
         return withExtendedLifetime(descriptor) {
             AEDeterminePermissionToAutomateTarget(target, AEEventClass(typeWildCard), AEEventID(typeWildCard), askUserIfNeeded)
         }
+    }
+
+    /// Notifications live in their own Settings pane, not under Privacy & Security.
+    @MainActor
+    static func openNotificationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @MainActor
