@@ -113,5 +113,14 @@ final class UsageStore: ObservableObject {
 
     func setNeedsOnboarding(_ value: Bool) {
         needsOnboarding = value
+        // Remember that this install started from nothing, so the first-run checklist can survive
+        // connecting an account - that is the moment onboarding ends and the permissions the app
+        // actually needs start mattering. An existing install never sets this and never sees it;
+        // its checklist lives in Settings.
+        if value, !preferences.setupChecklistStarted {
+            var next = preferences
+            next.setupChecklistStarted = true
+            updatePreferences(next)
+        }
     }
 }

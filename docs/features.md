@@ -80,11 +80,24 @@ during onboarding, and permanently under **Settings › Permissions** — listin
 used for and what it costs to skip.
 
 Nothing on the list is requested until you press its button. The statuses are read with checks
-that never prompt, so the list can tell you where you stand before asking for anything. Rows only
-appear when they apply to this Mac: Automation lists the terminals you actually have installed,
-Accessibility appears while an editor whose windows Toki raises is running, Local Network while
-Remote Control is on. A permission you refused earlier is marked as refused and sends you to
-System Settings, since macOS will not ask a second time.
+that never prompt, so the list can tell you where you stand before asking for anything. A
+permission you refused earlier is marked as refused and sends you to System Settings, since macOS
+will not ask a second time.
+
+A **first run lists everything Toki will ever ask for**, including the permissions that only matter
+once you use the feature behind them, and **Allow all** requests them in one pass — one dialog at a
+time, with Accessibility last because answering that one means a trip to System Settings. Refusing
+any of them only turns off what it was for. The list stays until you have worked through it or
+put it away, so connecting an account does not sweep it off screen halfway through.
+
+Afterwards the same list becomes a status board under Settings, and shows only what applies to
+this Mac right now: Automation lists the terminals you actually have installed, Accessibility
+appears while an editor whose windows Toki raises is running, Local Network while Remote Control
+is on.
+
+Local network is the one Toki cannot bring forward: macOS asks for it when the server first
+answers a device, so the checklist explains when to expect it rather than offering a button that
+could not do anything.
 
 On a fresh install Toki no longer reads Claude Code's sign-in out of the Keychain until the
 checklist's Keychain row is used, so opening the menu for the first time raises no dialog. A Mac
