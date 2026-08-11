@@ -437,6 +437,26 @@ final class RemoteControlServerTests: XCTestCase {
         """), .conflict)
     }
 
+    // When `tailscale status` cannot be read, serve's own config still names the Mac - the same
+    // name the connect link needs, which was being typed in by hand instead.
+    func testTheServedHostIsLearnedFromServeStatus() {
+        let json = """
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """
+        XCTAssertEqual(
+            RemoteControlServer.servedTailscaleHost(from: Data(json.utf8)),
+            "mac.tail1234.ts.net"
+        )
+    }
+
+    func testAServedHostThatIsNotATailnetNameIsIgnored() {
+        let json = """
+        {"Web":{"attacker.example.com:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """
+        XCTAssertNil(RemoteControlServer.servedTailscaleHost(from: Data(json.utf8)))
+        XCTAssertNil(RemoteControlServer.servedTailscaleHost(from: nil))
+    }
+
     func testParseTunnelHostFromCloudflaredOutput() {
         let text = """
         2026-07-29T10:00:00Z INF +----------------------------------------------------+
