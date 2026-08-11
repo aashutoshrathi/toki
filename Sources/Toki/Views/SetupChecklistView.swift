@@ -194,10 +194,18 @@ struct SetupChecklistView: View {
     }
 
     private func refresh() {
-        steps = SetupChecklist.steps(
-            from: SetupChecklist.currentFacts(store: store, remoteControlRunning: remoteServer.isRunning),
-            mode: mode
-        )
+        Task {
+            let facts = await SetupChecklist.currentFacts(store: store, remoteControlRunning: remoteServer.isRunning)
+            steps = SetupChecklist.steps(from: facts, mode: mode)
+        }
+    }
+
+    // Awaiting the refresh matters inside the "allow all" pass: each request has to see the list
+    // as it stands after the previous answer, or a permission granted along the way gets asked
+    // for twice.
+    private func refreshAndWait() async {
+        let facts = await SetupChecklist.currentFacts(store: store, remoteControlRunning: remoteServer.isRunning)
+        steps = SetupChecklist.steps(from: facts, mode: mode)
     }
 
     // One dialog at a time, in an order that ends with the one that sends you to System Settings.
@@ -211,7 +219,7 @@ struct SetupChecklistView: View {
                 handled.insert(next.id)
                 currentRequest = next.title
                 await request(next)
-                refresh()
+                await refreshAndWait()
             }
             currentRequest = nil
             requestingAll = false
@@ -235,7 +243,7 @@ struct SetupChecklistView: View {
         Task {
             await request(step)
             busyStepID = nil
-            refresh()
+            await refreshAndWait()
         }
     }
 
@@ -246,6 +254,9 @@ struct SetupChecklistView: View {
             // the user has asked for the read here.
             await store.approveKeychainReads()
         case .notifications:
+            // Delivery returns immediately and macOS decides for itself when to put its own
+            // notification prompt on screen, so unlike the others this one cannot be sequenced -
+            // it may land alongside the next dialog. Bringing it forward at all is the point.
             store.sendTestNotification()
             notificationTestSent = true
         case .automation:

@@ -127,10 +127,20 @@ enum AgentSessionResolver {
 
         // Oldest process first: each agent's range ends where the next agent's begins, so an
         // earlier agent can never claim the file a later one opened at its own launch.
+        //
+        // The known limit of this: only the newest agent's range runs to the present, so if an
+        // *earlier* co-located agent starts a new conversation, that file falls inside the newer
+        // agent's range. Nothing in a transcript records which process wrote it - Claude Code
+        // does not even hold the file open - so there is no signal that would settle it.
         let ordered = agents.sorted { ($0.startTime ?? .distantPast) < ($1.startTime ?? .distantPast) }
         for (index, agent) in ordered.enumerated() {
-            let lowerBound = (agent.startTime ?? .distantPast).addingTimeInterval(-sessionStartMatchWindow)
-            let upperBound = ordered.dropFirst(index + 1).compactMap(\.startTime).first
+            let start = agent.startTime ?? .distantPast
+            let lowerBound = start.addingTimeInterval(-sessionStartMatchWindow)
+            // The next *distinct* launch, not simply the next agent: `ps etime` is whole seconds,
+            // so two agents started in the same second read as simultaneous. Bounding the earlier
+            // one at its own start would empty its range and leave it with no session at all;
+            // sharing the range and letting `claimed` separate them is the honest answer.
+            let upperBound = ordered.dropFirst(index + 1).compactMap(\.startTime).first { $0 > start }
             let owned = sessions.filter { session in
                 guard !claimed.contains(session.path), let created = session.created, created >= lowerBound else {
                     return false

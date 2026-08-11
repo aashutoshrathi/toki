@@ -663,6 +663,14 @@ final class RemoteControlServer: ObservableObject {
         let launched: Bool
         let exitCode: Int32
         let stderr: String
+        /// Killed for taking too long. A GUI-app binary that is not a CLI hangs rather than
+        /// failing, so this is one of the ways "no usable tailscale here" shows up.
+        var timedOut = false
+
+        // `launched` only says a process started, and the fallback launches `/usr/bin/env`, which
+        // always exists - it then exits 127 when there is no `tailscale` for it to find. Neither
+        // that nor a binary that hangs is a CLI Toki can drive.
+        var foundCLI: Bool { launched && !timedOut && exitCode != 127 }
     }
 
     private nonisolated static func runTailscale(_ arguments: [String], timeout: TimeInterval = 6) -> TailscaleRun {
@@ -708,7 +716,8 @@ final class RemoteControlServer: ObservableObject {
             task.waitUntilExit()
             DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "command_timeout",
                                            detail: arguments.joined(separator: " "))
-            return TailscaleRun(data: nil, launched: true, exitCode: -1, stderr: "timed out after \(Int(timeout))s")
+            return TailscaleRun(data: nil, launched: true, exitCode: -1,
+                                stderr: "timed out after \(Int(timeout))s", timedOut: true)
         }
         try? outHandle?.close()
         try? errHandle?.close()
@@ -729,7 +738,7 @@ final class RemoteControlServer: ObservableObject {
     nonisolated static func readTailscaleStatus() -> (name: String?, diagnostic: String?, cliAvailable: Bool) {
         let run = runTailscale(["status", "--json"])
         guard let data = run.data else {
-            if !run.launched {
+            guard run.foundCLI else {
                 return (nil, "Couldn't run the tailscale command. Is Tailscale installed?", false)
             }
             let detail = run.stderr.isEmpty ? "exit code \(run.exitCode)" : run.stderr
@@ -823,13 +832,13 @@ final class RemoteControlServer: ObservableObject {
         let run = runTailscale(["serve", "--bg", target], timeout: serveTimeout)
         if run.launched, run.exitCode == 0 { return nil }
 
-        let failure = serveFailure(launched: run.launched, exitCode: run.exitCode, stderr: run.stderr)
+        let failure = serveFailure(launched: run.foundCLI, exitCode: run.exitCode, stderr: run.stderr)
         // Tailscale releases before 1.58 want the port spelled out. Only an unattributable failure
         // is worth a second attempt: an operator or certificate refusal refuses either form.
         guard failure.isUnrecognized else { return failure }
         let retry = runTailscale(["serve", "--bg", "443", target], timeout: serveTimeout)
         if retry.launched, retry.exitCode == 0 { return nil }
-        return serveFailure(launched: retry.launched, exitCode: retry.exitCode, stderr: retry.stderr)
+        return serveFailure(launched: retry.foundCLI, exitCode: retry.exitCode, stderr: retry.stderr)
     }
 
     // Pure so the mapping from Tailscale's wording to a remedy can be tested without a tailnet.

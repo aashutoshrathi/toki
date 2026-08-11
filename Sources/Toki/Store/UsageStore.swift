@@ -56,6 +56,9 @@ final class UsageStore: ObservableObject {
     var insightGeneration = 0
     var notificationAuthorization: Bool?
     var agentTimer: Timer?
+    // The provider scan in flight, so a caller that needs a fresh one can wait for it rather than
+    // colliding with it and silently doing nothing.
+    var providerScanTask: Task<Void, Never>?
     let connectivityMonitor = ConnectivityMonitor()
     var connectivityGeneration = 0
     var refreshAfterReconnect = false

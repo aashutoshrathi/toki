@@ -93,7 +93,7 @@ struct SetupFacts: Equatable {
     var launchAtLoginEnabled = false
 }
 
-struct AutomationTarget: Equatable, Identifiable {
+struct AutomationTarget: Equatable, Identifiable, Sendable {
     let name: String
     let bundleID: String
     let status: SetupStepStatus
@@ -262,15 +262,18 @@ enum SetupChecklist {
     ]
 
     @MainActor
-    static func currentFacts(store: UsageStore, remoteControlRunning: Bool) -> SetupFacts {
+    static func currentFacts(store: UsageStore, remoteControlRunning: Bool) async -> SetupFacts {
         var facts = SetupFacts()
         facts.hasConnectedAccount = !store.snapshots.isEmpty
-        facts.keychainApproved = store.preferences.keychainReadsApproved
+        // What the scan actually does, not just the stored answer: once onboarding is over the
+        // read happens regardless, and a row reading "pending" for something already working
+        // would be a lie with a button attached.
+        facts.keychainApproved = store.allowsKeychainReads
         facts.claudeCodeDetected = store.snapshots.contains { $0.provider.isClaudeAccount }
         facts.notificationsEnabled = store.preferences.notificationsEnabled
-        facts.automation = SystemPermissions.installed(scriptedTerminals).map {
-            AutomationTarget(name: $0.name, bundleID: $0.bundleID, status: SystemPermissions.automationStatus(bundleID: $0.bundleID))
-        }
+        // Off the main actor: this is a TCC lookup per terminal, and the list is rebuilt every
+        // time the app becomes active - which is exactly when TCC is least likely to answer fast.
+        facts.automation = await SystemPermissions.automationStatuses(for: SystemPermissions.installed(scriptedTerminals))
         facts.accessibilityGranted = SystemPermissions.accessibilityGranted
         facts.workspaceAppRunning = SystemPermissions.isRunning(anyOf: workspaceApps)
         facts.remoteControlRunning = remoteControlRunning
@@ -313,6 +316,15 @@ enum SystemPermissions {
     private static let targetNotRunning: OSStatus = -600 // procNotFound
     /// No Apple Event address could be built for that bundle id, so nothing can be asked.
     private static let descriptorUnavailable: OSStatus = -1
+
+    static func automationStatuses(for apps: [(name: String, bundleID: String)]) async -> [AutomationTarget] {
+        let requested = apps.map { (name: $0.name, bundleID: $0.bundleID) }
+        return await Task.detached(priority: .utility) {
+            requested.map {
+                AutomationTarget(name: $0.name, bundleID: $0.bundleID, status: automationStatus(bundleID: $0.bundleID))
+            }
+        }.value
+    }
 
     static func automationStatus(bundleID: String) -> SetupStepStatus {
         let status = automationPermission(bundleID: bundleID, askUserIfNeeded: false)
