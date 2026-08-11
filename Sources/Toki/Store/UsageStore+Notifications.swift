@@ -81,12 +81,16 @@ extension UsageStore {
     // rather than arriving with the first low-quota warning.
     func sendTestNotification() {
         let detail = "Toki will tell you here when quota runs low or an agent is waiting on you."
-        deliverNotification(title: "Toki notifications are on", detail: detail) { delivered, failureDetail in
+        deliverNotification(title: "Toki notifications are on", detail: detail) { handedOver, failureDetail in
+            // "Handed to macOS", not "delivered": nothing here can see whether it was shown, and
+            // claiming it arrived is what made a silent notification look like a working one.
             self.appendEvent(
                 kind: .notification,
                 title: "Test notification",
-                detail: delivered ? detail : "Not delivered: \(failureDetail ?? detail)",
-                deliveredNotification: delivered
+                detail: handedOver
+                    ? "Sent to macOS. If nothing appeared, allow Toki under System Settings › Notifications."
+                    : "Not sent: \(failureDetail ?? detail)",
+                deliveredNotification: handedOver
             )
         }
     }

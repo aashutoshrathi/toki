@@ -19,19 +19,32 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertEqual(step(.claudeKeychain, in: facts)?.actionLabel, "Allow")
     }
 
-    func testTheKeychainRowDisappearsOnceApprovedAndNoClaudeAccountIsThere() {
+    func testTheKeychainRowDisappearsOnceApprovedAndThereIsNoClaudeToRead() {
         var facts = SetupFacts()
         facts.keychainApproved = true
-        facts.claudeCodeDetected = false
+        facts.claudeSignInFound = false
+        facts.claudeAccountConfigured = false
         XCTAssertNil(step(.claudeKeychain, in: facts))
     }
 
-    func testAnApprovedKeychainStillExplainsItselfWhileClaudeIsConnected() {
+    func testAnApprovedKeychainReadsAsDoneOnlyWhenASignInWasActuallyRead() {
         var facts = SetupFacts()
         facts.keychainApproved = true
-        facts.claudeCodeDetected = true
+        facts.claudeSignInFound = true
         XCTAssertEqual(step(.claudeKeychain, in: facts)?.status, .done)
         XCTAssertNil(step(.claudeKeychain, in: facts)?.actionLabel)
+    }
+
+    // A refused Keychain dialog leaves the gate open and the read empty. Reporting that as "done"
+    // claimed success for something that never happened and removed the only way to retry.
+    func testAConfiguredClaudeAccountWithNoReadableSignInOffersARetry() {
+        var facts = SetupFacts()
+        facts.keychainApproved = true
+        facts.claudeAccountConfigured = true
+        facts.claudeSignInFound = false
+        XCTAssertEqual(step(.claudeKeychain, in: facts)?.status, .unknown)
+        XCTAssertEqual(step(.claudeKeychain, in: facts)?.actionLabel, "Try again")
+        XCTAssertTrue(step(.claudeKeychain, in: facts)?.isRequestable ?? false)
     }
 
     // Nothing is delivered while Toki's own switch is off, so macOS is never asked and there is
@@ -67,6 +80,19 @@ final class SetupChecklistTests: XCTestCase {
         var facts = SetupFacts()
         facts.automation = [AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .blocked)]
         XCTAssertEqual(step(.automation, in: facts)?.actionLabel, "Open Settings")
+    }
+
+    // macOS will not answer for an app that is not running, and most terminals are closed when the
+    // checklist is read. Calling that "not granted yet" marked already-allowed terminals as
+    // outstanding forever; it is unknown, and asking is still how you find out.
+    func testAClosedTerminalIsUnknownRatherThanNotGranted() {
+        var facts = SetupFacts()
+        facts.automation = [AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .unknown)]
+        let row = step(.automation, in: facts)
+        XCTAssertEqual(row?.status, .unknown)
+        XCTAssertEqual(row?.actionLabel, "Allow")
+        XCTAssertTrue(row?.isRequestable ?? false, "asking is what opens it and settles the question")
+        XCTAssertTrue(SetupChecklist.outstanding(steps(facts)).isEmpty, "unknown is not a chore")
     }
 
     func testAccessibilityIsOnlyRaisedWhileAnEditorThatNeedsItIsRunning() {
@@ -156,6 +182,7 @@ final class SetupChecklistTests: XCTestCase {
         facts.keychainApproved = true
         facts.accessibilityGranted = true
         facts.launchAtLoginEnabled = true
+        facts.claudeSignInFound = true
         facts.automation = [AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .blocked)]
         let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts, mode: .firstRun))
         // Notifications can't be read back, so it stays askable; everything else here is settled,
