@@ -73,6 +73,15 @@ struct OnboardingView: View {
             }
             .buttonStyle(.plain)
             .pointerOnHover()
+
+            // Second half of a first run: the permissions Toki would otherwise ask for one dialog
+            // at a time, listed with what each one buys and nothing requested until it is. It can
+            // be put away from here, and stays available in Settings afterwards.
+            if !store.preferences.setupChecklistCompleted {
+                Divider()
+                    .padding(.vertical, 2)
+                SetupChecklistView(store: store, showsDismiss: true)
+            }
         }
         .padding(10)
         .contentSurface()

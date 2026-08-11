@@ -71,6 +71,26 @@ Native low-quota and session warnings with cooldowns and a DND mode. DND suppres
 
 Session mode records starting quota for visible accounts, then shows a banner with a live stopwatch and per-account burn, logging warnings when quota drops sharply or crosses your threshold. Its toggle sits next to refresh in the header.
 
+## Permissions checklist
+
+Toki needs a handful of unrelated permissions, and each one used to arrive as a side effect of
+something else: the Keychain dialog when the menu was first opened, Automation the first time an
+agent row was clicked, Local Network when Remote Control started. They are now a checklist —
+during onboarding, and permanently under **Settings › Permissions** — listing what each one is
+used for and what it costs to skip.
+
+Nothing on the list is requested until you press its button. The statuses are read with checks
+that never prompt, so the list can tell you where you stand before asking for anything. Rows only
+appear when they apply to this Mac: Automation lists the terminals you actually have installed,
+Accessibility appears while an editor whose windows Toki raises is running, Local Network while
+Remote Control is on. A permission you refused earlier is marked as refused and sends you to
+System Settings, since macOS will not ask a second time.
+
+On a fresh install Toki no longer reads Claude Code's sign-in out of the Keychain until the
+checklist's Keychain row is used, so opening the menu for the first time raises no dialog. A Mac
+that already has accounts connected is past that point and keeps picking up new sign-ins
+automatically.
+
 ## Launch at login
 
 Backed by `SMAppService`, reflecting what System Settings → General → Login Items actually says rather than a separate stored preference. macOS sometimes needs a freshly-added login item approved in that pane first; when it does, the toggle shows a "Needs approval" note linking straight there.

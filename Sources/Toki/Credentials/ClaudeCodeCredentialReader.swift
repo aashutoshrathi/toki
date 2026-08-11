@@ -30,9 +30,12 @@ enum ClaudeCodeCredentialReader {
     // moves the whole config directory, and an XDG-style install puts it under ~/.config. Reading
     // one fixed location reported a genuinely signed-in machine as not connected, so the search
     // walks every known spot and a failure names each one it tried.
-    static func readSignedInCredentials() throws -> CredentialBundle {
+    // `allowsKeychain` is false while the setup checklist has not been through the Keychain step:
+    // the first read puts up the system's Keychain dialog, and a fresh install should not raise it
+    // as a side effect of opening the menu. A file-based sign-in is still found either way.
+    static func readSignedInCredentials(allowsKeychain: Bool = true) throws -> CredentialBundle {
         var attempts: [String] = []
-        for account in keychainAccountCandidates() {
+        for account in keychainAccountCandidates() where allowsKeychain {
             do {
                 return try keychainBundle(account: account)
             } catch {
@@ -42,6 +45,9 @@ enum ClaudeCodeCredentialReader {
                 // each one waiting out the same long timeout.
                 guard isMissingKeychainItem(error) else { break }
             }
+        }
+        if !allowsKeychain {
+            attempts.append("Keychain (not approved yet in Toki's setup checklist)")
         }
         for path in credentialFileCandidates() {
             do {

@@ -76,6 +76,21 @@ extension UsageStore {
         }
     }
 
+    // The setup checklist's notification step. macOS asks about notifications the first time one
+    // is delivered, so this is how that prompt is brought forward to a moment the user chose,
+    // rather than arriving with the first low-quota warning.
+    func sendTestNotification() {
+        let detail = "Toki will tell you here when quota runs low or an agent is waiting on you."
+        deliverNotification(title: "Toki notifications are on", detail: detail) { delivered, failureDetail in
+            self.appendEvent(
+                kind: .notification,
+                title: "Test notification",
+                detail: delivered ? detail : "Not delivered: \(failureDetail ?? detail)",
+                deliveredNotification: delivered
+            )
+        }
+    }
+
     private func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
         let cooldown = TimeInterval(max(preferences.notificationCooldownMinutes, 5) * 60)
         if let last = usageState.eventLastRecordedAt[key],

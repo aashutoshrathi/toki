@@ -75,12 +75,32 @@ extension UsageStore {
     func rescanProviders() {
         guard !isScanningProviders else { return }
         isScanningProviders = true
+        // A machine with accounts already connected has been past the Keychain dialog long ago;
+        // holding the read back there would only stop a newly signed-in Claude Code from being
+        // picked up. It is the fresh install - the one that gets every prompt at once - that waits
+        // for the checklist to ask.
+        let allowsKeychain = !needsOnboarding || preferences.keychainReadsApproved
         Task {
-            let detected = await ProviderDetection.scan()
+            let detected = await ProviderDetection.scan(allowsKeychain: allowsKeychain)
             detectedProviders = detected
             isScanningProviders = false
             connectDetected(detected)
         }
+    }
+
+    // The setup checklist's Keychain step: remember the answer, then look straight away so the
+    // dialog appears while the user is still looking at the row that asked for it.
+    func approveKeychainReads() {
+        var next = preferences
+        next.keychainReadsApproved = true
+        updatePreferences(next)
+        rescanProviders()
+    }
+
+    func completeSetupChecklist(_ completed: Bool = true) {
+        var next = preferences
+        next.setupChecklistCompleted = completed
+        updatePreferences(next)
     }
 
     // detectedProviders minus anything already present in snapshots (whether connected
