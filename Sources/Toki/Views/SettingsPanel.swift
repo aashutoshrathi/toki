@@ -852,6 +852,15 @@ struct SettingsPanel: View {
                     }
                 }
 
+                // Toki decided not to run serve itself. Saying so beats a warning that reads as
+                // though nothing has happened yet.
+                if remoteServer.serveSetupFailure == nil, let skipped = remoteServer.autoServeSkipped {
+                    Text(skipped)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if let failure = remoteServer.serveSetupFailure {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(failure.message)
