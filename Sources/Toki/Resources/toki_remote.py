@@ -524,7 +524,15 @@ def parse_claude_transcript(path, offset=0):
                         if block.get("type") == "text":
                             texts.append(block.get("text", ""))
                         elif block.get("type") == "tool_result":
-                            entries.append({"role": "resolved", "id": block.get("tool_use_id")})
+                            # The result's own content is deliberately not forwarded: it is
+                            # unbounded and is where file contents and command output live. What
+                            # travels is that the call finished, when, and whether it failed.
+                            entries.append({
+                                "role": "resolved",
+                                "id": block.get("tool_use_id"),
+                                "ts": j.get("timestamp"),
+                                "failed": bool(block.get("is_error")),
+                            })
                 for t in texts:
                     cleaned = clean_user_text(t)
                     if cleaned:
@@ -540,6 +548,8 @@ def parse_claude_transcript(path, offset=0):
                         entries.append({
                             "role": "tool", "tool": name, "id": block.get("id"),
                             "text": claude_tool_summary(name, inp),
+                            "detail": claude_tool_detail(name, inp),
+                            "ts": j.get("timestamp"),
                             "questions": extract_questions(name, inp),
                         })
         if "permissionMode" in j:
@@ -553,6 +563,39 @@ def claude_tool_summary(name, inp):
         if isinstance(v, str) and v.strip():
             return v.strip().splitlines()[0][:160]
     return ""
+
+
+# The one-line summary above picks whichever of six keys it finds first, which for a Bash call
+# with a description hides the command being run, and for an edit hides the file being edited.
+# This is the rest of the answer: what a call is actually about, per tool, still bounded.
+_TOOL_DETAIL_KEYS = {
+    "Bash": ("command",),
+    "Read": ("file_path", "offset", "limit"),
+    "Edit": ("file_path",),
+    "Write": ("file_path",),
+    "NotebookEdit": ("notebook_path",),
+    "Grep": ("pattern", "path", "glob"),
+    "Glob": ("pattern", "path"),
+    "WebFetch": ("url",),
+    "WebSearch": ("query",),
+    "Task": ("subagent_type",),
+}
+
+
+def claude_tool_detail(name, inp):
+    if not isinstance(inp, dict):
+        return ""
+    summary = claude_tool_summary(name, inp)
+    parts = []
+    for key in _TOOL_DETAIL_KEYS.get(name, ()):
+        value = inp.get(key)
+        if value in (None, "", []):
+            continue
+        text = " ".join(str(value).split())
+        # Don't repeat what the summary line already says.
+        if text and text != summary:
+            parts.append(text)
+    return " · ".join(parts)[:240]
 
 
 def extract_questions(name, inp):
