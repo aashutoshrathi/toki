@@ -133,6 +133,9 @@ final class RemoteControlServer: ObservableObject {
     // Toki enables HTTPS once per running server rather than on every status poll, so a refusal
     // (not the operator, certificates off) is reported once instead of retried every 20 seconds.
     private var didAttemptAutoServe = false
+    /// Why Toki did not run `tailscale serve` itself. Without this the row said serve was not
+    /// running and offered a button, with no hint that Toki had already decided not to try.
+    @Published private(set) var autoServeSkipped: String?
     // Public HTTPS address from a Cloudflare quick tunnel, when Host is Cloudflare Tunnel.
     @Published private(set) var tunnelHost: String?
     @Published private(set) var isStartingTunnel = false
@@ -618,10 +621,13 @@ final class RemoteControlServer: ObservableObject {
                 let serve = Self.readTailscaleServe(port: checkPort)
                 return (name: status.name, diagnostic: status.diagnostic, cli: status.cliAvailable, serve: serve)
             }.value
-            tailscaleDNSName = result.name
             tailscaleStatusDiagnostic = result.diagnostic
             tailscaleCLIAvailable = result.cli
-            serveState = result.serve
+            serveState = result.serve.state
+            // `tailscale status` is not the only place this Mac's name appears. When it could not
+            // be read, serve's own configuration names the host it is serving, which is the same
+            // name the phone needs - so it is filled in rather than typed by hand.
+            tailscaleDNSName = result.name ?? result.serve.host
             enableTailscaleServeIfNeeded()
         }
     }
@@ -631,9 +637,20 @@ final class RemoteControlServer: ObservableObject {
     // showing a warning and a button. A handler already serving :443 is left alone - replacing
     // someone else's service is a decision, and the UI asks for it explicitly.
     private func enableTailscaleServeIfNeeded() {
-        guard !didAttemptAutoServe, isRunning, tailscaleServeReady == false, !tailscaleServeConflict,
-              tailscaleCLIAvailable == true, hasUsableTailscaleHost,
-              hostMode == .tailscale || companionAppMode == .hosted else { return }
+        guard isRunning, hostMode == .tailscale || companionAppMode == .hosted else { return }
+        guard !didAttemptAutoServe else { return }
+        // Nothing to do, or nothing that can be decided yet.
+        guard tailscaleServeReady == false else { return }
+        // Deliberate refusals, each of which the row explains on its own.
+        if tailscaleServeConflict {
+            autoServeSkipped = "Something else already serves HTTPS on 443, so Toki left it alone."
+            return
+        }
+        if tailscaleCLIAvailable != true {
+            autoServeSkipped = "Toki has no tailscale command to run."
+            return
+        }
+        autoServeSkipped = nil
         didAttemptAutoServe = true
         enableTailscaleServe()
     }
@@ -792,12 +809,12 @@ final class RemoteControlServer: ObservableObject {
         return "Tailscale reports this Mac as \(name), which isn't a .ts.net name. Enter the host by hand."
     }
 
-    private nonisolated static func readTailscaleServe(port: Int) -> ServeState {
+    private nonisolated static func readTailscaleServe(port: Int) -> (state: ServeState, host: String?) {
         let run = runTailscale(["serve", "status", "--json"])
         guard run.foundCLI else {
-            return .unreadable("Toki couldn't run the tailscale command to check HTTPS.")
+            return (.unreadable("Toki couldn't run the tailscale command to check HTTPS."), nil)
         }
-        return serveState(from: run.data, port: port)
+        return (serveState(from: run.data, port: port), servedTailscaleHost(from: run.data))
     }
 
     // Why `tailscale serve` refused, in words, plus the one command that clears it where there is
@@ -1018,6 +1035,22 @@ final class RemoteControlServer: ObservableObject {
     nonisolated static func servedPort(fromWebKey key: String) -> Int? {
         guard let colon = key.lastIndex(of: ":") else { return nil }
         return Int(key[key.index(after: colon)...])
+    }
+
+    /// The `.ts.net` name `tailscale serve` says it is serving. When `tailscale status` cannot be
+    /// read - the Mac App Store build ships no usable CLI - this is a second source for the one
+    /// piece of information the connect link needs, and it is already on screen in serve's output.
+    nonisolated static func servedTailscaleHost(from data: Data?) -> String? {
+        guard let data,
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let root = object as? [String: Any],
+              let web = root["Web"] as? [String: Any] else { return nil }
+        for key in web.keys.sorted() {
+            guard let colon = key.lastIndex(of: ":") else { continue }
+            let host = String(key[..<colon])
+            if isTailscaleDNSHost(host) { return host }
+        }
+        return nil
     }
 
     nonisolated static func serveState(from data: Data?, port: Int) -> ServeState {
