@@ -82,6 +82,15 @@ struct MenuContentView: View {
             if store.needsOnboarding {
                 OnboardingView(store: store) { showConfig = true }
             } else {
+                // Connecting an account ends onboarding but not setup: the permissions Toki needs
+                // to actually be useful are still unanswered, so the first-run checklist stays
+                // until it is worked through or put away. Only for an install that started from
+                // nothing - an existing one finds the same list in Settings.
+                if store.preferences.setupChecklistStarted, !store.preferences.setupChecklistCompleted {
+                    SetupChecklistView(store: store, mode: .firstRun, showsDismiss: true)
+                        .padding(10)
+                        .contentSurface()
+                }
                 if store.preferences.aiInsightEnabled {
                     overview
                 }

@@ -20,10 +20,13 @@ struct DetectedProvider: Identifiable, Sendable {
 enum ProviderDetection {
     // Shells out to `security` and touches the filesystem, so this runs off the main
     // actor (mirrors ActiveAgent.scan()) to avoid blocking the UI while onboarding loads.
-    static func scan() async -> [DetectedProvider] {
+    // `allowsKeychain` is what the setup checklist gates: reading Claude Code's sign-in raises the
+    // system Keychain dialog, and a scan runs every time the popover opens, so on a fresh install
+    // that dialog would arrive unasked-for. Everything else here reads files and always runs.
+    static func scan(allowsKeychain: Bool = true) async -> [DetectedProvider] {
         await Task.detached(priority: .utility) {
             var detected: [DetectedProvider] = []
-            if let claude = detectClaudeCode() { detected.append(claude) }
+            if let claude = detectClaudeCode(allowsKeychain: allowsKeychain) { detected.append(claude) }
             if let codex = detectCodex() { detected.append(codex) }
             if let openCode = detectOpenCode() { detected.append(openCode) }
             if let pi = detectPi() { detected.append(pi) }
@@ -34,8 +37,10 @@ enum ProviderDetection {
         }.value
     }
 
-    private static func detectClaudeCode() -> DetectedProvider? {
-        guard let bundle = try? ClaudeCodeCredentialReader.readSignedInCredentials() else { return nil }
+    private static func detectClaudeCode(allowsKeychain: Bool) -> DetectedProvider? {
+        guard let bundle = try? ClaudeCodeCredentialReader.readSignedInCredentials(allowsKeychain: allowsKeychain) else {
+            return nil
+        }
         let email = ClaudeCodeCredentialReader.emailIdentifier(from: bundle.credentials)
         return DetectedProvider(
             provider: .claudeCode,

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.7.0 - 2026-08-11
+
+### Added
+
+- **The permissions Toki needs are a checklist now, not a series of surprises.** Toki asks macOS for several unrelated things, and each one used to arrive as a side effect of something else: the Keychain dialog the first time you opened the menu, Automation the first time you clicked an agent, Local Network when Remote Control started. They are now one list — during onboarding, and permanently under **Settings › Permissions** — saying what each permission is for, where it stands, and what skipping it costs. Nothing is requested until you press its button, and every status is read with a check that cannot prompt, which is what makes showing you the list before asking possible at all.
+- **A first run lists everything Toki will ever ask for, and can ask for it all at once.** The permissions that only matter once you use the feature behind them are listed too, so the whole cost is visible up front, and **Allow all** requests them in one pass — one dialog at a time, Accessibility last because answering it means a trip to System Settings. Refusing any one of them only turns off what it was for. The list survives connecting an account, which used to be the moment onboarding disappeared, and it includes starting Toki at login: a menu bar app that isn't running tracks nothing.
+- Afterwards, rows appear only when they apply to your Mac: Automation lists the terminals you actually have installed, Accessibility appears while an editor whose windows Toki raises is running, Local Network while Remote Control is on. A permission you refused earlier is marked as refused and offers System Settings instead of an **Allow** button macOS would ignore, since it never asks twice. Local network is the one Toki cannot bring forward — macOS asks when the server first answers a device — so the checklist says when to expect it instead of offering a button that could not do anything.
+- The checklist can send a test notification, which brings macOS's notification prompt forward to a moment you chose rather than attaching it to your first low-quota warning.
+
+### Changed
+
+- **A fresh install no longer raises the Keychain dialog just because you opened the menu.** Detection runs every time the popover opens and reading Claude Code's sign-in is what puts that dialog up, so it now waits for the checklist's Keychain row. A file-based sign-in is still found either way, and a Mac with accounts already connected is long past that dialog, so it keeps picking up new sign-ins automatically.
+- **Toki turns on Tailscale HTTPS instead of telling you it is off.** Choosing Tailscale as the host and starting the server is the whole request — without `tailscale serve` fronting the port there is no HTTPS and no phone can connect — so Toki runs it once per server start rather than reporting the problem and waiting for a click. A handler already serving :443 is still left alone; replacing someone else's service stays an explicit decision.
+
+### Fixed
+
+- **An agent's transcript and name follow the conversation you are actually having.** Toki resolved an agent's session file by picking the one created closest to when the process launched, and the file written at launch always won that comparison — for the life of the process. So the moment the conversation moved to another file, which `/clear`, switching chats and a rolled-over transcript all do, Toki was pinned to a dead one: the menu bar showed a name that stopped changing, and Remote Control showed a transcript that stopped moving, since the phone is handed Toki's answer and prefers it. Sessions are now assigned across a whole project folder at once — agents ordered by launch, each owning the files created before the next agent started, and the most recently written file inside that range winning — so a folder with one agent simply follows the live conversation, co-located agents still resolve to their own sessions, and no two agents are handed the same file.
+- The companion server stops trusting a snapshot forever. Toki republishes every 15 seconds, so one older than 90 seconds means the pipe went quiet — the app quit, hung, or the write failed — and past that the server discovers agents itself instead of serving names that stopped being true.
+- **The button that turns on Tailscale HTTPS is reachable in the case that needs it.** It only appeared once `tailscale status` had produced a DNS name, but the Mac App Store build of Tailscale ships no usable CLI, so that lookup returns nothing, the host gets typed in by hand — and nothing ever offered to enable HTTPS. It now appears for a hand-typed host too, and where no `tailscale` command can be found at all, Toki hands over the command to run rather than a button that could only fail.
+- A refusal from `tailscale serve` is named along with its fix. Not being the tailnet operator comes back with the `sudo tailscale set --operator=$USER` that clears it, a tailnet without HTTPS certificates is identified as such, and a signed-out Tailscale asks for a sign-in — each with a copy button where there is a command, instead of raw stderr and a suggestion to try Terminal. A failure Toki cannot attribute is retried once with the pre-1.58 command form.
+- Enabling HTTPS shares the timeout and force-kill handling of every other `tailscale` call instead of its own copy, which left a hung process behind.
+- Each Claude agent's session is resolved once per scan rather than four times, cutting four directory listings and a stat of every session file per agent, per scan.
+
 ## 2.6.1 - 2026-08-08
 
 ### Fixed

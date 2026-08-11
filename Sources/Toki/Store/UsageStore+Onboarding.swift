@@ -37,11 +37,16 @@ extension UsageStore {
     }
 
     func reloadConfig() {
+        // Before anything that can write: saved state has to be in memory first, or a save from
+        // either branch below persists the initializer's empty defaults over the real file and
+        // takes accounts, events, history and the running session with it. A machine with no
+        // config.json - which is permanent for local-only providers, since nothing ever writes
+        // one - takes the failure branch on every single launch, so this is not a corner.
+        usageState = StateLoader.load()
+        syncPublishedState()
         do {
             config = try ConfigLoader.load()
             setNeedsOnboarding(false)
-            usageState = StateLoader.load()
-            syncPublishedState()
             applyScheduledResets()
             configError = nil
             snapshots = config?.accounts.map(AccountSnapshot.loading) ?? []
@@ -73,14 +78,53 @@ extension UsageStore {
     // detected that's connectable gets added automatically (see connectDetected) -
     // there's no separate manual "Add account" step to trigger it.
     func rescanProviders() {
-        guard !isScanningProviders else { return }
+        startProviderScan()
+    }
+
+    // A machine with accounts already connected has been past the Keychain dialog long ago;
+    // holding the read back there would only stop a newly signed-in Claude Code from being picked
+    // up. It is the fresh install - the one that would get every prompt at once - that waits for
+    // the checklist to ask. The setup checklist reads this too, so the row cannot claim a state
+    // the scan doesn't actually honour.
+    var allowsKeychainReads: Bool {
+        !needsOnboarding || preferences.keychainReadsApproved
+    }
+
+    @discardableResult
+    func startProviderScan() -> Task<Void, Never> {
+        if let existing = providerScanTask { return existing }
         isScanningProviders = true
-        Task {
-            let detected = await ProviderDetection.scan()
-            detectedProviders = detected
-            isScanningProviders = false
-            connectDetected(detected)
+        let allowsKeychain = allowsKeychainReads
+        let task = Task { [weak self] in
+            let detected = await ProviderDetection.scan(allowsKeychain: allowsKeychain)
+            guard let self else { return }
+            self.detectedProviders = detected
+            self.isScanningProviders = false
+            self.providerScanTask = nil
+            self.connectDetected(detected)
         }
+        providerScanTask = task
+        return task
+    }
+
+    // The setup checklist's Keychain step: remember the answer, then look straight away so the
+    // dialog appears while the user is still looking at the row that asked for it. Awaits the
+    // scan, so a checklist asking for everything can put up one dialog at a time.
+    func approveKeychainReads() async {
+        var next = preferences
+        next.keychainReadsApproved = true
+        updatePreferences(next)
+        // A scan started before the approval was recorded ran under the old answer, so it has to
+        // finish before a new one can be started - otherwise this call collides with it, returns
+        // immediately, and the Keychain is never read even though the row says it was.
+        await providerScanTask?.value
+        await startProviderScan().value
+    }
+
+    func completeSetupChecklist(_ completed: Bool = true) {
+        var next = preferences
+        next.setupChecklistCompleted = completed
+        updatePreferences(next)
     }
 
     // detectedProviders minus anything already present in snapshots (whether connected

@@ -55,7 +55,12 @@ QUIET_PERIOD = 10.0  # seconds; same reasoning as Toki's attentionQuietPeriod
 SUBMIT_DELAY = 0.15
 AUTO_ACCEPTED_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 CANONICAL_AGENTS = None
+CANONICAL_AGENTS_AT = 0.0
 CANONICAL_AGENTS_LOCK = threading.Lock()
+# Toki republishes its agent snapshot every 15s. Past this age the pipe has gone quiet - the app
+# quit, hung, or the write failed - and serving the last snapshot would pin the phone to agents
+# and titles that stopped being true; discovering them here is stale-but-live instead.
+CANONICAL_MAX_AGE = 90.0
 
 # ============================================================ QR (byte mode,
 # EC level L, versions 1-10, mask 0; verified against cv2.QRCodeDetector)
@@ -303,7 +308,8 @@ def discover_agents():
             "etime": etime, "command": command,
         })
     with CANONICAL_AGENTS_LOCK:
-        canonical = None if CANONICAL_AGENTS is None else list(CANONICAL_AGENTS)
+        fresh = time.time() - CANONICAL_AGENTS_AT <= CANONICAL_MAX_AGE
+        canonical = list(CANONICAL_AGENTS) if CANONICAL_AGENTS is not None and fresh else None
     if canonical is not None:
         return agents_from_snapshot(rows, canonical)
 
@@ -350,7 +356,7 @@ def agents_from_snapshot(processes, snapshot):
 
 def read_control_messages():
     """Toki's side of the pipe: agent snapshots to display, and revocations to act on."""
-    global CANONICAL_AGENTS
+    global CANONICAL_AGENTS, CANONICAL_AGENTS_AT
     for line in sys.stdin:
         try:
             payload = json.loads(line)
@@ -368,6 +374,7 @@ def read_control_messages():
             continue
         with CANONICAL_AGENTS_LOCK:
             CANONICAL_AGENTS = agents
+            CANONICAL_AGENTS_AT = time.time()
 
 
 def dedupe_agents(agents):
@@ -1704,7 +1711,7 @@ def local_ipv4s():
 
 
 def main():
-    global CANONICAL_AGENTS, SESSION_TTL, ACCESS_POLICY, ALLOWED_HOSTS
+    global CANONICAL_AGENTS, CANONICAL_AGENTS_AT, SESSION_TTL, ACCESS_POLICY, ALLOWED_HOSTS
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--bind", default="0.0.0.0")
@@ -1721,6 +1728,7 @@ def main():
     ALLOWED_HOSTS = {h.strip().lower().rstrip(".") for h in args.allow_host if h.strip()}
     if args.agent_snapshot_stdin:
         CANONICAL_AGENTS = []
+        CANONICAL_AGENTS_AT = time.time()
         threading.Thread(target=read_control_messages, daemon=True).start()
         threading.Thread(target=watch_devices, daemon=True).start()
     server = RemoteControlHTTPServer((args.bind, args.port), Handler)

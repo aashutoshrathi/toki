@@ -61,6 +61,153 @@ enum AgentSessionResolver {
         }
     }
 
+    /// A transcript file resolved for one agent, carrying the mtime the resolution already read so
+    /// title, usage, attention and last-activity don't each re-stat it.
+    struct ResolvedSession: Sendable, Equatable {
+        let path: String
+        let modified: Date?
+    }
+
+    /// What assigning sessions to co-located Claude agents needs to know about one running process.
+    struct ClaudeAgentIdentity: Sendable {
+        let id: Int32
+        let command: String
+        let cwd: String?
+        let startTime: Date?
+
+        init(id: Int32, command: String, cwd: String?, startTime: Date?) {
+            self.id = id
+            self.command = command
+            self.cwd = cwd
+            self.startTime = startTime
+        }
+    }
+
+    // Everything a running Claude agent shows - its title, transcript, usage and attention - comes
+    // from one transcript file, and picking it has to survive the conversation moving to a new file
+    // mid-run: `/clear`, switching chats, and a rolled-over transcript all write a fresh .jsonl
+    // hours after the process launched. Resolving per agent in isolation cannot do that and keep
+    // co-located agents apart, so the whole project folder is assigned at once: agents are ordered
+    // by launch, each owns the files created from its own launch until the next agent's, and within
+    // that range the most recently written file - the live conversation - wins.
+    static func assignClaudeSessions(
+        _ agents: [ClaudeAgentIdentity],
+        projectsRoot: String? = nil
+    ) -> [Int32: ResolvedSession] {
+        var result: [Int32: ResolvedSession] = [:]
+        var claimed: Set<String> = []
+        var byDirectory: [String: [ClaudeAgentIdentity]] = [:]
+
+        for agent in agents {
+            // An explicit --resume names the file outright, so it needs neither a project
+            // directory nor the ordering below, and it claims that file against its neighbours.
+            if let explicit = explicitClaudeSessionPath(command: agent.command, cwd: agent.cwd, projectsRoot: projectsRoot) {
+                result[agent.id] = ResolvedSession(path: explicit, modified: modifiedDate(explicit))
+                claimed.insert(explicit)
+                continue
+            }
+            guard let cwd = agent.cwd else { continue }
+            byDirectory[projectDir(cwd, root: projectsRoot), default: []].append(agent)
+        }
+
+        for (directory, group) in byDirectory {
+            assignClaudeSessions(for: group, in: directory, claimed: &claimed, into: &result)
+        }
+        return result
+    }
+
+    private static func assignClaudeSessions(
+        for agents: [ClaudeAgentIdentity],
+        in directory: String,
+        claimed: inout Set<String>,
+        into result: inout [Int32: ResolvedSession]
+    ) {
+        let sessions = claudeSessionFiles(inProjectDir: directory)
+        guard !sessions.isEmpty else { return }
+
+        // Oldest process first: each agent's range ends where the next agent's begins, so an
+        // earlier agent can never claim the file a later one opened at its own launch.
+        //
+        // The known limit of this: only the newest agent's range runs to the present, so if an
+        // *earlier* co-located agent starts a new conversation, that file falls inside the newer
+        // agent's range. Nothing in a transcript records which process wrote it - Claude Code
+        // does not even hold the file open - so there is no signal that would settle it.
+        let ordered = agents.sorted { ($0.startTime ?? .distantPast) < ($1.startTime ?? .distantPast) }
+        for (index, agent) in ordered.enumerated() {
+            let start = agent.startTime ?? .distantPast
+            let lowerBound = start.addingTimeInterval(-sessionStartMatchWindow)
+            // The next *distinct* launch, not simply the next agent: `ps etime` is whole seconds,
+            // so two agents started in the same second read as simultaneous. Bounding the earlier
+            // one at its own start would empty its range and leave it with no session at all;
+            // sharing the range and letting `claimed` separate them is the honest answer.
+            let upperBound = ordered.dropFirst(index + 1).compactMap(\.startTime).first { $0 > start }
+            let owned = sessions.filter { session in
+                guard !claimed.contains(session.path), let created = session.created, created >= lowerBound else {
+                    return false
+                }
+                return upperBound.map { created < $0 } ?? true
+            }
+            // Nothing created since this process launched means it resumed a session whose file
+            // predates it, so fall back to the newest transcript that predates this agent and no
+            // other agent has claimed - never to a file a later agent just created.
+            let fallback = sessions.filter { session in
+                !claimed.contains(session.path) && (session.created.map { $0 < lowerBound } ?? true)
+            }
+            guard let pick = newestByModification(owned) ?? newestByModification(fallback) else { continue }
+            claimed.insert(pick.path)
+            result[agent.id] = ResolvedSession(path: pick.path, modified: pick.modified)
+        }
+    }
+
+    private struct ClaudeSessionFile {
+        let path: String
+        let created: Date?
+        let modified: Date?
+    }
+
+    private static func newestByModification(_ sessions: [ClaudeSessionFile]) -> ClaudeSessionFile? {
+        sessions.max { ($0.modified ?? .distantPast) < ($1.modified ?? .distantPast) }
+    }
+
+    private static func claudeSessionFiles(inProjectDir directory: String) -> [ClaudeSessionFile] {
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return [] }
+        return files.filter { $0.hasSuffix(".jsonl") }.map { name in
+            let path = "\(directory)/\(name)"
+            return ClaudeSessionFile(path: path, created: creationDate(path), modified: modifiedDate(path))
+        }
+    }
+
+    // A session named on the command line: a full transcript path, or an id that resolves to one
+    // inside the project folder.
+    private static func explicitClaudeSessionPath(command: String, cwd: String?, projectsRoot: String? = nil) -> String? {
+        if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
+            return resume
+        }
+        if let sessionID = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)"#),
+           let cwd, case let path = "\(projectDir(cwd, root: projectsRoot))/\(sessionID).jsonl",
+           FileManager.default.fileExists(atPath: path) {
+            return path
+        }
+        return nil
+    }
+
+    /// The conversation title recorded in an already-resolved transcript.
+    static func claudeTitle(of session: ResolvedSession) -> String? {
+        guard let contents = try? String(contentsOfFile: session.path, encoding: .utf8) else { return nil }
+        return claudeTitle(fromSessionContents: contents)
+    }
+
+    /// Cost and tokens from an already-resolved transcript.
+    static func claudeUsage(of session: ResolvedSession) -> AgentSessionUsage? {
+        claudeSession(at: session.path, modified: session.modified)?.usage
+    }
+
+    /// Whether an already-resolved transcript is parked waiting on the user.
+    static func claudeAttention(of session: ResolvedSession, now: Date = Date()) -> AgentAttention? {
+        guard let parsed = claudeSession(at: session.path, modified: session.modified) else { return nil }
+        return attention(from: parsed, modified: session.modified, now: now)
+    }
+
     struct ParsedClaudeSession: Sendable {
         var usage: AgentSessionUsage?
         /// Whether this counts as "blocked" depends on elapsed time, so that is left to the
@@ -347,53 +494,16 @@ enum AgentSessionResolver {
         return latestCustom ?? latestAI
     }
 
-    private static func newestClaudeSession(command: String, cwd: String?, nearStart: Date? = nil) -> (path: String, modified: Date?)? {
-        // An explicit --resume path wins; otherwise pick the newest file in the project dir.
-        if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
-            return (resume, modifiedDate(resume))
-        }
-        // A session id from --resume/-r/--session-id resolves to that file directly. Handling
-        // the bare-id --resume form (the common one) also keeps a resumed process out of the
-        // start-time match below, whose freshly-created sibling would otherwise steal it.
-        if let sid = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)"#),
-           let cwd, case let path = "\(projectDir(cwd))/\(sid).jsonl",
-           FileManager.default.fileExists(atPath: path) {
-            return (path, modifiedDate(path))
-        }
-        guard let cwd else { return nil }
-        let dir = projectDir(cwd)
-        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
-        let sessions = files.filter { $0.hasSuffix(".jsonl") }
-            .map { (path: "\(dir)/\($0)", modified: modifiedDate("\(dir)/\($0)")) }
-
-        // `--continue` reopens the most recently active session, so newest-by-mtime is right and
-        // the start-time match (which hunts for a freshly created file) would mis-assign a sibling.
-        let resumesMostRecent = firstMatch(in: command, pattern: #"(?:^|\s)(--continue|-c)(?:\s|$)"#) != nil
-
-        // When several agents share one project folder, "newest" hands them all the same file.
-        // If we know when this process launched, prefer the session file created closest to
-        // then - the one this process opened - so same-folder agents resolve distinctly. Only
-        // within a window: a resumed session's file predates the process and must not steal it.
-        if let nearStart, !resumesMostRecent {
-            var best: (path: String, modified: Date?)?
-            var bestDistance = sessionStartMatchWindow
-            for session in sessions {
-                guard let created = creationDate(session.path) else { continue }
-                let distance = abs(created.timeIntervalSince(nearStart))
-                if distance <= bestDistance {
-                    bestDistance = distance
-                    best = (session.path, session.modified)
-                }
-            }
-            if let best { return best }
-        }
-
-        return sessions.max { ($0.modified ?? .distantPast) < ($1.modified ?? .distantPast) }
+    // One agent resolved on its own, for the callers that have no sibling context. The scanner
+    // assigns a whole project folder at once instead, so co-located agents stay distinct.
+    private static func newestClaudeSession(command: String, cwd: String?, nearStart: Date? = nil) -> ResolvedSession? {
+        let identity = ClaudeAgentIdentity(id: 0, command: command, cwd: cwd, startTime: nearStart)
+        return assignClaudeSessions([identity])[identity.id]
     }
 
-    // How close a session file's creation must be to a process's launch to call it that
-    // process's session. Claude Code writes the file within moments of starting; the margin
-    // absorbs scan latency and clock coarseness without matching an unrelated older session.
+    // How far before a process's launch a session file may have been created and still be called
+    // that process's own. Claude Code writes the file within moments of starting; the margin
+    // absorbs scan latency and clock coarseness without reaching back to an unrelated session.
     private static let sessionStartMatchWindow: TimeInterval = 120
 
     private static func openCodeChatTitle(cwd: String?) -> String? {
@@ -515,11 +625,12 @@ enum AgentSessionResolver {
         return nil
     }
 
-    // ~/.claude/projects/<encoded-cwd>, where cwd path separators become dashes.
-    private static func projectDir(_ cwd: String) -> String {
+    // ~/.claude/projects/<encoded-cwd>, where cwd path separators become dashes. `root` is only
+    // passed by tests, which cannot write into the real projects folder.
+    private static func projectDir(_ cwd: String, root: String? = nil) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let encoded = "-" + cwd.split(separator: "/").joined(separator: "-")
-        return "\(home)/.claude/projects/\(encoded)"
+        return "\(root ?? "\(home)/.claude/projects")/\(encoded)"
     }
 
     private static func modifiedDate(_ path: String) -> Date? {
