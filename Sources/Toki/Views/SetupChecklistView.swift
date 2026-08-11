@@ -2,11 +2,16 @@ import AppKit
 import SwiftUI
 
 // The permissions Toki needs, as a list you work through, instead of dialogs that arrive while
-// you are doing something else. Nothing here asks macOS for anything until a row's button is
-// pressed; the statuses come from checks that never prompt.
+// you are doing something else. Nothing here asks macOS for anything until a button is pressed;
+// the statuses come from checks that never prompt.
+//
+// A first run lists everything Toki will ever ask for - including the ones that don't apply yet -
+// and can request them all in one pass, so a fresh install ends up working rather than working
+// once you have discovered each feature and answered its dialog.
 struct SetupChecklistView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject private var remoteServer = RemoteControlServer.shared
+    var mode: SetupChecklistMode = .ongoing
     /// The onboarding copy introduces itself; the Settings card sits under a heading already.
     var showsHeader = true
     /// Settings keeps the list around permanently; onboarding lets it be put away once done.
@@ -14,23 +19,18 @@ struct SetupChecklistView: View {
 
     @State private var steps: [SetupStep] = []
     @State private var busyStepID: String?
+    @State private var requestingAll = false
+    @State private var currentRequest: String?
     @State private var notificationTestSent = false
+    @State private var launchAtLoginError: String?
 
     private var outstanding: [SetupStep] { SetupChecklist.outstanding(steps) }
+    private var requestable: [SetupStep] { SetupChecklist.requestOrder(steps) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if showsHeader {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Finish setting up")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(outstanding.isEmpty
-                        ? "Nothing left to allow. Toki asks for each of these only when you use the feature behind it."
-                        : "Toki asks for these one at a time, when you say so - never in the background.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                header
             }
 
             VStack(spacing: 4) {
@@ -39,24 +39,14 @@ struct SetupChecklistView: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                Button("Re-check", action: refresh)
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .help("Permissions can be changed in System Settings; this reads them again")
-                    .pointerOnHover()
-
-                if showsDismiss {
-                    Button(outstanding.isEmpty ? "Done" : "Skip for now") {
-                        store.completeSetupChecklist()
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .pointerOnHover()
-                }
+            if let launchAtLoginError {
+                Text(launchAtLoginError)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            footer
         }
         .onAppear(perform: refresh)
         // TCC decisions are made outside Toki, so the list is re-read whenever the app comes back.
@@ -65,6 +55,68 @@ struct SetupChecklistView: View {
         }
         .onChange(of: store.snapshots.count) { refresh() }
         .onChange(of: remoteServer.isRunning) { refresh() }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Permissions")
+                .font(.system(size: 13, weight: .semibold))
+            Text(headerDetail)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var headerDetail: LocalizedStringKey {
+        if requestingAll {
+            return "Answer each dialog as it appears. Refusing one only turns off what it was for."
+        }
+        if requestable.isEmpty {
+            return "Nothing left to allow. Everything Toki asks macOS for is listed here, with what it is used for."
+        }
+        return "Everything Toki asks macOS for, and why. Grant them now, or one at a time as you use the features - nothing is requested until you press a button."
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if mode == .firstRun, !requestable.isEmpty {
+                Button(action: requestEverything) {
+                    if requestingAll {
+                        HStack(spacing: 5) {
+                            ProgressView().controlSize(.small).scaleEffect(0.7)
+                            Text(currentRequest.map { "Asking: \($0)" } ?? "Asking…")
+                        }
+                    } else {
+                        Label("Allow all \(requestable.count)", systemImage: "checkmark.shield")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(requestingAll || busyStepID != nil)
+                .help("Ask for each permission in turn, one dialog at a time")
+                .pointerOnHover()
+            }
+
+            Button("Re-check", action: refresh)
+                .buttonStyle(.plain)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .help("Permissions can be changed in System Settings; this reads them again")
+                .pointerOnHover()
+
+            if showsDismiss {
+                Button(outstanding.isEmpty ? "Done" : "Skip for now") {
+                    store.completeSetupChecklist()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .disabled(requestingAll)
+                .pointerOnHover()
+            }
+        }
     }
 
     private func row(for step: SetupStep) -> some View {
@@ -108,7 +160,7 @@ struct SetupChecklistView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .fixedSize()
-                .disabled(busyStepID != nil)
+                .disabled(busyStepID != nil || requestingAll)
                 .pointerOnHover()
             }
         }
@@ -143,38 +195,73 @@ struct SetupChecklistView: View {
 
     private func refresh() {
         steps = SetupChecklist.steps(
-            from: SetupChecklist.currentFacts(store: store, remoteControlRunning: remoteServer.isRunning)
+            from: SetupChecklist.currentFacts(store: store, remoteControlRunning: remoteServer.isRunning),
+            mode: mode
         )
     }
 
+    // One dialog at a time, in an order that ends with the one that sends you to System Settings.
+    // The list is rebuilt between requests so anything answered along the way drops out.
+    private func requestEverything() {
+        guard !requestingAll else { return }
+        requestingAll = true
+        Task {
+            var handled: Set<String> = []
+            while let next = SetupChecklist.requestOrder(steps).first(where: { !handled.contains($0.id) }) {
+                handled.insert(next.id)
+                currentRequest = next.title
+                await request(next)
+                refresh()
+            }
+            currentRequest = nil
+            requestingAll = false
+        }
+    }
+
     private func perform(_ step: SetupStep) {
+        // Rows that only open System Settings act immediately; a real request goes through the
+        // same path as the "allow all" pass so the two can't drift apart.
+        guard step.isRequestable else {
+            switch step.kind {
+            case .account: store.rescanProviders()
+            case .automation: SystemPermissions.openPrivacySettings(anchor: "Privacy_Automation")
+            case .localNetwork: SystemPermissions.openPrivacySettings(anchor: "Privacy_LocalNetwork")
+            default: break
+            }
+            refresh()
+            return
+        }
+        busyStepID = step.id
+        Task {
+            await request(step)
+            busyStepID = nil
+            refresh()
+        }
+    }
+
+    private func request(_ step: SetupStep) async {
         switch step.kind {
-        case .account:
-            store.rescanProviders()
         case .claudeKeychain:
-            // Reading it is what raises the system dialog, so the answer is only remembered after
+            // Reading it is what raises the system dialog, so the answer is only remembered once
             // the user has asked for the read here.
-            store.approveKeychainReads()
+            await store.approveKeychainReads()
         case .notifications:
             store.sendTestNotification()
             notificationTestSent = true
         case .automation:
             guard let bundleID = step.subject else { return }
-            guard step.status != .blocked else {
-                SystemPermissions.openPrivacySettings(anchor: "Privacy_Automation")
-                return
-            }
-            busyStepID = step.id
-            Task {
-                _ = await SystemPermissions.requestAutomation(bundleID: bundleID)
-                busyStepID = nil
-                refresh()
+            _ = await SystemPermissions.requestAutomation(bundleID: bundleID)
+        case .launchAtLogin:
+            do {
+                try LaunchAtLogin.setEnabled(true)
+                launchAtLoginError = nil
+            } catch {
+                launchAtLoginError = "Couldn't turn on Launch at login: \(error.localizedDescription)"
             }
         case .accessibility:
             SystemPermissions.requestAccessibility()
-        case .localNetwork:
-            SystemPermissions.openPrivacySettings(anchor: "Privacy_LocalNetwork")
+        case .account, .localNetwork:
+            break
         }
-        refresh()
     }
 }

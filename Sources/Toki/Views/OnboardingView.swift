@@ -80,7 +80,7 @@ struct OnboardingView: View {
             if !store.preferences.setupChecklistCompleted {
                 Divider()
                     .padding(.vertical, 2)
-                SetupChecklistView(store: store, showsDismiss: true)
+                SetupChecklistView(store: store, mode: .firstRun, showsDismiss: true)
             }
         }
         .padding(10)

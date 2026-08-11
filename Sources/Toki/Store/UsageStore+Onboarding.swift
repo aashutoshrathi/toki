@@ -73,6 +73,10 @@ extension UsageStore {
     // detected that's connectable gets added automatically (see connectDetected) -
     // there's no separate manual "Add account" step to trigger it.
     func rescanProviders() {
+        Task { await scanProviders() }
+    }
+
+    func scanProviders() async {
         guard !isScanningProviders else { return }
         isScanningProviders = true
         // A machine with accounts already connected has been past the Keychain dialog long ago;
@@ -80,21 +84,26 @@ extension UsageStore {
         // picked up. It is the fresh install - the one that gets every prompt at once - that waits
         // for the checklist to ask.
         let allowsKeychain = !needsOnboarding || preferences.keychainReadsApproved
-        Task {
-            let detected = await ProviderDetection.scan(allowsKeychain: allowsKeychain)
-            detectedProviders = detected
-            isScanningProviders = false
-            connectDetected(detected)
-        }
+        let detected = await ProviderDetection.scan(allowsKeychain: allowsKeychain)
+        detectedProviders = detected
+        isScanningProviders = false
+        connectDetected(detected)
     }
 
     // The setup checklist's Keychain step: remember the answer, then look straight away so the
-    // dialog appears while the user is still looking at the row that asked for it.
-    func approveKeychainReads() {
+    // dialog appears while the user is still looking at the row that asked for it. Awaits the
+    // scan, so a checklist asking for everything can put up one dialog at a time.
+    func approveKeychainReads() async {
         var next = preferences
         next.keychainReadsApproved = true
         updatePreferences(next)
-        rescanProviders()
+        // A scan kicked off by opening the popover would make this one a no-op, and the Keychain
+        // would then go unread until something else triggered a scan. Wait it out, briefly.
+        let deadline = Date().addingTimeInterval(3)
+        while isScanningProviders, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        await scanProviders()
     }
 
     func completeSetupChecklist(_ completed: Bool = true) {

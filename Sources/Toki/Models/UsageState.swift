@@ -119,6 +119,10 @@ struct AppPreferences: Codable, Equatable {
     /// system's Keychain dialog. Off until the setup checklist asks for it, so a fresh install
     /// doesn't raise that dialog just because someone opened the menu.
     var keychainReadsApproved = false
+    /// Set the first time Toki launches with nothing configured. It keeps the first-run checklist
+    /// on screen after an account is connected - which is when onboarding ends and the permissions
+    /// start mattering - without showing it to an install that was already set up.
+    var setupChecklistStarted = false
     /// Set once the setup checklist has been worked through, so it stops taking up the panel.
     var setupChecklistCompleted = false
 
@@ -135,6 +139,7 @@ struct AppPreferences: Codable, Equatable {
         case notchModeEnabled
         case notchPlacement
         case keychainReadsApproved
+        case setupChecklistStarted
         case setupChecklistCompleted
     }
 
@@ -165,6 +170,7 @@ struct AppPreferences: Codable, Equatable {
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled
         notchPlacement = try container.decodeIfPresent(NotchPlacement.self, forKey: .notchPlacement) ?? defaults.notchPlacement
         keychainReadsApproved = try container.decodeIfPresent(Bool.self, forKey: .keychainReadsApproved) ?? defaults.keychainReadsApproved
+        setupChecklistStarted = try container.decodeIfPresent(Bool.self, forKey: .setupChecklistStarted) ?? defaults.setupChecklistStarted
         setupChecklistCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupChecklistCompleted) ?? defaults.setupChecklistCompleted
     }
 }

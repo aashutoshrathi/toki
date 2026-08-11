@@ -19,10 +19,19 @@ enum SetupStepID: String, CaseIterable, Identifiable {
     case claudeKeychain
     case notifications
     case automation
+    case launchAtLogin
     case accessibility
     case localNetwork
 
     var id: String { rawValue }
+}
+
+/// A first run lists everything Toki will ever ask for, so the whole cost is visible at once and
+/// can be granted in one pass. Afterwards the list is a status board and only shows what applies
+/// to the Mac right now.
+enum SetupChecklistMode {
+    case firstRun
+    case ongoing
 }
 
 /// One row of the setup checklist. Built by `SetupChecklist.steps(from:)` from plain facts, so
@@ -39,6 +48,10 @@ struct SetupStep: Identifiable, Equatable {
     let actionLabel: String?
     /// True when Toki works without it and the row is only worth showing while it is missing.
     let isOptional: Bool
+    /// True when pressing the button puts a real macOS request in front of the user. False for
+    /// rows that only open System Settings or explain something Toki cannot ask for on its own,
+    /// which is what keeps those out of the "ask for everything" pass.
+    let isRequestable: Bool
 
     var id: String { subject.map { "\(kind.rawValue).\($0)" } ?? kind.rawValue }
 
@@ -49,7 +62,8 @@ struct SetupStep: Identifiable, Equatable {
         detail: String,
         status: SetupStepStatus,
         actionLabel: String?,
-        isOptional: Bool = false
+        isOptional: Bool = false,
+        isRequestable: Bool = false
     ) {
         self.kind = kind
         self.subject = subject
@@ -58,6 +72,7 @@ struct SetupStep: Identifiable, Equatable {
         self.status = status
         self.actionLabel = actionLabel
         self.isOptional = isOptional
+        self.isRequestable = isRequestable
     }
 }
 
@@ -75,6 +90,7 @@ struct SetupFacts: Equatable {
     var workspaceAppRunning = false
     var accessibilityGranted = false
     var remoteControlRunning = false
+    var launchAtLoginEnabled = false
 }
 
 struct AutomationTarget: Equatable, Identifiable {
@@ -92,8 +108,9 @@ struct AutomationTarget: Equatable, Identifiable {
 enum SetupChecklist {
     // Pure: every fact comes in, no probing happens here, so the wording and the ordering can be
     // tested without granting anything.
-    static func steps(from facts: SetupFacts) -> [SetupStep] {
+    static func steps(from facts: SetupFacts, mode: SetupChecklistMode = .ongoing) -> [SetupStep] {
         var steps: [SetupStep] = []
+        let isFirstRun = mode == .firstRun
 
         steps.append(SetupStep(
             kind: .account,
@@ -107,15 +124,16 @@ enum SetupChecklist {
 
         // Reading the sign-in Claude Code stored puts up the system's Keychain dialog, so on a
         // fresh install Toki waits to be told to look rather than doing it while you open a menu.
-        if !facts.keychainApproved || facts.claudeCodeDetected {
+        if isFirstRun || !facts.keychainApproved || facts.claudeCodeDetected {
             steps.append(SetupStep(
                 kind: .claudeKeychain,
                 title: "Read your Claude Code sign-in",
                 detail: facts.keychainApproved
                     ? "Toki reads the token Claude Code stored in your Keychain to show its quota."
-                    : "Claude Code keeps its token in your Keychain. macOS will ask you to allow Toki once.",
+                    : "Claude Code keeps its token in your Keychain, and macOS asks you to allow Toki once. Without it, Claude Code quota can't be shown.",
                 status: facts.keychainApproved ? .done : .pending,
-                actionLabel: facts.keychainApproved ? nil : "Allow"
+                actionLabel: facts.keychainApproved ? nil : "Allow",
+                isRequestable: !facts.keychainApproved
             ))
         }
 
@@ -123,10 +141,11 @@ enum SetupChecklist {
             kind: .notifications,
             title: "Notifications",
             detail: facts.notificationsEnabled
-                ? "Toki tells you when quota runs low or an agent is waiting. macOS asks the first time one is sent."
+                ? "Toki tells you when quota runs low or an agent is waiting on you. macOS asks the first time one is sent."
                 : "Turned off in Toki, so nothing is delivered and macOS is never asked.",
             status: facts.notificationsEnabled ? .unknown : .done,
-            actionLabel: facts.notificationsEnabled ? "Send a test" : nil
+            actionLabel: facts.notificationsEnabled ? "Send a test" : nil,
+            isRequestable: facts.notificationsEnabled
         ))
 
         // Only for terminals actually installed: an Automation row for an app that isn't here
@@ -141,29 +160,55 @@ enum SetupChecklist {
                     : "Lets Toki jump to an agent's tab, and type your replies from Remote Control into it.",
                 status: target.status,
                 actionLabel: target.status == .done ? nil : (target.status == .blocked ? "Open Settings" : "Allow"),
-                isOptional: true
+                isOptional: true,
+                isRequestable: target.status == .pending
             ))
         }
 
-        if facts.workspaceAppRunning, !facts.accessibilityGranted {
+        // On a first run this is listed whether or not an editor is open right now: the point is
+        // to show the whole cost up front, not to wait until the click that needs it.
+        if !facts.accessibilityGranted, isFirstRun || facts.workspaceAppRunning {
             steps.append(SetupStep(
                 kind: .accessibility,
                 title: "Accessibility",
-                detail: "Only used to raise the right VS Code window when you click an agent running in it.",
+                detail: facts.workspaceAppRunning
+                    ? "Only used to raise the right VS Code window when you click an agent running in it."
+                    : "Only used to raise the right VS Code window when you click an agent running in one. Skip it if you work in a terminal.",
                 status: .pending,
                 actionLabel: "Allow",
+                isOptional: true,
+                isRequestable: true
+            ))
+        }
+
+        if isFirstRun || facts.remoteControlRunning {
+            steps.append(SetupStep(
+                kind: .localNetwork,
+                title: "Local network",
+                // The one permission Toki cannot bring forward: macOS asks when the server first
+                // answers a device, so there is nothing to request here, only something to expect.
+                detail: facts.remoteControlRunning
+                    ? "Remote Control answers your phone over the network, which macOS asks about the first time. Without it the phone can't reach this Mac."
+                    : "Answering agents from your phone needs this, and macOS asks for it when you turn Remote Control on - not now.",
+                status: facts.remoteControlRunning ? .unknown : .done,
+                actionLabel: facts.remoteControlRunning ? "Open Settings" : nil,
                 isOptional: true
             ))
         }
 
-        if facts.remoteControlRunning {
+        // Not a permission, but the other half of a fresh install actually working: a menu bar app
+        // that isn't running tracks nothing.
+        if isFirstRun {
             steps.append(SetupStep(
-                kind: .localNetwork,
-                title: "Local network",
-                detail: "Remote Control answers your phone over the network, which macOS asks about the first time. Without it the phone can't reach this Mac.",
-                status: .unknown,
-                actionLabel: "Open Settings",
-                isOptional: true
+                kind: .launchAtLogin,
+                title: "Start Toki when you sign in",
+                detail: facts.launchAtLoginEnabled
+                    ? "Toki starts with your Mac, so quota and agents are tracked without opening it."
+                    : "Toki only tracks usage while it is running. Starting it at login means nothing is missed.",
+                status: facts.launchAtLoginEnabled ? .done : .pending,
+                actionLabel: facts.launchAtLoginEnabled ? nil : "Turn on",
+                isOptional: true,
+                isRequestable: !facts.launchAtLoginEnabled
             ))
         }
 
@@ -173,6 +218,32 @@ enum SetupChecklist {
     /// Steps still worth acting on - what the badge counts.
     static func outstanding(_ steps: [SetupStep]) -> [SetupStep] {
         steps.filter { $0.status == .pending || $0.status == .blocked }
+    }
+
+    // What "allow everything" actually runs, in the order it runs them. Each request is a dialog,
+    // so they go one at a time; Accessibility is last because answering it means leaving for
+    // System Settings, and coming back to three more dialogs would be worse than finding them.
+    static func requestOrder(_ steps: [SetupStep]) -> [SetupStep] {
+        let rank: [SetupStepID: Int] = [
+            .claudeKeychain: 0,
+            .notifications: 1,
+            .automation: 2,
+            .launchAtLogin: 3,
+            .accessibility: 4
+        ]
+        // `.unknown` counts: notifications can't be read back, and skipping them would leave the
+        // one prompt this pass exists to bring forward for the first low-quota warning instead.
+        // Swift's sort isn't stable, so the original position breaks ties - two terminals must
+        // not swap places between two renders of the same list.
+        return steps
+            .filter { $0.isRequestable && ($0.status == .pending || $0.status == .unknown) }
+            .enumerated()
+            .sorted { left, right in
+                let leftRank = rank[left.element.kind] ?? 99
+                let rightRank = rank[right.element.kind] ?? 99
+                return leftRank == rightRank ? left.offset < right.offset : leftRank < rightRank
+            }
+            .map(\.element)
     }
 
     // Terminals Toki scripts to focus a tab and deliver a reply. Only these two are scripted, so
@@ -203,6 +274,7 @@ enum SetupChecklist {
         facts.accessibilityGranted = SystemPermissions.accessibilityGranted
         facts.workspaceAppRunning = SystemPermissions.isRunning(anyOf: workspaceApps)
         facts.remoteControlRunning = remoteControlRunning
+        facts.launchAtLoginEnabled = LaunchAtLogin.isEnabled
         return facts
     }
 }
