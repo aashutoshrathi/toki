@@ -779,6 +779,11 @@ struct SettingsPanel: View {
     // A string literal per state rather than nested ternaries inside the Text, so each state's
     // wording is readable and stays formatted (the backticks are markdown to Text).
     private var readinessMessage: LocalizedStringKey {
+        // A status Toki could not read is not evidence that serve is off. Saying so sent people to
+        // fix a working setup; now it says what it could not do.
+        if let problem = remoteServer.serveStatusProblem {
+            return LocalizedStringKey(problem + " Serve may well be running - this is Toki failing to check, not Tailscale failing to serve.")
+        }
         switch remoteServer.tailscaleServeReady {
         case .some(true):
             return "Reachable from your phone."
@@ -801,16 +806,16 @@ struct SettingsPanel: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: ready == true ? "checkmark.circle.fill"
-                    : ready == false ? "exclamationmark.triangle.fill" : "ellipsis.circle")
+                    : (ready == false || remoteServer.serveStatusProblem != nil) ? "exclamationmark.triangle.fill" : "ellipsis.circle")
                     .foregroundStyle(ready == true ? Color.green
-                        : ready == false ? Color.orange : Color.secondary)
+                        : (ready == false || remoteServer.serveStatusProblem != nil) ? Color.orange : Color.secondary)
                 Text(readinessMessage)
-                    .foregroundStyle(ready == false && !remoteServer.isEnablingServe ? Color.orange : Color.secondary)
+                    .foregroundStyle((ready == false || remoteServer.serveStatusProblem != nil) && !remoteServer.isEnablingServe ? Color.orange : Color.secondary)
             }
             .font(.system(size: 11))
             .fixedSize(horizontal: false, vertical: true)
 
-            if ready == false {
+            if ready == false || remoteServer.serveStatusProblem != nil {
                 if remoteServer.tailscaleCLIAvailable == false {
                     // Nothing to click: with no CLI Toki cannot run serve at all, so hand over the
                     // exact command instead of a button that would only fail.

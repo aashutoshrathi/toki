@@ -354,54 +354,87 @@ final class RemoteControlServerTests: XCTestCase {
         )
     }
 
+    private func serveState(_ json: String, port: Int = 8765) -> RemoteControlServer.ServeState {
+        RemoteControlServer.serveState(from: Data(json.utf8), port: port)
+    }
+
     func testServeReadyDetectsHandlerForOurPort() {
-        let json = """
+        XCTAssertEqual(serveState("""
         {"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
-        """
-        XCTAssertTrue(RemoteControlServer.serveReady(from: Data(json.utf8), port: 8765))
+        """), .ready)
     }
 
-    func testServeReadyFalseForDifferentPort() {
-        let json = """
-        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}
-        """
-        XCTAssertFalse(RemoteControlServer.serveReady(from: Data(json.utf8), port: 8765))
+    // The spellings Tailscale is free to use for the same thing. Matching one literal string is
+    // what reported a working serve as absent.
+    func testServeReadyAcceptsEveryWayOfSpellingThisMac() {
+        for proxy in ["http://127.0.0.1:8765", "127.0.0.1:8765", "http://localhost:8765",
+                      "https://localhost:8765/", "http://[::1]:8765", "http+insecure://127.0.0.1:8765"] {
+            XCTAssertEqual(
+                serveState("{\"Web\":{\"mac.tail1234.ts.net:443\":{\"Handlers\":{\"/\":{\"Proxy\":\"\(proxy)\"}}}}}"),
+                .ready,
+                "\(proxy) points at this Mac and should count as served"
+            )
+        }
     }
 
-    func testServeReadyFalseWhenNotServedOn443() {
-        let json = """
+    // Ours may not be the only handler on 443; finding it anywhere is what matters.
+    func testServeReadyFindsOurPortOnANonRootPath() {
+        XCTAssertEqual(serveState("""
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Text":"hi"},"/toki":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """), .ready)
+    }
+
+    func testServeStateIsNotServingForADifferentPort() {
+        XCTAssertEqual(serveState("""
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/other":{"Proxy":"http://127.0.0.1:9999"}}}}}
+        """), .notServing)
+    }
+
+    func testServeStateIgnoresHandlersThatAreNotOn443() {
+        XCTAssertEqual(serveState("""
         {"Web":{"mac.tail1234.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
-        """
-        XCTAssertFalse(RemoteControlServer.serveReady(from: Data(json.utf8), port: 8765))
+        """), .notServing)
     }
 
-    func testServeReadyFalseForEmptyConfig() {
-        XCTAssertFalse(RemoteControlServer.serveReady(from: Data("{}".utf8), port: 8765))
+    func testServeStateIsNotServingForAnEmptyConfig() {
+        XCTAssertEqual(serveState("{}"), .notServing)
+    }
+
+    // The distinction the UI was missing: nothing served is a fact, an unreadable status is not.
+    func testUnreadableStatusIsNotReportedAsNotServing() {
+        XCTAssertEqual(RemoteControlServer.serveState(from: nil, port: 8765),
+                       .unreadable("Toki couldn't read `tailscale serve status`."))
+        guard case .unreadable = serveState("not json at all") else {
+            return XCTFail("unparseable output must not read as a working answer")
+        }
     }
 
     func testServeConflictWhenRootServesAnotherApp() {
-        let json = """
+        XCTAssertEqual(serveState("""
         {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}
-        """
-        XCTAssertTrue(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+        """), .conflict)
     }
 
-    func testNoServeConflictWhenRootIsOurPort() {
-        let json = """
+    func testAStaticRootHandlerIsAConflictToo() {
+        XCTAssertEqual(serveState("""
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Text":"hello"}}}}}
+        """), .conflict)
+    }
+
+    func testNoConflictWhenRootIsOurPort() {
+        XCTAssertEqual(serveState("""
         {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
-        """
-        XCTAssertFalse(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+        """), .ready)
     }
 
-    func testNoServeConflictWhenNothingOn443() {
-        XCTAssertFalse(RemoteControlServer.serveConflict(from: Data("{}".utf8), port: 8765))
+    func testNoConflictWhenNothingIsOn443() {
+        XCTAssertEqual(serveState("{}"), .notServing)
     }
 
-    func testServeConflictWhenRootIsStaticHandler() {
-        let json = """
+    func testAStaticPathRootHandlerIsAConflict() {
+        XCTAssertEqual(serveState("""
         {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Path":"/var/www/site"}}}}}
-        """
-        XCTAssertTrue(RemoteControlServer.serveConflict(from: Data(json.utf8), port: 8765))
+        """), .conflict)
     }
 
     func testParseTunnelHostFromCloudflaredOutput() {

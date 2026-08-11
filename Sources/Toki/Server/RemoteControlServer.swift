@@ -101,12 +101,27 @@ final class RemoteControlServer: ObservableObject {
     @Published private(set) var pairingCode: String?
     @Published private(set) var lastError: String?
     @Published private(set) var tailscaleDNSName: String?
-    // nil until the first check completes; true when `tailscale serve` fronts our port on 443,
-    // so the hosted Toki RC UI can actually reach this Mac from a phone.
-    @Published private(set) var tailscaleServeReady: Bool?
+    // nil until the first check completes. Everything the UI needs about serve comes from here.
+    @Published private(set) var serveState: ServeState?
+
+    /// True when serve fronts our port, false when it demonstrably does not, nil while unknown -
+    /// which now includes "the status could not be read", since that is not evidence of anything.
+    var tailscaleServeReady: Bool? {
+        switch serveState {
+        case .ready: return true
+        case .conflict, .notServing: return false
+        case .unreadable, nil: return nil
+        }
+    }
+
+    /// Why serve status could not be read, when that is what happened.
+    var serveStatusProblem: String? {
+        if case let .unreadable(reason) = serveState { return reason }
+        return nil
+    }
     // True when HTTPS :443 already serves a different app; auto-serve is suppressed so it can't
     // clobber it, and the UI warns before a manual enable replaces it.
-    @Published private(set) var tailscaleServeConflict = false
+    var tailscaleServeConflict: Bool { serveState == .conflict }
     // Why the Tailscale DNS name couldn't be read (command missing, not logged in, MagicDNS off),
     // surfaced in settings so a failed lookup explains itself instead of silently using the IP.
     @Published private(set) var tailscaleStatusDiagnostic: String?
@@ -601,14 +616,12 @@ final class RemoteControlServer: ObservableObject {
             let result = await Task.detached(priority: .utility) {
                 let status = Self.readTailscaleStatus()
                 let serve = Self.readTailscaleServe(port: checkPort)
-                return (name: status.name, diagnostic: status.diagnostic, cli: status.cliAvailable,
-                        ready: serve.ready, conflict: serve.conflict)
+                return (name: status.name, diagnostic: status.diagnostic, cli: status.cliAvailable, serve: serve)
             }.value
             tailscaleDNSName = result.name
             tailscaleStatusDiagnostic = result.diagnostic
             tailscaleCLIAvailable = result.cli
-            tailscaleServeReady = result.ready
-            tailscaleServeConflict = result.conflict
+            serveState = result.serve
             enableTailscaleServeIfNeeded()
         }
     }
@@ -779,9 +792,12 @@ final class RemoteControlServer: ObservableObject {
         return "Tailscale reports this Mac as \(name), which isn't a .ts.net name. Enter the host by hand."
     }
 
-    private nonisolated static func readTailscaleServe(port: Int) -> (ready: Bool, conflict: Bool) {
-        guard let data = runTailscale(["serve", "status", "--json"]).data else { return (false, false) }
-        return (serveReady(from: data, port: port), serveConflict(from: data, port: port))
+    private nonisolated static func readTailscaleServe(port: Int) -> ServeState {
+        let run = runTailscale(["serve", "status", "--json"])
+        guard run.foundCLI else {
+            return .unreadable("Toki couldn't run the tailscale command to check HTTPS.")
+        }
+        return serveState(from: run.data, port: port)
     }
 
     // Why `tailscale serve` refused, in words, plus the one command that clears it where there is
@@ -964,60 +980,74 @@ final class RemoteControlServer: ObservableObject {
 
     // `tailscale serve status --json` reports a Web handler map keyed by "<host>:<port>", each with
     // a Proxy target. Ready means a :443 handler forwards to our loopback port.
-    nonisolated static func serveReady(from data: Data, port: Int) -> Bool {
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data),
-            let root = object as? [String: Any],
-            let web = root["Web"] as? [String: Any]
-        else {
-            return false
-        }
-        let needle = "127.0.0.1:\(port)"
-        for (hostPort, value) in web {
-            guard
-                hostPort.hasSuffix(":443"),
-                let entry = value as? [String: Any],
-                let handlers = entry["Handlers"] as? [String: Any]
-            else {
-                continue
-            }
-            for handler in handlers.values {
-                if let handler = handler as? [String: Any],
-                   let proxy = handler["Proxy"] as? String,
-                   proxy.contains(needle) {
-                    return true
-                }
-            }
-        }
-        return false
+    /// What `tailscale serve status --json` says about our port. "Could not read it" is a
+    /// separate answer from "nothing is served": they used to render identically, which meant a
+    /// failed status read told the user their serve was off and offered to fix a working setup.
+    enum ServeState: Equatable, Sendable {
+        case ready
+        case conflict
+        case notServing
+        case unreadable(String)
     }
 
-    // True when HTTPS :443 already serves a different app at the root path. Auto-serve must skip
-    // this case: `tailscale serve` at root would replace the user's other service silently.
-    nonisolated static func serveConflict(from data: Data, port: Int) -> Bool {
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data),
-            let root = object as? [String: Any],
-            let web = root["Web"] as? [String: Any]
-        else {
-            return false
+    /// Hosts that mean "this Mac" in a serve target. Tailscale writes 127.0.0.1 today, but the
+    /// spelling is not part of any contract, and matching one literal string is what made a
+    /// working serve read as absent.
+    private static let loopbackHosts: Set<String> = ["127.0.0.1", "localhost", "::1", "0.0.0.0"]
+
+    /// True when a serve target points at this Mac on `port`, whatever scheme, path or spelling
+    /// of loopback it uses.
+    nonisolated static func proxyTargetsLocalPort(_ proxy: String, port: Int) -> Bool {
+        var rest = proxy.trimmingCharacters(in: .whitespaces)
+        if let scheme = rest.range(of: "://") {
+            rest = String(rest[scheme.upperBound...])
         }
-        let needle = "127.0.0.1:\(port)"
+        if let slash = rest.firstIndex(of: "/") {
+            rest = String(rest[..<slash])
+        }
+        guard let colon = rest.lastIndex(of: ":") else { return false }
+        let host = String(rest[..<colon])
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            .lowercased()
+        guard Int(rest[rest.index(after: colon)...]) == port else { return false }
+        return loopbackHosts.contains(host)
+    }
+
+    /// The port a `Web` key is serving on. Keys are "<host>:<port>", and an IPv6 host has colons
+    /// of its own, so only the last one separates the port.
+    nonisolated static func servedPort(fromWebKey key: String) -> Int? {
+        guard let colon = key.lastIndex(of: ":") else { return nil }
+        return Int(key[key.index(after: colon)...])
+    }
+
+    nonisolated static func serveState(from data: Data?, port: Int) -> ServeState {
+        guard let data else {
+            return .unreadable("Toki couldn't read `tailscale serve status`.")
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data), let root = object as? [String: Any] else {
+            return .unreadable("Tailscale's serve status wasn't readable.")
+        }
+        // A tailnet with nothing served answers with valid JSON and no Web map. That is a real
+        // "not serving", not a failure to read.
+        guard let web = root["Web"] as? [String: Any] else { return .notServing }
+
+        var sawConflict = false
         for (hostPort, value) in web {
-            guard
-                hostPort.hasSuffix(":443"),
-                let entry = value as? [String: Any],
-                let handlers = entry["Handlers"] as? [String: Any],
-                let rootHandler = handlers["/"] as? [String: Any]
-            else {
-                continue
+            guard servedPort(fromWebKey: hostPort) == 443,
+                  let entry = value as? [String: Any],
+                  let handlers = entry["Handlers"] as? [String: Any] else { continue }
+            for handler in handlers.values {
+                guard let handler = handler as? [String: Any],
+                      let proxy = handler["Proxy"] as? String else { continue }
+                if proxyTargetsLocalPort(proxy, port: port) { return .ready }
             }
-            // Any root handler conflicts unless it's a proxy to our own port; a Path/Text static
-            // handler or a proxy elsewhere would be replaced by our serve command.
-            if let proxy = rootHandler["Proxy"] as? String, proxy.contains(needle) { continue }
-            return true
+            // Something else owns the root path here; serving over it would replace it silently.
+            if let rootHandler = handlers["/"] as? [String: Any] {
+                let proxy = rootHandler["Proxy"] as? String
+                if proxy == nil || !proxyTargetsLocalPort(proxy!, port: port) { sawConflict = true }
+            }
         }
-        return false
+        return sawConflict ? .conflict : .notServing
     }
 
     private static func isTailscaleAddress(_ ip: String) -> Bool {
