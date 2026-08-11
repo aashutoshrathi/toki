@@ -776,6 +776,25 @@ struct SettingsPanel: View {
         .pointerOnHover()
     }
 
+    // A string literal per state rather than nested ternaries inside the Text, so each state's
+    // wording is readable and stays formatted (the backticks are markdown to Text).
+    private var readinessMessage: LocalizedStringKey {
+        switch remoteServer.tailscaleServeReady {
+        case .some(true):
+            return "Reachable from your phone."
+        case .some(false):
+            if remoteServer.isEnablingServe {
+                return "Turning on HTTPS access with `tailscale serve`…"
+            }
+            if remoteServer.tailscaleServeConflict {
+                return "Tailscale already serves another app on HTTPS 443. Enabling here will replace it."
+            }
+            return "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet."
+        case nil:
+            return "Checking whether your phone can reach this Mac…"
+        }
+    }
+
     @ViewBuilder
     private var tailscaleReadinessRow: some View {
         let ready = remoteServer.tailscaleServeReady
@@ -785,15 +804,7 @@ struct SettingsPanel: View {
                     : ready == false ? "exclamationmark.triangle.fill" : "ellipsis.circle")
                     .foregroundStyle(ready == true ? Color.green
                         : ready == false ? Color.orange : Color.secondary)
-                Text(ready == true
-                    ? "Reachable from your phone."
-                    : ready == false
-                        ? (remoteServer.isEnablingServe
-                            ? "Turning on HTTPS access with `tailscale serve`…"
-                            : remoteServer.tailscaleServeConflict
-                                ? "Tailscale already serves another app on HTTPS 443. Enabling here will replace it."
-                                : "`tailscale serve` isn't running on 443, so your phone can't reach this Mac yet.")
-                        : "Checking whether your phone can reach this Mac…")
+                Text(readinessMessage)
                     .foregroundStyle(ready == false && !remoteServer.isEnablingServe ? Color.orange : Color.secondary)
             }
             .font(.system(size: 11))

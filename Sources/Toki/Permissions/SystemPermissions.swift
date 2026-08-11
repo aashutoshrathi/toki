@@ -212,6 +212,7 @@ enum SetupChecklist {
 enum SystemPermissions {
     static var accessibilityGranted: Bool { AXIsProcessTrusted() }
 
+    @MainActor
     static func requestAccessibility() {
         // Puts up macOS's own "open Privacy settings" prompt; the app must then be toggled on
         // there by hand, which is why the settings pane is opened alongside it.
@@ -219,10 +220,12 @@ enum SystemPermissions {
         openPrivacySettings(anchor: "Privacy_Accessibility")
     }
 
+    @MainActor
     static func installed(_ apps: [(name: String, bundleID: String)]) -> [(name: String, bundleID: String)] {
         apps.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil }
     }
 
+    @MainActor
     static func isRunning(anyOf bundleIDs: [String]) -> Bool {
         NSWorkspace.shared.runningApplications.contains { app in
             app.bundleIdentifier.map(bundleIDs.contains) ?? false
@@ -250,6 +253,7 @@ enum SystemPermissions {
     // Asking blocks until the dialog is answered, so it never runs on the main thread. macOS also
     // shows nothing for an app that isn't running, so the target is launched (in the background)
     // before it is asked about.
+    @MainActor
     static func requestAutomation(bundleID: String) async -> SetupStepStatus {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return .unknown }
         let configuration = NSWorkspace.OpenConfiguration()
@@ -272,6 +276,7 @@ enum SystemPermissions {
         }
     }
 
+    @MainActor
     static func openPrivacySettings(anchor: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") else { return }
         NSWorkspace.shared.open(url)
