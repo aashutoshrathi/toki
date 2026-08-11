@@ -386,5 +386,61 @@ class RemoteControlDisplayPathTests(unittest.TestCase):
         self.assertEqual(toki_remote.display_path(""), "")
 
 
+class ClaudeToolEntryTests(unittest.TestCase):
+    """What a tool call sends to the phone: enough to follow it, never its output."""
+
+    def _entries(self, lines):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as handle:
+            for line in lines:
+                handle.write(json.dumps(line) + "\n")
+            path = handle.name
+        entries, _ = toki_remote.parse_claude_transcript(path, 0)
+        return entries
+
+    def test_a_call_carries_its_id_time_and_what_it_is_doing(self):
+        entries = self._entries([{
+            "type": "assistant",
+            "timestamp": "2026-08-11T10:00:00.000Z",
+            "message": {"content": [{
+                "type": "tool_use", "id": "tu_1", "name": "Bash",
+                "input": {"description": "List files", "command": "ls -la /tmp"},
+            }]},
+        }])
+        call = next(e for e in entries if e["role"] == "tool")
+        self.assertEqual(call["id"], "tu_1")
+        self.assertEqual(call["ts"], "2026-08-11T10:00:00.000Z")
+        # The summary picks the description; the detail is what is actually being run, which the
+        # single-line summary hid.
+        self.assertEqual(call["text"], "List files")
+        self.assertEqual(call["detail"], "ls -la /tmp")
+
+    def test_a_result_reports_completion_and_failure_but_never_its_output(self):
+        entries = self._entries([{
+            "type": "user",
+            "timestamp": "2026-08-11T10:00:04.000Z",
+            "message": {"content": [{
+                "type": "tool_result", "tool_use_id": "tu_1", "is_error": True,
+                "content": "SECRET_TOKEN=hunter2 leaked all over stdout",
+            }]},
+        }])
+        resolved = next(e for e in entries if e["role"] == "resolved")
+        self.assertEqual(resolved["id"], "tu_1")
+        self.assertEqual(resolved["ts"], "2026-08-11T10:00:04.000Z")
+        self.assertTrue(resolved["failed"])
+        # Tool output is where file contents and command output live; none of it leaves the Mac.
+        self.assertNotIn("hunter2", json.dumps(resolved))
+
+    def test_detail_does_not_repeat_the_summary(self):
+        self.assertEqual(toki_remote.claude_tool_detail("Bash", {"command": "ls"}), "")
+        self.assertEqual(
+            toki_remote.claude_tool_detail("Grep", {"pattern": "todo", "path": "src"}),
+            "src",
+        )
+
+    def test_detail_is_bounded(self):
+        detail = toki_remote.claude_tool_detail("Bash", {"description": "x", "command": "y" * 900})
+        self.assertLessEqual(len(detail), 240)
+
+
 if __name__ == "__main__":
     unittest.main()
