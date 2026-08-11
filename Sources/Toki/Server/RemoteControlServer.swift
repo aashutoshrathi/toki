@@ -993,7 +993,7 @@ final class RemoteControlServer: ObservableObject {
     /// Hosts that mean "this Mac" in a serve target. Tailscale writes 127.0.0.1 today, but the
     /// spelling is not part of any contract, and matching one literal string is what made a
     /// working serve read as absent.
-    private static let loopbackHosts: Set<String> = ["127.0.0.1", "localhost", "::1", "0.0.0.0"]
+    private nonisolated static let loopbackHosts: Set<String> = ["127.0.0.1", "localhost", "::1", "0.0.0.0"]
 
     /// True when a serve target points at this Mac on `port`, whatever scheme, path or spelling
     /// of loopback it uses.
