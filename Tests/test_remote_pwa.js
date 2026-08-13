@@ -228,6 +228,28 @@ assert.equal(dead.store.value, null, "an expired session must be cleared from st
 const legacy = sessionContext("bare-token", 1000);
 assert.equal(vm.runInContext("loadSession()", legacy.context), "bare-token");
 
+// A session an older build left in sessionStorage is migrated into localStorage, and the old copy
+// is cleared, so the device stays paired across the upgrade.
+const legacyLocal = { value: null };
+const legacySession = { value: "moved-token" };
+const migrate = vm.createContext({
+  SESSION_KEY: "k",
+  Date: { now: () => 1000 },
+  localStorage: {
+    getItem: () => legacyLocal.value,
+    setItem: (_, v) => { legacyLocal.value = v; },
+    removeItem: () => { legacyLocal.value = null; },
+  },
+  sessionStorage: {
+    getItem: () => legacySession.value,
+    removeItem: () => { legacySession.value = null; },
+  },
+});
+sessionSources.forEach(source => vm.runInContext(source, migrate));
+assert.equal(vm.runInContext("loadSession()", migrate), "moved-token");
+assert.equal(legacyLocal.value, "moved-token", "the session must move into localStorage");
+assert.equal(legacySession.value, null, "the sessionStorage copy must be cleared once moved");
+
 // saveSession records the lifetime /api/pair reported.
 const fresh = sessionContext(null, 1000);
 vm.runInContext("saveSession('new-token', 60)", fresh.context);

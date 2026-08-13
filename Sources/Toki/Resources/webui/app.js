@@ -77,9 +77,22 @@ function loadSession() {
   try {
     raw = localStorage.getItem(SESSION_KEY);
   } catch (e) {}
+  if (!raw) {
+    // An older build kept the session in sessionStorage, which the tab discards; move it across so
+    // upgrading doesn't sign the device out. Keep the old copy if the write fails.
+    let legacy = null;
+    try {
+      legacy = sessionStorage.getItem(SESSION_KEY);
+    } catch (e) {}
+    if (legacy) {
+      try {
+        localStorage.setItem(SESSION_KEY, legacy);
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch (e) {}
+      raw = legacy;
+    }
+  }
   if (!raw) return "";
-  // Sessions stored before this change were bare tokens with no expiry; treat them as valid and
-  // let the server be the judge, rather than dropping a working session on upgrade.
   let saved;
   try {
     saved = JSON.parse(raw);

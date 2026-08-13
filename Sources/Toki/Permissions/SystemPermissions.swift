@@ -304,8 +304,10 @@ enum SetupChecklist {
         // would be a lie with a button attached.
         facts.keychainApproved = store.allowsKeychainReads
         facts.claudeAccountConfigured = store.snapshots.contains { $0.provider.isClaudeAccount }
-        // What the read produced, from either route: a connected account or a live detection.
-        facts.claudeSignInFound = facts.claudeAccountConfigured
+        // A read that produced something, from either route: a connected account whose snapshot is
+        // not an error, or a live detection. An error snapshot falls through to the retry row rather
+        // than claiming the token is being read.
+        facts.claudeSignInFound = store.snapshots.contains { $0.provider.isClaudeAccount && !$0.isError }
             || store.detectedProviders.contains { $0.provider.isClaudeAccount }
         facts.notificationsEnabled = store.preferences.notificationsEnabled
         // Off the main actor: this is a TCC lookup per terminal, and the list is rebuilt every
