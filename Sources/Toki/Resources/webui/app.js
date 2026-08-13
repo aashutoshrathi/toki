@@ -66,10 +66,65 @@ function feedback(kind = "tap") {
 
 const SESSION_KEY = "toki-session:" + API_BASE + ":" + LINK_TOKEN;
 
-let TOKEN = "";
-try {
-  TOKEN = sessionStorage.getItem(SESSION_KEY) || "";
-} catch (e) {}
+// The session lives in localStorage, not sessionStorage: sessionStorage dies with the tab (a
+// closed browser, or iOS discarding a backgrounded tab), which used to sign the device out. The
+// stored expiry matches what /api/pair granted; a revoke on the Mac still ends it immediately.
+function loadSession() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(SESSION_KEY);
+  } catch (e) {}
+  if (!raw) {
+    // An older build kept the session in sessionStorage, which the tab discards; move it across so
+    // upgrading doesn't sign the device out. Keep the old copy if the write fails.
+    let legacy = null;
+    try {
+      legacy = sessionStorage.getItem(SESSION_KEY);
+    } catch (e) {}
+    if (legacy) {
+      try {
+        localStorage.setItem(SESSION_KEY, legacy);
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch (e) {}
+      raw = legacy;
+    }
+  }
+  if (!raw) return "";
+  let saved;
+  try {
+    saved = JSON.parse(raw);
+  } catch (e) {
+    return raw;
+  }
+  if (!saved || !saved.token) return "";
+  if (saved.expires && Date.now() >= saved.expires) {
+    clearSession();
+    return "";
+  }
+  return saved.token;
+}
+
+function saveSession(token, expiresInSeconds) {
+  const record = { token };
+  // /api/pair reports the lifetime it granted; without it the token is kept until the server
+  // rejects it.
+  if (expiresInSeconds > 0) record.expires = Date.now() + expiresInSeconds * 1000;
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(record));
+  } catch (e) {}
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+  // Older builds kept it here; clear both so an upgrade cannot leave a stale copy behind.
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+}
+
+let TOKEN = loadSession();
 
 let current = null;
 let offset = 0;
@@ -82,6 +137,11 @@ function maskText(t) {
 
 function dispTitle(t) {
   return privacyMode ? maskText(t) : esc(t);
+}
+
+// Same masking, but for a textContent assignment: no HTML escaping, or names would show entities.
+function plainTitle(t) {
+  return privacyMode ? maskText(t) : (t || "");
 }
 
 // The folder an agent is working in, masked alongside its title so the privacy toggle doesn't
@@ -164,16 +224,19 @@ async function api(p, o) {
   // second time. The probe above is a GET and is the only thing repeated.
   const transport = await tokenTransportOnce();
   const r = await tokenedRequest(p, o, transport === "query");
-  if (r.status == 403) lockApp();
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const detail = await r.text();
+    // A 403 also means "wrong Wi-Fi": the host setting refuses networks it was not meant to answer,
+    // which fixes itself. Only a token the Mac rejects should end the session.
+    if (r.status == 403 && detail.includes("bad token")) lockApp();
+    throw new Error(detail);
+  }
   return r.json();
 }
 
 function lockApp() {
   TOKEN = "";
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch (e) {}
+  clearSession();
   document.body.classList.add("locked");
   $("#paircontrols").hidden = false;
   $("#connectmethods").hidden = true;
@@ -184,9 +247,7 @@ function lockApp() {
 
 function invalidLink(message) {
   TOKEN = "";
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch (e) {}
+  clearSession();
   try {
     localStorage.removeItem(CONN_KEY);
   } catch (e) {}
@@ -211,6 +272,75 @@ function setConnected(ok) {
   if (++failCount >= 2) $("#conn").hidden = false;
 }
 
+// Quota, from the same reading the menu bar shows: one line by default, the whole list when asked.
+let usageOpen = false;
+let lastUsage = null;
+
+// Red is the low-quota notification threshold (lowQuotaThreshold, 20% by default), so the strip and
+// the alerts agree on "low"; amber is the warning before it.
+function usageClass(remaining) {
+  if (remaining <= 0.2) return "low";
+  if (remaining <= 0.35) return "warn";
+  return "";
+}
+
+function renderUsage(data) {
+  lastUsage = data;
+  const toggle = $("#usagetoggle");
+  const panel = $("#usage");
+  const accounts = (data && data.accounts) || [];
+  if (!accounts.length) {
+    toggle.hidden = true;
+    panel.hidden = true;
+    return;
+  }
+  toggle.hidden = false;
+  // The summary line is the account with least left, because that is the one about to bite.
+  const withRatio = accounts.filter(a => typeof a.remaining == "number");
+  const lowest = withRatio.length
+    ? withRatio.reduce((a, b) => (a.remaining <= b.remaining ? a : b))
+    : accounts[0];
+  const lowestValue = typeof lowest.remaining == "number"
+    ? Math.round(lowest.remaining * 100) + "% left"
+    : (lowest.value || lowest.primary || "");
+  const summary = accounts.length > 1
+    ? plainTitle(lowest.name) + " " + lowestValue + " · " + accounts.length + " accounts"
+    : plainTitle(lowest.name) + " " + lowestValue;
+  // Stale shows in the collapsed strip too, not only the expanded panel, or a reading the Mac
+  // stopped refreshing would look current until the user opened it.
+  const stale = !!(data && data.stale);
+  $("#usagesummary").textContent = stale ? summary + " · may be out of date" : summary;
+  toggle.classList.toggle("stale", stale);
+  toggle.setAttribute("aria-expanded", usageOpen ? "true" : "false");
+  panel.hidden = !usageOpen;
+  if (!usageOpen) return;
+
+  panel.innerHTML = accounts.map(a => {
+    const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
+    if (typeof a.remaining != "number") {
+      // No quota API, or a cost figure instead: show the figure, not a bar for a number nobody has.
+      return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+        '<span class="u-track"></span><span class="u-value">' +
+        esc(a.value || a.primary || "") + "</span></div>";
+    }
+    const pct = Math.max(0, Math.min(100, Math.round(a.remaining * 100)));
+    return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+      '<span class="u-track"><span class="u-fill ' + usageClass(a.remaining) +
+      '" style="width:' + pct + '%"></span></span>' +
+      '<span class="u-value">' + pct + "%</span></div>";
+  }).join("") + (data.stale
+    ? '<div class="u-stale">Toki stopped sending updates, so this may be out of date.</div>'
+    : "");
+}
+
+async function refreshUsage() {
+  renderUsage(await api("/api/usage"));
+}
+
+function pollUsage() {
+  if (TOKEN) refreshUsage().then(() => setConnected(true), () => {});
+}
+
 function pollAgents() {
   if (TOKEN) refreshAgents().then(() => setConnected(true), () => setConnected(false));
 }
@@ -226,9 +356,27 @@ function startApp() {
   started = true;
   pollAgents();
   pollLog();
+  pollUsage();
   setInterval(pollAgents, 4000);
   setInterval(pollLog, 2500);
+  // Quota moves in minutes, not seconds; polling it like a transcript would be noise.
+  setInterval(pollUsage, 20000);
 }
+
+$("#usagetoggle").addEventListener("click", () => {
+  usageOpen = !usageOpen;
+  feedback();
+  refreshUsage();
+});
+
+// A backgrounded tab has its timers throttled, so it showed stale state until the next tick. Poll
+// the moment it is visible again.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState != "visible" || !started || !TOKEN) return;
+  pollAgents();
+  pollLog();
+  pollUsage();
+});
 
 $("#pairform").addEventListener("submit", async e => {
   e.preventDefault();
@@ -255,9 +403,7 @@ $("#pairform").addEventListener("submit", async e => {
       throw new Error(body.error || "verification failed");
     }
     TOKEN = body.token;
-    try {
-      sessionStorage.setItem(SESSION_KEY, TOKEN);
-    } catch (e) {}
+    saveSession(TOKEN, body.expiresIn);
     $("#pairstatus").textContent = "";
     startApp();
   } catch (err) {
@@ -514,12 +660,54 @@ function clearPending() {
 let logSession = null;
 let logEpoch = 0;
 
+// Tool calls arrive before their results, so the row has to be found again when the result turns
+// up. Keyed by the tool_use id the transcript already carries.
+let toolNodes = {};
+
 function resetTranscript() {
   logEpoch++;
   logSession = null;
   offset = 0;
+  toolNodes = {};
   $("#log").innerHTML = "";
   clearPending();
+}
+
+// Whole seconds up to a minute, then minutes: a tool call's duration is interesting at a glance,
+// not to three decimal places.
+function shortDuration(ms) {
+  if (!(ms > 0)) return "";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 1) return "";
+  if (seconds < 60) return seconds + "s";
+  return Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
+}
+
+function toolRow(e) {
+  const detail = e.detail && e.detail != e.text
+    ? '<span class="tool-detail">' + dispTitle(e.detail) + "</span>"
+    : "";
+  return '<span class="tool-state" aria-hidden="true"></span>&#128295; <b>' + esc(e.tool) + "</b> " +
+    dispTitle(e.text || "") + detail;
+}
+
+// The result carries no output, only that the call ended, when, and whether it failed: enough to
+// stop a finished call looking like one still running.
+function resolveToolNode(entry) {
+  const node = toolNodes[entry.id];
+  if (!node) return;
+  delete toolNodes[entry.id];
+  node.el.classList.remove("running");
+  node.el.classList.add(entry.failed ? "failed" : "ok");
+  const started = Date.parse(node.ts || "");
+  const ended = Date.parse(entry.ts || "");
+  const took = shortDuration(ended - started);
+  if (took) {
+    const stamp = document.createElement("span");
+    stamp.className = "tool-took";
+    stamp.textContent = took;
+    node.el.appendChild(stamp);
+  }
 }
 
 async function refreshLog() {
@@ -548,7 +736,11 @@ async function refreshLog() {
   const stick = nearBottom();
   let added = 0;
   for (const e of r.entries) {
-    if (e.role == "meta" || e.role == "resolved") continue;
+    if (e.role == "resolved") {
+      resolveToolNode(e);
+      continue;
+    }
+    if (e.role == "meta") continue;
     // The agent echoes back the message we optimistically showed; drop the placeholder so it isn't doubled.
     if (e.role == "user" && pendingEcho && e.text.trim() == pendingEcho.text) {
       pendingEcho.node.remove();
@@ -561,7 +753,15 @@ async function refreshLog() {
     if (!added) hideTyping();
     const d = document.createElement("div");
     d.className = "m " + e.role;
-    if (e.role == "tool") d.innerHTML = "&#128295; <b>" + esc(e.tool) + "</b> " + esc(e.text || "");
+    if (e.role == "tool") {
+      d.innerHTML = toolRow(e);
+      // Only spin what can stop spinning: OpenCode tools carry no id and no completion, so marking
+      // them running would leave every finished call in flight forever.
+      if (e.id) {
+        d.classList.add("running");
+        toolNodes[e.id] = { el: d, ts: e.ts };
+      }
+    }
     else if (e.role == "assistant") d.innerHTML = md(e.text);
     else d.textContent = e.text;
     $("#log").appendChild(d);
@@ -709,6 +909,7 @@ $("#privacytoggle").addEventListener("click", () => {
   b.setAttribute("aria-label", privacyMode ? "Show agent names" : "Hide agent names");
   b.title = privacyMode ? "Show agent names" : "Hide agent names";
   renderAgents();
+  if (lastUsage) renderUsage(lastUsage);
 });
 
 // Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.
@@ -757,9 +958,7 @@ function goHome() {
   try {
     localStorage.removeItem(CONN_KEY);
   } catch (e) {}
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch (e) {}
+  clearSession();
   location.replace(location.pathname);
 }
 

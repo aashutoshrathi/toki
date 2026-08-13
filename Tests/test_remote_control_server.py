@@ -386,5 +386,122 @@ class RemoteControlDisplayPathTests(unittest.TestCase):
         self.assertEqual(toki_remote.display_path(""), "")
 
 
+class ClaudeToolEntryTests(unittest.TestCase):
+    """What a tool call sends to the phone: enough to follow it, never its output."""
+
+    def _entries(self, lines):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as handle:
+            for line in lines:
+                handle.write(json.dumps(line) + "\n")
+            path = handle.name
+        entries, _ = toki_remote.parse_claude_transcript(path, 0)
+        return entries
+
+    def test_a_call_carries_its_id_time_and_what_it_is_doing(self):
+        entries = self._entries([{
+            "type": "assistant",
+            "timestamp": "2026-08-11T10:00:00.000Z",
+            "message": {"content": [{
+                "type": "tool_use", "id": "tu_1", "name": "Bash",
+                "input": {"description": "List files", "command": "ls -la /tmp"},
+            }]},
+        }])
+        call = next(e for e in entries if e["role"] == "tool")
+        self.assertEqual(call["id"], "tu_1")
+        self.assertEqual(call["ts"], "2026-08-11T10:00:00.000Z")
+        # The summary picks the description; the detail is what is actually being run.
+        self.assertEqual(call["text"], "List files")
+        self.assertEqual(call["detail"], "ls -la /tmp")
+
+    def test_a_result_reports_completion_and_failure_but_never_its_output(self):
+        entries = self._entries([{
+            "type": "user",
+            "timestamp": "2026-08-11T10:00:04.000Z",
+            "message": {"content": [{
+                "type": "tool_result", "tool_use_id": "tu_1", "is_error": True,
+                "content": "SECRET_TOKEN=hunter2 leaked all over stdout",
+            }]},
+        }])
+        resolved = next(e for e in entries if e["role"] == "resolved")
+        self.assertEqual(resolved["id"], "tu_1")
+        self.assertEqual(resolved["ts"], "2026-08-11T10:00:04.000Z")
+        self.assertTrue(resolved["failed"])
+        # Tool output is where file contents and command output live; none of it leaves the Mac.
+        self.assertNotIn("hunter2", json.dumps(resolved))
+
+    def test_detail_does_not_repeat_the_summary(self):
+        self.assertEqual(toki_remote.claude_tool_detail("Bash", {"command": "ls"}), "")
+        self.assertEqual(
+            toki_remote.claude_tool_detail("Grep", {"pattern": "todo", "path": "src"}),
+            "src",
+        )
+
+    def test_detail_is_bounded(self):
+        detail = toki_remote.claude_tool_detail("Bash", {"description": "x", "command": "y" * 900})
+        self.assertLessEqual(len(detail), 240)
+
+
+class UsageSnapshotTests(unittest.TestCase):
+    """Usage reaches the phone over the same pipe as agents, and ages the same way."""
+
+    def setUp(self):
+        toki_remote.USAGE_SNAPSHOT = []
+        toki_remote.USAGE_SNAPSHOT_AT = 0.0
+
+    def test_nothing_published_yet_is_waiting_not_empty(self):
+        # An empty list and "the Mac has not told us yet" are different things to draw.
+        result = toki_remote.current_usage()
+        self.assertTrue(result["waiting"])
+        self.assertFalse(result["stale"])
+        self.assertEqual(result["accounts"], [])
+
+    def test_a_fresh_publish_is_served_verbatim(self):
+        toki_remote.USAGE_SNAPSHOT = [{"id": "claude-code", "name": "Claude Code", "remaining": 0.42}]
+        toki_remote.USAGE_SNAPSHOT_AT = time.time()
+        result = toki_remote.current_usage()
+        self.assertFalse(result["stale"])
+        self.assertFalse(result["waiting"])
+        self.assertEqual(result["accounts"][0]["remaining"], 0.42)
+
+    def test_a_reading_the_mac_stopped_refreshing_is_marked_stale(self):
+        # Worse than no reading, because it looks current: the phone is told so it can say so.
+        toki_remote.USAGE_SNAPSHOT = [{"id": "codex", "name": "Codex", "remaining": 0.9}]
+        toki_remote.USAGE_SNAPSHOT_AT = time.time() - toki_remote.CANONICAL_MAX_AGE - 1
+        self.assertTrue(toki_remote.current_usage()["stale"])
+
+
+class InitialTranscriptWindowTests(unittest.TestCase):
+    def test_a_call_that_finished_before_the_transcript_opened_carries_its_completion(self):
+        # The tool finished before the client opened the transcript, so its `resolved` must ride
+        # along in the first payload, or the row is stuck `running`.
+        entries = [
+            {"role": "user", "text": "hi"},
+            {"role": "tool", "tool": "Read", "id": "t1"},
+            {"role": "resolved", "id": "t1"},
+            {"role": "assistant", "text": "done"},
+        ]
+        shown = toki_remote.initial_transcript_window(entries)
+        self.assertIn({"role": "resolved", "id": "t1"}, shown)
+
+    def test_meta_is_dropped_from_the_first_payload(self):
+        entries = [
+            {"role": "meta", "mode": "default"},
+            {"role": "user", "text": "hi"},
+        ]
+        shown = toki_remote.initial_transcript_window(entries)
+        self.assertEqual([e["role"] for e in shown], ["user"])
+
+    def test_only_the_last_visible_messages_are_kept_but_their_resolutions_survive(self):
+        entries = []
+        for i in range(70):
+            entries.append({"role": "user", "text": str(i)})
+        entries.append({"role": "tool", "tool": "Read", "id": "last"})
+        entries.append({"role": "resolved", "id": "last"})
+        shown = toki_remote.initial_transcript_window(entries, limit=60)
+        visible = [e for e in shown if e["role"] in ("user", "assistant", "tool")]
+        self.assertEqual(len(visible), 60)
+        self.assertIn({"role": "resolved", "id": "last"}, shown)
+
+
 if __name__ == "__main__":
     unittest.main()

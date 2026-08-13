@@ -120,6 +120,8 @@ assert.match(html, /id="pairhome"/);
 assert.match(css, /#pairhome\{[^}]*position:absolute/);
 const homeSource = app.match(/^function goHome\([\s\S]*?^}/m);
 assert.ok(homeSource, "goHome must be a top-level function in app.js");
+const clearSource = app.match(/^function clearSession\([\s\S]*?^}/m);
+assert.ok(clearSource, "clearSession must be a top-level function in app.js");
 const steps = [];
 const home = vm.createContext({
   CONN_KEY: "toki-conn",
@@ -128,11 +130,14 @@ const home = vm.createContext({
   sessionStorage: { removeItem(k) { steps.push("session:" + k); } },
   location: { pathname: "/", replace(url) { steps.push("replace:" + url); } },
 });
+vm.runInContext(clearSource[0], home);
 vm.runInContext(homeSource[0], home);
 
 vm.runInContext("goHome()", home);
 assert.deepEqual(steps, [
   "local:toki-conn",
+  // The session lives in localStorage now; the sessionStorage removal clears what an older build left.
+  "local:toki-session:https://my-mac.example-tailnet.ts.net:abc",
   "session:toki-session:https://my-mac.example-tailnet.ts.net:abc",
   // The bare path: no query and no fragment, so nothing revives the connection we just left.
   "replace:/",
@@ -182,5 +187,179 @@ assert.match(app, /function savedConn/);
 assert.match(app, /const REVIVE\s*=\s*PARAMS\.get\("token"\)\s*\?\s*null\s*:\s*savedConn\(\)/);
 assert.match(app, /localStorage\.setItem\(CONN_KEY/);
 assert.match(app, /localStorage\.removeItem\(CONN_KEY\)/);
+
+// --- The session outlives the tab, and no longer than the Mac says it should ---
+// sessionStorage dies with the tab (closed browser, or iOS discarding it), which ended live
+// sessions; localStorage keeps them for the lifetime /api/pair granted.
+const sessionSources = ["loadSession", "saveSession", "clearSession"].map(name => {
+  const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
+  assert.ok(found, name + " must be a top-level function in app.js");
+  return found[0];
+});
+
+function sessionContext(stored, now) {
+  const store = { value: stored };
+  const context = vm.createContext({
+    SESSION_KEY: "k",
+    Date: { now: () => now },
+    localStorage: {
+      getItem: () => store.value,
+      setItem: (_, v) => { store.value = v; },
+      removeItem: () => { store.value = null; },
+    },
+    sessionStorage: { removeItem() {} },
+  });
+  sessionSources.forEach(source => vm.runInContext(source, context));
+  return { context, store };
+}
+
+// A session stored with a future expiry is restored.
+const live = sessionContext(JSON.stringify({ token: "tok", expires: 2000 }), 1000);
+assert.equal(vm.runInContext("loadSession()", live.context), "tok");
+
+// Past its expiry it is dropped rather than replayed against a server that would refuse it.
+const dead = sessionContext(JSON.stringify({ token: "tok", expires: 500 }), 1000);
+assert.equal(vm.runInContext("loadSession()", dead.context), "");
+assert.equal(dead.store.value, null, "an expired session must be cleared from storage");
+
+// Sessions written by an older build were bare tokens; upgrading must not sign those devices out.
+const legacy = sessionContext("bare-token", 1000);
+assert.equal(vm.runInContext("loadSession()", legacy.context), "bare-token");
+
+// A session an older build left in sessionStorage is migrated into localStorage, and the old copy
+// is cleared, so the device stays paired across the upgrade.
+const legacyLocal = { value: null };
+const legacySession = { value: "moved-token" };
+const migrate = vm.createContext({
+  SESSION_KEY: "k",
+  Date: { now: () => 1000 },
+  localStorage: {
+    getItem: () => legacyLocal.value,
+    setItem: (_, v) => { legacyLocal.value = v; },
+    removeItem: () => { legacyLocal.value = null; },
+  },
+  sessionStorage: {
+    getItem: () => legacySession.value,
+    removeItem: () => { legacySession.value = null; },
+  },
+});
+sessionSources.forEach(source => vm.runInContext(source, migrate));
+assert.equal(vm.runInContext("loadSession()", migrate), "moved-token");
+assert.equal(legacyLocal.value, "moved-token", "the session must move into localStorage");
+assert.equal(legacySession.value, null, "the sessionStorage copy must be cleared once moved");
+
+// saveSession records the lifetime /api/pair reported.
+const fresh = sessionContext(null, 1000);
+vm.runInContext("saveSession('new-token', 60)", fresh.context);
+assert.deepEqual(JSON.parse(fresh.store.value), { token: "new-token", expires: 1000 + 60 * 1000 });
+
+// No lifetime reported: keep the token and let the server be the judge.
+vm.runInContext("saveSession('no-expiry', 0)", fresh.context);
+assert.deepEqual(JSON.parse(fresh.store.value), { token: "no-expiry" });
+
+// --- A 403 that isn't about the token must not end the session ---
+// The host setting refuses networks it was not meant to answer: a different Wi-Fi, not a dead session.
+assert.match(app, /detail\.includes\("bad token"\)/);
+
+// --- Coming back to a backgrounded tab polls immediately ---
+assert.match(app, /addEventListener\("visibilitychange"/);
+
+// --- Tool calls show that they finished, and how long they took ---
+// The transcript already carried tool_result entries; the client dropped them, so every call looked stuck running.
+assert.match(app, /function resolveToolNode/);
+assert.match(app, /toolNodes\[entry\.id\]/);
+assert.match(app, /classList\.add\(entry\.failed \? "failed" : "ok"\)/);
+// Only resolvable rows spin: an OpenCode tool carries no id and no completion, so "running" is
+// gated on e.id or every finished OpenCode call would stay in flight forever.
+assert.match(app, /if \(e\.id\) \{\s*\n\s*d\.classList\.add\("running"\);/);
+assert.match(css, /\.tool\.running \.tool-state/);
+assert.match(css, /\.tool\.failed \.tool-state/);
+
+const durationSource = app.match(/^function shortDuration\([\s\S]*?^}/m);
+assert.ok(durationSource, "shortDuration must be a top-level function in app.js");
+const duration = vm.createContext({ Math });
+vm.runInContext(durationSource[0], duration);
+const took = ms => vm.runInContext("shortDuration", duration)(ms);
+assert.equal(took(2400), "2s");
+assert.equal(took(65000), "1m 5s");
+// A call that returned instantly says nothing rather than "0s", and a missing timestamp on either
+// end must not render "NaN".
+assert.equal(took(200), "");
+assert.equal(took(NaN), "");
+assert.equal(took(-5), "");
+
+// --- Usage strip: same reading as the menu bar, one line until asked ---
+assert.match(html, /id="usagetoggle"/);
+assert.match(html, /id="usage"/);
+assert.match(app, /setInterval\(pollUsage/);
+assert.match(css, /#usagetoggle/);
+
+const usageSources = ["usageClass", "renderUsage"].map(name => {
+  const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
+  assert.ok(found, name + " must be a top-level function in app.js");
+  return found[0];
+});
+
+// Colour follows how close the account is to running out, not the provider.
+const usage = vm.createContext({ Math });
+vm.runInContext(usageSources[0], usage);
+const band = r => vm.runInContext("usageClass", usage)(r);
+assert.equal(band(0.8), "");
+assert.equal(band(0.3), "warn");
+// 20% is where Toki itself calls an account low and notifies, so the bar agrees with the alert.
+assert.equal(band(0.2), "low");
+assert.equal(band(0.05), "low");
+
+// The summary names the account with least left; one with no quota API shows its figure, not a bar.
+const nodes = {};
+const el = () => ({ hidden: true, textContent: "", innerHTML: "", attrs: {}, classes: {},
+  setAttribute(k, v) { this.attrs[k] = v; },
+  classList: { toggle(name, on) { nodes["#usagetoggle"].classes[name] = on; } } });
+["#usagetoggle", "#usage", "#usagesummary"].forEach(id => { nodes[id] = el(); });
+const render = vm.createContext({
+  Math,
+  $: id => nodes[id],
+  dispTitle: t => t,
+  plainTitle: t => t,
+  esc: t => t,
+  usageOpen: true,
+});
+vm.runInContext(usageSources[0], render);
+vm.runInContext(usageSources[1], render);
+vm.runInContext(`renderUsage({accounts:[
+  {id:"a",name:"Claude Code",remaining:0.62},
+  {id:"b",name:"Codex",remaining:0.11},
+  {id:"c",name:"Grok",primary:"no quota API"}
+],stale:true})`, render);
+assert.match(nodes["#usagesummary"].textContent, /^Codex 11% left/);
+assert.match(nodes["#usagesummary"].textContent, /3 accounts/);
+assert.match(nodes["#usage"].innerHTML, /width:62%/);
+assert.match(nodes["#usage"].innerHTML, /u-fill low/);
+assert.match(nodes["#usage"].innerHTML, /no quota API/);
+// A reading the Mac stopped refreshing says so rather than looking current, in the collapsed strip too.
+assert.match(nodes["#usage"].innerHTML, /out of date/);
+assert.match(nodes["#usagesummary"].textContent, /out of date/);
+assert.equal(nodes["#usagetoggle"].classes.stale, true);
+
+// A fresh reading clears the stale marker from both the summary and the strip class.
+vm.runInContext(`renderUsage({accounts:[{id:"a",name:"Codex",remaining:0.5}],stale:false})`, render);
+assert.doesNotMatch(nodes["#usagesummary"].textContent, /out of date/);
+assert.equal(nodes["#usagetoggle"].classes.stale, false);
+
+// plainTitle masks like dispTitle but does not HTML-escape, since it feeds textContent.
+const titleSources = ["maskText", "plainTitle"].map(name => {
+  const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
+  assert.ok(found, name + " must be a top-level function in app.js");
+  return found[0];
+});
+const titles = vm.createContext({ Math, privacyMode: false });
+titleSources.forEach(source => vm.runInContext(source, titles));
+assert.equal(vm.runInContext(`plainTitle("R&D <ops>")`, titles), "R&D <ops>");
+vm.runInContext("privacyMode = true", titles);
+assert.match(vm.runInContext(`plainTitle("R&D")`, titles), /^•+$/);
+
+// Nothing to show means no strip at all, rather than an empty panel.
+vm.runInContext("renderUsage({accounts:[]})", render);
+assert.equal(nodes["#usagetoggle"].hidden, true);
 
 console.log("remote pwa + qr + ux tests passed");

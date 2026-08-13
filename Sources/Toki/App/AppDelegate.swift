@@ -115,6 +115,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
+        // The phone gets the same readings from the same publisher, so the two can't drift apart.
+        Task { @MainActor in
+            for await snapshots in store.$snapshots.values {
+                RemoteControlServer.shared.updateUsage(snapshots)
+            }
+        }
+
         Task { @MainActor in
             for await agents in store.$activeAgents.values {
                 agentsAwaitingInput = agents.filter(\.needsInput).count

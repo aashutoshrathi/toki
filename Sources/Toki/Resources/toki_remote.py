@@ -57,6 +57,11 @@ AUTO_ACCEPTED_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 CANONICAL_AGENTS = None
 CANONICAL_AGENTS_AT = 0.0
 CANONICAL_AGENTS_LOCK = threading.Lock()
+# Usage arrives on the same pipe as the agent snapshot and goes stale the same way: a reading the
+# Mac stopped refreshing is worse than no reading, because it looks current.
+USAGE_SNAPSHOT = []
+USAGE_SNAPSHOT_AT = 0.0
+USAGE_LOCK = threading.Lock()
 # Toki republishes its agent snapshot every 15s. Past this age the pipe has gone quiet - the app
 # quit, hung, or the write failed - and serving the last snapshot would pin the phone to agents
 # and titles that stopped being true; discovering them here is stale-but-live instead.
@@ -356,7 +361,7 @@ def agents_from_snapshot(processes, snapshot):
 
 def read_control_messages():
     """Toki's side of the pipe: agent snapshots to display, and revocations to act on."""
-    global CANONICAL_AGENTS, CANONICAL_AGENTS_AT
+    global CANONICAL_AGENTS, CANONICAL_AGENTS_AT, USAGE_SNAPSHOT, USAGE_SNAPSHOT_AT
     for line in sys.stdin:
         try:
             payload = json.loads(line)
@@ -369,12 +374,32 @@ def read_control_messages():
             if revoke_device(revoke):
                 publish_devices()
             continue
+        usage = payload.get("usage")
+        if isinstance(usage, list):
+            with USAGE_LOCK:
+                USAGE_SNAPSHOT = usage
+                USAGE_SNAPSHOT_AT = time.time()
+            continue
         agents = payload.get("agents")
         if not isinstance(agents, list):
             continue
         with CANONICAL_AGENTS_LOCK:
             CANONICAL_AGENTS = agents
             CANONICAL_AGENTS_AT = time.time()
+
+
+def current_usage():
+    """The last usage Toki published, and whether it is old enough to distrust."""
+    with USAGE_LOCK:
+        accounts = list(USAGE_SNAPSHOT)
+        published = USAGE_SNAPSHOT_AT
+    if not published:
+        return {"accounts": [], "stale": False, "waiting": True}
+    return {
+        "accounts": accounts,
+        "stale": time.time() - published > CANONICAL_MAX_AGE,
+        "waiting": False,
+    }
 
 
 def dedupe_agents(agents):
@@ -524,7 +549,14 @@ def parse_claude_transcript(path, offset=0):
                         if block.get("type") == "text":
                             texts.append(block.get("text", ""))
                         elif block.get("type") == "tool_result":
-                            entries.append({"role": "resolved", "id": block.get("tool_use_id")})
+                            # The result content is not forwarded (unbounded, holds file/command
+                            # output); only that the call finished, when, and whether it failed.
+                            entries.append({
+                                "role": "resolved",
+                                "id": block.get("tool_use_id"),
+                                "ts": j.get("timestamp"),
+                                "failed": bool(block.get("is_error")),
+                            })
                 for t in texts:
                     cleaned = clean_user_text(t)
                     if cleaned:
@@ -540,6 +572,8 @@ def parse_claude_transcript(path, offset=0):
                         entries.append({
                             "role": "tool", "tool": name, "id": block.get("id"),
                             "text": claude_tool_summary(name, inp),
+                            "detail": claude_tool_detail(name, inp),
+                            "ts": j.get("timestamp"),
                             "questions": extract_questions(name, inp),
                         })
         if "permissionMode" in j:
@@ -553,6 +587,38 @@ def claude_tool_summary(name, inp):
         if isinstance(v, str) and v.strip():
             return v.strip().splitlines()[0][:160]
     return ""
+
+
+# The second line: what a call is actually about, per tool. The one-line summary picks the first of
+# six keys, which hides the command on a Bash call with a description and the file on an edit.
+_TOOL_DETAIL_KEYS = {
+    "Bash": ("command",),
+    "Read": ("file_path", "offset", "limit"),
+    "Edit": ("file_path",),
+    "Write": ("file_path",),
+    "NotebookEdit": ("notebook_path",),
+    "Grep": ("pattern", "path", "glob"),
+    "Glob": ("pattern", "path"),
+    "WebFetch": ("url",),
+    "WebSearch": ("query",),
+    "Task": ("subagent_type",),
+}
+
+
+def claude_tool_detail(name, inp):
+    if not isinstance(inp, dict):
+        return ""
+    summary = claude_tool_summary(name, inp)
+    parts = []
+    for key in _TOOL_DETAIL_KEYS.get(name, ()):
+        value = inp.get(key)
+        if value in (None, "", []):
+            continue
+        text = " ".join(str(value).split())
+        # Don't repeat what the summary line already says.
+        if text and text != summary:
+            parts.append(text)
+    return " · ".join(parts)[:240]
 
 
 def extract_questions(name, inp):
@@ -948,6 +1014,16 @@ def safe_tty(tty):
 
 def agent_is_writable(agent):
     return safe_tty(agent.get("tty"))
+
+
+def initial_transcript_window(entries, limit=60):
+    """The first payload: the last `limit` visible messages plus the `resolved` events that
+    complete the tool calls among them. A `resolved` follows its `tool`, so keeping everything from
+    the oldest shown message onward carries each call's completion; without it, a call that finished
+    before the transcript opened stays `running`. `meta` is dropped."""
+    visible = [i for i, e in enumerate(entries) if e["role"] in ("user", "assistant", "tool")]
+    start = visible[-limit] if len(visible) > limit else 0
+    return [e for e in entries[start:] if e["role"] in ("user", "assistant", "tool", "resolved")]
 
 
 def transcript_id(agent):
@@ -1599,6 +1675,8 @@ class Handler(BaseHTTPRequestHandler):
                     "writable": agent_is_writable(a),
                 })
             self._json(result)
+        elif url.path == "/api/usage":
+            self._json(current_usage())
         elif url.path == "/api/transcript":
             # Anything unparseable reads as "start from the beginning" rather than raising out of
             # the handler, which would drop the connection mid-poll.
@@ -1612,9 +1690,7 @@ class Handler(BaseHTTPRequestHandler):
                 entries = opencode_entries(agent["session"])
                 if offset > len(entries):  # session changed under us
                     return self._json({"entries": [], "offset": 0, "reset": True, "session": session})
-                shown = entries[offset:]
-                if offset == 0:
-                    shown = [e for e in shown if e["role"] in ("user", "assistant", "tool")][-60:]
+                shown = initial_transcript_window(entries) if offset == 0 else entries[offset:]
                 return self._json({"entries": shown, "offset": len(entries), "session": session})
             try:
                 size = os.path.getsize(agent["session"])
@@ -1625,8 +1701,7 @@ class Handler(BaseHTTPRequestHandler):
             parse = parse_claude_transcript if agent["provider"] == "claude" else parse_codex_transcript
             entries, new_offset = parse(agent["session"], offset)
             if offset == 0:
-                shown = [e for e in entries if e["role"] in ("user", "assistant", "tool")]
-                entries = shown[-60:]
+                entries = initial_transcript_window(entries)
             self._json({"entries": entries, "offset": new_offset, "session": session})
         else:
             self._json({"error": "not found"}, 404)

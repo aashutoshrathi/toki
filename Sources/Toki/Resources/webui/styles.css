@@ -203,6 +203,15 @@ body.privacy .eye-off{display:inline}
 .assistant tbody tr:nth-child(even){background:#ffffff06}
 .tool{background:var(--surface-2);border-color:var(--line);color:var(--text-2);font-size:13px;font-family:ui-monospace,monospace}
 .tool b{color:#c3cad6}
+/* A call that has not come back yet reads as in-flight rather than finished. The dot carries the
+   state so the row's text is unchanged when it resolves. */
+.tool-state{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--line)}
+.tool.running .tool-state{background:#e2b341;animation:toolpulse 1.2s ease-in-out infinite}
+.tool.ok .tool-state{background:#4a9d5f}
+.tool.failed .tool-state{background:#d1544f}
+.tool-detail{display:block;margin:2px 0 0 12px;color:var(--text-3,#8b95a5);font-size:12px;word-break:break-all}
+.tool-took{margin-left:6px;color:var(--text-3,#8b95a5);font-size:11px}
+@keyframes toolpulse{0%,100%{opacity:1}50%{opacity:.35}}
 footer{flex:none;background:var(--surface-1);
        border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
 .keys{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-bottom:8px}
@@ -234,3 +243,22 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
 #status.error{color:var(--danger)}
 #status.sending{color:var(--accent-2)}
 footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.45;cursor:not-allowed}
+
+/* Usage strip: the agent transcript is what you came for, so quota stays one line until asked. */
+#usagetoggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
+  padding:8px 12px;background:var(--surface-2);border:0;border-bottom:1px solid var(--line);
+  color:var(--text-2);font-size:12px;text-align:left}
+#usagetoggle .chev{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid currentColor;opacity:.6;transition:transform .15s ease}
+#usagetoggle[aria-expanded="true"] .chev{transform:rotate(180deg)}
+#usage{padding:4px 12px 10px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+.u-row{display:flex;align-items:center;gap:8px;padding:5px 0}
+.u-name{flex:0 0 34%;color:var(--text-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.u-track{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.u-fill{display:block;height:100%;border-radius:3px;background:#4a9d5f}
+.u-fill.warn{background:#e2b341}
+.u-fill.low{background:#d1544f}
+.u-value{flex:0 0 auto;color:var(--text-2);font-size:12px;font-variant-numeric:tabular-nums}
+.u-row.err .u-value{color:#d1544f}
+.u-stale{padding:4px 0 0;color:#e2b341;font-size:11px}
+#usagetoggle.stale #usagesummary{color:#e2b341}
