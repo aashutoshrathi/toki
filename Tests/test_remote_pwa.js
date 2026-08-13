@@ -269,6 +269,9 @@ assert.match(app, /addEventListener\("visibilitychange"/);
 assert.match(app, /function resolveToolNode/);
 assert.match(app, /toolNodes\[entry\.id\]/);
 assert.match(app, /classList\.add\(entry\.failed \? "failed" : "ok"\)/);
+// Only resolvable rows spin: an OpenCode tool carries no id and no completion, so "running" is
+// gated on e.id or every finished OpenCode call would stay in flight forever.
+assert.match(app, /if \(e\.id\) \{\s*\n\s*d\.classList\.add\("running"\);/);
 assert.match(css, /\.tool\.running \.tool-state/);
 assert.match(css, /\.tool\.failed \.tool-state/);
 

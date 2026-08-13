@@ -755,8 +755,12 @@ async function refreshLog() {
     d.className = "m " + e.role;
     if (e.role == "tool") {
       d.innerHTML = toolRow(e);
-      d.classList.add("running");
-      if (e.id) toolNodes[e.id] = { el: d, ts: e.ts };
+      // Only spin what can stop spinning: OpenCode tools carry no id and no completion, so marking
+      // them running would leave every finished call in flight forever.
+      if (e.id) {
+        d.classList.add("running");
+        toolNodes[e.id] = { el: d, ts: e.ts };
+      }
     }
     else if (e.role == "assistant") d.innerHTML = md(e.text);
     else d.textContent = e.text;
