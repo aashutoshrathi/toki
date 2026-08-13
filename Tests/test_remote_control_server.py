@@ -471,5 +471,39 @@ class UsageSnapshotTests(unittest.TestCase):
         self.assertTrue(toki_remote.current_usage()["stale"])
 
 
+class InitialTranscriptWindowTests(unittest.TestCase):
+    def test_a_call_that_finished_before_the_transcript_opened_carries_its_completion(self):
+        # The tool finished before the client opened the transcript, so its `resolved` must ride
+        # along in the first payload; otherwise the row is stuck `running` and the advanced offset
+        # never delivers the completion.
+        entries = [
+            {"role": "user", "text": "hi"},
+            {"role": "tool", "tool": "Read", "id": "t1"},
+            {"role": "resolved", "id": "t1"},
+            {"role": "assistant", "text": "done"},
+        ]
+        shown = toki_remote.initial_transcript_window(entries)
+        self.assertIn({"role": "resolved", "id": "t1"}, shown)
+
+    def test_meta_is_dropped_from_the_first_payload(self):
+        entries = [
+            {"role": "meta", "mode": "default"},
+            {"role": "user", "text": "hi"},
+        ]
+        shown = toki_remote.initial_transcript_window(entries)
+        self.assertEqual([e["role"] for e in shown], ["user"])
+
+    def test_only_the_last_visible_messages_are_kept_but_their_resolutions_survive(self):
+        entries = []
+        for i in range(70):
+            entries.append({"role": "user", "text": str(i)})
+        entries.append({"role": "tool", "tool": "Read", "id": "last"})
+        entries.append({"role": "resolved", "id": "last"})
+        shown = toki_remote.initial_transcript_window(entries, limit=60)
+        visible = [e for e in shown if e["role"] in ("user", "assistant", "tool")]
+        self.assertEqual(len(visible), 60)
+        self.assertIn({"role": "resolved", "id": "last"}, shown)
+
+
 if __name__ == "__main__":
     unittest.main()

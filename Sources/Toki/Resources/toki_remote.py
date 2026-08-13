@@ -1018,6 +1018,18 @@ def agent_is_writable(agent):
     return safe_tty(agent.get("tty"))
 
 
+def initial_transcript_window(entries, limit=60):
+    """The first payload a client gets: the last `limit` visible messages, plus the `resolved`
+    events that complete the tool calls among them. A `resolved` always follows its `tool` in the
+    stream, so keeping everything from the oldest shown message onward carries each shown call's
+    completion with it -- otherwise a call that finished before the transcript was opened arrives as
+    `tool` with no `resolved`, and the offset has already advanced past it, so it stays `running`
+    forever. `meta` is dropped; the client ignores it on load."""
+    visible = [i for i, e in enumerate(entries) if e["role"] in ("user", "assistant", "tool")]
+    start = visible[-limit] if len(visible) > limit else 0
+    return [e for e in entries[start:] if e["role"] in ("user", "assistant", "tool", "resolved")]
+
+
 def transcript_id(agent):
     """Identify the transcript an offset belongs to, so a client can tell when it was replaced.
 
@@ -1682,9 +1694,7 @@ class Handler(BaseHTTPRequestHandler):
                 entries = opencode_entries(agent["session"])
                 if offset > len(entries):  # session changed under us
                     return self._json({"entries": [], "offset": 0, "reset": True, "session": session})
-                shown = entries[offset:]
-                if offset == 0:
-                    shown = [e for e in shown if e["role"] in ("user", "assistant", "tool")][-60:]
+                shown = initial_transcript_window(entries) if offset == 0 else entries[offset:]
                 return self._json({"entries": shown, "offset": len(entries), "session": session})
             try:
                 size = os.path.getsize(agent["session"])
@@ -1695,8 +1705,7 @@ class Handler(BaseHTTPRequestHandler):
             parse = parse_claude_transcript if agent["provider"] == "claude" else parse_codex_transcript
             entries, new_offset = parse(agent["session"], offset)
             if offset == 0:
-                shown = [e for e in entries if e["role"] in ("user", "assistant", "tool")]
-                entries = shown[-60:]
+                entries = initial_transcript_window(entries)
             self._json({"entries": entries, "offset": new_offset, "session": session})
         else:
             self._json({"error": "not found"}, 404)
