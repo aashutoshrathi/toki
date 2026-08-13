@@ -309,13 +309,15 @@ assert.equal(band(0.05), "low");
 
 // The summary names the account with least left; one with no quota API shows its figure, not a bar.
 const nodes = {};
-const el = () => ({ hidden: true, textContent: "", innerHTML: "", attrs: {},
-  setAttribute(k, v) { this.attrs[k] = v; } });
+const el = () => ({ hidden: true, textContent: "", innerHTML: "", attrs: {}, classes: {},
+  setAttribute(k, v) { this.attrs[k] = v; },
+  classList: { toggle(name, on) { nodes["#usagetoggle"].classes[name] = on; } } });
 ["#usagetoggle", "#usage", "#usagesummary"].forEach(id => { nodes[id] = el(); });
 const render = vm.createContext({
   Math,
   $: id => nodes[id],
   dispTitle: t => t,
+  plainTitle: t => t,
   esc: t => t,
   usageOpen: true,
 });
@@ -331,8 +333,27 @@ assert.match(nodes["#usagesummary"].textContent, /3 accounts/);
 assert.match(nodes["#usage"].innerHTML, /width:62%/);
 assert.match(nodes["#usage"].innerHTML, /u-fill low/);
 assert.match(nodes["#usage"].innerHTML, /no quota API/);
-// A reading the Mac stopped refreshing says so rather than looking current.
+// A reading the Mac stopped refreshing says so rather than looking current, in the collapsed strip too.
 assert.match(nodes["#usage"].innerHTML, /out of date/);
+assert.match(nodes["#usagesummary"].textContent, /out of date/);
+assert.equal(nodes["#usagetoggle"].classes.stale, true);
+
+// A fresh reading clears the stale marker from both the summary and the strip class.
+vm.runInContext(`renderUsage({accounts:[{id:"a",name:"Codex",remaining:0.5}],stale:false})`, render);
+assert.doesNotMatch(nodes["#usagesummary"].textContent, /out of date/);
+assert.equal(nodes["#usagetoggle"].classes.stale, false);
+
+// plainTitle masks like dispTitle but does not HTML-escape, since it feeds textContent.
+const titleSources = ["maskText", "plainTitle"].map(name => {
+  const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
+  assert.ok(found, name + " must be a top-level function in app.js");
+  return found[0];
+});
+const titles = vm.createContext({ Math, privacyMode: false });
+titleSources.forEach(source => vm.runInContext(source, titles));
+assert.equal(vm.runInContext(`plainTitle("R&D <ops>")`, titles), "R&D <ops>");
+vm.runInContext("privacyMode = true", titles);
+assert.match(vm.runInContext(`plainTitle("R&D")`, titles), /^•+$/);
 
 // Nothing to show means no strip at all, rather than an empty panel.
 vm.runInContext("renderUsage({accounts:[]})", render);

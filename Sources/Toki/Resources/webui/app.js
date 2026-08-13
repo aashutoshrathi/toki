@@ -139,6 +139,11 @@ function dispTitle(t) {
   return privacyMode ? maskText(t) : esc(t);
 }
 
+// Same masking, but for a textContent assignment: no HTML escaping, or names would show entities.
+function plainTitle(t) {
+  return privacyMode ? maskText(t) : (t || "");
+}
+
 // The folder an agent is working in, masked alongside its title so the privacy toggle doesn't
 // leave your project names on screen.
 function dispPath(p) {
@@ -269,6 +274,7 @@ function setConnected(ok) {
 
 // Quota, from the same reading the menu bar shows: one line by default, the whole list when asked.
 let usageOpen = false;
+let lastUsage = null;
 
 // Red is the low-quota notification threshold (lowQuotaThreshold, 20% by default), so the strip and
 // the alerts agree on "low"; amber is the warning before it.
@@ -279,6 +285,7 @@ function usageClass(remaining) {
 }
 
 function renderUsage(data) {
+  lastUsage = data;
   const toggle = $("#usagetoggle");
   const panel = $("#usage");
   const accounts = (data && data.accounts) || [];
@@ -296,9 +303,14 @@ function renderUsage(data) {
   const lowestValue = typeof lowest.remaining == "number"
     ? Math.round(lowest.remaining * 100) + "% left"
     : (lowest.value || lowest.primary || "");
-  $("#usagesummary").textContent = accounts.length > 1
-    ? dispTitle(lowest.name) + " " + lowestValue + " · " + accounts.length + " accounts"
-    : dispTitle(lowest.name) + " " + lowestValue;
+  const summary = accounts.length > 1
+    ? plainTitle(lowest.name) + " " + lowestValue + " · " + accounts.length + " accounts"
+    : plainTitle(lowest.name) + " " + lowestValue;
+  // Stale shows in the collapsed strip too, not only the expanded panel, or a reading the Mac
+  // stopped refreshing would look current until the user opened it.
+  const stale = !!(data && data.stale);
+  $("#usagesummary").textContent = stale ? summary + " · may be out of date" : summary;
+  toggle.classList.toggle("stale", stale);
   toggle.setAttribute("aria-expanded", usageOpen ? "true" : "false");
   panel.hidden = !usageOpen;
   if (!usageOpen) return;
@@ -893,6 +905,7 @@ $("#privacytoggle").addEventListener("click", () => {
   b.setAttribute("aria-label", privacyMode ? "Show agent names" : "Hide agent names");
   b.title = privacyMode ? "Show agent names" : "Hide agent names";
   renderAgents();
+  if (lastUsage) renderUsage(lastUsage);
 });
 
 // Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.

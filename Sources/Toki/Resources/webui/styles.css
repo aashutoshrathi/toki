@@ -261,3 +261,4 @@ footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.4
 .u-value{flex:0 0 auto;color:var(--text-2);font-size:12px;font-variant-numeric:tabular-nums}
 .u-row.err .u-value{color:#d1544f}
 .u-stale{padding:4px 0 0;color:#e2b341;font-size:11px}
+#usagetoggle.stale #usagesummary{color:#e2b341}

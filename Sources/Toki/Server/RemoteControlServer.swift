@@ -455,6 +455,9 @@ final class RemoteControlServer: ObservableObject {
     func updateActiveAgents(_ agents: [ActiveAgent]) {
         activeAgents = agents
         sendActiveAgentSnapshot()
+        // Ride the agent heartbeat so the phone's usage reading tracks the live pipe, not the far
+        // slower usage refresh, which would otherwise read as stale between refreshes.
+        sendUsageSnapshot()
     }
 
     func updateUsage(_ snapshots: [AccountSnapshot]) {

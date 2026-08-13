@@ -52,6 +52,9 @@ struct SetupStep: Identifiable, Equatable {
     /// rows that only open System Settings or explain something Toki cannot ask for on its own,
     /// which is what keeps those out of the "ask for everything" pass.
     let isRequestable: Bool
+    /// True when an `.unknown` row is still unfinished work, not the benign kind (a closed terminal
+    /// Toki can't read) - a required read that failed keeps onboarding from reading as done.
+    let blocksCompletion: Bool
 
     var id: String { subject.map { "\(kind.rawValue).\($0)" } ?? kind.rawValue }
 
@@ -63,7 +66,8 @@ struct SetupStep: Identifiable, Equatable {
         status: SetupStepStatus,
         actionLabel: String?,
         isOptional: Bool = false,
-        isRequestable: Bool = false
+        isRequestable: Bool = false,
+        blocksCompletion: Bool = false
     ) {
         self.kind = kind
         self.subject = subject
@@ -73,6 +77,7 @@ struct SetupStep: Identifiable, Equatable {
         self.actionLabel = actionLabel
         self.isOptional = isOptional
         self.isRequestable = isRequestable
+        self.blocksCompletion = blocksCompletion
     }
 }
 
@@ -154,7 +159,8 @@ enum SetupChecklist {
                 detail: "Toki couldn't read a Claude Code sign-in. If macOS asked and the answer was Deny, try again and choose Always Allow; if Claude Code isn't signed in, run /login there first.",
                 status: .unknown,
                 actionLabel: "Try again",
-                isRequestable: true
+                isRequestable: true,
+                blocksCompletion: facts.claudeAccountConfigured
             ))
         }
 
@@ -248,7 +254,9 @@ enum SetupChecklist {
 
     /// Steps still worth acting on - what the badge counts.
     static func outstanding(_ steps: [SetupStep]) -> [SetupStep] {
-        steps.filter { $0.status == .pending || $0.status == .blocked }
+        steps.filter {
+            $0.status == .pending || $0.status == .blocked || ($0.status == .unknown && $0.blocksCompletion)
+        }
     }
 
     // What "allow everything" actually runs, in the order it runs them. Each request is a dialog,

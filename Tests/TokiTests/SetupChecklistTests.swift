@@ -44,6 +44,12 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertEqual(step(.claudeKeychain, in: facts)?.status, .unknown)
         XCTAssertEqual(step(.claudeKeychain, in: facts)?.actionLabel, "Try again")
         XCTAssertTrue(step(.claudeKeychain, in: facts)?.isRequestable ?? false)
+        // A failed read of a configured account is real outstanding work, so onboarding can't call
+        // itself done while it shows "Try again" - unlike the closed-terminal `.unknown`.
+        XCTAssertTrue(
+            SetupChecklist.outstanding(steps(facts)).contains { $0.kind == .claudeKeychain },
+            "a required Keychain read that failed is outstanding"
+        )
     }
 
     // Nothing is delivered while Toki's own switch is off, so macOS is never asked and there is
