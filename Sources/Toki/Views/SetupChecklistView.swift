@@ -147,8 +147,8 @@ struct SetupChecklistView: View {
 
             Spacer(minLength: 4)
 
-            // macOS decides on its own whether a notification appears, and there is no way to ask
-            // it after the fact, so the only honest follow-up is a way to go and look.
+            // macOS decides whether a notification appears and won't say after the fact, so the only
+            // honest follow-up is a way to go and look.
             if step.kind == .notifications, notificationTestSent {
                 Button("Open Settings") {
                     SystemPermissions.openNotificationSettings()

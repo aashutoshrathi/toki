@@ -136,8 +136,7 @@ vm.runInContext(homeSource[0], home);
 vm.runInContext("goHome()", home);
 assert.deepEqual(steps, [
   "local:toki-conn",
-  // The session now lives in localStorage so it survives the tab closing; the sessionStorage
-  // removal stays behind it to clear what an older build of this page left there.
+  // The session lives in localStorage now; the sessionStorage removal clears what an older build left.
   "local:toki-session:https://my-mac.example-tailnet.ts.net:abc",
   "session:toki-session:https://my-mac.example-tailnet.ts.net:abc",
   // The bare path: no query and no fragment, so nothing revives the connection we just left.
@@ -190,9 +189,8 @@ assert.match(app, /localStorage\.setItem\(CONN_KEY/);
 assert.match(app, /localStorage\.removeItem\(CONN_KEY\)/);
 
 // --- The session outlives the tab, and no longer than the Mac says it should ---
-// sessionStorage dies when the browser closes and when iOS discards a backgrounded tab, which
-// ended sessions the Mac still considered live. localStorage keeps them for exactly the lifetime
-// /api/pair granted.
+// sessionStorage dies with the tab (closed browser, or iOS discarding it), which ended live
+// sessions; localStorage keeps them for the lifetime /api/pair granted.
 const sessionSources = ["loadSession", "saveSession", "clearSession"].map(name => {
   const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
   assert.ok(found, name + " must be a top-level function in app.js");
@@ -260,16 +258,14 @@ vm.runInContext("saveSession('no-expiry', 0)", fresh.context);
 assert.deepEqual(JSON.parse(fresh.store.value), { token: "no-expiry" });
 
 // --- A 403 that isn't about the token must not end the session ---
-// The host setting refuses networks it was not meant to answer; that is a different Wi-Fi, not a
-// dead session, and signing out there would make leaving the house a logout.
+// The host setting refuses networks it was not meant to answer: a different Wi-Fi, not a dead session.
 assert.match(app, /detail\.includes\("bad token"\)/);
 
 // --- Coming back to a backgrounded tab polls immediately ---
 assert.match(app, /addEventListener\("visibilitychange"/);
 
 // --- Tool calls show that they finished, and how long they took ---
-// The transcript already carried tool_result entries; the client dropped them, so every call sat
-// looking like it was still running.
+// The transcript already carried tool_result entries; the client dropped them, so every call looked stuck running.
 assert.match(app, /function resolveToolNode/);
 assert.match(app, /toolNodes\[entry\.id\]/);
 assert.match(app, /classList\.add\(entry\.failed \? "failed" : "ok"\)/);
@@ -311,8 +307,7 @@ assert.equal(band(0.3), "warn");
 assert.equal(band(0.2), "low");
 assert.equal(band(0.05), "low");
 
-// The summary names the account with least left, since that is the one about to bite, and an
-// account with no quota API shows its figure rather than a bar drawn from a number nobody has.
+// The summary names the account with least left; one with no quota API shows its figure, not a bar.
 const nodes = {};
 const el = () => ({ hidden: true, textContent: "", innerHTML: "", attrs: {},
   setAttribute(k, v) { this.attrs[k] = v; } });

@@ -549,9 +549,8 @@ def parse_claude_transcript(path, offset=0):
                         if block.get("type") == "text":
                             texts.append(block.get("text", ""))
                         elif block.get("type") == "tool_result":
-                            # The result's own content is deliberately not forwarded: it is
-                            # unbounded and is where file contents and command output live. What
-                            # travels is that the call finished, when, and whether it failed.
+                            # The result content is not forwarded (unbounded, holds file/command
+                            # output); only that the call finished, when, and whether it failed.
                             entries.append({
                                 "role": "resolved",
                                 "id": block.get("tool_use_id"),
@@ -590,9 +589,8 @@ def claude_tool_summary(name, inp):
     return ""
 
 
-# The one-line summary above picks whichever of six keys it finds first, which for a Bash call
-# with a description hides the command being run, and for an edit hides the file being edited.
-# This is the rest of the answer: what a call is actually about, per tool, still bounded.
+# The second line: what a call is actually about, per tool. The one-line summary picks the first of
+# six keys, which hides the command on a Bash call with a description and the file on an edit.
 _TOOL_DETAIL_KEYS = {
     "Bash": ("command",),
     "Read": ("file_path", "offset", "limit"),
@@ -1019,12 +1017,10 @@ def agent_is_writable(agent):
 
 
 def initial_transcript_window(entries, limit=60):
-    """The first payload a client gets: the last `limit` visible messages, plus the `resolved`
-    events that complete the tool calls among them. A `resolved` always follows its `tool` in the
-    stream, so keeping everything from the oldest shown message onward carries each shown call's
-    completion with it -- otherwise a call that finished before the transcript was opened arrives as
-    `tool` with no `resolved`, and the offset has already advanced past it, so it stays `running`
-    forever. `meta` is dropped; the client ignores it on load."""
+    """The first payload: the last `limit` visible messages plus the `resolved` events that
+    complete the tool calls among them. A `resolved` follows its `tool`, so keeping everything from
+    the oldest shown message onward carries each call's completion; without it, a call that finished
+    before the transcript opened stays `running`. `meta` is dropped."""
     visible = [i for i, e in enumerate(entries) if e["role"] in ("user", "assistant", "tool")]
     start = visible[-limit] if len(visible) > limit else 0
     return [e for e in entries[start:] if e["role"] in ("user", "assistant", "tool", "resolved")]

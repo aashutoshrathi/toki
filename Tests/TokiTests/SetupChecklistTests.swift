@@ -35,8 +35,7 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertNil(step(.claudeKeychain, in: facts)?.actionLabel)
     }
 
-    // A refused Keychain dialog leaves the gate open and the read empty. Reporting that as "done"
-    // claimed success for something that never happened and removed the only way to retry.
+    // A refused dialog leaves the gate open and the read empty; reporting "done" hid the failure and the retry.
     func testAConfiguredClaudeAccountWithNoReadableSignInOffersARetry() {
         var facts = SetupFacts()
         facts.keychainApproved = true
@@ -82,9 +81,8 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertEqual(step(.automation, in: facts)?.actionLabel, "Open Settings")
     }
 
-    // macOS will not answer for an app that is not running, and most terminals are closed when the
-    // checklist is read. Calling that "not granted yet" marked already-allowed terminals as
-    // outstanding forever; it is unknown, and asking is still how you find out.
+    // macOS won't answer for a closed app, and most terminals are closed when the checklist is read.
+    // "Not granted yet" marked already-allowed terminals outstanding forever; it is unknown.
     func testAClosedTerminalIsUnknownRatherThanNotGranted() {
         var facts = SetupFacts()
         facts.automation = [AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .unknown)]
@@ -92,8 +90,7 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertEqual(row?.status, .unknown)
         XCTAssertEqual(row?.actionLabel, "Allow")
         XCTAssertTrue(row?.isRequestable ?? false, "asking is what opens it and settles the question")
-        // Other rows in a bare fixture are legitimately outstanding; what matters is that a
-        // terminal macOS refuses to answer for is not one of them.
+        // What matters: a terminal macOS refuses to answer for is not counted as outstanding.
         XCTAssertFalse(
             SetupChecklist.outstanding(steps(facts)).contains { $0.kind == .automation },
             "a closed terminal is unknown, not an outstanding chore"

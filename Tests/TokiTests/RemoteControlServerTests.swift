@@ -364,8 +364,7 @@ final class RemoteControlServerTests: XCTestCase {
         """), .ready)
     }
 
-    // The spellings Tailscale is free to use for the same thing. Matching one literal string is
-    // what reported a working serve as absent.
+    // Spellings Tailscale may use for the same thing; matching one literal read a working serve as absent.
     func testServeReadyAcceptsEveryWayOfSpellingThisMac() {
         for proxy in ["http://127.0.0.1:8765", "127.0.0.1:8765", "http://localhost:8765",
                       "https://localhost:8765/", "http://[::1]:8765", "http+insecure://127.0.0.1:8765"] {
@@ -437,8 +436,7 @@ final class RemoteControlServerTests: XCTestCase {
         """), .conflict)
     }
 
-    // When `tailscale status` cannot be read, serve's own config still names the Mac - the same
-    // name the connect link needs, which was being typed in by hand instead.
+    // When `tailscale status` can't be read, serve's own config still names the Mac.
     func testTheServedHostIsLearnedFromServeStatus() {
         let json = """
         {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
@@ -457,8 +455,7 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(RemoteControlServer.servedTailscaleHost(from: nil))
     }
 
-    // The phone is shown the same reading the menu bar has, so the payload is built from the
-    // snapshots rather than re-derived.
+    // The payload is built from the snapshots, so the phone shows the same reading as the menu bar.
     func testUsagePayloadCarriesTheReadingTheMenuBarShows() {
         var snapshot = AccountSnapshot(
             id: "claude-code", name: "Claude Code", provider: .claudeCode,
@@ -473,8 +470,7 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertEqual(payload[0]["error"] as? Bool, false)
     }
 
-    // Grok and Copilot have no quota API at all, and a cost-based provider has a figure instead.
-    // Sending a placeholder ratio would have the phone draw a bar for a number nobody has.
+    // No quota API (Grok, Copilot) or a cost figure instead: a placeholder ratio would draw a bar for nothing.
     func testAnAccountWithNoQuotaSendsNoRatio() {
         var snapshot = AccountSnapshot(
             id: "grok", name: "Grok", provider: .grok,

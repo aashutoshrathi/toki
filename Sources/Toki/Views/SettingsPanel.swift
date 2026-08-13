@@ -779,8 +779,7 @@ struct SettingsPanel: View {
     // A string literal per state rather than nested ternaries inside the Text, so each state's
     // wording is readable and stays formatted (the backticks are markdown to Text).
     private var readinessMessage: LocalizedStringKey {
-        // A status Toki could not read is not evidence that serve is off. Saying so sent people to
-        // fix a working setup; now it says what it could not do.
+        // An unreadable status is not evidence serve is off; it now says what it couldn't read.
         if let problem = remoteServer.serveStatusProblem {
             return LocalizedStringKey(problem + " Serve may well be running - this is Toki failing to check, not Tailscale failing to serve.")
         }
@@ -852,8 +851,7 @@ struct SettingsPanel: View {
                     }
                 }
 
-                // Toki decided not to run serve itself. Saying so beats a warning that reads as
-                // though nothing has happened yet.
+                // Toki declined to run serve itself; saying so beats a warning that looks like nothing happened.
                 if remoteServer.serveSetupFailure == nil, let skipped = remoteServer.autoServeSkipped {
                     Text(skipped)
                         .font(.system(size: 10))

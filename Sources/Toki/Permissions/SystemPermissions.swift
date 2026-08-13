@@ -127,8 +127,7 @@ enum SetupChecklist {
 
         // Reading the sign-in Claude Code stored puts up the system's Keychain dialog, so on a
         // fresh install Toki waits to be told to look rather than doing it while you open a menu.
-        // Once it is allowed the row reports what the read actually produced: saying "done" purely
-        // because the gate is open claimed success for a dialog that may have been refused.
+        // Once allowed, the row reports what the read produced, not just that the gate is open.
         if !facts.keychainApproved {
             steps.append(SetupStep(
                 kind: .claudeKeychain,
@@ -147,9 +146,8 @@ enum SetupChecklist {
                 actionLabel: nil
             ))
         } else if facts.claudeAccountConfigured || isFirstRun {
-            // Allowed, but nothing came back. A refused Keychain dialog looks exactly like this,
-            // and so does a Claude Code that was never signed in - both are worth another look
-            // rather than a row claiming everything is fine.
+            // Allowed but nothing read back (a denied dialog, or a Claude Code never signed in):
+            // worth another look rather than a row claiming everything is fine.
             steps.append(SetupStep(
                 kind: .claudeKeychain,
                 title: "Read your Claude Code sign-in",
@@ -182,8 +180,7 @@ enum SetupChecklist {
                 status: target.status,
                 actionLabel: target.status == .done ? nil : (target.status == .blocked ? "Open Settings" : "Allow"),
                 isOptional: true,
-                // `.unknown` means the app is closed and macOS would not say; asking is still the
-                // way to find out, and asking launches it.
+                // `.unknown` means the app is closed and macOS won't say; asking launches it and finds out.
                 isRequestable: target.status == .pending || target.status == .unknown
             ))
         }
@@ -304,9 +301,8 @@ enum SetupChecklist {
         // would be a lie with a button attached.
         facts.keychainApproved = store.allowsKeychainReads
         facts.claudeAccountConfigured = store.snapshots.contains { $0.provider.isClaudeAccount }
-        // A read that produced something, from either route: a connected account whose snapshot is
-        // not an error, or a live detection. An error snapshot falls through to the retry row rather
-        // than claiming the token is being read.
+        // A read that produced something, from either route: a non-error account snapshot or a live
+        // detection. An error snapshot falls through to the retry row instead of claiming success.
         facts.claudeSignInFound = store.snapshots.contains { $0.provider.isClaudeAccount && !$0.isError }
             || store.detectedProviders.contains { $0.provider.isClaudeAccount }
         facts.notificationsEnabled = store.preferences.notificationsEnabled
@@ -370,9 +366,8 @@ enum SystemPermissions {
         if status == noErr { return .done }
         if status == notPermitted { return .blocked }
         if status == wouldRequireConsent { return .pending }
-        // The app is not running, so macOS will not say. Reporting "not granted yet" there was
-        // wrong for every terminal that happened to be closed - including ones already allowed -
-        // and it is the state most terminals are in when the checklist is read.
+        // The app isn't running, so macOS won't say. "Not granted yet" was wrong for every closed
+        // terminal, including ones already allowed, which is most of them when the checklist is read.
         if status == targetNotRunning { return .unknown }
         return .unknown
     }

@@ -409,8 +409,7 @@ class ClaudeToolEntryTests(unittest.TestCase):
         call = next(e for e in entries if e["role"] == "tool")
         self.assertEqual(call["id"], "tu_1")
         self.assertEqual(call["ts"], "2026-08-11T10:00:00.000Z")
-        # The summary picks the description; the detail is what is actually being run, which the
-        # single-line summary hid.
+        # The summary picks the description; the detail is what is actually being run.
         self.assertEqual(call["text"], "List files")
         self.assertEqual(call["detail"], "ls -la /tmp")
 
@@ -474,8 +473,7 @@ class UsageSnapshotTests(unittest.TestCase):
 class InitialTranscriptWindowTests(unittest.TestCase):
     def test_a_call_that_finished_before_the_transcript_opened_carries_its_completion(self):
         # The tool finished before the client opened the transcript, so its `resolved` must ride
-        # along in the first payload; otherwise the row is stuck `running` and the advanced offset
-        # never delivers the completion.
+        # along in the first payload, or the row is stuck `running`.
         entries = [
             {"role": "user", "text": "hi"},
             {"role": "tool", "tool": "Read", "id": "t1"},

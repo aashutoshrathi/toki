@@ -82,8 +82,7 @@ extension UsageStore {
     func sendTestNotification() {
         let detail = "Toki will tell you here when quota runs low or an agent is waiting on you."
         deliverNotification(title: "Toki notifications are on", detail: detail) { handedOver, failureDetail in
-            // "Handed to macOS", not "delivered": nothing here can see whether it was shown, and
-            // claiming it arrived is what made a silent notification look like a working one.
+            // "Handed to macOS", not "delivered": nothing here can see whether it was actually shown.
             self.appendEvent(
                 kind: .notification,
                 title: "Test notification",

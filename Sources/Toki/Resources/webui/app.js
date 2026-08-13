@@ -66,12 +66,9 @@ function feedback(kind = "tap") {
 
 const SESSION_KEY = "toki-session:" + API_BASE + ":" + LINK_TOKEN;
 
-// The session lives in localStorage, not sessionStorage, because sessionStorage dies with the tab:
-// closing the browser -- or iOS discarding a backgrounded tab, which it does within minutes --
-// threw away a session the Mac still considered valid and sent you back to the six-digit code. The
-// server decides how long a session lasts (an hour to two days, chosen in Settings); the phone's
-// copy should last exactly as long, and no longer, so the expiry is stored with it and honoured on
-// load. Revoke on the Mac still ends it immediately, since the token stops being accepted.
+// The session lives in localStorage, not sessionStorage: sessionStorage dies with the tab (a
+// closed browser, or iOS discarding a backgrounded tab), which used to sign the device out. The
+// stored expiry matches what /api/pair granted; a revoke on the Mac still ends it immediately.
 function loadSession() {
   let raw = null;
   try {
@@ -224,9 +221,8 @@ async function api(p, o) {
   const r = await tokenedRequest(p, o, transport === "query");
   if (!r.ok) {
     const detail = await r.text();
-    // 403 covers more than a dead session: the host setting refuses networks it was not meant to
-    // answer, and that is a "you are on the wrong Wi-Fi" which fixes itself. Only a token the Mac
-    // rejects should end the session -- otherwise walking out of the house would sign you out.
+    // A 403 also means "wrong Wi-Fi": the host setting refuses networks it was not meant to answer,
+    // which fixes itself. Only a token the Mac rejects should end the session.
     if (r.status == 403 && detail.includes("bad token")) lockApp();
     throw new Error(detail);
   }
@@ -271,13 +267,11 @@ function setConnected(ok) {
   if (++failCount >= 2) $("#conn").hidden = false;
 }
 
-// Quota, from the same reading the menu bar shows. One line by default - the transcript is what
-// the phone is for - and the whole list when asked.
+// Quota, from the same reading the menu bar shows: one line by default, the whole list when asked.
 let usageOpen = false;
 
-// Red is exactly the point Toki would send a low-quota notification (lowQuotaThreshold, 20% by
-// default), so the strip and the alerts agree about what "low" means. Amber is the warning shot
-// before it.
+// Red is the low-quota notification threshold (lowQuotaThreshold, 20% by default), so the strip and
+// the alerts agree on "low"; amber is the warning before it.
 function usageClass(remaining) {
   if (remaining <= 0.2) return "low";
   if (remaining <= 0.35) return "warn";
@@ -312,8 +306,7 @@ function renderUsage(data) {
   panel.innerHTML = accounts.map(a => {
     const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
     if (typeof a.remaining != "number") {
-      // No quota API for this provider, or a cost figure instead: show the figure, not a bar
-      // drawn from a number nobody has.
+      // No quota API, or a cost figure instead: show the figure, not a bar for a number nobody has.
       return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
         '<span class="u-track"></span><span class="u-value">' +
         esc(a.value || a.primary || "") + "</span></div>";
@@ -364,9 +357,8 @@ $("#usagetoggle").addEventListener("click", () => {
   refreshUsage();
 });
 
-// A backgrounded tab has its timers throttled to a crawl or stopped outright, so returning to the
-// app showed whatever was on screen when you left until the next tick happened to fire. Poll the
-// moment it is visible again.
+// A backgrounded tab has its timers throttled, so it showed stale state until the next tick. Poll
+// the moment it is visible again.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState != "visible" || !started || !TOKEN) return;
   pollAgents();
@@ -687,8 +679,8 @@ function toolRow(e) {
     dispTitle(e.text || "") + detail;
 }
 
-// The result carries no output - only that the call ended, when, and whether it failed. That is
-// enough to stop a finished call looking like one still running.
+// The result carries no output, only that the call ended, when, and whether it failed: enough to
+// stop a finished call looking like one still running.
 function resolveToolNode(entry) {
   const node = toolNodes[entry.id];
   if (!node) return;
