@@ -151,6 +151,12 @@ function dispPath(p) {
   return privacyMode ? maskText(p) : esc(p);
 }
 
+// For the text of a tool row, which is often the URL the call is fetching. Masking still wins:
+// a masked row has nothing left worth linking.
+function dispLinked(t) {
+  return privacyMode ? maskText(t) : linkify(t);
+}
+
 // The session token rides in the Authorization header rather than the query string, so it stays
 // out of the phone's history and out of the request line any proxy in front of the Mac writes to
 // its log -- Cloudflare's, on the tunnel path.
@@ -419,6 +425,9 @@ function esc(s) {
 }
 
 const md = renderMarkdown;
+// Escapes and links in one step, for the messages that are not Markdown. Every caller assigns the
+// result to innerHTML, so nothing may reach it that has not been through here or esc().
+const linkify = renderMarkdown.linkify;
 
 const LOGOS = {
   claude: '<svg class="plogo" viewBox="0 0 100 100" fill="#d97757"><path d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z"/></svg>',
@@ -616,7 +625,9 @@ let pendingEcho = null;
 function addEcho(text) {
   const d = document.createElement("div");
   d.className = "m user pending";
-  d.textContent = text;
+  // Linked here as well as when the transcript echoes it back, so a message does not change
+  // appearance under you the moment the agent confirms it.
+  d.innerHTML = linkify(text);
   $("#log").appendChild(d);
   pendingEcho = { node: d, text: text.trim() };
 }
@@ -685,10 +696,10 @@ function shortDuration(ms) {
 
 function toolRow(e) {
   const detail = e.detail && e.detail != e.text
-    ? '<span class="tool-detail">' + dispTitle(e.detail) + "</span>"
+    ? '<span class="tool-detail">' + dispLinked(e.detail) + "</span>"
     : "";
   return '<span class="tool-state" aria-hidden="true"></span>&#128295; <b>' + esc(e.tool) + "</b> " +
-    dispTitle(e.text || "") + detail;
+    dispLinked(e.text || "") + detail;
 }
 
 // The result carries no output, only that the call ended, when, and whether it failed: enough to
@@ -763,7 +774,9 @@ async function refreshLog() {
       }
     }
     else if (e.role == "assistant") d.innerHTML = md(e.text);
-    else d.textContent = e.text;
+    // Your own messages stay verbatim -- no Markdown, and the bubble's pre-wrap keeps the line
+    // breaks -- but a URL in one is as worth tapping as a URL in a reply.
+    else d.innerHTML = linkify(e.text);
     $("#log").appendChild(d);
     added++;
   }
@@ -856,8 +869,11 @@ document.addEventListener("click", async e => {
 });
 
 $("#log").addEventListener("click", e => {
+  // A link inside a failed message opens the link; tapping the bubble around it retries the send.
+  if (e.target.closest("a")) return;
   const f = e.target.closest(".m.user.failed");
   if (!f) return;
+  // textContent, not the linked markup: a retry has to send what was typed, not what it renders as.
   const text = f.textContent;
   f.remove();
   feedback("tap");

@@ -64,6 +64,20 @@ assert.match(app, /if\s*\(ok\)\s*resetTranscript\(\)/);
 assert.match(app, /const epoch = logEpoch/);
 assert.match(app, /if\s*\(epoch\s*!=\s*logEpoch\)\s*return/);
 assert.match(app, /r\.session\s*!==\s*logSession/);
+// Every kind of message links its URLs: the agent's reply through the Markdown renderer, your own
+// messages and the tool rows through linkify, which escapes as it goes.
+assert.match(app, /const linkify = renderMarkdown\.linkify/);
+assert.match(app, /d\.innerHTML = linkify\(e\.text\)/);
+assert.match(app, /d\.innerHTML = linkify\(text\)/);
+assert.match(app, /function dispLinked/);
+assert.match(app, /dispLinked\(e\.text \|\| ""\)/);
+assert.match(app, /dispLinked\(e\.detail\)/);
+// Tapping a link inside a message that failed to send opens the link instead of retrying the send.
+assert.match(app, /if\s*\(e\.target\.closest\("a"\)\)\s*return/);
+assert.match(css, /\.m a\{/);
+assert.match(css, /\.user a\{/);
+assert.match(css, /#alert \.qq a\{/);
+
 // Restyled question banner (header label + badge/label option layout) and film grain.
 assert.match(app, /class="ahead"/);
 assert.match(app, /<b>\$\{i\s*\+\s*1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);

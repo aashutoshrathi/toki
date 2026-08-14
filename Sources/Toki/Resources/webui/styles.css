@@ -156,6 +156,10 @@ body.privacy .eye-off{display:inline}
 #alert .qq p{margin:5px 0}
 #alert .qq code{background:#0006;padding:1px 5px;border-radius:5px;
                 font-family:ui-monospace,monospace;font-size:13px}
+/* The panel is saturated blue when it asks and saturated red when it wants approval, so a link in
+   the question is set in white rather than a colour that only works against one of them. */
+#alert .qq a{color:#fff;text-decoration:underline;text-underline-offset:2px;
+             overflow-wrap:anywhere}
 #alert .qq:not(:first-of-type){margin-top:14px;padding-top:12px;border-top:1px solid #ffffff1a}
 #readonly{display:none;margin:10px 14px;padding:11px 12px;border-radius:var(--r);
           background:var(--warn-surface);border:1px solid var(--warn-line);color:#e2cc8c;font-size:13px}
@@ -173,6 +177,13 @@ body.privacy .eye-off{display:inline}
 #log{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 14px}
 .m{margin:8px 0;padding:10px 13px;border-radius:var(--r-lg);max-width:88%;border:1px solid transparent;
    word-break:break-word;overflow-wrap:anywhere}
+/* A link has to look like one before it is tapped, in every kind of message: colour alone is not
+   enough against these surfaces, and a bare URL wraps mid-string on a phone. */
+.m a{color:var(--accent-2);text-decoration:underline;text-underline-offset:2px;
+     overflow-wrap:anywhere}
+.m a:active{opacity:.7}
+/* Blue on the green bubble is the one place the accent fights its background. */
+.user a{color:#9adcb4}
 .user{background:var(--user-surface);border-color:var(--user-line);margin-left:auto;
       border-bottom-right-radius:var(--tail);white-space:pre-wrap}
 .m.pending{opacity:.55}
@@ -191,7 +202,6 @@ body.privacy .eye-off{display:inline}
 .assistant code{background:#0f1118;padding:1px 5px;border-radius:5px;
                 font-family:ui-monospace,monospace;font-size:13px}
 .assistant p{margin:5px 0}
-.assistant a{color:var(--accent-2)}
 .assistant .table-wrap{max-width:100%;margin:8px 0;overflow-x:auto;
                        border:1px solid var(--line);border-radius:var(--r-sm)}
 .assistant table{width:100%;min-width:max-content;border-collapse:collapse;font-size:13px}
