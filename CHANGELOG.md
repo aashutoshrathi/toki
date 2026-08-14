@@ -8,6 +8,7 @@
 - **A first run lists everything Toki will ever ask for, and can ask for it all at once.** **Allow all** requests them one dialog at a time, Accessibility last; refusing one only turns off what it was for. The list survives connecting an account and includes starting Toki at login. Afterwards rows appear only when they apply to your Mac, and a permission you refused offers System Settings instead of an **Allow** button macOS would ignore.
 - **Quota on your phone.** The companion app shows a strip with the account that has least left, expanding to the full list on tap. It is the same reading the Mac renders, so the two cannot disagree, and a reading the Mac stopped refreshing says so.
 - **Tool calls in the companion app show that they finished.** Calls now show as in flight, then succeeded or failed, with how long they took and a second line saying what the call is actually doing. Tool output stays on the Mac.
+- **A link in the companion app is a link you can tap.** Agents print URLs far more often than they write Markdown links, and until now a bare one was text you had to retype on a phone. Every message linkifies them: the agent's replies, the question in an approval prompt, the messages you send, and the target of a tool call. Links open in a new tab, only `http` and `https` are ever linked, and a URL inside code or a code block is still left as text. The full stop that ends the sentence stays out of the link, and so does a closing bracket the URL never opened.
 
 ### Changed
 

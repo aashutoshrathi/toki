@@ -12,6 +12,62 @@
       .replace(/'/g, "&#39;");
   }
 
+  function anchor(href, label) {
+    return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>";
+  }
+
+  function countChar(value, char) {
+    let total = 0;
+    for (let index = 0; index < value.length; index++) {
+      if (value[index] === char) total++;
+    }
+    return total;
+  }
+
+  // Where a bare URL actually ends. What surrounds it is prose, so a trailing full stop or comma
+  // belongs to the sentence, and a closing bracket belongs to the URL only if the URL opened it.
+  // Escaping has already run by this point, so a delimiter that wrapped the URL arrives as an
+  // entity -- &gt; from <url>, &quot; from "url" -- and has to come off whole, while the semicolon
+  // ending an &amp; inside a query string has to stay on.
+  function urlEnd(url) {
+    let end = url.length;
+    while (end > 0) {
+      const head = url.slice(0, end);
+      const wrapper = head.match(/&(?:gt|quot|#39);$/);
+      if (wrapper) {
+        end -= wrapper[0].length;
+        continue;
+      }
+      const last = head[end - 1];
+      if (last === ";" && /&(?:#\d+|[a-zA-Z]+);$/.test(head)) break;
+      if (".,;:!?".indexOf(last) >= 0) {
+        end--;
+        continue;
+      }
+      if (last === ")" && countChar(head, "(") < countChar(head, ")")) {
+        end--;
+        continue;
+      }
+      break;
+    }
+    return end;
+  }
+
+  // A bare URL runs to whitespace, to a "<" (escaping has already run, so a raw one can only be
+  // markup this renderer produced), or to a control character, which no URL contains and which is
+  // what a stashed code span is left behind as.
+  const BARE_URL = /https?:\/\/[^\s<\p{Cc}]+/gu;
+
+  // A bare URL, linked from wherever it ends up: the prose an agent writes, a line of a table, the
+  // question in an approval prompt. Only http(s) is matched, so no anchor this produces can carry
+  // a javascript: or data: target, and the URL has already been escaped by the time it lands in
+  // the href.
+  function linkURL(match) {
+    const url = match.slice(0, urlEnd(match));
+    if (!/^https?:\/\/[^\s<]/.test(url)) return match;
+    return anchor(url, url) + match.slice(url.length);
+  }
+
   function inlineMarkdown(value) {
     const codes = [];
     let text = value.replace(/`([^`\n]+)`/g, function(_, code) {
@@ -20,9 +76,14 @@
     });
     text = text.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
     text = text.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<i>$2</i>");
+    // Written links and bare ones in a single pass, the written form first: matching them
+    // separately would let the bare-URL pass find the href the written one had just produced and
+    // nest a second anchor inside the first.
     text = text.replace(
-      /\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+      new RegExp("\\[([^\\]]+)\\]\\((https?:[^)\\s]+)\\)|" + BARE_URL.source, "gu"),
+      function(match, label, href) {
+        return href ? anchor(href, label) : linkURL(match);
+      }
     );
     return text.replace(/\u0001C(\d+)\u0001/g, function(_, index) {
       return "<code>" + codes[Number(index)] + "</code>";
@@ -99,7 +160,7 @@
     };
   }
 
-  return function renderMarkdown(source) {
+  function renderMarkdown(source) {
     let text = escapeHTML(source);
     const fences = [];
     text = text.replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, function(_, code) {
@@ -137,5 +198,16 @@
       index++;
     }
     return output.join("");
+  }
+
+  // The same links for text that is not Markdown: a message you typed, the target of a tool call.
+  // Nothing else in the string is interpreted, so a reply of "**not bold**" still reads as it was
+  // typed, and the escape runs first so this is safe on anything.
+  renderMarkdown.linkify = function(source) {
+    return escapeHTML(source == null ? "" : source).replace(BARE_URL, function(match) {
+      return linkURL(match);
+    });
   };
+
+  return renderMarkdown;
 });
