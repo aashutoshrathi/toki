@@ -46,6 +46,16 @@ assert.equal(written.match(/<a /g).length, 1);
 assert.match(written, /<a href="https:\/\/github\.com\/aashutoshrathi\/toki"[^>]*>the repo<\/a>/);
 assert.doesNotMatch(renderMarkdown("[https://a.example](https://b.example)"), /<a[^>]*><a /);
 
+// A written link this renderer will not open stays plain text, label and all. The bare-URL pass
+// must not reach a URL sitting in that label and swallow the "](destination)" after it.
+for (const inert of [
+  "[https://toki.aashutosh.dev](/docs/setup)",
+  "[https://toki.aashutosh.dev](#anchor)",
+  "[see https://a.example](mailto:someone@example.com)",
+]) {
+  assert.doesNotMatch(renderMarkdown(inert), /<a /, inert + " should not link");
+}
+
 // Escaping runs first, so an "&" in a query string survives into the href, while the "<>" or
 // quotes that wrapped a URL are not swallowed by it.
 const query = renderMarkdown("https://example.com/s?a=1&b=2 done");

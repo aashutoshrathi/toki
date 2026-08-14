@@ -80,9 +80,15 @@
     // separately would let the bare-URL pass find the href the written one had just produced and
     // nest a second anchor inside the first.
     text = text.replace(
-      new RegExp("\\[([^\\]]+)\\]\\((https?:[^)\\s]+)\\)|" + BARE_URL.source, "gu"),
+      new RegExp("\\[([^\\]]+)\\]\\(([^)\\s]*)\\)|" + BARE_URL.source, "gu"),
       function(match, label, href) {
-        return href ? anchor(href, label) : linkURL(match);
+        // A written link is matched whatever its destination, but only followed when that
+        // destination is one this renderer will open. The rest -- a relative path, an anchor, a
+        // mailto -- stays the plain text it has always been. Matching only the http ones here
+        // would drop the others through to the bare-URL branch, which would then find a URL in
+        // the label and swallow the "](destination)" after it into the href.
+        if (label !== undefined) return /^https?:/.test(href) ? anchor(href, label) : match;
+        return linkURL(match);
       }
     );
     return text.replace(/\u0001C(\d+)\u0001/g, function(_, index) {
