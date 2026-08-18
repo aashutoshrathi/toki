@@ -949,10 +949,18 @@ async function refreshLog() {
 }
 
 let sending = false;
-// True only while an image is being read and uploaded, before its reply is sent. Keeps the
-// composer disabled through the upload so a second tap cannot start a parallel one.
+// True only while an image is being read and uploaded, before its reply is sent. Every send-capable
+// control is disabled through it: the footer via updateComposer, and the alert panel's approve and
+// answer buttons via the body class, so answering another agent's prompt cannot collide with the
+// image's own send (which shares the single `sending` guard) and wrongly fail it.
 let uploading = false;
 let statusTimer = null;
+
+function setUploading(on) {
+  uploading = on;
+  document.body.classList.toggle("uploading", on);
+  updateComposer(agents.find(a => a.pid == current) || null);
+}
 
 function setStatus(message, kind) {
   clearTimeout(statusTimer);
@@ -1090,16 +1098,14 @@ async function submitComposer() {
   renderAttachPreview();
   input.value = "";
   resizeComposer();
-  uploading = true;
-  updateComposer(agents.find(a => a.pid == current) || null);
+  setUploading(true);
   let echoed = false;
   try {
     const path = await uploadImage(image.blob);
     // With no caption the message would start with "/Users/…", which Claude Code and Codex read as a
     // slash command; a leading word keeps the path an argument the agent actually receives.
     const message = caption ? caption + " " + path : "Image: " + path;
-    uploading = false;
-    updateComposer(agents.find(a => a.pid == current) || null);
+    setUploading(false);
     // Echo only when the log still shows the agent we're sending to; otherwise the message still
     // goes to that agent and its own transcript poll surfaces it. Echo the exact text sent, so the
     // transcript's copy dedupes it rather than leaving a duplicate bubble.
@@ -1128,7 +1134,7 @@ async function submitComposer() {
   } catch (e) {
     // Upload itself failed: the preview URL was never revoked, so the same attachment goes back for
     // a retry rather than a redo.
-    uploading = false;
+    setUploading(false);
     restoreAttachment(image, caption, pid);
     feedback("error");
     setStatus("Couldn’t upload the image: " + e.message, "error");
