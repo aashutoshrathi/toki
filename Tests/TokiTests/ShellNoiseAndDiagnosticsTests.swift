@@ -173,6 +173,15 @@ final class ShellNoiseAndDiagnosticsTests: XCTestCase {
         }
     }
 
+    func testCodexNotFoundMessageNamesBothInstalls() {
+        let message = CodexBinaryResolver.notFoundMessage
+        XCTAssertTrue(message.contains("Codex CLI"), message)
+        XCTAssertTrue(message.contains("PATH"), message)
+        XCTAssertTrue(message.contains("Codex macOS app"), message)
+        // It must read as an actionable install hint, never a leaked raw shell line.
+        XCTAssertFalse(message.contains("app-server"), message)
+    }
+
     // MARK: - Diagnostic error detail
 
     func testNSErrorDetailCarriesDomainAndCode() {

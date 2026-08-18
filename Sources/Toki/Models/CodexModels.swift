@@ -12,6 +12,7 @@ struct CodexAppServerPayload {
     var usage: Any?
     var rateLimits: Any?
     var account: Any?
+    var binarySource: CodexBinary?
 }
 
 struct CodexUsage {

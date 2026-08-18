@@ -716,7 +716,7 @@ struct HostApp: Hashable {
         HostApp(displayName: "VS Code Insiders", bundleID: "com.microsoft.VSCodeInsiders", matchers: ["code - insiders"]),
         HostApp(displayName: "VS Code", bundleID: "com.microsoft.VSCode", matchers: ["code helper", "visual studio code"]),
         HostApp(displayName: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92", matchers: ["cursor"]),
-        HostApp(displayName: "ChatGPT", bundleID: "com.openai.codex", matchers: ["chatgpt"]),
+        HostApp(displayName: "ChatGPT", bundleID: codexAppBundleIdentifier, matchers: ["chatgpt"]),
         HostApp(displayName: "iTerm", bundleID: "com.googlecode.iterm2", matchers: ["iterm"]),
         HostApp(displayName: "WezTerm", bundleID: "com.github.wez.wezterm", matchers: ["wezterm"]),
         HostApp(displayName: "Alacritty", bundleID: "org.alacritty", matchers: ["alacritty"]),
