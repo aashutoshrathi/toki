@@ -604,10 +604,18 @@ final class RemoteControlServer: ObservableObject {
         interfaceIPv4Addresses().first { isTailscaleAddress($0.ip) }?.ip
     }
 
+    nonisolated static func tailscaleJSONObject(from data: Data?) -> [String: Any]? {
+        guard let data, !data.isEmpty else { return nil }
+        if let object = try? JSONSerialization.jsonObject(with: data), let root = object as? [String: Any] {
+            return root
+        }
+        guard let brace = data.firstIndex(of: UInt8(ascii: "{")) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data[brace...])) as? [String: Any]
+    }
+
     nonisolated static func tailscaleDNSName(from statusData: Data) -> String? {
         guard
-            let object = try? JSONSerialization.jsonObject(with: statusData),
-            let status = object as? [String: Any],
+            let status = tailscaleJSONObject(from: statusData),
             let selfNode = status["Self"] as? [String: Any],
             let rawName = selfNode["DNSName"] as? String
         else {
@@ -621,8 +629,7 @@ final class RemoteControlServer: ObservableObject {
 
     nonisolated static func rawSelfDNSName(from statusData: Data) -> String? {
         guard
-            let object = try? JSONSerialization.jsonObject(with: statusData),
-            let status = object as? [String: Any],
+            let status = tailscaleJSONObject(from: statusData),
             let selfNode = status["Self"] as? [String: Any]
         else {
             return nil
@@ -684,11 +691,11 @@ final class RemoteControlServer: ObservableObject {
     private nonisolated static func tailscaleExecutable() -> URL {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
-            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
             "/opt/homebrew/bin/tailscale",
             "/usr/local/bin/tailscale",
             "/usr/bin/tailscale",
-            "\(home)/.local/bin/tailscale"
+            "\(home)/.local/bin/tailscale",
+            "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
         ]
         if let path = candidates.first(where: FileManager.default.isExecutableFile(atPath:)) {
             return URL(fileURLWithPath: path)
@@ -813,10 +820,7 @@ final class RemoteControlServer: ObservableObject {
     // right fix. "MagicDNS is off" is claimed only for a running node that really reports no name;
     // every other way of failing to read one says so instead of accusing a setting that may be on.
     nonisolated static func statusDiagnostic(from data: Data) -> String {
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data),
-            let status = object as? [String: Any]
-        else {
+        guard let status = tailscaleJSONObject(from: data) else {
             return "Couldn't read Tailscale's status. Enter the host by hand."
         }
         if let backend = status["BackendState"] as? String, backend != "Running" {
@@ -1059,9 +1063,7 @@ final class RemoteControlServer: ObservableObject {
 
     /// The `.ts.net` host `tailscale serve` reports, used when `tailscale status` can't supply the name.
     nonisolated static func servedTailscaleHost(from data: Data?) -> String? {
-        guard let data,
-              let object = try? JSONSerialization.jsonObject(with: data),
-              let root = object as? [String: Any],
+        guard let root = tailscaleJSONObject(from: data),
               let web = root["Web"] as? [String: Any] else { return nil }
         for key in web.keys.sorted() {
             guard let colon = key.lastIndex(of: ":") else { continue }
@@ -1075,7 +1077,7 @@ final class RemoteControlServer: ObservableObject {
         guard let data else {
             return .unreadable("Toki couldn't read `tailscale serve status`.")
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data), let root = object as? [String: Any] else {
+        guard let root = tailscaleJSONObject(from: data) else {
             return .unreadable("Tailscale's serve status wasn't readable.")
         }
         // Valid JSON with no Web map is a real "not serving", not a read failure.
