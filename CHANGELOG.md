@@ -1,11 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-
-- **Codex quota works with only the Codex app installed.** Reading Codex usage needs the `codex` CLI, and until now that meant a separate Homebrew or npm install even though the desktop app already ships one. When nothing named `codex` is on your `PATH`, Toki now falls back to the copy inside `Codex.app`, so the app alone is enough. A `PATH` install still wins, since it can be newer than the version locked to the app; a broken one is named as the problem instead of being quietly skipped.
-
 ## 2.7.0 - 2026-08-11
 
 ### Added
@@ -31,6 +25,7 @@
 - **Toki no longer reports a working `tailscale serve` as missing.** Detection matched one spelling of the loopback at one path, so `localhost`, IPv6, or a shared serve all read as "not serving", and an unreadable status looked identical to an empty one. Those are now distinct answers.
 - **`tailscale serve` starts itself on the machines that most need it.** Auto-serve was gated on the Mac's `.ts.net` name, which serving does not require, so on a Mac whose Tailscale ships no usable CLI the gate closed and serve never ran. It now runs regardless, takes the name from serve's own config, and says when it deliberately declines.
 - **The permissions checklist reports what it actually checked.** A closed terminal made macOS refuse to answer about Automation and read as "not granted yet"; the Keychain row claimed success whenever the gate was open; **Send a test** logged a notification as delivered macOS may never have shown. Each now tells the truth and offers a way to retry.
+- **Codex quota works with only the Codex app installed.** Reading Codex usage needs the `codex` CLI, and until now that meant a separate Homebrew or npm install even though the desktop app already ships one. When nothing named `codex` is on your `PATH`, Toki now falls back to the copy inside `Codex.app`, so the app alone is enough. A `PATH` install still wins, since it can be newer than the version locked to the app; a broken one is named as the problem instead of being quietly skipped.
 - **An agent's transcript and name follow the conversation you are actually having.** Toki pinned an agent to the session file written at its launch, so once the conversation moved (via `/clear`, switching chats, or a rollover) the menu bar name and Remote Control transcript froze. Sessions are now assigned across a whole project folder at once, each agent owning the files created before the next one started, so no two agents share a file and a lone agent follows the live conversation.
 - The companion server stops trusting a snapshot forever: a reading older than 90 seconds means the pipe went quiet, and past that the server discovers agents itself.
 - **The button that turns on Tailscale HTTPS is reachable in the case that needs it.** It only appeared once `tailscale status` produced a DNS name, which the Mac App Store build cannot supply; it now appears for a hand-typed host too, and where no `tailscale` command exists Toki hands over the command to run.
