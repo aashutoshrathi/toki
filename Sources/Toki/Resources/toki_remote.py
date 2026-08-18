@@ -1279,17 +1279,35 @@ def decode_image_payload(value):
 
 
 def prune_uploads(now=None):
-    """Drop uploads past their TTL so the folder cannot accumulate across many sessions."""
+    """Keep the uploads folder bounded, by age and by total size. Anything past its TTL goes; then,
+    if what remains still exceeds the aggregate cap, the oldest survivors are evicted until it fits.
+    Runs before every write, so a paired client cannot fill the disk by uploading in a loop."""
     now = time.time() if now is None else now
     try:
         names = os.listdir(UPLOAD_DIR)
     except OSError:
         return
+    survivors = []
     for name in names:
         path = os.path.join(UPLOAD_DIR, name)
         try:
-            if now - os.path.getmtime(path) > UPLOAD_TTL:
+            st = os.stat(path)
+        except OSError:
+            continue
+        if now - st.st_mtime > UPLOAD_TTL:
+            try:
                 os.remove(path)
+            except OSError:
+                pass
+        else:
+            survivors.append((st.st_mtime, st.st_size, path))
+    total = sum(size for _, size, _ in survivors)
+    for _, size, path in sorted(survivors):  # oldest first
+        if total <= MAX_UPLOAD_DIR_BYTES:
+            break
+        try:
+            os.remove(path)
+            total -= size
         except OSError:
             pass
 
@@ -1402,10 +1420,11 @@ MAX_SEND_CHARS = 8_000
 # as base64 (~33% larger than the file), so the request cap sits above the decoded image cap.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_UPLOAD_BODY_BYTES = 17 * 1024 * 1024
-# Uploaded images land here for an agent to read by path. Pruned by age on each new upload so the
-# folder cannot grow without bound; the agent reads the file straight after it is written.
+# Uploaded images land here for an agent to read by path. Pruned by age and by total size on each
+# new upload so the folder cannot grow without bound; the agent reads the file straight after write.
 UPLOAD_DIR = os.path.join(HOME, ".toki", "remote-uploads")
 UPLOAD_TTL = 24 * 60 * 60
+MAX_UPLOAD_DIR_BYTES = 256 * 1024 * 1024
 # One phone is one session. Pairing is cheap once the code is known, so cap the table rather than
 # let a paired client mint sessions until the process runs out of memory.
 MAX_SESSIONS = 32

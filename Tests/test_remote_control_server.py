@@ -678,6 +678,25 @@ class ImageUploadTests(unittest.TestCase):
             self.assertTrue(os.path.exists(fresh))
             self.assertFalse(os.path.exists(old))
 
+    def test_prune_evicts_oldest_when_over_the_aggregate_cap(self):
+        with tempfile.TemporaryDirectory() as d:
+            # Three in-TTL files of 100 bytes each (total 300); a 150-byte cap must evict the two
+            # oldest, leaving only the newest.
+            paths = []
+            base = time.time()
+            for i in range(3):
+                p = os.path.join(d, f"f{i}.png")
+                with open(p, "wb") as f:
+                    f.write(b"x" * 100)
+                os.utime(p, (base + i, base + i))  # f0 oldest, f2 newest
+                paths.append(p)
+            with mock.patch.object(toki_remote, "UPLOAD_DIR", d), \
+                    mock.patch.object(toki_remote, "MAX_UPLOAD_DIR_BYTES", 150):
+                toki_remote.prune_uploads(now=base + 3)
+            self.assertFalse(os.path.exists(paths[0]))
+            self.assertFalse(os.path.exists(paths[1]))
+            self.assertTrue(os.path.exists(paths[2]))  # newest survives, total now under cap
+
 
 if __name__ == "__main__":
     unittest.main()

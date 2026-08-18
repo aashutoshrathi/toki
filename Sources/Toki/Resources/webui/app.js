@@ -978,11 +978,16 @@ async function send(body, pid = current) {
     });
     feedback("success");
     setStatus("Sent \u2713 via " + r.how, "success");
-    const stick = nearBottom();
-    awaitingReply = true;
-    showTyping();
-    if (stick) scrollToLatest();
-    refreshLog().catch(() => {});
+    // The typing indicator and transcript refresh belong to the log on screen. When this send was
+    // bound to an agent the user has since navigated away from, they belong to that other agent's
+    // view, not the one now showing, so leave the current view alone.
+    if (pid == current) {
+      const stick = nearBottom();
+      awaitingReply = true;
+      showTyping();
+      if (stick) scrollToLatest();
+      refreshLog().catch(() => {});
+    }
     return true;
   } catch (e) {
     feedback("error");
@@ -1103,25 +1108,42 @@ async function submitComposer() {
       showTyping();
       scrollToLatest();
     }
-    URL.revokeObjectURL(image.url);
     const ok = await send({ text: message }, pid);
-    if (!ok && echoed) {
+    if (ok) {
+      URL.revokeObjectURL(image.url);
+    } else if (echoed) {
+      // The failed bubble is the retry: tapping it re-sends the same text, and the uploaded file is
+      // still on the Mac, so the path resolves. The blob is no longer needed.
       markEchoFailed();
       awaitingReply = false;
       hideTyping();
+      URL.revokeObjectURL(image.url);
+    } else {
+      // Bound to an agent no longer on screen and the send failed, so there is no bubble to retry
+      // from: put the attachment back for a manual retry instead of dropping it.
+      restoreAttachment(image, caption);
     }
   } catch (e) {
-    // Put the attachment and caption back so a failed upload is a retry, not a redo. The preview URL
-    // is still live (only revoked on success), so the same object goes straight back.
+    // Upload itself failed: the preview URL was never revoked, so the same attachment goes back for
+    // a retry rather than a redo.
     uploading = false;
-    pendingImage = image;
-    renderAttachPreview();
-    input.value = caption;
-    resizeComposer();
-    updateComposer(agents.find(a => a.pid == current) || null);
+    restoreAttachment(image, caption);
     feedback("error");
     setStatus("Couldn’t upload the image: " + e.message, "error");
   }
+}
+
+// Put a not-yet-sent image (and its caption) back in the composer, without clobbering a fresh draft
+// the user may have typed while the upload was in flight.
+function restoreAttachment(image, caption) {
+  pendingImage = image;
+  renderAttachPreview();
+  const input = $("#msg");
+  if (!input.value.trim()) {
+    input.value = caption;
+    resizeComposer();
+  }
+  updateComposer(agents.find(a => a.pid == current) || null);
 }
 
 document.addEventListener("pointerdown", e => {
