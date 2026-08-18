@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Codex quota works with only the Codex app installed.** Reading Codex usage needs the `codex` CLI, and until now that meant a separate Homebrew or npm install even though the desktop app already ships one. When nothing named `codex` is on your `PATH`, Toki now falls back to the copy inside `Codex.app`, so the app alone is enough. A `PATH` install still wins, since it can be newer than the version locked to the app; a broken one is named as the problem instead of being quietly skipped.
+
 ## 2.7.0 - 2026-08-11
 
 ### Added

@@ -38,6 +38,8 @@ Toki reads the auth file and asks the local Codex app-server for usage and rate 
 
 The app-server is launched through a login shell, which sources `.zprofile` but not `.zshrc`. Since the version managers most CLIs are installed through (nvm, fnm, volta, bun, pnpm, mise, asdf) set `PATH` from `.zshrc`, their bin directories are appended explicitly, so a `codex` installed that way is found rather than reported as `command not found`.
 
+When no `codex` is on `PATH` at all, Toki falls back to the copy bundled inside `Codex.app`, so the desktop app on its own is enough to read usage. A `PATH` install always takes precedence over the bundled copy, since the bundled CLI is version-locked to the app release and a Homebrew or npm install should keep winning. A broken `PATH` install is reported as such rather than silently bypassed.
+
 When OpenAI has banked a rate-limit reset credit, the expanded card shows a **Reset now** button (with a count when more than one is banked). It stays disabled until the current window is at least 80% used, so a credit is not spent while quota remains.
 
 ## Pi

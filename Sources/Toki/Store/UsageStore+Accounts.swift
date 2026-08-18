@@ -32,8 +32,12 @@ extension UsageStore {
         resettingAccountIDs.insert(accountID)
         Task {
             defer { resettingAccountIDs.remove(accountID) }
-            let result = await Task.detached {
-                Result { try CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil) }
+            let result = await Task.detached { () -> Result<String, Error> in
+                do {
+                    return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil))
+                } catch {
+                    return .failure(error)
+                }
             }.value
 
             switch result {

@@ -7,7 +7,7 @@ struct CodexUsageClient {
 
     func snapshot() async throws -> AccountSnapshot {
         let credentials = try CodexCredentialReader.readCredentials(account: account)
-        let payload = try CodexAppServerClient.fetch(account: account)
+        let payload = try await CodexAppServerClient.fetch(account: account)
         let usage = CodexUsage(json: payload.usage ?? [:])
         let rateLimits = CodexRateLimits(json: payload.rateLimits ?? [:])
         guard usage.hasUsage || rateLimits.hasUsage else {
@@ -35,24 +35,49 @@ struct CodexUsageClient {
             progressRatio: rateLimits.progressRatio,
             resetCreditsAvailable: rateLimits.resetCreditsAvailable,
             metrics: rateLimits.metrics + usage.metrics,
-            accountInfo: CodexCredentialReader.accountInfo(from: credentials) + CodexAccountInfo.lines(from: payload.account),
+            accountInfo: CodexCredentialReader.accountInfo(from: credentials)
+                + CodexAccountInfo.lines(from: payload.account)
+                + Self.binaryInfoLines(payload.binarySource),
             primaryWindow: rateLimits.primaryWindow,
             secondaryWindow: rateLimits.secondaryWindow
         )
+    }
+
+    private static func binaryInfoLines(_ binary: CodexBinary?) -> [MetricLine] {
+        guard let binary else { return [] }
+        return [MetricLine(label: "Codex CLI", value: binary.displayName)]
     }
 }
 
 enum CodexAppServerClient {
     private static let path = agentCommandSearchPath
 
-    static func fetch(account: AccountConfig) throws -> CodexAppServerPayload {
-        let responses = try call(account: account, requests: [
+    // Resolve once per fetch/reset and thread the result through, so the optional account-info line
+    // can't disagree with the fetch if install state changes mid-refresh. Nothing usable found is a
+    // real error thrown before anything is spawned, naming both fixes.
+    private static func resolvedBinary() async throws -> CodexBinary {
+        guard let binary = try await CodexBinaryResolver.resolve() else {
+            throw LocalizedErrorMessage(CodexBinaryResolver.notFoundMessage)
+        }
+        DiagnosticLogger.shared.record(
+            .info,
+            component: "usage",
+            code: "codex_binary_source",
+            detail: "source=\(binary.sourceTag) executable=\(binary.executablePath)"
+        )
+        return binary
+    }
+
+    static func fetch(account: AccountConfig) async throws -> CodexAppServerPayload {
+        let binary = try await resolvedBinary()
+        let responses = try call(account: account, binary: binary, requests: [
             (id: 2, method: "account/usage/read", params: "null"),
             (id: 3, method: "account/rateLimits/read", params: "null"),
             (id: 4, method: "account/read", params: "{}")
         ])
 
         var payload = CodexAppServerPayload()
+        payload.binarySource = binary
         payload.usage = responses.results[2]
         payload.rateLimits = responses.results[3]
         payload.account = responses.results[4]
@@ -71,7 +96,8 @@ enum CodexAppServerClient {
         return payload
     }
 
-    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?) throws -> String {
+    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?) async throws -> String {
+        let binary = try await resolvedBinary()
         var params: [String: Any] = ["idempotencyKey": UUID().uuidString]
         if let creditID {
             params["creditId"] = creditID
@@ -79,7 +105,7 @@ enum CodexAppServerClient {
         let paramsData = try JSONSerialization.data(withJSONObject: params)
         let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
 
-        let responses = try call(account: account, requests: [(id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)])
+        let responses = try call(account: account, binary: binary, requests: [(id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)])
         guard let result = responses.results[2] as? [String: Any], let outcome = result["outcome"] as? String else {
             throw LocalizedErrorMessage(responses.errors.first ?? "Codex did not confirm the reset")
         }
@@ -107,7 +133,7 @@ enum CodexAppServerClient {
     // therefore stay alive (via a trailing sleep) for at least as long as we intend to poll,
     // or app-server tears itself down mid-round-trip and every response after initialize goes
     // missing - the app-server process itself is still killed explicitly below once we're done.
-    private static func call(account: AccountConfig, requests: [(id: Int, method: String, params: String)]) throws -> (results: [Int: Any], errors: [String]) {
+    private static func call(account: AccountConfig, binary: CodexBinary, requests: [(id: Int, method: String, params: String)]) throws -> (results: [Int: Any], errors: [String]) {
         let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"Toki","version":"\#(appVersion)"},"capabilities":{"experimentalApi":true}}}"#
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
         let requestLines = requests.map { #"{"jsonrpc":"2.0","id":\#($0.id),"method":"\#($0.method)","params":\#($0.params)}"# }
@@ -126,7 +152,7 @@ enum CodexAppServerClient {
         printf '%s\\n' '\(shellEscaped(initialized))'; \
         sleep 0.2; \
         printf '%s\\n' \(printfArgs); \
-        sleep 11 ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" codex app-server --stdio > "$__toki_out" 2>&1 & \
+        sleep 11 ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" '\(shellEscaped(binary.executablePath))' app-server --stdio > "$__toki_out" 2>&1 & \
         __toki_pid=$!; \
         for ((__toki_i = 1; __toki_i <= 100; __toki_i++)); do \
         sleep 0.1; \
@@ -166,11 +192,18 @@ enum CodexAppServerClient {
             }
         }
 
-        // No structured JSON-RPC error and no results usually means codex itself failed
-        // before speaking JSON-RPC (missing binary, permission error, crash) - surface a
-        // sanitized snippet instead of the raw line (which could contain paths or system info).
+        // No structured JSON-RPC error and no results usually means the selected codex itself
+        // failed before speaking JSON-RPC (permission error, crash, app-server won't start) -
+        // surface a sanitized snippet instead of the raw line (which could contain paths or system
+        // info), prefixed with which source was selected so a corrupt app-bundled binary is
+        // distinguishable from a broken PATH install.
         if errors.isEmpty, results.isEmpty, let firstUnparsed = unparsedLines.first {
-            errors.append(String(firstUnparsed.prefix(200)))
+            let source: String
+            switch binary {
+            case .pathInstall(let path): source = "Codex CLI at \(path)"
+            case .appBundle: source = "Codex.app's bundled CLI"
+            }
+            errors.append("\(source) failed: \(firstUnparsed.prefix(200))")
         }
 
         return (results, errors)
