@@ -475,8 +475,13 @@ function renderAgents() {
   }).join("");
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
+    if (+el.dataset.pid == current) {
+      document.getElementById("dd").classList.remove("open");
+      return;
+    }
     current = +el.dataset.pid;
     resetTranscript();
+    clearPendingImage();  // an image attached for the previous agent must not follow you to this one
     document.getElementById("dd").classList.remove("open");
     renderAgents();
     refreshLog();
@@ -586,6 +591,7 @@ async function refreshAgents() {
   if (agents.length && !agents.some(a => a.pid == prev)) {
     current = agents[0].pid;
     resetTranscript();
+    clearPendingImage();  // the agent it was attached for is gone; do not carry it to another
   }
   renderAgents();
   renderAttention(agents.find(x => x.pid == current));
