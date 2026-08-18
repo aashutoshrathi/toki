@@ -1,9 +1,7 @@
-// Fragments keep the token out of static-host access logs. Query params remain supported for
-// links created from the original hosting plan.
+// Fragments keep tokens out of static-host logs; query params support older links.
 const PARAMS = new URLSearchParams(location.hash.slice(1) || location.search);
 
-// An installed PWA relaunches at start_url with no fragment; fall back to the last connection so
-// it reopens on the verify screen (or resumes) instead of the invalid-link screen.
+// Installed PWAs relaunch at start_url without the fragment, so restore the last connection.
 const CONN_KEY = "toki-conn";
 
 function savedConn() {
@@ -26,8 +24,7 @@ try {
   CONFIG_ERROR = e.message;
 }
 
-// Save whenever we have a link token, even with no host: the direct same-host flow serves the
-// PWA from the Mac's own origin, so an empty host restores to the same origin on relaunch.
+// An empty host is meaningful: it restores a direct same-origin connection.
 let connSaved = false;
 if (LINK_TOKEN && !CONFIG_ERROR) {
   try {
@@ -36,10 +33,7 @@ if (LINK_TOKEN && !CONFIG_ERROR) {
   } catch (e) {}
 }
 
-// The link token has been read and remembered, so take it back out of the address bar: on a phone
-// that URL is on screen, in history, and in whatever the browser syncs. Only once the connection
-// is safely in localStorage -- with storage unavailable, the address bar is the only copy left and
-// a reload would have nothing to come back to.
+// Remove a token from the visible/synced URL only after localStorage preserves the sole copy.
 if (connSaved && (location.hash || location.search)) {
   try {
     history.replaceState(null, "", location.pathname);
@@ -66,17 +60,14 @@ function feedback(kind = "tap") {
 
 const SESSION_KEY = "toki-session:" + API_BASE + ":" + LINK_TOKEN;
 
-// The session lives in localStorage, not sessionStorage: sessionStorage dies with the tab (a
-// closed browser, or iOS discarding a backgrounded tab), which used to sign the device out. The
-// stored expiry matches what /api/pair granted; a revoke on the Mac still ends it immediately.
+// localStorage survives iOS discarding a backgrounded tab; server revocation still wins.
 function loadSession() {
   let raw = null;
   try {
     raw = localStorage.getItem(SESSION_KEY);
   } catch (e) {}
   if (!raw) {
-    // An older build kept the session in sessionStorage, which the tab discards; move it across so
-    // upgrading doesn't sign the device out. Keep the old copy if the write fails.
+    // Migrate pre-2.7 sessions without deleting the legacy copy unless persistence succeeds.
     let legacy = null;
     try {
       legacy = sessionStorage.getItem(SESSION_KEY);
@@ -106,8 +97,6 @@ function loadSession() {
 
 function saveSession(token, expiresInSeconds) {
   const record = { token };
-  // /api/pair reports the lifetime it granted; without it the token is kept until the server
-  // rejects it.
   if (expiresInSeconds > 0) record.expires = Date.now() + expiresInSeconds * 1000;
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(record));
@@ -118,7 +107,7 @@ function clearSession() {
   try {
     localStorage.removeItem(SESSION_KEY);
   } catch (e) {}
-  // Older builds kept it here; clear both so an upgrade cannot leave a stale copy behind.
+  // Pre-2.7 builds used sessionStorage.
   try {
     sessionStorage.removeItem(SESSION_KEY);
   } catch (e) {}
@@ -139,33 +128,21 @@ function dispTitle(t) {
   return privacyMode ? maskText(t) : esc(t);
 }
 
-// Same masking, but for a textContent assignment: no HTML escaping, or names would show entities.
 function plainTitle(t) {
   return privacyMode ? maskText(t) : (t || "");
 }
 
-// The folder an agent is working in, masked alongside its title so the privacy toggle doesn't
-// leave your project names on screen.
 function dispPath(p) {
   if (!p) return "";
   return privacyMode ? maskText(p) : esc(p);
 }
 
-// For the text of a tool row, which is often the URL the call is fetching. Masking still wins:
-// a masked row has nothing left worth linking.
 function dispLinked(t) {
   return privacyMode ? maskText(t) : linkify(t);
 }
 
-// The session token rides in the Authorization header rather than the query string, so it stays
-// out of the phone's history and out of the request line any proxy in front of the Mac writes to
-// its log -- Cloudflare's, on the tunnel path.
-//
-// Servers before 2.6.0 read the token only from the query string. This page is also served from
-// rc.toki.aashutosh.dev, which updates the moment a release lands while the Mac it talks to
-// updates whenever its owner gets round to it, so the two versions have to meet. Try the header,
-// and on the one status an old server answers with, fall back and remember for the session.
-// null until proven, then "header" or "query" for the rest of the session.
+// Headers keep session tokens out of history and proxy logs. Hosted UI and Mac versions can drift,
+// so servers before 2.6.0 still get their query-token fallback after a safe GET probe.
 let tokenTransport = null;
 
 function tokenedRequest(p, o, inQuery) {
@@ -178,40 +155,28 @@ function tokenedRequest(p, o, inQuery) {
   return fetch(url, opts);
 }
 
-// Settle the question with a GET, before it can be asked with something that types into a
-// terminal. A server predating the header refuses it two different ways: cross-origin it is
-// preflighted and the browser blocks the call outright, with no response to read a status from;
-// same-origin the request goes through and comes back 403, because the token was never seen.
-// Treat both as a reason to try the query string.
+// Probe with GET: old servers either return 403 same-origin or fail the header preflight cross-origin.
 async function resolveTokenTransport() {
   if (tokenTransport) return tokenTransport;
   try {
     const probe = await tokenedRequest("/api/agents", undefined, false);
-    // Anything other than a refusal means the header was read, whatever else went wrong.
     if (probe.status != 403) {
       tokenTransport = "header";
       return tokenTransport;
     }
-  } catch (blocked) {
-    // Preflight rejected. Nothing to inspect; fall through and try the older shape.
-  }
+  } catch (blocked) {}
   try {
     const probe = await tokenedRequest("/api/agents", undefined, true);
     if (probe.ok) {
       tokenTransport = "query";
       return tokenTransport;
     }
-  } catch (unreachable) {
-    // Neither shape got through.
-  }
-  // No evidence either way: an expired token refused both ways, or the Mac is unreachable. Latch
-  // nothing, and let the caller's own request produce the real error. Deciding here on a dropped
-  // connection would put the token back in URLs for the rest of the session.
+  } catch (unreachable) {}
+  // Do not latch query mode on ambiguous failure; that would keep exposing tokens in URLs.
   return "header";
 }
 
-// The agent and transcript polls both start at once, so share one probe between them rather than
-// asking twice.
+// Concurrent startup polls share one compatibility probe.
 let transportProbe = null;
 
 function tokenTransportOnce() {
@@ -225,15 +190,12 @@ function tokenTransportOnce() {
 }
 
 async function api(p, o) {
-  // Never retry the caller's request. A reply, an approval key and /clear are all delivered to
-  // the terminal before the response is written, so a retry after a lost answer types them a
-  // second time. The probe above is a GET and is the only thing repeated.
+  // Never retry terminal mutations: a lost response may arrive after the keystroke was delivered.
   const transport = await tokenTransportOnce();
   const r = await tokenedRequest(p, o, transport === "query");
   if (!r.ok) {
     const detail = await r.text();
-    // A 403 also means "wrong Wi-Fi": the host setting refuses networks it was not meant to answer,
-    // which fixes itself. Only a token the Mac rejects should end the session.
+    // A generic 403 may be a transient network-policy mismatch; only bad-token ends the session.
     if (r.status == 403 && detail.includes("bad token")) lockApp();
     throw new Error(detail);
   }
@@ -280,12 +242,10 @@ function setConnected(ok) {
   if (++failCount >= 2) $("#conn").hidden = false;
 }
 
-// Quota, from the same reading the menu bar shows: one line by default, the whole list when asked.
 let usageOpen = false;
 let lastUsage = null;
 
-// Red is the low-quota notification threshold (lowQuotaThreshold, 20% by default), so the strip and
-// the alerts agree on "low"; amber is the warning before it.
+// Match Toki's default 20% low-quota alert threshold.
 function usageClass(remaining) {
   if (remaining <= 0.2) return "low";
   if (remaining <= 0.35) return "warn";
@@ -303,7 +263,6 @@ function renderUsage(data) {
     return;
   }
   toggle.hidden = false;
-  // The summary line is the account with least left, because that is the one about to bite.
   const withRatio = accounts.filter(a => typeof a.remaining == "number");
   const lowest = withRatio.length
     ? withRatio.reduce((a, b) => (a.remaining <= b.remaining ? a : b))
@@ -314,8 +273,6 @@ function renderUsage(data) {
   const summary = accounts.length > 1
     ? plainTitle(lowest.name) + " " + lowestValue + " · " + accounts.length + " accounts"
     : plainTitle(lowest.name) + " " + lowestValue;
-  // Stale shows in the collapsed strip too, not only the expanded panel, or a reading the Mac
-  // stopped refreshing would look current until the user opened it.
   const stale = !!(data && data.stale);
   $("#usagesummary").textContent = stale ? summary + " · may be out of date" : summary;
   toggle.classList.toggle("stale", stale);
@@ -326,7 +283,6 @@ function renderUsage(data) {
   panel.innerHTML = accounts.map(a => {
     const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
     if (typeof a.remaining != "number") {
-      // No quota API, or a cost figure instead: show the figure, not a bar for a number nobody has.
       return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
         '<span class="u-track"></span><span class="u-value">' +
         esc(a.value || a.primary || "") + "</span></div>";
@@ -367,7 +323,6 @@ function startApp() {
   pollUsage();
   setInterval(pollAgents, 4000);
   setInterval(pollLog, 2500);
-  // Quota moves in minutes, not seconds; polling it like a transcript would be noise.
   setInterval(pollUsage, 20000);
 }
 
@@ -377,8 +332,7 @@ $("#usagetoggle").addEventListener("click", () => {
   refreshUsage();
 });
 
-// A backgrounded tab has its timers throttled, so it showed stale state until the next tick. Poll
-// the moment it is visible again.
+// Backgrounded tabs throttle timers; refresh immediately on return.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState != "visible" || !started || !TOKEN) return;
   pollAgents();
@@ -427,8 +381,7 @@ function esc(s) {
 }
 
 const md = renderMarkdown;
-// Escapes and links in one step, for the messages that are not Markdown. Every caller assigns the
-// result to innerHTML, so nothing may reach it that has not been through here or esc().
+// Non-Markdown text reaches innerHTML only through this escaping linkifier.
 const linkify = renderMarkdown.linkify;
 
 const LOGOS = {
@@ -444,9 +397,6 @@ function providerLogo(p) {
   return '<svg class="plogo" viewBox="0 0 24 24" fill="#888"><circle cx="12" cy="12" r="8"/></svg>';
 }
 
-// Two lines: the chat's title, and under it the folder the agent is running in. Several agents
-// often share a title (or carry none worth reading), and the folder is what actually tells them
-// apart, so it belongs on the row you pick from rather than a screen away.
 function agentRow(a) {
   const path = dispPath(a.path);
   return providerLogo(a.provider) +
@@ -458,10 +408,6 @@ function agentRow(a) {
 
 const DEFAULT_TITLE = "Toki Remote Control";
 
-// The browser tab reads "<Mac name> - <chat title>", so someone with tabs open on several Macs (or
-// several chats) can tell them apart at a glance. The chat title honours the privacy toggle just as
-// it does on screen; the machine name is the device label and stays. Falls back to the plain name
-// on an older server that sends no machine, and to the default when nothing is connected.
 function setDocTitle(agent) {
   if (!agent) {
     document.title = DEFAULT_TITLE;
@@ -485,8 +431,7 @@ function renderAgents() {
   btn.innerHTML = agentRow(cur) + '<span class="caret">\u25be</span>';
   updateComposer(cur);
   setDocTitle(cur);
-  // The server hands agents back writable-first, so the read-only ones are a single run at the
-  // end. Label that run once, where it starts, rather than badging every row in it.
+  // The server sorts writable agents first, making read-only agents one contiguous group.
   list.innerHTML = agents.map((a, i) => {
     const startsReadOnly = !a.writable && (i == 0 || agents[i - 1].writable);
     return (startsReadOnly ? '<div class="ddgroup">Read-only</div>' : "") +
@@ -495,13 +440,13 @@ function renderAgents() {
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
     if (+el.dataset.pid == current) {
-      document.getElementById("dd").classList.remove("open");
+      $("#dd").classList.remove("open");
       return;
     }
     current = +el.dataset.pid;
     resetTranscript();
-    clearPendingImage();  // an image attached for the previous agent must not follow you to this one
-    document.getElementById("dd").classList.remove("open");
+    clearPendingImage();  // Attachments are agent-scoped.
+    $("#dd").classList.remove("open");
     renderAgents();
     refreshLog();
   });
@@ -511,15 +456,13 @@ function updateComposer(agent) {
   const writable = !!(agent && agent.writable);
   const enabled = writable && !sending && !uploading;
   $("#readonly").style.display = agent && !writable ? "block" : "none";
-  // Attach only against a server that advertises the upload endpoint: a hosted UI newer than the Mac
-  // must not offer a picker that would POST to a route the older server does not have.
+  // Hosted UI versions can be newer than the server; gate uploads on its capability flag.
   $("#attach").hidden = !(agent && agent.uploads);
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
 }
 
-// Clearing an agent's context cannot be undone, and this button sits a thumb's width from Send on
-// a phone. So the first tap only arms it; the second one within a few seconds actually sends.
+// Clearing is irreversible, so require a second tap within five seconds.
 let clearArmed = false;
 let clearTimer = null;
 
@@ -541,9 +484,6 @@ function clearContext() {
     return;
   }
   setClearArmed(false);
-  // No optimistic echo: /clear is a command to the agent, not a message in the conversation, and
-  // the transcript it belongs to is about to be replaced. Drop the log as soon as the command is
-  // away rather than waiting to be told, so the conversation you just cleared doesn't linger.
   send({ text: "/clear" }).then(ok => {
     if (ok) resetTranscript();
   });
@@ -610,29 +550,22 @@ async function refreshAgents() {
   if (agents.length && !agents.some(a => a.pid == prev)) {
     current = agents[0].pid;
     resetTranscript();
-    clearPendingImage();  // the agent it was attached for is gone; do not carry it to another
+    clearPendingImage();  // Attachments are agent-scoped.
   }
   renderAgents();
   renderAttention(agents.find(x => x.pid == current));
 }
 
-// A picker the phone is answering: the provider whose TUI the keystrokes have to drive, the
-// questions, and the option indices chosen for each. Kept across polls so a selection survives the
-// alert being rebuilt, and reset (in renderAttention) when the pending question changes.
+// Persist picker selections across polls until the pending question changes.
 let answer = null;
 
-// The pid is in the signature so switching to another agent whose question happens to read the same
-// never carries the first agent's selections onto -- and then submits them to -- the second. Built
-// with JSON.stringify rather than joined delimiters so a header or label that happens to contain a
-// separator character cannot make two different pickers collide onto one signature.
+// Include pid to prevent cross-agent selection leaks; JSON encoding avoids delimiter collisions.
 function questionSignature(pid, provider, qs) {
   return JSON.stringify([pid, provider, qs.map(q =>
     [q.header || "", q.question || "", q.multi ? 1 : 0, (q.options || []).map(o => o.label)])]);
 }
 
-// Older servers describe a question's options as bare strings (under `options`, or inside the
-// `questions` array a pre-2.7.1 server still sends); normalise both shapes so the renderer only
-// ever deals with {label, description}.
+// Normalize pre-2.7.1 string options to the current object shape.
 function attentionQuestions(att) {
   const qs = att.questions && att.questions.length
     ? att.questions
@@ -644,17 +577,17 @@ function attentionQuestions(att) {
 }
 
 function renderAttention(a) {
-  const al = $("#alert");
+  const panel = $("#alert");
   if (!a || !a.attention) {
     answer = null;
-    al.style.display = "none";
+    panel.style.display = "none";
     return;
   }
-  al.style.display = "block";
-  al.className = a.attention.kind == "question" ? "q" : "";
+  panel.style.display = "block";
+  panel.className = a.attention.kind == "question" ? "q" : "";
   if (a.attention.kind != "question") {
     answer = null;
-    al.innerHTML = '<div class="ahead">Needs your approval</div>' +
+    panel.innerHTML = '<div class="ahead">Needs your approval</div>' +
       '<div class="qq">' + md(a.attention.prompt || "") + "</div>" +
       '<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button>' +
       '<button class="decision reject" data-key="esc">&#10005; Reject</button></div>';
@@ -667,16 +600,10 @@ function renderAttention(a) {
   renderQuestions();
 }
 
-// A lone single-select question keeps the old one-tap behaviour: tapping an option is the answer,
-// with no separate Submit step. Anything with a multi-select or a second question needs the panel
-// to stay open while choices accumulate.
 function isQuickPick(qs) {
   return qs.length == 1 && !qs[0].multi;
 }
 
-// Every question that actually offers options needs one chosen before the answer can go. An
-// option-less question (malformed, or a free-text-only prompt) is not gated on, or its picker could
-// never be submitted at all.
 function answerComplete(qs, sel) {
   return sel.every((s, i) => !(qs[i].options || []).length || s.size > 0);
 }
@@ -691,8 +618,6 @@ function renderQuestions() {
     html += '<div class="qq">' + md(q.question || "") + "</div>";
     (q.options || []).forEach((o, oi) => {
       const on = sel[qi].has(oi);
-      // role + aria-checked so a screen reader announces each option as a checkbox/radio and reads
-      // its on/off state, which the tick or dot conveys only visually.
       html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}" ` +
         `role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
         `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>` +
@@ -701,8 +626,7 @@ function renderQuestions() {
     });
   });
   if (!isQuickPick(qs)) {
-    // Submit stays disabled until every answerable question has a pick: an unanswered one is
-    // otherwise dropped (Claude) or silently sent as its first option (OpenCode's buildKeySequence).
+    // Both TUIs default or drop unanswered questions, so require every available choice.
     html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
       (answerComplete(qs, sel) ? "" : " disabled") + ">Submit</button></div>";
   }
@@ -710,8 +634,7 @@ function renderQuestions() {
 }
 
 function toggleOption(spec) {
-  // Ignore taps mid-submit: the keystrokes were computed from the selection as it was, so letting it
-  // change now would show a set the terminal never received, and the tap could not re-submit anyway.
+  // Freeze selection while its computed keystrokes are in flight.
   if (!answer || submitting) return;
   const [qi, oi] = spec.split(":").map(Number);
   const set = answer.sel[qi];
@@ -726,16 +649,7 @@ function toggleOption(spec) {
   else renderQuestions();
 }
 
-// Translate the accumulated selections into the exact keypresses each TUI needs. The two pickers
-// diverge, so this is the one place that knows how:
-//
-//   OpenCode's `question` tool: arrows move the highlight, Enter toggles a multi-select option and
-//   Tab moves to the next question; a single-select's Enter both selects and advances. A final tab
-//   lands on the "Confirm" step, where Enter submits. (Confirmed against OpenCode's TUI.)
-//
-//   Claude's AskUserQuestion: number keys pick options directly, so a single-select's number is the
-//   whole answer, a multi-select toggles each number then Enter confirms, and Tab moves between
-//   questions in a multi-question prompt.
+// OpenCode navigates with arrows/Enter/Tab; Claude selects by number and advances with Tab.
 function buildKeySequence(provider, questions, sel) {
   const keys = [];
   const anyMulti = questions.some(q => q.multi);
@@ -755,18 +669,12 @@ function buildKeySequence(provider, questions, sel) {
         keys.push("enter");
       }
     } else {
-      // A single digit per option: only the number path (Claude) reaches here, and its picker caps
-      // at a handful of options, so the index never needs two digits -- which /api/send would reject
-      // as a key anyway. OpenCode, the one provider that can list many options, navigates by arrow.
+      // Claude's picker caps options to single-digit shortcuts.
       chosen.forEach(i => keys.push(String(i + 1)));
       if (qi < last) keys.push("tab");
     }
   });
-  // OpenCode shows a Confirm step whenever there is more than one question or any multi-select;
-  // land on it and submit. A lone single-select has already submitted on its Enter.
   if (provider == "opencode" && (questions.length > 1 || anyMulti)) keys.push("enter");
-  // Claude submits a multi-question or multi-select prompt with a closing Enter; a lone
-  // single-select was answered by its number alone.
   else if (provider != "opencode" && !isQuickPick(questions)) keys.push("enter");
   return keys;
 }
@@ -775,19 +683,14 @@ let submitting = false;
 
 async function submitAnswer() {
   if (!answer || submitting) return;
-  // Never deliver a partial answer, whatever state the Submit button is in: an unanswered question
-  // would be dropped or sent as a default.
   if (!answerComplete(answer.questions, answer.sel)) return;
   const keys = buildKeySequence(answer.provider, answer.questions, answer.sel);
   if (!keys.length) return;
-  // Hold the selection until the send is known to have landed. If it fails, the panel stays with
-  // every pick intact rather than making the user rebuild the whole answer from scratch.
   const pending = answer;
   submitting = true;
   const ok = await send({ keys });
   submitting = false;
-  // A poll (or an agent switch) may have swapped in a different picker while the send was in flight.
-  // Only clear or re-render the exact one we submitted, never whatever took its place.
+  // A poll may replace the picker while sending; never settle its replacement.
   if (answer !== pending) return;
   if (ok) {
     answer = null;
@@ -814,8 +717,6 @@ let pendingEcho = null;
 function addEcho(text) {
   const d = document.createElement("div");
   d.className = "m user pending";
-  // Linked here as well as when the transcript echoes it back, so a message does not change
-  // appearance under you the moment the agent confirms it.
   d.innerHTML = linkify(text);
   $("#log").appendChild(d);
   pendingEcho = { node: d, text: text.trim() };
@@ -854,14 +755,11 @@ function clearPending() {
   setClearArmed(false);
 }
 
-// Which transcript the offset below counts into, and how many times we've thrown that offset away.
-// A poll that was already in flight when the transcript changed carries an offset into a log that
-// no longer exists, so it has to be dropped instead of appended.
+// Epoch invalidates polls that began against an earlier transcript.
 let logSession = null;
 let logEpoch = 0;
 
-// Tool calls arrive before their results, so the row has to be found again when the result turns
-// up. Keyed by the tool_use id the transcript already carries.
+// Tool results resolve earlier rows by tool-use id.
 let toolNodes = {};
 
 function resetTranscript() {
@@ -873,8 +771,6 @@ function resetTranscript() {
   clearPending();
 }
 
-// Whole seconds up to a minute, then minutes: a tool call's duration is interesting at a glance,
-// not to three decimal places.
 function shortDuration(ms) {
   if (!(ms > 0)) return "";
   const seconds = Math.round(ms / 1000);
@@ -891,8 +787,6 @@ function toolRow(e) {
     dispLinked(e.text || "") + detail;
 }
 
-// The result carries no output, only that the call ended, when, and whether it failed: enough to
-// stop a finished call looking like one still running.
 function resolveToolNode(entry) {
   const node = toolNodes[entry.id];
   if (!node) return;
@@ -919,11 +813,7 @@ async function refreshLog() {
     resetTranscript();
     return;
   }
-  // The server names the transcript this offset belongs to. When that name changes the agent has
-  // moved to a new session (/clear, or a new conversation started on the Mac) and the offset we
-  // hold points into a file that is gone -- start over rather than parse one file at another's
-  // position. The size check the server does catches this only while the new transcript is still
-  // shorter than the old offset.
+  // Session identity catches rotation even when the new file has already surpassed the old offset.
   if (r.session != null && r.session !== logSession) {
     const rotated = logSession !== null;
     logSession = r.session;
@@ -941,7 +831,6 @@ async function refreshLog() {
       continue;
     }
     if (e.role == "meta") continue;
-    // The agent echoes back the message we optimistically showed; drop the placeholder so it isn't doubled.
     if (e.role == "user" && pendingEcho && e.text.trim() == pendingEcho.text) {
       pendingEcho.node.remove();
       pendingEcho = null;
@@ -955,16 +844,13 @@ async function refreshLog() {
     d.className = "m " + e.role;
     if (e.role == "tool") {
       d.innerHTML = toolRow(e);
-      // Only spin what can stop spinning: OpenCode tools carry no id and no completion, so marking
-      // them running would leave every finished call in flight forever.
+      // OpenCode tools lack completion ids, so they cannot safely show an in-flight state.
       if (e.id) {
         d.classList.add("running");
         toolNodes[e.id] = { el: d, ts: e.ts };
       }
     }
     else if (e.role == "assistant") d.innerHTML = md(e.text);
-    // Your own messages stay verbatim -- no Markdown, and the bubble's pre-wrap keeps the line
-    // breaks -- but a URL in one is as worth tapping as a URL in a reply.
     else d.innerHTML = linkify(e.text);
     $("#log").appendChild(d);
     added++;
@@ -977,10 +863,7 @@ async function refreshLog() {
 }
 
 let sending = false;
-// True only while an image is being read and uploaded, before its reply is sent. Every send-capable
-// control is disabled through it: the footer via updateComposer, and the alert panel's approve and
-// answer buttons via the body class, so answering another agent's prompt cannot collide with the
-// image's own send (which shares the single `sending` guard) and wrongly fail it.
+// Upload and terminal send share one guard; disable every send path while either owns it.
 let uploading = false;
 let statusTimer = null;
 
@@ -996,13 +879,8 @@ function setStatus(message, kind) {
   $("#status").className = kind || "";
 }
 
-// `pid` defaults to the current agent, but a caller that awaited something first (an image upload)
-// passes the agent it was bound to when the user pressed Send, so switching agents mid-flight cannot
-// misdeliver the message.
+// Callers that await first pass their captured pid to prevent cross-agent delivery.
 async function send(body, pid = current) {
-  // `uploading` blocks every send too: an image upload shares this single in-flight guard, and a
-  // send that slipped in while it was reading would occupy the slot and fail the image's own send.
-  // The image path calls send() only after clearing `uploading`, so it is never blocked by this.
   if (!pid || sending || uploading) return false;
   const agent = agents.find(a => a.pid == pid);
   if (!agent || !agent.writable) return false;
@@ -1017,9 +895,7 @@ async function send(body, pid = current) {
     });
     feedback("success");
     setStatus("Sent \u2713 via " + r.how, "success");
-    // The typing indicator and transcript refresh belong to the log on screen. When this send was
-    // bound to an agent the user has since navigated away from, they belong to that other agent's
-    // view, not the one now showing, so leave the current view alone.
+    // Do not update the visible log if navigation changed agents during the request.
     if (pid == current) {
       const stick = nearBottom();
       awaitingReply = true;
@@ -1053,14 +929,10 @@ function sendText(text) {
   });
 }
 
-// The client cap matches the server's, so an image too big to accept is refused before the upload
-// rather than after. A camera shot or a screenshot is comfortably under this.
+// Mirror server caps so invalid image replies stay editable instead of failing after upload.
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
-// Mirrors the server's per-message cap, so a caption long enough that appending the image path would
-// overflow it is caught here, with the attachment kept, rather than 413'd into a failed bubble.
 const MAX_SEND_CHARS = 8000;
 
-// An image chosen (picker/camera) or pasted, waiting to go out with the next Send. One at a time.
 let pendingImage = null;
 
 function uploadsSupported() {
@@ -1070,8 +942,7 @@ function uploadsSupported() {
 
 function setPendingImage(blob) {
   if (!blob || !(blob.type || "").startsWith("image/")) return;
-  // Guards the paste path (which bypasses the attach button) against an older server with no
-  // upload endpoint; the button itself is already hidden by updateComposer.
+  // Paste bypasses the capability-gated attach button.
   if (!uploadsSupported()) return;
   if (blob.size > MAX_IMAGE_BYTES) {
     feedback("error");
@@ -1090,21 +961,18 @@ function clearPendingImage() {
 }
 
 function renderAttachPreview() {
-  const p = $("#attachpreview");
+  const preview = $("#attachpreview");
   if (!pendingImage) {
-    p.hidden = true;
-    p.innerHTML = "";
+    preview.hidden = true;
+    preview.innerHTML = "";
     return;
   }
-  p.hidden = false;
-  p.innerHTML = '<img alt="Attached image"><button type="button" id="attachremove" ' +
+  preview.hidden = false;
+  preview.innerHTML = '<img alt="Attached image"><button type="button" id="attachremove" ' +
     'aria-label="Remove image">&#10005;</button>';
-  // src as a property, never interpolated into the markup above.
-  p.querySelector("img").src = pendingImage.url;
+  preview.querySelector("img").src = pendingImage.url;
 }
 
-// Send the image bytes to the Mac and get back the path it was written to. The path, not the
-// picture, is what the agent then reads -- a terminal cannot take a pasted image.
 async function uploadImage(blob) {
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1121,8 +989,6 @@ async function uploadImage(blob) {
   return r.path;
 }
 
-// The composer's Send: a plain reply when there's only text, or an image reply that uploads first
-// and then sends the caption alongside the saved path for the agent to open.
 async function submitComposer() {
   if (sending || uploading) return;
   const input = $("#msg");
@@ -1134,7 +1000,7 @@ async function submitComposer() {
     sendText(caption);
     return;
   }
-  const pid = current;              // the agent chosen now; the upload must not misdeliver if it changes
+  const pid = current;  // Bind the upload and reply to the selected agent.
   const image = pendingImage;
   pendingImage = null;
   renderAttachPreview();
@@ -1144,21 +1010,16 @@ async function submitComposer() {
   let echoed = false;
   try {
     const path = await uploadImage(image.blob);
-    // With no caption the message would start with "/Users/…", which Claude Code and Codex read as a
-    // slash command; a leading word keeps the path an argument the agent actually receives.
+    // A bare absolute path can be parsed as a slash command.
     const message = caption ? caption + " " + path : "Image: " + path;
     setUploading(false);
-    // The path pushed an otherwise-fine caption over the server's limit: keep the attachment and
-    // caption editable rather than sending a message /api/send will only 413.
     if (message.length > MAX_SEND_CHARS) {
       restoreAttachment(image, caption, pid);
       feedback("error");
       setStatus("Message is too long to send with an image. Shorten it and try again.", "error");
       return;
     }
-    // Echo only when the log still shows the agent we're sending to; otherwise the message still
-    // goes to that agent and its own transcript poll surfaces it. Echo the exact text sent, so the
-    // transcript's copy dedupes it rather than leaving a duplicate bubble.
+    // Echo only into the bound agent's log, using exact sent text for transcript deduplication.
     if (current == pid) {
       addEcho(message);
       echoed = true;
@@ -1170,20 +1031,16 @@ async function submitComposer() {
     if (ok) {
       URL.revokeObjectURL(image.url);
     } else if (echoed && pendingEcho) {
-      // The failed bubble is the retry: tapping it re-sends the same text, and the uploaded file is
-      // still on the Mac, so the path resolves. The blob is no longer needed.
+      // The failed bubble retries the already-uploaded path, so the local blob is no longer needed.
       markEchoFailed();
       awaitingReply = false;
       hideTyping();
       URL.revokeObjectURL(image.url);
     } else {
-      // No bubble to retry from -- the send was bound to an agent no longer on screen, or navigating
-      // away cleared the echo -- so put the attachment back for a manual retry instead of dropping it.
+      // Without a visible retry bubble, restore the attachment for a manual retry.
       restoreAttachment(image, caption, pid);
     }
   } catch (e) {
-    // Upload itself failed: the preview URL was never revoked, so the same attachment goes back for
-    // a retry rather than a redo.
     setUploading(false);
     restoreAttachment(image, caption, pid);
     feedback("error");
@@ -1191,14 +1048,11 @@ async function submitComposer() {
   }
 }
 
-// Put a not-yet-sent image (and caption) back for retry, but only while its agent is still the one
-// on screen -- the composer is shared, so restoring into a different agent's view would send the
-// retry to the wrong agent. When you've navigated away, drop it and say so rather than misdeliver.
+// Restore only into the bound agent's shared composer; otherwise a retry could be misdelivered.
 function restoreAttachment(image, caption, pid) {
   if (current != pid) {
     URL.revokeObjectURL(image.url);
-    // Re-enable the footer for the agent now on screen: `uploading` was true when navigation
-    // disabled it, and this path would otherwise leave it stuck until the next successful poll.
+    // Navigation may have disabled this footer while uploading was still true.
     updateComposer(agents.find(a => a.pid == current) || null);
     feedback("error");
     setStatus("Image not sent. Reopen that agent to try again.", "error");
@@ -1222,8 +1076,6 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
-  // While an image is uploading, no other send may start (it would occupy the shared send guard and
-  // fail the image reply). Navigation stays live; only the send-capable controls are inert.
   if (uploading && (b.id == "send" || b.id == "clear" ||
       b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
@@ -1242,20 +1094,15 @@ document.addEventListener("click", async e => {
   } else if (b.dataset.submit) {
     submitAnswer();
   } else if (b.dataset.text) {
-    // The footer's numbered "Choice" keys type a single digit into the terminal for a numbered
-    // prompt. Raw, so it lands as the keypress a picker reads rather than a submitted line.
     await send({ text: b.dataset.text, raw: true });
   }
 });
 
 $("#log").addEventListener("click", e => {
-  // A link inside a failed message opens the link; tapping the bubble around it retries the send.
   if (e.target.closest("a")) return;
-  // Not while an image upload holds the send slot -- the retry would fail against it.
   if (uploading) return;
   const f = e.target.closest(".m.user.failed");
   if (!f) return;
-  // textContent, not the linked markup: a retry has to send what was typed, not what it renders as.
   const text = f.textContent;
   f.remove();
   feedback("tap");
@@ -1276,15 +1123,13 @@ $("#msg").addEventListener("keydown", e => {
   }
 });
 
-// The picker (accept="image/*") offers the photo library and, on a phone, the camera; the OS picks
-// which. Reset the value so choosing the same file again after removing it still fires change.
+// Reset so choosing the same file after removal still fires change.
 $("#fileinput").addEventListener("change", e => {
   const file = e.target.files && e.target.files[0];
   if (file) setPendingImage(file);
   e.target.value = "";
 });
 
-// Paste an image straight into the composer (desktop, and keyboards that offer it on mobile).
 $("#msg").addEventListener("paste", e => {
   for (const item of (e.clipboardData && e.clipboardData.items) || []) {
     if (item.type && item.type.startsWith("image/")) {
@@ -1305,9 +1150,9 @@ resizeComposer();
 
 $("#ddbtn").addEventListener("click", e => {
   e.stopPropagation();
-  document.getElementById("dd").classList.toggle("open");
+  $("#dd").classList.toggle("open");
 });
-document.addEventListener("click", () => document.getElementById("dd").classList.remove("open"));
+document.addEventListener("click", () => $("#dd").classList.remove("open"));
 $("#tolatest").addEventListener("click", scrollToLatest);
 $("#log").addEventListener("scroll", () => {
   if (nearBottom()) $("#tolatest").hidden = true;
@@ -1324,23 +1169,15 @@ $("#privacytoggle").addEventListener("click", () => {
   privacyMode = !privacyMode;
   feedback("tap");
   document.body.classList.toggle("privacy", privacyMode);
-  const b = $("#privacytoggle");
-  b.setAttribute("aria-pressed", String(privacyMode));
-  b.setAttribute("aria-label", privacyMode ? "Show agent names" : "Hide agent names");
-  b.title = privacyMode ? "Show agent names" : "Hide agent names";
+  const button = $("#privacytoggle");
+  button.setAttribute("aria-pressed", String(privacyMode));
+  button.setAttribute("aria-label", privacyMode ? "Show agent names" : "Hide agent names");
+  button.title = privacyMode ? "Show agent names" : "Hide agent names";
   renderAgents();
   if (lastUsage) renderUsage(lastUsage);
 });
 
-// Enter a fresh link from another device: scan Toki's Connect QR, or type its host and token.
-// Both reload with the params in the fragment so the normal verify flow takes over.
-//
-// Save the connection before reloading, not after. Scanning and manual entry are only reachable
-// from the invalid-link screen, which has just cleared the saved connection, so the fragment set
-// below would be the only copy of the link -- and a reload does not always come back with it (an
-// installed PWA relaunches at start_url, same reason REVIVE exists above). That dropped the freshly
-// scanned link and bounced straight back to the invalid-link screen. Writing it here means the
-// reload restores the same host and token whether or not the fragment survives.
+// Persist before reloading because an installed PWA may discard the new fragment at start_url.
 function connectWith(host, token) {
   try {
     localStorage.setItem(CONN_KEY, JSON.stringify({ host, token }));
@@ -1369,11 +1206,7 @@ function manualConnect() {
   connectWith(host, token);
 }
 
-// Start over from the landing screen. A link that points at a host the phone can no longer reach
-// leaves the app sitting on the verify screen with nothing to do -- and because the link is
-// remembered in localStorage and repeated in the address bar, reloading only restores it. So drop
-// both, and navigate to the bare page instead of reloading, or the fragment would revive the very
-// connection we were asked to leave. location.replace also keeps the tokened URL out of history.
+// Drop both persisted and URL state; replace also keeps the tokened URL out of history.
 function goHome() {
   try {
     localStorage.removeItem(CONN_KEY);
@@ -1382,9 +1215,6 @@ function goHome() {
   location.replace(location.pathname);
 }
 
-// Leaving the active session drops the pairing and sends you back to the connect screen, so a
-// stray tap on Home should not do it silently. Confirm first. The pairing-screen Home has no live
-// session to lose, so it still goes straight back.
 function showDisconnectConfirm() {
   $("#confirm").hidden = false;
   $("#confirmcancel").focus();
@@ -1392,8 +1222,6 @@ function showDisconnectConfirm() {
 
 function hideDisconnectConfirm() {
   $("#confirm").hidden = true;
-  // Return focus to the control that opened the dialog, so keyboard and switch users are not
-  // dropped back at the top of the document.
   $("#home").focus();
 }
 
@@ -1403,12 +1231,10 @@ $("#confirmok").addEventListener("click", () => {
   hideDisconnectConfirm();
   goHome();
 });
-// Tapping the dimmed backdrop, or Escape, is a cancel -- the same as choosing not to leave.
 $("#confirm").addEventListener("click", e => {
   if (e.target.id == "confirm") hideDisconnectConfirm();
 });
-// A real modal: Escape closes it, and Tab is trapped on its two buttons so focus cannot wander into
-// the header, terminal controls, or composer sitting behind the dim.
+// Trap focus inside the modal.
 $("#confirm").addEventListener("keydown", e => {
   if (e.key == "Tab") {
     const first = $("#confirmcancel");
@@ -1435,7 +1261,6 @@ $("#manualconnect").addEventListener("click", manualConnect);
   }
 }));
 
-// Scan Toki's Connect QR straight from the landing page, then verify the same way as an opened link.
 const CAN_SCAN = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext);
 $("#scanbtn").hidden = !CAN_SCAN;
 $("#scanor").hidden = !CAN_SCAN;
@@ -1545,12 +1370,7 @@ function scanError(msg) {
   }, 2600);
 }
 
-// Toki's Connect QR comes in two shapes: a hosted link that names the Mac in its fragment
-// (https://rc.toki.../#host=<mac>.ts.net&token=...), and a direct link to the Mac itself
-// (https://<mac>.ts.net/?token=... over Tailscale, http://<lan-ip>:8765/?token=... on the LAN).
-// Either one is usable here once it yields a token plus a host we're allowed to call, which is the
-// same pair the manual host + token form asks for. So resolve both shapes instead of demanding the
-// QR point at this exact page: on Tailscale the two shapes name the same Mac either way.
+// Accept hosted links naming a Mac in their fragment and direct links to the Mac itself.
 function resolveScanLink(value, pageURL) {
   let pageOrigin = "";
   try {
@@ -1570,8 +1390,7 @@ function resolveScanLink(value, pageURL) {
     return isTailscaleHost(named)
       ? { host: named, token }
       : { error: "That link\u2019s address isn\u2019t a Tailscale name. Open Connect in Toki and scan its current code." };
-  // A direct link. Same origin means this page already reaches that server; otherwise only the
-  // tailnet works, because an HTTPS page can't call a plain-HTTP address.
+  // Cross-origin HTTPS pages can reach only the Tailscale form, not a plain-HTTP LAN link.
   if (pageOrigin && target.origin == pageOrigin) return { host: "", token };
   if (isTailscaleHost(target.hostname)) return { host: target.hostname, token };
   return { error: "This page can\u2019t reach " + target.hostname + ". Open that link directly on this device, or switch Toki\u2019s host to Tailscale." };
