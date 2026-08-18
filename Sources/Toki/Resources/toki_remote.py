@@ -1170,11 +1170,15 @@ def focus_terminal_tab(tty):
         error "tty not found"''')
 
 
-def send_input(tty, text=None, key=None, raw=False):
-    """Deliver input to the agent's terminal. Returns (ok, how)."""
+def send_input(tty, text=None, key=None, raw=False, route=None):
+    """Deliver input to the agent's terminal. Returns (ok, how).
+
+    `route` is an already-resolved (tmux, pane) pair; pass it to skip tmux discovery, which a
+    caller delivering many keystrokes resolves once rather than paying for on every one.
+    """
     if not safe_tty(tty):
         return False, "unsafe tty"
-    tmux, pane = tmux_pane_for_tty(tty)
+    tmux, pane = route if route is not None else tmux_pane_for_tty(tty)
     if pane:
         if key:
             ok = shell([tmux, "send-keys", "-t", pane, TMUX_KEYS[key]]) is not None
@@ -1214,28 +1218,21 @@ def send_sequence(tty, items):
     characters typed as-is -- to answer a picker. Stops at the first failure so a half-delivered
     answer does not keep going. Returns (ok, how).
 
-    The tmux pane is resolved once for the whole run rather than per keypress: `tmux list-panes`
-    is a subprocess, and a long walkthrough would otherwise pay for that discovery on every key.
-    Only the tmux route can be pinned cheaply; iTerm/Terminal delivery re-routes per key by nature,
-    so it falls through to send_input.
+    The delivery route is resolved once for the whole run and handed to every send_input call:
+    `tmux list-panes` is a subprocess, and without this a long walkthrough would rediscover the
+    route on every key -- whichever route it turns out to be.
     """
     if not safe_tty(tty):
         return False, "unsafe tty"
-    tmux, pane = tmux_pane_for_tty(tty)
+    route = tmux_pane_for_tty(tty)
     how = "sequence"
     for i, item in enumerate(items):
         if i:
             time.sleep(SEQ_KEY_DELAY)
-        if pane:
-            if item in NAMED_KEYS:
-                ok = shell([tmux, "send-keys", "-t", pane, TMUX_KEYS[item]]) is not None
-            else:
-                ok = shell([tmux, "send-keys", "-t", pane, "-l", item]) is not None
-            how = "tmux"
-        elif item in NAMED_KEYS:
-            ok, how = send_input(tty, key=item)
+        if item in NAMED_KEYS:
+            ok, how = send_input(tty, key=item, route=route)
         else:
-            ok, how = send_input(tty, text=item, raw=True)
+            ok, how = send_input(tty, text=item, raw=True, route=route)
         if not ok:
             return False, how
     return True, how

@@ -567,10 +567,9 @@ class QuestionExtractionTests(unittest.TestCase):
 
 class SendSequenceTests(unittest.TestCase):
     def test_sequence_delivers_named_keys_and_characters_in_order(self):
-        # No tmux pane, so each key falls through to send_input (the iTerm/Terminal route).
         calls = []
 
-        def fake_send_input(tty, text=None, key=None, raw=False):
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
             calls.append((text, key, raw))
             return True, "iterm"
 
@@ -585,7 +584,7 @@ class SendSequenceTests(unittest.TestCase):
     def test_sequence_stops_at_first_failure(self):
         calls = []
 
-        def fake_send_input(tty, text=None, key=None, raw=False):
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
             calls.append(key or text)
             return (False, "iterm") if (key or text) == "enter" else (True, "iterm")
 
@@ -596,36 +595,28 @@ class SendSequenceTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(calls, ["1", "enter"])
 
-    def test_sequence_resolves_the_tmux_pane_once_for_the_whole_run(self):
-        # A tmux pane is discovered a single time; every key is delivered through it with no further
-        # `tmux list-panes` and without touching send_input.
-        panes_lookups = []
+    def test_sequence_resolves_the_route_once_and_reuses_it(self):
+        # The route is discovered a single time and handed to every send_input, so no key repeats
+        # `tmux list-panes` -- whichever route it turns out to be.
+        lookups = []
 
         def fake_pane(tty):
-            panes_lookups.append(tty)
+            lookups.append(tty)
             return ("/opt/homebrew/bin/tmux", "%3")
 
-        sent = []
+        routes = []
 
-        def fake_shell(cmd, timeout=None):
-            sent.append(cmd)
-            return ""
-
-        def boom(*a, **k):
-            raise AssertionError("send_input must not run on the tmux route")
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
+            routes.append(route)
+            return True, "tmux"
 
         with mock.patch.object(toki_remote, "tmux_pane_for_tty", fake_pane), \
-                mock.patch.object(toki_remote, "shell", fake_shell), \
-                mock.patch.object(toki_remote, "send_input", boom), \
+                mock.patch.object(toki_remote, "send_input", fake_send_input), \
                 mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
-            ok, how = toki_remote.send_sequence("ttys000", ["1", "enter"])
+            ok, _ = toki_remote.send_sequence("ttys000", ["1", "enter"])
         self.assertTrue(ok)
-        self.assertEqual(how, "tmux")
-        self.assertEqual(panes_lookups, ["ttys000"])  # discovered exactly once
-        self.assertEqual(sent, [
-            ["/opt/homebrew/bin/tmux", "send-keys", "-t", "%3", "-l", "1"],
-            ["/opt/homebrew/bin/tmux", "send-keys", "-t", "%3", "Enter"],
-        ])
+        self.assertEqual(lookups, ["ttys000"])  # discovered exactly once
+        self.assertEqual(routes, [("/opt/homebrew/bin/tmux", "%3"), ("/opt/homebrew/bin/tmux", "%3")])
 
     def test_sequence_rejects_an_unsafe_tty(self):
         ok, how = toki_remote.send_sequence("../etc/passwd", ["1"])
