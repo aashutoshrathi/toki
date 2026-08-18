@@ -98,6 +98,9 @@ assert.match(app, /send\(\{ keys \}\)/);
 // so a partial answer is never delivered and one agent's picks never leak to another.
 assert.match(app, /sel\.every\(s => s\.size > 0\)/);
 assert.match(app, /questionSignature\(a\.pid,/);
+// Options expose their checked state to assistive tech, and a failed submit keeps the picks.
+assert.match(app, /role="\$\{q\.multi \? "checkbox" : "radio"\}" aria-checked="\$\{on\}"/);
+assert.match(app, /const ok = await send\(\{ keys \}\)/);
 assert.match(css, /\.opt \.mark\.box/);
 assert.match(css, /\.opt\.on \.mark/);
 assert.match(css, /\.decision-row\.one/);

@@ -655,7 +655,10 @@ function renderQuestions() {
     html += '<div class="qq">' + md(q.question || "") + "</div>";
     (q.options || []).forEach((o, oi) => {
       const on = sel[qi].has(oi);
-      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}">` +
+      // role + aria-checked so a screen reader announces each option as a checkbox/radio and reads
+      // its on/off state, which the tick or dot conveys only visually.
+      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}" ` +
+        `role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
         `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>` +
         `<span class="olab"><b>${esc(o.label)}</b>` +
         (o.description ? `<em>${esc(o.description)}</em>` : "") + "</span></button>";
@@ -715,6 +718,9 @@ function buildKeySequence(provider, questions, sel) {
         keys.push("enter");
       }
     } else {
+      // A single digit per option: only the number path (Claude) reaches here, and its picker caps
+      // at a handful of options, so the index never needs two digits -- which /api/send would reject
+      // as a key anyway. OpenCode, the one provider that can list many options, navigates by arrow.
       chosen.forEach(i => keys.push(String(i + 1)));
       if (qi < last) keys.push("tab");
     }
@@ -728,16 +734,27 @@ function buildKeySequence(provider, questions, sel) {
   return keys;
 }
 
+let submitting = false;
+
 async function submitAnswer() {
-  if (!answer) return;
+  if (!answer || submitting) return;
   // Never deliver a partial answer, whatever state the Submit button is in: an unanswered question
   // would be dropped or sent as a default.
   if (!answer.sel.every(s => s.size > 0)) return;
   const keys = buildKeySequence(answer.provider, answer.questions, answer.sel);
   if (!keys.length) return;
-  answer = null;
-  $("#alert").style.display = "none";
-  await send({ keys });
+  // Hold the selection until the send is known to have landed. If it fails, the panel stays with
+  // every pick intact rather than making the user rebuild the whole answer from scratch.
+  submitting = true;
+  const ok = await send({ keys });
+  submitting = false;
+  if (!answer) return;
+  if (ok) {
+    answer = null;
+    $("#alert").style.display = "none";
+  } else {
+    renderQuestions();
+  }
 }
 
 function nearBottom() {
