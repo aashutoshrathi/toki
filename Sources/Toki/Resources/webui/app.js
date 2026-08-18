@@ -960,9 +960,12 @@ function setStatus(message, kind) {
   $("#status").className = kind || "";
 }
 
-async function send(body) {
-  if (!current || sending) return false;
-  const agent = agents.find(a => a.pid == current);
+// `pid` defaults to the current agent, but a caller that awaited something first (an image upload)
+// passes the agent it was bound to when the user pressed Send, so switching agents mid-flight cannot
+// misdeliver the message.
+async function send(body, pid = current) {
+  if (!pid || sending) return false;
+  const agent = agents.find(a => a.pid == pid);
   if (!agent || !agent.writable) return false;
   sending = true;
   updateComposer(agent);
@@ -971,7 +974,7 @@ async function send(body) {
     const r = await api("/api/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pid: current, ...body }),
+      body: JSON.stringify({ pid, ...body }),
     });
     feedback("success");
     setStatus("Sent \u2713 via " + r.how, "success");
@@ -1076,6 +1079,7 @@ async function submitComposer() {
     sendText(caption);
     return;
   }
+  const pid = current;              // the agent chosen now; the upload must not misdeliver if it changes
   const image = pendingImage;
   pendingImage = null;
   renderAttachPreview();
@@ -1083,32 +1087,40 @@ async function submitComposer() {
   resizeComposer();
   uploading = true;
   updateComposer(agents.find(a => a.pid == current) || null);
-  awaitingReply = true;
-  showTyping();
-  scrollToLatest();
+  let echoed = false;
   try {
     const path = await uploadImage(image.blob);
     const message = caption ? caption + " " + path : path;
-    // Echo the exact text that goes to the terminal, so the transcript's copy dedupes it rather
-    // than leaving a duplicate bubble behind.
-    addEcho(message);
     uploading = false;
     updateComposer(agents.find(a => a.pid == current) || null);
-    const ok = await send({ text: message });
-    if (!ok) {
+    // Echo only when the log still shows the agent we're sending to; otherwise the message still
+    // goes to that agent and its own transcript poll surfaces it. Echo the exact text sent, so the
+    // transcript's copy dedupes it rather than leaving a duplicate bubble.
+    if (current == pid) {
+      addEcho(message);
+      echoed = true;
+      awaitingReply = true;
+      showTyping();
+      scrollToLatest();
+    }
+    URL.revokeObjectURL(image.url);
+    const ok = await send({ text: message }, pid);
+    if (!ok && echoed) {
       markEchoFailed();
       awaitingReply = false;
       hideTyping();
     }
   } catch (e) {
+    // Put the attachment and caption back so a failed upload is a retry, not a redo. The preview URL
+    // is still live (only revoked on success), so the same object goes straight back.
     uploading = false;
+    pendingImage = image;
+    renderAttachPreview();
+    input.value = caption;
+    resizeComposer();
     updateComposer(agents.find(a => a.pid == current) || null);
-    awaitingReply = false;
-    hideTyping();
     feedback("error");
     setStatus("Couldn’t upload the image: " + e.message, "error");
-  } finally {
-    URL.revokeObjectURL(image.url);
   }
 }
 

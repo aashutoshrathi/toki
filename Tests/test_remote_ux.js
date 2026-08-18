@@ -22,7 +22,10 @@ assert.match(app, /e\.preventDefault\(\)/);
 assert.match(app, /e\.metaKey\s*\|\|\s*e\.ctrlKey/);
 assert.match(app, /function resizeComposer/);
 assert.match(app, /new ResizeObserver/);
-assert.match(app, /if\s*\(!current\s*\|\|\s*sending\)\s*return/);
+assert.match(app, /if\s*\(!pid\s*\|\|\s*sending\)\s*return/);
+// An awaited send (image upload) is bound to the agent chosen at Send, not the live `current`.
+assert.match(app, /async function send\(body, pid = current\)/);
+assert.match(app, /await send\(\{ text: message \}, pid\)/);
 assert.match(app, /Sent \\u2713 via/);
 // Optimistic send: the message is echoed and the input cleared before the round trip resolves.
 assert.match(app, /function sendText/);
