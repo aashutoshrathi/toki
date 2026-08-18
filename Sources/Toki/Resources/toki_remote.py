@@ -1436,6 +1436,11 @@ MAX_UPLOAD_DIR_BYTES = 256 * 1024 * 1024
 # The server is threaded, so two uploads could prune and write at once and both slip past the cap.
 # Held across prune-then-write so the folder is bounded even under concurrent uploads.
 UPLOAD_LOCK = threading.Lock()
+# Each in-flight upload buffers its whole body and decoded image in memory. Cap how many decode at
+# once so a burst of concurrent uploads cannot run the process out of memory; excess ones wait
+# briefly, then are told the server is busy rather than piling up.
+UPLOAD_SLOTS = threading.BoundedSemaphore(2)
+UPLOAD_SLOT_TIMEOUT = 30
 # One phone is one session. Pairing is cheap once the code is known, so cap the table rather than
 # let a paired client mint sessions until the process runs out of memory.
 MAX_SESSIONS = 32
@@ -1918,7 +1923,15 @@ class Handler(BaseHTTPRequestHandler):
     def _upload(self):
         """Save an attached image on the Mac and hand its path back, for a reply to reference so the
         agent can read the picture. Only a paired device reaches here, and only bytes that sniff as a
-        real image are written."""
+        real image are written. A semaphore bounds how many large bodies are buffered at once."""
+        if not UPLOAD_SLOTS.acquire(timeout=UPLOAD_SLOT_TIMEOUT):
+            return self._json({"error": "too many uploads in progress"}, 503)
+        try:
+            return self._upload_locked()
+        finally:
+            UPLOAD_SLOTS.release()
+
+    def _upload_locked(self):
         raw = self._read_body(MAX_UPLOAD_BODY_BYTES)
         if raw is None:
             return self._json({"error": "image too large"}, 413)
