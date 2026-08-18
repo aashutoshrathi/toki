@@ -94,6 +94,10 @@ assert.match(app, /function buildKeySequence/);
 assert.match(app, /function toggleOption/);
 assert.match(app, /data-submit="1"/);
 assert.match(app, /send\(\{ keys \}\)/);
+// Submit is gated on every question being answered, and the pending answer is keyed by agent pid,
+// so a partial answer is never delivered and one agent's picks never leak to another.
+assert.match(app, /sel\.every\(s => s\.size > 0\)/);
+assert.match(app, /questionSignature\(a\.pid,/);
 assert.match(css, /\.opt \.mark\.box/);
 assert.match(css, /\.opt\.on \.mark/);
 assert.match(css, /\.decision-row\.one/);

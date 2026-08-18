@@ -593,20 +593,25 @@ async function refreshAgents() {
 // alert being rebuilt, and reset (in renderAttention) when the pending question changes.
 let answer = null;
 
-function questionSignature(provider, qs) {
-  return provider + "␟" + qs.map(q =>
+// The pid is in the signature so switching to another agent whose question happens to read the same
+// never carries the first agent's selections onto -- and then submits them to -- the second.
+function questionSignature(pid, provider, qs) {
+  return pid + "␟" + provider + "␟" + qs.map(q =>
     (q.header || "") + "‖" + (q.question || "") + "‖" + (q.multi ? "m" : "s") + "‖" +
     (q.options || []).map(o => o.label).join("¦")).join("‡");
 }
 
-// Older servers send option labels as bare strings under `options`; wrap them so the renderer only
+// Older servers describe a question's options as bare strings (under `options`, or inside the
+// `questions` array a pre-2.7.1 server still sends); normalise both shapes so the renderer only
 // ever deals with {label, description}.
 function attentionQuestions(att) {
-  if (att.questions && att.questions.length) return att.questions;
-  return [{
-    question: att.prompt || "Agent is waiting on you", header: "", multi: false,
-    options: (att.options || []).map(l => (typeof l == "string" ? { label: l, description: "" } : l)),
-  }];
+  const qs = att.questions && att.questions.length
+    ? att.questions
+    : [{ question: att.prompt || "Agent is waiting on you", header: "", multi: false, options: att.options || [] }];
+  return qs.map(q => ({
+    question: q.question || "", header: q.header || "", multi: !!q.multi,
+    options: (q.options || []).map(o => (typeof o == "string" ? { label: o, description: "" } : o)),
+  }));
 }
 
 function renderAttention(a) {
@@ -627,7 +632,7 @@ function renderAttention(a) {
     return;
   }
   const qs = attentionQuestions(a.attention);
-  const sig = questionSignature(a.provider, qs);
+  const sig = questionSignature(a.pid, a.provider, qs);
   if (!answer || answer.sig != sig)
     answer = { sig, provider: a.provider, questions: qs, sel: qs.map(() => new Set()) };
   renderQuestions();
@@ -657,9 +662,11 @@ function renderQuestions() {
     });
   });
   if (!isQuickPick(qs)) {
-    const chosen = sel.reduce((n, s) => n + s.size, 0);
+    // Every question needs an answer before Submit: an unanswered one is otherwise dropped (Claude)
+    // or silently sent as its first option (OpenCode's fallback in buildKeySequence).
+    const complete = sel.every(s => s.size > 0);
     html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
-      (chosen ? "" : " disabled") + ">Submit</button></div>";
+      (complete ? "" : " disabled") + ">Submit</button></div>";
   }
   $("#alert").innerHTML = html;
 }
@@ -723,6 +730,9 @@ function buildKeySequence(provider, questions, sel) {
 
 async function submitAnswer() {
   if (!answer) return;
+  // Never deliver a partial answer, whatever state the Submit button is in: an unanswered question
+  // would be dropped or sent as a default.
+  if (!answer.sel.every(s => s.size > 0)) return;
   const keys = buildKeySequence(answer.provider, answer.questions, answer.sel);
   if (!keys.length) return;
   answer = null;
