@@ -267,6 +267,21 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
        box-shadow:0 1px 0 #ffffff0d inset}
 #clear svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #clear.armed{background:var(--danger-surface);border-color:var(--danger-line);color:#eda0a0}
+/* Attach sits with Clear as a secondary control, not the accent Send it would otherwise inherit. */
+#attach{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
+        box-shadow:0 1px 0 #ffffff0d inset}
+#attach svg{fill:none;stroke:currentColor}
+/* The chosen image, previewed above the composer with a corner button to drop it before sending. */
+#attachpreview{position:relative;display:inline-block;margin-bottom:8px}
+#attachpreview[hidden]{display:none}
+#attachpreview img{max-height:96px;max-width:100%;display:block;border-radius:var(--r);
+                   border:1px solid var(--line-strong)}
+#attachremove{position:absolute;top:-8px;right:-8px;width:24px;min-width:24px;height:24px;padding:0;
+              border-radius:50%;background:#000c;color:#fff;border:1px solid var(--line-strong);
+              display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;box-shadow:none}
+/* While an image is uploading, the alert panel's approve/answer buttons are inert too, so answering
+   another agent's prompt cannot collide with the image's own send. */
+body.uploading #alert button{pointer-events:none;opacity:.55}
 .composer-hint{margin-top:5px;color:var(--text-3);font-size:10px;text-align:right}
 #status{font-size:12px;color:var(--text-2);margin-top:3px;min-height:18px;
         transition:color .15s ease}

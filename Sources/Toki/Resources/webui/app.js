@@ -494,8 +494,13 @@ function renderAgents() {
   }).join("");
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
+    if (+el.dataset.pid == current) {
+      document.getElementById("dd").classList.remove("open");
+      return;
+    }
     current = +el.dataset.pid;
     resetTranscript();
+    clearPendingImage();  // an image attached for the previous agent must not follow you to this one
     document.getElementById("dd").classList.remove("open");
     renderAgents();
     refreshLog();
@@ -504,8 +509,11 @@ function renderAgents() {
 
 function updateComposer(agent) {
   const writable = !!(agent && agent.writable);
-  const enabled = writable && !sending;
+  const enabled = writable && !sending && !uploading;
   $("#readonly").style.display = agent && !writable ? "block" : "none";
+  // Attach only against a server that advertises the upload endpoint: a hosted UI newer than the Mac
+  // must not offer a picker that would POST to a route the older server does not have.
+  $("#attach").hidden = !(agent && agent.uploads);
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
 }
@@ -602,6 +610,7 @@ async function refreshAgents() {
   if (agents.length && !agents.some(a => a.pid == prev)) {
     current = agents[0].pid;
     resetTranscript();
+    clearPendingImage();  // the agent it was attached for is gone; do not carry it to another
   }
   renderAgents();
   renderAttention(agents.find(x => x.pid == current));
@@ -968,7 +977,18 @@ async function refreshLog() {
 }
 
 let sending = false;
+// True only while an image is being read and uploaded, before its reply is sent. Every send-capable
+// control is disabled through it: the footer via updateComposer, and the alert panel's approve and
+// answer buttons via the body class, so answering another agent's prompt cannot collide with the
+// image's own send (which shares the single `sending` guard) and wrongly fail it.
+let uploading = false;
 let statusTimer = null;
+
+function setUploading(on) {
+  uploading = on;
+  document.body.classList.toggle("uploading", on);
+  updateComposer(agents.find(a => a.pid == current) || null);
+}
 
 function setStatus(message, kind) {
   clearTimeout(statusTimer);
@@ -976,9 +996,15 @@ function setStatus(message, kind) {
   $("#status").className = kind || "";
 }
 
-async function send(body) {
-  if (!current || sending) return false;
-  const agent = agents.find(a => a.pid == current);
+// `pid` defaults to the current agent, but a caller that awaited something first (an image upload)
+// passes the agent it was bound to when the user pressed Send, so switching agents mid-flight cannot
+// misdeliver the message.
+async function send(body, pid = current) {
+  // `uploading` blocks every send too: an image upload shares this single in-flight guard, and a
+  // send that slipped in while it was reading would occupy the slot and fail the image's own send.
+  // The image path calls send() only after clearing `uploading`, so it is never blocked by this.
+  if (!pid || sending || uploading) return false;
+  const agent = agents.find(a => a.pid == pid);
   if (!agent || !agent.writable) return false;
   sending = true;
   updateComposer(agent);
@@ -987,15 +1013,20 @@ async function send(body) {
     const r = await api("/api/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pid: current, ...body }),
+      body: JSON.stringify({ pid, ...body }),
     });
     feedback("success");
     setStatus("Sent \u2713 via " + r.how, "success");
-    const stick = nearBottom();
-    awaitingReply = true;
-    showTyping();
-    if (stick) scrollToLatest();
-    refreshLog().catch(() => {});
+    // The typing indicator and transcript refresh belong to the log on screen. When this send was
+    // bound to an agent the user has since navigated away from, they belong to that other agent's
+    // view, not the one now showing, so leave the current view alone.
+    if (pid == current) {
+      const stick = nearBottom();
+      awaitingReply = true;
+      showTyping();
+      if (stick) scrollToLatest();
+      refreshLog().catch(() => {});
+    }
     return true;
   } catch (e) {
     feedback("error");
@@ -1022,6 +1053,167 @@ function sendText(text) {
   });
 }
 
+// The client cap matches the server's, so an image too big to accept is refused before the upload
+// rather than after. A camera shot or a screenshot is comfortably under this.
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+// Mirrors the server's per-message cap, so a caption long enough that appending the image path would
+// overflow it is caught here, with the attachment kept, rather than 413'd into a failed bubble.
+const MAX_SEND_CHARS = 8000;
+
+// An image chosen (picker/camera) or pasted, waiting to go out with the next Send. One at a time.
+let pendingImage = null;
+
+function uploadsSupported() {
+  const a = agents.find(x => x.pid == current);
+  return !!(a && a.uploads);
+}
+
+function setPendingImage(blob) {
+  if (!blob || !(blob.type || "").startsWith("image/")) return;
+  // Guards the paste path (which bypasses the attach button) against an older server with no
+  // upload endpoint; the button itself is already hidden by updateComposer.
+  if (!uploadsSupported()) return;
+  if (blob.size > MAX_IMAGE_BYTES) {
+    feedback("error");
+    setStatus("That image is too large (max 12 MB).", "error");
+    return;
+  }
+  if (pendingImage) URL.revokeObjectURL(pendingImage.url);
+  pendingImage = { blob, url: URL.createObjectURL(blob) };
+  renderAttachPreview();
+}
+
+function clearPendingImage() {
+  if (pendingImage) URL.revokeObjectURL(pendingImage.url);
+  pendingImage = null;
+  renderAttachPreview();
+}
+
+function renderAttachPreview() {
+  const p = $("#attachpreview");
+  if (!pendingImage) {
+    p.hidden = true;
+    p.innerHTML = "";
+    return;
+  }
+  p.hidden = false;
+  p.innerHTML = '<img alt="Attached image"><button type="button" id="attachremove" ' +
+    'aria-label="Remove image">&#10005;</button>';
+  // src as a property, never interpolated into the markup above.
+  p.querySelector("img").src = pendingImage.url;
+}
+
+// Send the image bytes to the Mac and get back the path it was written to. The path, not the
+// picture, is what the agent then reads -- a terminal cannot take a pasted image.
+async function uploadImage(blob) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("could not read the image"));
+    reader.readAsDataURL(blob);
+  });
+  const r = await api("/api/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: dataUrl }),
+  });
+  if (!r || !r.path) throw new Error("no path returned");
+  return r.path;
+}
+
+// The composer's Send: a plain reply when there's only text, or an image reply that uploads first
+// and then sends the caption alongside the saved path for the agent to open.
+async function submitComposer() {
+  if (sending || uploading) return;
+  const input = $("#msg");
+  const caption = input.value.trim();
+  if (!pendingImage) {
+    if (!caption) return;
+    input.value = "";
+    resizeComposer();
+    sendText(caption);
+    return;
+  }
+  const pid = current;              // the agent chosen now; the upload must not misdeliver if it changes
+  const image = pendingImage;
+  pendingImage = null;
+  renderAttachPreview();
+  input.value = "";
+  resizeComposer();
+  setUploading(true);
+  let echoed = false;
+  try {
+    const path = await uploadImage(image.blob);
+    // With no caption the message would start with "/Users/…", which Claude Code and Codex read as a
+    // slash command; a leading word keeps the path an argument the agent actually receives.
+    const message = caption ? caption + " " + path : "Image: " + path;
+    setUploading(false);
+    // The path pushed an otherwise-fine caption over the server's limit: keep the attachment and
+    // caption editable rather than sending a message /api/send will only 413.
+    if (message.length > MAX_SEND_CHARS) {
+      restoreAttachment(image, caption, pid);
+      feedback("error");
+      setStatus("Message is too long to send with an image. Shorten it and try again.", "error");
+      return;
+    }
+    // Echo only when the log still shows the agent we're sending to; otherwise the message still
+    // goes to that agent and its own transcript poll surfaces it. Echo the exact text sent, so the
+    // transcript's copy dedupes it rather than leaving a duplicate bubble.
+    if (current == pid) {
+      addEcho(message);
+      echoed = true;
+      awaitingReply = true;
+      showTyping();
+      scrollToLatest();
+    }
+    const ok = await send({ text: message }, pid);
+    if (ok) {
+      URL.revokeObjectURL(image.url);
+    } else if (echoed && pendingEcho) {
+      // The failed bubble is the retry: tapping it re-sends the same text, and the uploaded file is
+      // still on the Mac, so the path resolves. The blob is no longer needed.
+      markEchoFailed();
+      awaitingReply = false;
+      hideTyping();
+      URL.revokeObjectURL(image.url);
+    } else {
+      // No bubble to retry from -- the send was bound to an agent no longer on screen, or navigating
+      // away cleared the echo -- so put the attachment back for a manual retry instead of dropping it.
+      restoreAttachment(image, caption, pid);
+    }
+  } catch (e) {
+    // Upload itself failed: the preview URL was never revoked, so the same attachment goes back for
+    // a retry rather than a redo.
+    setUploading(false);
+    restoreAttachment(image, caption, pid);
+    feedback("error");
+    setStatus("Couldn’t upload the image: " + e.message, "error");
+  }
+}
+
+// Put a not-yet-sent image (and caption) back for retry, but only while its agent is still the one
+// on screen -- the composer is shared, so restoring into a different agent's view would send the
+// retry to the wrong agent. When you've navigated away, drop it and say so rather than misdeliver.
+function restoreAttachment(image, caption, pid) {
+  if (current != pid) {
+    URL.revokeObjectURL(image.url);
+    // Re-enable the footer for the agent now on screen: `uploading` was true when navigation
+    // disabled it, and this path would otherwise leave it stuck until the next successful poll.
+    updateComposer(agents.find(a => a.pid == current) || null);
+    feedback("error");
+    setStatus("Image not sent. Reopen that agent to try again.", "error");
+    return;
+  }
+  pendingImage = image;
+  renderAttachPreview();
+  const input = $("#msg");
+  if (!input.value.trim()) {
+    input.value = caption;
+    resizeComposer();
+  }
+  updateComposer(agents.find(a => a.pid == current) || null);
+}
+
 document.addEventListener("pointerdown", e => {
   const button = e.target.closest("button");
   if (button && !button.disabled) feedback("tap");
@@ -1030,13 +1222,16 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
+  // While an image is uploading, no other send may start (it would occupy the shared send guard and
+  // fail the image reply). Navigation stays live; only the send-capable controls are inert.
+  if (uploading && (b.id == "send" || b.id == "clear" ||
+      b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
-    const input = $("#msg");
-    const v = input.value.trim();
-    if (!v || sending) return;
-    input.value = "";
-    resizeComposer();
-    sendText(v);
+    submitComposer();
+  } else if (b.id == "attach") {
+    $("#fileinput").click();
+  } else if (b.id == "attachremove") {
+    clearPendingImage();
   } else if (b.id == "clear") {
     clearContext();
   } else if (b.dataset.key) {
@@ -1056,6 +1251,8 @@ document.addEventListener("click", async e => {
 $("#log").addEventListener("click", e => {
   // A link inside a failed message opens the link; tapping the bubble around it retries the send.
   if (e.target.closest("a")) return;
+  // Not while an image upload holds the send slot -- the retry would fail against it.
+  if (uploading) return;
   const f = e.target.closest(".m.user.failed");
   if (!f) return;
   // textContent, not the linked markup: a retry has to send what was typed, not what it renders as.
@@ -1076,6 +1273,28 @@ $("#msg").addEventListener("keydown", e => {
   if (e.key == "Enter" && !e.isComposing && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     $("#send").click();
+  }
+});
+
+// The picker (accept="image/*") offers the photo library and, on a phone, the camera; the OS picks
+// which. Reset the value so choosing the same file again after removing it still fires change.
+$("#fileinput").addEventListener("change", e => {
+  const file = e.target.files && e.target.files[0];
+  if (file) setPendingImage(file);
+  e.target.value = "";
+});
+
+// Paste an image straight into the composer (desktop, and keyboards that offer it on mobile).
+$("#msg").addEventListener("paste", e => {
+  for (const item of (e.clipboardData && e.clipboardData.items) || []) {
+    if (item.type && item.type.startsWith("image/")) {
+      const blob = item.getAsFile();
+      if (blob) {
+        e.preventDefault();
+        setPendingImage(blob);
+        return;
+      }
+    }
   }
 });
 
