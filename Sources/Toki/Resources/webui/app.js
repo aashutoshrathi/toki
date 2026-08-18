@@ -1173,6 +1173,9 @@ function showDisconnectConfirm() {
 
 function hideDisconnectConfirm() {
   $("#confirm").hidden = true;
+  // Return focus to the control that opened the dialog, so keyboard and switch users are not
+  // dropped back at the top of the document.
+  $("#home").focus();
 }
 
 $("#home").addEventListener("click", showDisconnectConfirm);
@@ -1184,6 +1187,21 @@ $("#confirmok").addEventListener("click", () => {
 // Tapping the dimmed backdrop, or Escape, is a cancel -- the same as choosing not to leave.
 $("#confirm").addEventListener("click", e => {
   if (e.target.id == "confirm") hideDisconnectConfirm();
+});
+// A real modal: Escape closes it, and Tab is trapped on its two buttons so focus cannot wander into
+// the header, terminal controls, or composer sitting behind the dim.
+$("#confirm").addEventListener("keydown", e => {
+  if (e.key == "Tab") {
+    const first = $("#confirmcancel");
+    const last = $("#confirmok");
+    if (e.shiftKey && document.activeElement == first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement == last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 });
 document.addEventListener("keydown", e => {
   if (e.key == "Escape" && !$("#confirm").hidden) hideDisconnectConfirm();
