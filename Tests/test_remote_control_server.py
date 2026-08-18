@@ -697,6 +697,23 @@ class ImageUploadTests(unittest.TestCase):
             self.assertFalse(os.path.exists(paths[1]))
             self.assertTrue(os.path.exists(paths[2]))  # newest survives, total now under cap
 
+    def test_prune_reserves_room_for_the_incoming_image(self):
+        with tempfile.TemporaryDirectory() as d:
+            # Two 100-byte files (total 200) under a 250 cap: nothing is over the cap yet, but making
+            # room for a 100-byte incoming image (200 + 100 > 250) must evict the oldest.
+            base = time.time()
+            keep = os.path.join(d, "keep.png")
+            drop = os.path.join(d, "drop.png")
+            for i, p in enumerate((drop, keep)):  # drop older than keep
+                with open(p, "wb") as f:
+                    f.write(b"x" * 100)
+                os.utime(p, (base + i, base + i))
+            with mock.patch.object(toki_remote, "UPLOAD_DIR", d), \
+                    mock.patch.object(toki_remote, "MAX_UPLOAD_DIR_BYTES", 250):
+                toki_remote.prune_uploads(now=base + 2, reserve=100)
+            self.assertFalse(os.path.exists(drop))
+            self.assertTrue(os.path.exists(keep))
+
 
 if __name__ == "__main__":
     unittest.main()

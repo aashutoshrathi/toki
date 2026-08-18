@@ -1278,10 +1278,11 @@ def decode_image_payload(value):
     return data
 
 
-def prune_uploads(now=None):
+def prune_uploads(now=None, reserve=0):
     """Keep the uploads folder bounded, by age and by total size. Anything past its TTL goes; then,
-    if what remains still exceeds the aggregate cap, the oldest survivors are evicted until it fits.
-    Runs before every write, so a paired client cannot fill the disk by uploading in a loop."""
+    if what remains plus `reserve` (the image about to be written) exceeds the aggregate cap, the
+    oldest survivors are evicted until it fits. Run under UPLOAD_LOCK so it stays bounded under the
+    concurrent uploads a threaded server allows."""
     now = time.time() if now is None else now
     try:
         names = os.listdir(UPLOAD_DIR)
@@ -1303,7 +1304,7 @@ def prune_uploads(now=None):
             survivors.append((st.st_mtime, st.st_size, path))
     total = sum(size for _, size, _ in survivors)
     for _, size, path in sorted(survivors):  # oldest first
-        if total <= MAX_UPLOAD_DIR_BYTES:
+        if total + reserve <= MAX_UPLOAD_DIR_BYTES:
             break
         try:
             os.remove(path)
@@ -1319,18 +1320,18 @@ def save_upload(data):
     ext = image_extension(data)
     if not ext:
         return None
-    try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-    except OSError:
-        return None
-    prune_uploads()
     path = os.path.join(UPLOAD_DIR, f"{int(time.time())}-{secrets.token_hex(6)}.{ext}")
-    try:
-        with open(path, "wb") as f:
-            f.write(data)
-        os.chmod(path, 0o600)
-    except OSError:
-        return None
+    # One writer at a time: prune (reserving room for this image) and write as a unit, so concurrent
+    # uploads cannot each clear the cap check and then all write past it.
+    with UPLOAD_LOCK:
+        try:
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            prune_uploads(reserve=len(data))
+            with open(path, "wb") as f:
+                f.write(data)
+            os.chmod(path, 0o600)
+        except OSError:
+            return None
     return path
 
 
@@ -1425,6 +1426,9 @@ MAX_UPLOAD_BODY_BYTES = 17 * 1024 * 1024
 UPLOAD_DIR = os.path.join(HOME, ".toki", "remote-uploads")
 UPLOAD_TTL = 24 * 60 * 60
 MAX_UPLOAD_DIR_BYTES = 256 * 1024 * 1024
+# The server is threaded, so two uploads could prune and write at once and both slip past the cap.
+# Held across prune-then-write so the folder is bounded even under concurrent uploads.
+UPLOAD_LOCK = threading.Lock()
 # One phone is one session. Pairing is cheap once the code is known, so cap the table rather than
 # let a paired client mint sessions until the process runs out of memory.
 MAX_SESSIONS = 32
