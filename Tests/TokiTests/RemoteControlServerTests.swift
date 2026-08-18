@@ -172,6 +172,43 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(RemoteControlServer.tailscaleDNSName(from: data))
     }
 
+    func testTailscaleDNSNameSurvivesAVersionSkewWarningPrefix() {
+        let data = Data("""
+        Warning: client version "1.98.5" != tailscaled server version "1.102.2"
+        {"Self":{"DNSName":"my-mac.example-tailnet.ts.net."}}
+        """.utf8)
+
+        XCTAssertEqual(
+            RemoteControlServer.tailscaleDNSName(from: data),
+            "my-mac.example-tailnet.ts.net"
+        )
+    }
+
+    func testStatusDiagnosticTreatsTheGUIWrapperErrorAsUnreadable() {
+        let data = Data("The Tailscale GUI failed to start: The operation couldn’t be completed. (Tailscale.CLIError error 3.)".utf8)
+
+        XCTAssertEqual(
+            RemoteControlServer.statusDiagnostic(from: data),
+            "Couldn't read Tailscale's status. Enter the host by hand."
+        )
+    }
+
+    func testServeStateSurvivesAVersionSkewWarningPrefix() {
+        let json = """
+        Warning: client version "1.98.5" != tailscaled server version "1.102.2"
+        {"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+        """
+        XCTAssertEqual(serveState(json), .ready)
+    }
+
+    func testServeStateReportsGUIWrapperErrorAsUnreadable() {
+        let data = Data("The Tailscale GUI failed to start: The operation couldn’t be completed. (Tailscale.CLIError error 3.)".utf8)
+
+        guard case .unreadable = RemoteControlServer.serveState(from: data, port: 8765) else {
+            return XCTFail("expected unreadable for non-JSON serve output")
+        }
+    }
+
     func testTailscaleConnectURLUsesHostedUIAndEncodesParameters() {
         let url = RemoteControlServer.makeConnectURL(
             companionAppMode: .hosted,
