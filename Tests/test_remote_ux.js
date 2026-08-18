@@ -116,6 +116,8 @@ assert.match(css, /\.decision-row\.one/);
 // and referenced by path in the reply.
 assert.match(app, /function uploadImage/);
 assert.match(app, /"\/api\/upload"/);
+// A caption-less image sends "Image: <path>", never a bare "/path" the TUI reads as a slash command.
+assert.match(app, /"Image: " \+ path/);
 assert.match(app, /function setPendingImage/);
 assert.match(app, /addEventListener\("paste"/);
 assert.match(html, /id="fileinput"[^>]*accept="image\/\*"/);

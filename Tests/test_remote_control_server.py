@@ -632,6 +632,9 @@ _PNG_1x1 = base64.b64decode(
 
 
 class ImageUploadTests(unittest.TestCase):
+    def test_csp_allows_blob_previews(self):
+        self.assertIn("blob:", toki_remote.CSP)
+
     def test_sniffs_known_image_types(self):
         self.assertEqual(toki_remote.image_extension(_PNG_1x1), "png")
         self.assertEqual(toki_remote.image_extension(b"\xff\xd8\xff\xe0\x00\x10JFIF"), "jpg")

@@ -1095,7 +1095,9 @@ async function submitComposer() {
   let echoed = false;
   try {
     const path = await uploadImage(image.blob);
-    const message = caption ? caption + " " + path : path;
+    // With no caption the message would start with "/Users/…", which Claude Code and Codex read as a
+    // slash command; a leading word keeps the path an argument the agent actually receives.
+    const message = caption ? caption + " " + path : "Image: " + path;
     uploading = false;
     updateComposer(agents.find(a => a.pid == current) || null);
     // Echo only when the log still shows the agent we're sending to; otherwise the message still

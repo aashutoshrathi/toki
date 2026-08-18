@@ -1434,7 +1434,8 @@ UPLOAD_LOCK = threading.Lock()
 MAX_SESSIONS = 32
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; "
+    # blob: is the attach preview's object URL, which Safari does not treat as 'self'.
+    "img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; "
     "base-uri 'none'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
 )
 SESSIONS = {}
