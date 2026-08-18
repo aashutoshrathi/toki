@@ -675,7 +675,9 @@ function renderQuestions() {
 }
 
 function toggleOption(spec) {
-  if (!answer) return;
+  // Ignore taps mid-submit: the keystrokes were computed from the selection as it was, so letting it
+  // change now would show a set the terminal never received, and the tap could not re-submit anyway.
+  if (!answer || submitting) return;
   const [qi, oi] = spec.split(":").map(Number);
   const set = answer.sel[qi];
   if (answer.questions[qi].multi) {
