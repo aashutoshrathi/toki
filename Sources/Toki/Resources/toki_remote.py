@@ -1,35 +1,9 @@
 #!/usr/bin/env python3
-"""
-toki-remote — prototype companion server for Toki.
+"""Dependency-free companion server for Toki Remote Control.
 
-Remote-control experience for agents that don't support remote control.
-Run this on your Mac, scan the QR code with your phone (same LAN or
-Tailscale tailnet), and you get:
-
-  - live list of running Claude Code and Codex agents
-  - real chat titles (Claude's customTitle/aiTitle, else first message)
-  - live transcript with markdown rendering
-  - "waiting on you" detection (pending tool call with no result)
-  - reply from the phone: taps are injected into the agent's terminal
-    via tmux send-keys, iTerm2 AppleScript (by tty, no focus stealing),
-    or Terminal.app + System Events as fallback.
-
-Zero dependencies — Python 3.9+ stdlib only.
-
-Usage:
-    python3 toki_remote.py [--port 8765]
-
-If the phone can't connect over plain Wi-Fi:
-  - macOS firewall may be blocking python3: System Settings → Network →
-    Firewall → Options → allow python3 (macOS prompts on first run;
-    if you dismissed it, it stays blocked).
-  - Guest Wi-Fi networks often isolate clients from each other
-    ("AP isolation") — Tailscale side-steps all of this, use that URL.
-
-SECURITY: injecting keystrokes into a terminal is arbitrary command
-execution. A random link token plus a separately displayed verification
-code are required to create a time-limited session. Only run this on
-networks you trust (your tailnet qualifies; a coffee-shop LAN does not).
+SECURITY: terminal keystroke injection is arbitrary command execution. Sessions require both a
+random link token and a separately displayed verification code and are time-limited. Only use this
+server on a trusted network.
 """
 
 import argparse
@@ -51,34 +25,23 @@ from urllib.parse import parse_qs, urlparse
 
 HOME = os.path.expanduser("~")
 QUIET_PERIOD = 10.0  # seconds; same reasoning as Toki's attentionQuietPeriod
-# Gap between delivering the message text and the submitting Enter. Sent together, a TUI like
-# Claude Code reads the trailing carriage return as part of the paste and inserts a newline
-# instead of submitting; a short pause makes the Enter register as its own keypress.
+# TUIs can treat an Enter sent with pasted text as part of the paste rather than a submit key.
 SUBMIT_DELAY = 0.15
-# Answering a multi-select picker means driving its TUI one keypress at a time (navigate, toggle,
-# advance, submit). The gap lets each keystroke land and the interface repaint before the next, so
-# a toggle is not eaten while the cursor is still moving.
+# Picker navigation needs time to repaint between synthetic keystrokes.
 SEQ_KEY_DELAY = 0.12
-# A ceiling on a single walkthrough: options plus navigation across every question. Generous enough
-# for a real picker, low enough that one /api/send cannot hold the terminal for long.
 MAX_SEQ_KEYS = 200
 NAMED_KEYS = ("enter", "esc", "up", "down", "tab")
 AUTO_ACCEPTED_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 CANONICAL_AGENTS = None
 CANONICAL_AGENTS_AT = 0.0
 CANONICAL_AGENTS_LOCK = threading.Lock()
-# Usage arrives on the same pipe as the agent snapshot and goes stale the same way: a reading the
-# Mac stopped refreshing is worse than no reading, because it looks current.
 USAGE_SNAPSHOT = []
 USAGE_SNAPSHOT_AT = 0.0
 USAGE_LOCK = threading.Lock()
-# Toki republishes its agent snapshot every 15s. Past this age the pipe has gone quiet - the app
-# quit, hung, or the write failed - and serving the last snapshot would pin the phone to agents
-# and titles that stopped being true; discovering them here is stale-but-live instead.
+# Toki publishes every 15s; after this, live discovery is safer than a stale canonical snapshot.
 CANONICAL_MAX_AGE = 90.0
 
-# ============================================================ QR (byte mode,
-# EC level L, versions 1-10, mask 0; verified against cv2.QRCodeDetector)
+# Byte-mode QR, EC level L, versions 1–10, mask 0; verified with cv2.QRCodeDetector.
 
 _QR_BLOCKS = {
     1: ([19], 7), 2: ([34], 10), 3: ([55], 15), 4: ([80], 20), 5: ([108], 26),
@@ -279,8 +242,6 @@ def qr_terminal(text):
     return "\n".join(lines)
 
 
-# ================================================================= discovery
-
 def shell(cmd, timeout=5):
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -354,8 +315,7 @@ def agents_from_snapshot(processes, snapshot):
         agent["cwd"] = item.get("cwd")
         agent["tty"] = item.get("tty")
         agent["title"] = item.get("title")
-        # Prefer the session Toki already resolved with the process start time; only fall back to
-        # resolving by cwd (which can't tell co-located agents apart) when it wasn't provided.
+        # Toki's start-time match distinguishes co-located agents; cwd fallback cannot.
         provided = item.get("session")
         if provided:
             agent["session"] = provided
@@ -445,8 +405,6 @@ def cwd_of_pid(pid):
             return line[1:]
     return None
 
-
-# ------------------------------------------------------------- Claude Code
 
 def claude_project_dir(cwd):
     encoded = "-" + "-".join(p for p in cwd.split("/") if p)
@@ -559,8 +517,7 @@ def parse_claude_transcript(path, offset=0):
                         if block.get("type") == "text":
                             texts.append(block.get("text", ""))
                         elif block.get("type") == "tool_result":
-                            # The result content is not forwarded (unbounded, holds file/command
-                            # output); only that the call finished, when, and whether it failed.
+                            # Tool output is unbounded; the UI only needs completion state.
                             entries.append({
                                 "role": "resolved",
                                 "id": block.get("tool_use_id"),
@@ -599,8 +556,6 @@ def claude_tool_summary(name, inp):
     return ""
 
 
-# The second line: what a call is actually about, per tool. The one-line summary picks the first of
-# six keys, which hides the command on a Bash call with a description and the file on an edit.
 _TOOL_DETAIL_KEYS = {
     "Bash": ("command",),
     "Read": ("file_path", "offset", "limit"),
@@ -625,7 +580,6 @@ def claude_tool_detail(name, inp):
         if value in (None, "", []):
             continue
         text = " ".join(str(value).split())
-        # Don't repeat what the summary line already says.
         if text and text != summary:
             parts.append(text)
     return " · ".join(parts)[:240]
@@ -713,8 +667,6 @@ def quiet_enough(path):
     except OSError:
         return False
 
-
-# ------------------------------------------------------------------- Codex
 
 CODEX_SESSIONS = os.path.join(HOME, ".codex", "sessions")
 _codex_cwd_cache = {}  # path -> cwd (immutable per file)
@@ -861,8 +813,6 @@ def codex_attention(path):
     return {"kind": "permission", "prompt": f"Approve: {label}?", "options": []}
 
 
-# ------------------------------------------------------------------- titles
-
 _title_cache = {}  # path -> (mtime, title)
 
 
@@ -924,8 +874,7 @@ def opencode_attention(session_id):
     tool, ts, pdata = rows[0]
     if not ts or time.time() - ts / 1000 < QUIET_PERIOD:
         return None
-    # OpenCode's `question` tool is a structured picker with the same shape as Claude's
-    # AskUserQuestion, so surface it as a question the phone can answer rather than a bare "Allow".
+    # OpenCode's picker matches Claude's question shape and can be answered from the phone.
     if tool == "question":
         qs = opencode_questions(pdata)
         if qs:
@@ -1044,7 +993,7 @@ def chat_title(provider, path, cwd):
         return cached[1] or fallback
     title = None
     if provider == "claude":
-        # /rename (customTitle) wins over the inferred aiTitle; last of each is current.
+        # The last /rename wins over the last inferred title.
         try:
             with open(path, "r", errors="replace") as f:
                 contents = f.read()
@@ -1069,8 +1018,6 @@ def chat_title(provider, path, cwd):
         _title_cache.pop(next(iter(_title_cache)))
     return title or fallback
 
-
-# ------------------------------------------------------------ key injection
 
 SYS_EVENTS_KEYCODES = {"enter": 36, "esc": 53, "up": 126, "down": 125, "tab": 48}
 TMUX_KEYS = {"enter": "Enter", "esc": "Escape", "up": "Up", "down": "Down", "tab": "Tab"}
@@ -1145,9 +1092,7 @@ def agent_order(agent):
 
 
 def applescript_str(s):
-    # A raw newline cannot appear inside an AppleScript string literal -- it makes the script fail
-    # to compile, so a multi-line reply from the phone was silently lost on the iTerm and Terminal
-    # routes. Send the escape sequence instead. Backslash first, or it would escape the others.
+    # AppleScript string literals cannot contain raw newlines; escape backslashes first.
     return '"' + (
         s.replace("\\", "\\\\")
         .replace('"', '\\"')
@@ -1265,8 +1210,6 @@ def send_sequence(tty, items):
     return True, how
 
 
-# ------------------------------------------------------------------ uploads
-
 def image_extension(data):
     """The file extension for an image's bytes, or None if they are not a known image type. The
     type is sniffed from the content, never a declared header, so only real images reach disk."""
@@ -1292,7 +1235,6 @@ def decode_image_payload(value):
     if not isinstance(value, str) or not value:
         return None
     if value.startswith("data:"):
-        # A data: URL must have a comma before its payload; without one there are no bytes to decode.
         if "," not in value:
             return None
         value = value.split(",", 1)[1]
@@ -1351,14 +1293,12 @@ def save_upload(data):
     if not ext:
         return None
     path = os.path.join(UPLOAD_DIR, f"{int(time.time())}-{secrets.token_hex(6)}.{ext}")
-    # One writer at a time: prune (reserving room for this image) and write as a unit, so concurrent
-    # uploads cannot each clear the cap check and then all write past it.
+    # Prune and write atomically so concurrent uploads cannot each pass the directory cap.
     with UPLOAD_LOCK:
         try:
             os.makedirs(UPLOAD_DIR, exist_ok=True)
             prune_uploads(reserve=len(data))
-            # Create private from the first byte: opening 0o600 rather than writing then chmod'ing
-            # leaves no window where another local user could read the image mid-write.
+            # Create as 0600 immediately; chmod after writing would expose a readable window.
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "wb") as f:
                 f.write(data)
@@ -1366,8 +1306,6 @@ def save_upload(data):
             return None
     return path
 
-
-# ------------------------------------------------------------------- server
 
 def new_pairing_code():
     return f"{secrets.randbelow(1_000_000):06d}"
@@ -1445,29 +1383,19 @@ SESSION_TTL_CHOICES = (60 * 60, 12 * 60 * 60, 24 * 60 * 60, 2 * 24 * 60 * 60)
 PAIRING_WINDOW = 60
 PAIRING_MAX_FAILURES = 5
 MAX_BODY_BYTES = 256 * 1024
-# A reply is a person typing on a phone, not a file transfer. The body cap above still lets a
-# quarter-megabyte of keystrokes be pushed into a terminal in one request; this bounds what any
-# single /api/send can inject.
+# Bound terminal injection independently of the general request-body cap.
 MAX_SEND_CHARS = 8_000
-# An attached image is the one thing a phone sends that is genuinely large. It rides in a JSON body
-# as base64 (~33% larger than the file), so the request cap sits above the decoded image cap.
+# Base64 adds roughly 33%, so the upload-body cap exceeds the decoded-image cap.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_UPLOAD_BODY_BYTES = 17 * 1024 * 1024
-# Uploaded images land here for an agent to read by path. Pruned by age and by total size on each
-# new upload so the folder cannot grow without bound; the agent reads the file straight after write.
 UPLOAD_DIR = os.path.join(HOME, ".toki", "remote-uploads")
 UPLOAD_TTL = 24 * 60 * 60
 MAX_UPLOAD_DIR_BYTES = 256 * 1024 * 1024
-# The server is threaded, so two uploads could prune and write at once and both slip past the cap.
-# Held across prune-then-write so the folder is bounded even under concurrent uploads.
 UPLOAD_LOCK = threading.Lock()
-# Each in-flight upload buffers its whole body and decoded image in memory. Cap how many decode at
-# once so a burst of concurrent uploads cannot run the process out of memory; excess ones wait
-# briefly, then are told the server is busy rather than piling up.
+# Each upload buffers its body and decoded image; bound concurrent memory use.
 UPLOAD_SLOTS = threading.BoundedSemaphore(2)
 UPLOAD_SLOT_TIMEOUT = 30
-# One phone is one session. Pairing is cheap once the code is known, so cap the table rather than
-# let a paired client mint sessions until the process runs out of memory.
+# Pairing is cheap once the code is known, so bound session-table growth.
 MAX_SESSIONS = 32
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
@@ -1479,21 +1407,12 @@ SESSIONS = {}
 PAIRING_FAILURES = {}
 AUTH_LOCK = threading.Lock()
 
-# ------------------------------------------------------------- access control
-#
-# The listening socket stays on 0.0.0.0 for the modes that need it: `tailscale serve` reaches us
-# over loopback while a phone on the tailnet reaches the same port at the 100.x address, and one
-# bind() cannot cover both. So reachability is decided per connection instead, against the Host
-# setting the user actually chose. Without this, picking "Localhost" or "Tailscale" in Toki still
-# left the port open to every machine on whatever Wi-Fi the Mac happened to join.
-#
-# "loopback" and "tunnel" both describe a server only this Mac dials, but they are not the same
-# promise. Localhost means this Mac and nothing else, so a proxy relaying someone in is a
-# violation. Cloudflare Tunnel means exactly that relay, chosen deliberately.
+# Some modes require a wildcard bind: Tailscale reaches the port directly while its proxy and
+# Cloudflare dial over loopback. Enforce reachability per request. "loopback" forbids relayed
+# clients; "tunnel" explicitly permits Cloudflare's relay.
 ACCESS_POLICIES = ("loopback", "tunnel", "tailnet", "private", "any")
 ACCESS_POLICY = "private"
-# Extra Host header values to trust, for the Custom host mode. Loopback, literal IPs, .ts.net and
-# .trycloudflare.com are always accepted.
+# Custom-mode Host values; standard local, IP, Tailscale and Cloudflare hosts are implicit.
 ALLOWED_HOSTS = set()
 
 TAILNET_NET = ipaddress.ip_network("100.64.0.0/10")
@@ -1517,8 +1436,7 @@ def peer_allowed(ip, policy=None):
         return False
     if getattr(addr, "ipv4_mapped", None):
         addr = addr.ipv4_mapped
-    # Loopback covers both a browser on this Mac and the two proxies that front us, `tailscale
-    # serve` and `cloudflared`, which both dial 127.0.0.1.
+    # Both tailscale serve and cloudflared dial from loopback.
     if addr.is_loopback:
         return True
     if policy in ("loopback", "tunnel"):
@@ -1549,7 +1467,6 @@ def request_allowed(peer, forwarded_for, policy=None):
         return True
     origin_ip, proxied = client_ip(peer, forwarded_for)
     if proxied or origin_ip == peer:
-        # No forwarded address to judge, or a direct connection we already cleared.
         return True
     return peer_allowed(origin_ip, policy)
 
@@ -1602,21 +1519,15 @@ def origin_allowed(origin, host_header):
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 WEBUI_DIR = os.path.join(_SCRIPT_DIR, "webui")
 if not os.path.isdir(WEBUI_DIR):
-    # `swift run` flattens SwiftPM's processed resources beside the script rather than into a
-    # webui/ subdirectory, so serve them from the script's own directory in that case.
+    # `swift run` flattens processed resources beside the script.
     WEBUI_DIR = _SCRIPT_DIR
 
 
-# ------------------------------------------------------- paired device registry
-#
-# Toki drives the server over the pipe it already owns: agent snapshots and revocations go in on
-# stdin, the device list comes back out on stdout. That keeps the list off the HTTP surface, so a
-# paired phone can neither enumerate the other devices nor revoke them.
+# Device management stays on Toki's stdin/stdout pipe, outside the phone's HTTP surface.
 
 _last_published = None
-# Serialises snapshot-then-print. Without it the timer thread can read the list, a revoke can
-# publish the shorter one, and the timer's older snapshot lands last, putting a revoked device
-# back on screen until the next tick. Always taken before AUTH_LOCK, never the other way round.
+# Serialize snapshot-and-print so a timer cannot republish pre-revocation state. Lock order is
+# PUBLISH_LOCK then AUTH_LOCK.
 PUBLISH_LOCK = threading.Lock()
 
 
@@ -1664,8 +1575,7 @@ def revoke_device(device_id):
 
 
 def watch_devices():
-    # Last-seen moves on its own as a phone polls, and an expiry passes with nothing to trigger it,
-    # so the list is republished on a timer rather than only when a request changes it.
+    # Polling changes last-seen and expiry can pass without another event.
     while True:
         time.sleep(5)
         publish_devices()
@@ -1686,8 +1596,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _cors(self):
-        # Always vary: whether this response carries an allow-origin header depends on the request
-        # origin, so a cache must not hand one origin's copy to another.
+        # CORS varies by request origin, so caches must not reuse another origin's response.
         self.send_header("Vary", "Origin")
         if self.headers.get("Origin") == HOSTED_ORIGIN:
             self.send_header("Access-Control-Allow-Origin", HOSTED_ORIGIN)
@@ -1698,8 +1607,7 @@ class Handler(BaseHTTPRequestHandler):
         if document:
             self.send_header("Content-Security-Policy", CSP)
             self.send_header("X-Frame-Options", "DENY")
-            # The connect link carries the token in its URL. Keep every copy of this page out of
-            # shared caches, which on the Cloudflare Tunnel path means Cloudflare's edge.
+            # Connect URLs carry the token; keep them out of browser and edge caches.
             self.send_header("Cache-Control", "no-store")
 
     def _gate(self):
@@ -1754,16 +1662,13 @@ class Handler(BaseHTTPRequestHandler):
         with AUTH_LOCK:
             for token in [t for t, d in SESSIONS.items() if d["expires"] <= now]:
                 del SESSIONS[token]
-            # compare_digest against each live session rather than a dict lookup, so a wrong token
-            # takes the same time whatever prefix it shares with a real one.
+            # Compare every live token in constant time rather than exposing dict lookup timing.
             match = next(
                 (d for t, d in SESSIONS.items() if secrets.compare_digest(candidate, t)),
                 None,
             )
             if match is None:
                 return False
-            # Keep the entry Toki lists fresh, so "last seen" tells you whether a device you don't
-            # recognise is still active or a leftover from days ago.
             match["seen"] = now
             match["ip"] = ip
             return True
@@ -1787,16 +1692,9 @@ class Handler(BaseHTTPRequestHandler):
         now = time.time()
 
         with AUTH_LOCK:
-            # Drop every bucket that has aged out, not just this client's, so the table cannot
-            # keep a row for every address that ever guessed wrong.
-            #
-            # The key is the direct peer, which behind `tailscale serve` or `cloudflared` is this
-            # Mac for every phone, so they share one bucket and can lock each other out for a
-            # minute. Keying on the forwarded address instead would separate them, and is wrong:
-            # a proxy that appends to an existing header leaves the first entry under the
-            # caller's control, and a key an attacker chooses is a key they can rotate for
-            # unlimited guesses at a six-digit code. A shared bucket is a denial of service; a
-            # spoofable one is a brute force.
+            # Key failures by direct peer, not a spoofable forwarded address. Proxied phones share
+            # a bucket (a limited DoS risk), but attacker-chosen keys would permit unlimited guesses.
+            # Prune every expired bucket so unique peers cannot grow the table forever.
             for address in [a for a, tries in PAIRING_FAILURES.items()
                             if not any(t > now - PAIRING_WINDOW for t in tries)]:
                 del PAIRING_FAILURES[address]
@@ -1910,16 +1808,13 @@ class Handler(BaseHTTPRequestHandler):
                     "attention": att,
                     "writable": agent_is_writable(a),
                     "machine": machine_name(),
-                    # Advertises this endpoint, so a hosted UI newer than the Mac only offers image
-                    # attachments once it is talking to a server that can receive them.
+                    # Lets newer hosted UIs hide uploads when connected to an older server.
                     "uploads": True,
                 })
             self._json(result)
         elif url.path == "/api/usage":
             self._json(current_usage())
         elif url.path == "/api/transcript":
-            # Anything unparseable reads as "start from the beginning" rather than raising out of
-            # the handler, which would drop the connection mid-poll.
             pid = int_param(q, "pid")
             offset = int_param(q, "offset")
             agent = next((a for a in discover_agents() if a["pid"] == pid), None)
@@ -1965,11 +1860,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw)
         except ValueError:
             return self._json({"error": "bad json"}, 400)
-        # Valid JSON that is not an object (null, a list, a string) has no `image` field to read.
         if not isinstance(body, dict):
             return self._json({"error": "bad json"}, 400)
         data = decode_image_payload(body.get("image"))
-        # 415 is the caller's fault (not an image, or too big); 500 is ours (could not write).
         if data is None or not image_extension(data):
             return self._json({"error": "not a supported image, or too large"}, 415)
         path = save_upload(data)
@@ -1988,9 +1881,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "bad token"}, 403)
         if url.path not in ("/api/send", "/api/upload"):
             return self._json({"error": "not found"}, 404)
-        # A POST carrying a simple content type is exempt from CORS preflight, so a page on any
-        # origin can fire one at these endpoints. The session token still has to be right, but keep
-        # a page that somehow learned it from driving the terminal anyway.
+        # Simple POSTs skip CORS preflight; still bind state changes to an allowed origin.
         if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host")):
             return self._json({"error": "cross-origin request not allowed"}, 403)
         if url.path == "/api/upload":
@@ -2002,20 +1893,14 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw)
         except ValueError:
             return self._json({"error": "bad json"}, 400)
-        # Validate the payload before resolving the agent: discovery shells out to ps and lsof, and
-        # a request that can never be delivered should not pay for that, let alone let a caller
-        # drive those scans in a loop.
+        # Validate before discovery shells out to ps and lsof.
         key = body.get("key")
         text = body.get("text")
         keys = body.get("keys")
         if key not in (None,) + NAMED_KEYS:
             return self._json({"error": "unknown key"}, 400)
         if keys is not None:
-            # A picker walkthrough: a run of named keys and single characters. Reject anything else
-            # up front so an oversized or malformed run never reaches the terminal.
             if key is not None or text is not None or body.get("raw") is not None:
-                # One request delivers one thing. Mixing a batch with a single key/text would let a
-                # caller send a payload the server silently half-ignores.
                 return self._json({"error": "keys cannot be combined with key/text/raw"}, 400)
             if not isinstance(keys, list) or not keys or len(keys) > MAX_SEQ_KEYS:
                 return self._json({"error": "bad key sequence"}, 400)
@@ -2037,8 +1922,6 @@ class Handler(BaseHTTPRequestHandler):
             ok, how = send_input(agent["tty"], text=text, key=key, raw=raw)
         self._json({"ok": ok, "how": how}, 200 if ok else 502)
 
-
-# --------------------------------------------------------------------- main
 
 class RemoteControlHTTPServer(ThreadingHTTPServer):
     """Threading server that binds without a reverse DNS lookup.

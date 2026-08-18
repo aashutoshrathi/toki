@@ -28,7 +28,6 @@
 body{font:15px/1.45 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);
      display:flex;flex-direction:column;height:100dvh;overflow:hidden;
      -webkit-font-smoothing:antialiased}
-/* Subtle film grain over the whole app: an inline SVG noise field, fixed behind the content. */
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.05;
   background:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>")}
 button{font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
@@ -116,8 +115,6 @@ h1{font-size:16px;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
 #privacytoggle:not(:disabled):hover,.homebtn:not(:disabled):hover{color:var(--text);border-color:var(--line-strong)}
 #privacytoggle[aria-pressed="true"]{background:var(--accent-surface);border-color:var(--accent-line);color:#dce7f5}
 #privacytoggle svg,.homebtn svg{width:18px;height:18px}
-/* The verify screen is where a wedged connection strands you, and .locked hides the header, so the
-   pairing overlay carries its own copy of the same control. */
 #pairhome{position:absolute;top:calc(16px + env(safe-area-inset-top));left:16px;z-index:16}
 .eye-off{display:none}
 body.privacy .eye-open{display:none}
@@ -156,15 +153,11 @@ body.privacy .eye-off{display:inline}
 #alert .qq p{margin:5px 0}
 #alert .qq code{background:#0006;padding:1px 5px;border-radius:5px;
                 font-family:ui-monospace,monospace;font-size:13px}
-/* The panel is saturated blue when it asks and saturated red when it wants approval, so a link in
-   the question is set in white rather than a colour that only works against one of them. */
 #alert .qq a{color:#fff;text-decoration:underline;text-underline-offset:2px;
              overflow-wrap:anywhere}
 #alert .qq:not(:first-of-type){margin-top:14px;padding-top:12px;border-top:1px solid #ffffff1a}
 #readonly{display:none;margin:10px 14px;padding:11px 12px;border-radius:var(--r);
           background:var(--warn-surface);border:1px solid var(--warn-line);color:#e2cc8c;font-size:13px}
-/* The header above a question (OpenCode/Claude give each one a short tab label) and, for a
-   multi-select, a reminder that more than one answer is allowed. */
 #alert .qhdr{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:14px 0 2px;
              font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#8fb4e0}
 #alert .qhdr:first-of-type{margin-top:4px}
@@ -175,8 +168,6 @@ body.privacy .eye-off{display:inline}
      text-align:left;line-height:1.4}
 .opt:not(:disabled):hover{background:#2c496b;border-color:#5a83b0}
 .opt.on{background:#2d4d73;border-color:#79a6d6}
-/* The tick box (multi-select) or dot (single-select) that shows what's chosen. It fills in when the
-   option's button carries .on, so the state reads the same whether or not the label wraps. */
 .opt .mark{flex:none;width:20px;height:20px;margin-top:1px;border:1.5px solid #ffffff66;
            display:inline-flex;align-items:center;justify-content:center}
 .opt .mark.box{border-radius:6px}
@@ -198,12 +189,9 @@ body.privacy .eye-off{display:inline}
 #log{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 14px}
 .m{margin:8px 0;padding:10px 13px;border-radius:var(--r-lg);max-width:88%;border:1px solid transparent;
    word-break:break-word;overflow-wrap:anywhere}
-/* A link has to look like one before it is tapped, in every kind of message: colour alone is not
-   enough against these surfaces, and a bare URL wraps mid-string on a phone. */
 .m a{color:var(--accent-2);text-decoration:underline;text-underline-offset:2px;
      overflow-wrap:anywhere}
 .m a:active{opacity:.7}
-/* Blue on the green bubble is the one place the accent fights its background. */
 .user a{color:#9adcb4}
 .user{background:var(--user-surface);border-color:var(--user-line);margin-left:auto;
       border-bottom-right-radius:var(--tail);white-space:pre-wrap}
@@ -234,8 +222,6 @@ body.privacy .eye-off{display:inline}
 .assistant tbody tr:nth-child(even){background:#ffffff06}
 .tool{background:var(--surface-2);border-color:var(--line);color:var(--text-2);font-size:13px;font-family:ui-monospace,monospace}
 .tool b{color:#c3cad6}
-/* A call that has not come back yet reads as in-flight rather than finished. The dot carries the
-   state so the row's text is unchanged when it resolves. */
 .tool-state{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--line)}
 .tool.running .tool-state{background:#e2b341;animation:toolpulse 1.2s ease-in-out infinite}
 .tool.ok .tool-state{background:#4a9d5f}
@@ -262,16 +248,13 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
             box-shadow:0 1px 0 #ffffff40 inset,0 3px 10px #0d2a4d55;font-size:15px;font-weight:650;
             display:flex;align-items:center;justify-content:center;gap:6px}
 .row button svg{width:22px;height:22px;fill:currentColor}
-/* Secondary next to Send, and unmistakably a warning once armed: the second tap wipes context. */
 #clear{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
        box-shadow:0 1px 0 #ffffff0d inset}
 #clear svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #clear.armed{background:var(--danger-surface);border-color:var(--danger-line);color:#eda0a0}
-/* Attach sits with Clear as a secondary control, not the accent Send it would otherwise inherit. */
 #attach{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
         box-shadow:0 1px 0 #ffffff0d inset}
 #attach svg{fill:none;stroke:currentColor}
-/* The chosen image, previewed above the composer with a corner button to drop it before sending. */
 #attachpreview{position:relative;display:inline-block;margin-bottom:8px}
 #attachpreview[hidden]{display:none}
 #attachpreview img{max-height:96px;max-width:100%;display:block;border-radius:var(--r);
@@ -279,8 +262,7 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
 #attachremove{position:absolute;top:-8px;right:-8px;width:24px;min-width:24px;height:24px;padding:0;
               border-radius:50%;background:#000c;color:#fff;border:1px solid var(--line-strong);
               display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;box-shadow:none}
-/* While an image is uploading, the alert panel's approve/answer buttons are inert too, so answering
-   another agent's prompt cannot collide with the image's own send. */
+/* Prevent alert actions from racing the upload's shared send guard. */
 body.uploading #alert button{pointer-events:none;opacity:.55}
 .composer-hint{margin-top:5px;color:var(--text-3);font-size:10px;text-align:right}
 #status{font-size:12px;color:var(--text-2);margin-top:3px;min-height:18px;
@@ -290,7 +272,6 @@ body.uploading #alert button{pointer-events:none;opacity:.55}
 #status.sending{color:var(--accent-2)}
 footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.45;cursor:not-allowed}
 
-/* Usage strip: the agent transcript is what you came for, so quota stays one line until asked. */
 #usagetoggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
   padding:8px 12px;background:var(--surface-2);border:0;border-bottom:1px solid var(--line);
   color:var(--text-2);font-size:12px;text-align:left}
@@ -309,8 +290,6 @@ footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.4
 .u-stale{padding:4px 0 0;color:#e2b341;font-size:11px}
 #usagetoggle.stale #usagesummary{color:#e2b341}
 
-/* Confirm before leaving an active session: a full-screen dim with a small card, so a stray tap on
-   Home cannot silently drop the pairing. */
 #confirm{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
          padding:24px;background:#000a;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
          animation:confirm-fade .12s ease}
