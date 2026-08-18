@@ -485,7 +485,7 @@ function renderAgents() {
 
 function updateComposer(agent) {
   const writable = !!(agent && agent.writable);
-  const enabled = writable && !sending;
+  const enabled = writable && !sending && !uploading;
   $("#readonly").style.display = agent && !writable ? "block" : "none";
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
@@ -949,6 +949,9 @@ async function refreshLog() {
 }
 
 let sending = false;
+// True only while an image is being read and uploaded, before its reply is sent. Keeps the
+// composer disabled through the upload so a second tap cannot start a parallel one.
+let uploading = false;
 let statusTimer = null;
 
 function setStatus(message, kind) {
@@ -1003,6 +1006,112 @@ function sendText(text) {
   });
 }
 
+// The client cap matches the server's, so an image too big to accept is refused before the upload
+// rather than after. A camera shot or a screenshot is comfortably under this.
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+
+// An image chosen (picker/camera) or pasted, waiting to go out with the next Send. One at a time.
+let pendingImage = null;
+
+function setPendingImage(blob) {
+  if (!blob || !(blob.type || "").startsWith("image/")) return;
+  if (blob.size > MAX_IMAGE_BYTES) {
+    feedback("error");
+    setStatus("That image is too large (max 12 MB).", "error");
+    return;
+  }
+  if (pendingImage) URL.revokeObjectURL(pendingImage.url);
+  pendingImage = { blob, url: URL.createObjectURL(blob) };
+  renderAttachPreview();
+}
+
+function clearPendingImage() {
+  if (pendingImage) URL.revokeObjectURL(pendingImage.url);
+  pendingImage = null;
+  renderAttachPreview();
+}
+
+function renderAttachPreview() {
+  const p = $("#attachpreview");
+  if (!pendingImage) {
+    p.hidden = true;
+    p.innerHTML = "";
+    return;
+  }
+  p.hidden = false;
+  p.innerHTML = '<img alt="Attached image"><button type="button" id="attachremove" ' +
+    'aria-label="Remove image">&#10005;</button>';
+  // src as a property, never interpolated into the markup above.
+  p.querySelector("img").src = pendingImage.url;
+}
+
+// Send the image bytes to the Mac and get back the path it was written to. The path, not the
+// picture, is what the agent then reads -- a terminal cannot take a pasted image.
+async function uploadImage(blob) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("could not read the image"));
+    reader.readAsDataURL(blob);
+  });
+  const r = await api("/api/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: dataUrl }),
+  });
+  if (!r || !r.path) throw new Error("no path returned");
+  return r.path;
+}
+
+// The composer's Send: a plain reply when there's only text, or an image reply that uploads first
+// and then sends the caption alongside the saved path for the agent to open.
+async function submitComposer() {
+  if (sending || uploading) return;
+  const input = $("#msg");
+  const caption = input.value.trim();
+  if (!pendingImage) {
+    if (!caption) return;
+    input.value = "";
+    resizeComposer();
+    sendText(caption);
+    return;
+  }
+  const image = pendingImage;
+  pendingImage = null;
+  renderAttachPreview();
+  input.value = "";
+  resizeComposer();
+  uploading = true;
+  updateComposer(agents.find(a => a.pid == current) || null);
+  awaitingReply = true;
+  showTyping();
+  scrollToLatest();
+  try {
+    const path = await uploadImage(image.blob);
+    const message = caption ? caption + " " + path : path;
+    // Echo the exact text that goes to the terminal, so the transcript's copy dedupes it rather
+    // than leaving a duplicate bubble behind.
+    addEcho(message);
+    uploading = false;
+    updateComposer(agents.find(a => a.pid == current) || null);
+    const ok = await send({ text: message });
+    if (!ok) {
+      markEchoFailed();
+      awaitingReply = false;
+      hideTyping();
+    }
+  } catch (e) {
+    uploading = false;
+    updateComposer(agents.find(a => a.pid == current) || null);
+    awaitingReply = false;
+    hideTyping();
+    feedback("error");
+    setStatus("Couldn’t upload the image: " + e.message, "error");
+  } finally {
+    URL.revokeObjectURL(image.url);
+  }
+}
+
 document.addEventListener("pointerdown", e => {
   const button = e.target.closest("button");
   if (button && !button.disabled) feedback("tap");
@@ -1012,12 +1121,11 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.id == "send") {
-    const input = $("#msg");
-    const v = input.value.trim();
-    if (!v || sending) return;
-    input.value = "";
-    resizeComposer();
-    sendText(v);
+    submitComposer();
+  } else if (b.id == "attach") {
+    $("#fileinput").click();
+  } else if (b.id == "attachremove") {
+    clearPendingImage();
   } else if (b.id == "clear") {
     clearContext();
   } else if (b.dataset.key) {
@@ -1053,6 +1161,28 @@ $("#msg").addEventListener("keydown", e => {
   if (e.key == "Enter" && !e.isComposing && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     $("#send").click();
+  }
+});
+
+// The picker (accept="image/*") offers the photo library and, on a phone, the camera; the OS picks
+// which. Reset the value so choosing the same file again after removing it still fires change.
+$("#fileinput").addEventListener("change", e => {
+  const file = e.target.files && e.target.files[0];
+  if (file) setPendingImage(file);
+  e.target.value = "";
+});
+
+// Paste an image straight into the composer (desktop, and keyboards that offer it on mobile).
+$("#msg").addEventListener("paste", e => {
+  for (const item of (e.clipboardData && e.clipboardData.items) || []) {
+    if (item.type && item.type.startsWith("image/")) {
+      const blob = item.getAsFile();
+      if (blob) {
+        e.preventDefault();
+        setPendingImage(blob);
+        return;
+      }
+    }
   }
 });
 

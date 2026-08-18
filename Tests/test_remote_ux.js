@@ -26,7 +26,8 @@ assert.match(app, /if\s*\(!current\s*\|\|\s*sending\)\s*return/);
 assert.match(app, /Sent \\u2713 via/);
 // Optimistic send: the message is echoed and the input cleared before the round trip resolves.
 assert.match(app, /function sendText/);
-assert.match(app, /sendText\(v\)/);
+assert.match(app, /function submitComposer/);
+assert.match(app, /sendText\(caption\)/);
 assert.match(app, /function addEcho/);
 assert.match(app, /pendingEcho/);
 // A typing indicator covers the wait for the reply, and is reconciled against the polled transcript.
@@ -107,6 +108,17 @@ assert.match(app, /const ok = await send\(\{ keys \}\)/);
 assert.match(css, /\.opt \.mark\.box/);
 assert.match(css, /\.opt\.on \.mark/);
 assert.match(css, /\.decision-row\.one/);
+
+// Image input: an attachment can be picked, pasted, or shot, previewed, then uploaded to the Mac
+// and referenced by path in the reply.
+assert.match(app, /function uploadImage/);
+assert.match(app, /"\/api\/upload"/);
+assert.match(app, /function setPendingImage/);
+assert.match(app, /addEventListener\("paste"/);
+assert.match(html, /id="fileinput"[^>]*accept="image\/\*"/);
+assert.match(html, /id="attach"/);
+assert.match(html, /id="attachpreview"/);
+assert.match(css, /#attachpreview img/);
 
 // Every element app.js reaches for at load must exist in the page. A missing one throws on the
 // first line that touches it and takes the whole script down with it, which looks from the phone

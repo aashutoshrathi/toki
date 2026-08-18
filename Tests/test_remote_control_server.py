@@ -1,5 +1,7 @@
+import base64
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import time
@@ -622,6 +624,59 @@ class SendSequenceTests(unittest.TestCase):
         ok, how = toki_remote.send_sequence("../etc/passwd", ["1"])
         self.assertFalse(ok)
         self.assertEqual(how, "unsafe tty")
+
+
+_PNG_1x1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+)
+
+
+class ImageUploadTests(unittest.TestCase):
+    def test_sniffs_known_image_types(self):
+        self.assertEqual(toki_remote.image_extension(_PNG_1x1), "png")
+        self.assertEqual(toki_remote.image_extension(b"\xff\xd8\xff\xe0\x00\x10JFIF"), "jpg")
+        self.assertEqual(toki_remote.image_extension(b"GIF89a....."), "gif")
+        self.assertEqual(toki_remote.image_extension(b"RIFF\x00\x00\x00\x00WEBPVP8 "), "webp")
+
+    def test_rejects_non_image_bytes(self):
+        self.assertIsNone(toki_remote.image_extension(b"#!/bin/sh\nrm -rf /"))
+        self.assertIsNone(toki_remote.image_extension(b"%PDF-1.4"))
+
+    def test_decodes_data_url_and_bare_base64(self):
+        as_data_url = "data:image/png;base64," + base64.b64encode(_PNG_1x1).decode()
+        self.assertEqual(toki_remote.decode_image_payload(as_data_url), _PNG_1x1)
+        self.assertEqual(toki_remote.decode_image_payload(base64.b64encode(_PNG_1x1).decode()), _PNG_1x1)
+
+    def test_rejects_malformed_or_oversized_payloads(self):
+        self.assertIsNone(toki_remote.decode_image_payload("not base64 @@@"))
+        self.assertIsNone(toki_remote.decode_image_payload(""))
+        self.assertIsNone(toki_remote.decode_image_payload(None))
+        with mock.patch.object(toki_remote, "MAX_IMAGE_BYTES", 4):
+            self.assertIsNone(toki_remote.decode_image_payload(base64.b64encode(_PNG_1x1).decode()))
+
+    def test_saves_only_images_and_stays_inside_the_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.object(toki_remote, "UPLOAD_DIR", d):
+                path = toki_remote.save_upload(_PNG_1x1)
+                self.assertIsNotNone(path)
+                self.assertEqual(os.path.dirname(path), d)
+                self.assertTrue(path.endswith(".png"))
+                self.assertTrue(os.path.exists(path))
+                self.assertIsNone(toki_remote.save_upload(b"definitely not an image"))
+
+    def test_prune_drops_only_expired_uploads(self):
+        with tempfile.TemporaryDirectory() as d:
+            fresh = os.path.join(d, "fresh.png")
+            old = os.path.join(d, "old.png")
+            for p in (fresh, old):
+                with open(p, "wb") as f:
+                    f.write(_PNG_1x1)
+            stale = time.time() - toki_remote.UPLOAD_TTL - 10
+            os.utime(old, (stale, stale))
+            with mock.patch.object(toki_remote, "UPLOAD_DIR", d):
+                toki_remote.prune_uploads()
+            self.assertTrue(os.path.exists(fresh))
+            self.assertFalse(os.path.exists(old))
 
 
 if __name__ == "__main__":

@@ -33,6 +33,8 @@ networks you trust (your tailnet qualifies; a coffee-shop LAN does not).
 """
 
 import argparse
+import base64
+import binascii
 import ipaddress
 import json
 import os
@@ -1238,6 +1240,82 @@ def send_sequence(tty, items):
     return True, how
 
 
+# ------------------------------------------------------------------ uploads
+
+def image_extension(data):
+    """The file extension for an image's bytes, or None if they are not a known image type. The
+    type is sniffed from the content, never a declared header, so only real images reach disk."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[4:8] == b"ftyp" and data[8:12] in (
+        b"heic", b"heix", b"hevc", b"hevm", b"heis", b"hevs", b"mif1", b"msf1"
+    ):
+        return "heic"
+    return None
+
+
+def decode_image_payload(value):
+    """The bytes behind an uploaded image field -- a data: URL or a bare base64 string -- or None if
+    it is malformed or larger than the image cap. The encoded length is checked before decoding so
+    an oversized payload is rejected without being expanded into memory."""
+    if not isinstance(value, str) or not value:
+        return None
+    b64 = value.split(",", 1)[1] if value.startswith("data:") else value
+    if len(b64) > MAX_UPLOAD_BODY_BYTES:
+        return None
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not data or len(data) > MAX_IMAGE_BYTES:
+        return None
+    return data
+
+
+def prune_uploads(now=None):
+    """Drop uploads past their TTL so the folder cannot accumulate across many sessions."""
+    now = time.time() if now is None else now
+    try:
+        names = os.listdir(UPLOAD_DIR)
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(UPLOAD_DIR, name)
+        try:
+            if now - os.path.getmtime(path) > UPLOAD_TTL:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+def save_upload(data):
+    """Write validated image bytes to the uploads folder under a generated name and return the
+    absolute path, or None if the bytes are not an image or cannot be written. The name is the
+    server's own, so nothing a caller sends can escape the folder."""
+    ext = image_extension(data)
+    if not ext:
+        return None
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except OSError:
+        return None
+    prune_uploads()
+    path = os.path.join(UPLOAD_DIR, f"{int(time.time())}-{secrets.token_hex(6)}.{ext}")
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+        os.chmod(path, 0o600)
+    except OSError:
+        return None
+    return path
+
+
 # ------------------------------------------------------------------- server
 
 def new_pairing_code():
@@ -1320,6 +1398,14 @@ MAX_BODY_BYTES = 256 * 1024
 # quarter-megabyte of keystrokes be pushed into a terminal in one request; this bounds what any
 # single /api/send can inject.
 MAX_SEND_CHARS = 8_000
+# An attached image is the one thing a phone sends that is genuinely large. It rides in a JSON body
+# as base64 (~33% larger than the file), so the request cap sits above the decoded image cap.
+MAX_IMAGE_BYTES = 12 * 1024 * 1024
+MAX_UPLOAD_BODY_BYTES = 17 * 1024 * 1024
+# Uploaded images land here for an agent to read by path. Pruned by age on each new upload so the
+# folder cannot grow without bound; the agent reads the file straight after it is written.
+UPLOAD_DIR = os.path.join(HOME, ".toki", "remote-uploads")
+UPLOAD_TTL = 24 * 60 * 60
 # One phone is one session. Pairing is cheap once the code is known, so cap the table rather than
 # let a paired client mint sessions until the process runs out of memory.
 MAX_SESSIONS = 32
@@ -1565,12 +1651,12 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def _read_body(self):
+    def _read_body(self, max_bytes=MAX_BODY_BYTES):
         try:
             length = int(self.headers.get("Content-Length", 0))
         except (TypeError, ValueError):
             return None
-        if length < 0 or length > MAX_BODY_BYTES:
+        if length < 0 or length > max_bytes:
             return None
         return self.rfile.read(length)
 
@@ -1795,6 +1881,26 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json({"error": "not found"}, 404)
 
+    def _upload(self):
+        """Save an attached image on the Mac and hand its path back, for a reply to reference so the
+        agent can read the picture. Only a paired device reaches here, and only bytes that sniff as a
+        real image are written."""
+        raw = self._read_body(MAX_UPLOAD_BODY_BYTES)
+        if raw is None:
+            return self._json({"error": "image too large"}, 413)
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            return self._json({"error": "bad json"}, 400)
+        data = decode_image_payload(body.get("image"))
+        # 415 is the caller's fault (not an image, or too big); 500 is ours (could not write).
+        if data is None or not image_extension(data):
+            return self._json({"error": "not a supported image, or too large"}, 415)
+        path = save_upload(data)
+        if not path:
+            return self._json({"error": "could not save image"}, 500)
+        self._json({"path": path}, 200)
+
     def do_POST(self):
         if not self._gate():
             return
@@ -1804,13 +1910,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._pair(q)
         if not self._authed(q):
             return self._json({"error": "bad token"}, 403)
-        if url.path != "/api/send":
+        if url.path not in ("/api/send", "/api/upload"):
             return self._json({"error": "not found"}, 404)
         # A POST carrying a simple content type is exempt from CORS preflight, so a page on any
-        # origin can fire one at this endpoint. The session token still has to be right, but keep
+        # origin can fire one at these endpoints. The session token still has to be right, but keep
         # a page that somehow learned it from driving the terminal anyway.
         if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host")):
             return self._json({"error": "cross-origin request not allowed"}, 403)
+        if url.path == "/api/upload":
+            return self._upload()
         raw = self._read_body()
         if raw is None:
             return self._json({"error": "request too large"}, 413)
