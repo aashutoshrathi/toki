@@ -1028,6 +1028,9 @@ function sendText(text) {
 // The client cap matches the server's, so an image too big to accept is refused before the upload
 // rather than after. A camera shot or a screenshot is comfortably under this.
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+// Mirrors the server's per-message cap, so a caption long enough that appending the image path would
+// overflow it is caught here, with the attachment kept, rather than 413'd into a failed bubble.
+const MAX_SEND_CHARS = 8000;
 
 // An image chosen (picker/camera) or pasted, waiting to go out with the next Send. One at a time.
 let pendingImage = null;
@@ -1109,6 +1112,14 @@ async function submitComposer() {
     // slash command; a leading word keeps the path an argument the agent actually receives.
     const message = caption ? caption + " " + path : "Image: " + path;
     setUploading(false);
+    // The path pushed an otherwise-fine caption over the server's limit: keep the attachment and
+    // caption editable rather than sending a message /api/send will only 413.
+    if (message.length > MAX_SEND_CHARS) {
+      restoreAttachment(image, caption, pid);
+      feedback("error");
+      setStatus("Message is too long to send with an image. Shorten it and try again.", "error");
+      return;
+    }
     // Echo only when the log still shows the agent we're sending to; otherwise the message still
     // goes to that agent and its own transcript poll surfaces it. Echo the exact text sent, so the
     // transcript's copy dedupes it rather than leaving a duplicate bubble.
