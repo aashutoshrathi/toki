@@ -1254,7 +1254,7 @@ def image_extension(data):
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
     if data[4:8] == b"ftyp" and data[8:12] in (
-        b"heic", b"heix", b"hevc", b"hevm", b"heis", b"hevs", b"mif1", b"msf1"
+        b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"hevm", b"hevs", b"mif1", b"msf1"
     ):
         return "heic"
     return None

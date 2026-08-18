@@ -1113,7 +1113,7 @@ async function submitComposer() {
     const ok = await send({ text: message }, pid);
     if (ok) {
       URL.revokeObjectURL(image.url);
-    } else if (echoed) {
+    } else if (echoed && pendingEcho) {
       // The failed bubble is the retry: tapping it re-sends the same text, and the uploaded file is
       // still on the Mac, so the path resolves. The blob is no longer needed.
       markEchoFailed();
@@ -1121,8 +1121,8 @@ async function submitComposer() {
       hideTyping();
       URL.revokeObjectURL(image.url);
     } else {
-      // Bound to an agent no longer on screen and the send failed, so there is no bubble to retry
-      // from: put the attachment back for a manual retry instead of dropping it.
+      // No bubble to retry from -- the send was bound to an agent no longer on screen, or navigating
+      // away cleared the echo -- so put the attachment back for a manual retry instead of dropping it.
       restoreAttachment(image, caption);
     }
   } catch (e) {
