@@ -585,26 +585,187 @@ async function refreshAgents() {
     resetTranscript();
   }
   renderAgents();
-  const a = agents.find(x => x.pid == current);
+  renderAttention(agents.find(x => x.pid == current));
+}
+
+// A picker the phone is answering: the provider whose TUI the keystrokes have to drive, the
+// questions, and the option indices chosen for each. Kept across polls so a selection survives the
+// alert being rebuilt, and reset (in renderAttention) when the pending question changes.
+let answer = null;
+
+// The pid is in the signature so switching to another agent whose question happens to read the same
+// never carries the first agent's selections onto -- and then submits them to -- the second. Built
+// with JSON.stringify rather than joined delimiters so a header or label that happens to contain a
+// separator character cannot make two different pickers collide onto one signature.
+function questionSignature(pid, provider, qs) {
+  return JSON.stringify([pid, provider, qs.map(q =>
+    [q.header || "", q.question || "", q.multi ? 1 : 0, (q.options || []).map(o => o.label)])]);
+}
+
+// Older servers describe a question's options as bare strings (under `options`, or inside the
+// `questions` array a pre-2.7.1 server still sends); normalise both shapes so the renderer only
+// ever deals with {label, description}.
+function attentionQuestions(att) {
+  const qs = att.questions && att.questions.length
+    ? att.questions
+    : [{ question: att.prompt || "Agent is waiting on you", header: "", multi: false, options: att.options || [] }];
+  return qs.map(q => ({
+    question: q.question || "", header: q.header || "", multi: !!q.multi,
+    options: (q.options || []).map(o => (typeof o == "string" ? { label: o, description: "" } : o)),
+  }));
+}
+
+function renderAttention(a) {
   const al = $("#alert");
-  if (a && a.attention) {
-    al.style.display = "block";
-    al.className = a.attention.kind == "question" ? "q" : "";
-    const qs = a.attention.questions && a.attention.questions.length
-      ? a.attention.questions
-      : [{ question: a.attention.prompt || "Agent is waiting on you", options: a.attention.options || [] }];
-    const head = '<div class="ahead">' +
-      (a.attention.kind == "permission" ? "Needs your approval" : "Agent is asking") + "</div>";
-    al.innerHTML = head + qs.map(q =>
-      '<div class="qq">' + md(q.question || "") + "</div>" +
-      (q.options || []).map((o, i) =>
-        `<button class="opt" data-text="${i + 1}"><b>${i + 1}</b><span>${esc(o)}</span></button>`).join("")
-    ).join("") +
-      (a.attention.kind == "permission"
-        ? '<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>'
-        : "");
-  } else {
+  if (!a || !a.attention) {
+    answer = null;
     al.style.display = "none";
+    return;
+  }
+  al.style.display = "block";
+  al.className = a.attention.kind == "question" ? "q" : "";
+  if (a.attention.kind != "question") {
+    answer = null;
+    al.innerHTML = '<div class="ahead">Needs your approval</div>' +
+      '<div class="qq">' + md(a.attention.prompt || "") + "</div>" +
+      '<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button>' +
+      '<button class="decision reject" data-key="esc">&#10005; Reject</button></div>';
+    return;
+  }
+  const qs = attentionQuestions(a.attention);
+  const sig = questionSignature(a.pid, a.provider, qs);
+  if (!answer || answer.sig != sig)
+    answer = { sig, provider: a.provider, questions: qs, sel: qs.map(() => new Set()) };
+  renderQuestions();
+}
+
+// A lone single-select question keeps the old one-tap behaviour: tapping an option is the answer,
+// with no separate Submit step. Anything with a multi-select or a second question needs the panel
+// to stay open while choices accumulate.
+function isQuickPick(qs) {
+  return qs.length == 1 && !qs[0].multi;
+}
+
+// Every question that actually offers options needs one chosen before the answer can go. An
+// option-less question (malformed, or a free-text-only prompt) is not gated on, or its picker could
+// never be submitted at all.
+function answerComplete(qs, sel) {
+  return sel.every((s, i) => !(qs[i].options || []).length || s.size > 0);
+}
+
+function renderQuestions() {
+  const { questions: qs, sel } = answer;
+  let html = '<div class="ahead">Agent is asking</div>';
+  qs.forEach((q, qi) => {
+    if (q.header)
+      html += '<div class="qhdr">' + esc(q.header) +
+        (q.multi ? '<span class="qtag">select all that apply</span>' : "") + "</div>";
+    html += '<div class="qq">' + md(q.question || "") + "</div>";
+    (q.options || []).forEach((o, oi) => {
+      const on = sel[qi].has(oi);
+      // role + aria-checked so a screen reader announces each option as a checkbox/radio and reads
+      // its on/off state, which the tick or dot conveys only visually.
+      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}" ` +
+        `role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
+        `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>` +
+        `<span class="olab"><b>${esc(o.label)}</b>` +
+        (o.description ? `<em>${esc(o.description)}</em>` : "") + "</span></button>";
+    });
+  });
+  if (!isQuickPick(qs)) {
+    // Submit stays disabled until every answerable question has a pick: an unanswered one is
+    // otherwise dropped (Claude) or silently sent as its first option (OpenCode's buildKeySequence).
+    html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
+      (answerComplete(qs, sel) ? "" : " disabled") + ">Submit</button></div>";
+  }
+  $("#alert").innerHTML = html;
+}
+
+function toggleOption(spec) {
+  // Ignore taps mid-submit: the keystrokes were computed from the selection as it was, so letting it
+  // change now would show a set the terminal never received, and the tap could not re-submit anyway.
+  if (!answer || submitting) return;
+  const [qi, oi] = spec.split(":").map(Number);
+  const set = answer.sel[qi];
+  if (answer.questions[qi].multi) {
+    if (set.has(oi)) set.delete(oi);
+    else set.add(oi);
+  } else {
+    set.clear();
+    set.add(oi);
+  }
+  if (isQuickPick(answer.questions)) submitAnswer();
+  else renderQuestions();
+}
+
+// Translate the accumulated selections into the exact keypresses each TUI needs. The two pickers
+// diverge, so this is the one place that knows how:
+//
+//   OpenCode's `question` tool: arrows move the highlight, Enter toggles a multi-select option and
+//   Tab moves to the next question; a single-select's Enter both selects and advances. A final tab
+//   lands on the "Confirm" step, where Enter submits. (Confirmed against OpenCode's TUI.)
+//
+//   Claude's AskUserQuestion: number keys pick options directly, so a single-select's number is the
+//   whole answer, a multi-select toggles each number then Enter confirms, and Tab moves between
+//   questions in a multi-question prompt.
+function buildKeySequence(provider, questions, sel) {
+  const keys = [];
+  const anyMulti = questions.some(q => q.multi);
+  const last = questions.length - 1;
+  questions.forEach((q, qi) => {
+    const chosen = [...sel[qi]].sort((x, y) => x - y);
+    const n = (q.options || []).length;
+    if (provider == "opencode") {
+      if (q.multi) {
+        for (let i = 0; i < n; i++) {
+          if (sel[qi].has(i)) keys.push("enter");
+          if (i < n - 1) keys.push("down");
+        }
+        keys.push("tab");
+      } else {
+        for (let i = 0, idx = chosen.length ? chosen[0] : 0; i < idx; i++) keys.push("down");
+        keys.push("enter");
+      }
+    } else {
+      // A single digit per option: only the number path (Claude) reaches here, and its picker caps
+      // at a handful of options, so the index never needs two digits -- which /api/send would reject
+      // as a key anyway. OpenCode, the one provider that can list many options, navigates by arrow.
+      chosen.forEach(i => keys.push(String(i + 1)));
+      if (qi < last) keys.push("tab");
+    }
+  });
+  // OpenCode shows a Confirm step whenever there is more than one question or any multi-select;
+  // land on it and submit. A lone single-select has already submitted on its Enter.
+  if (provider == "opencode" && (questions.length > 1 || anyMulti)) keys.push("enter");
+  // Claude submits a multi-question or multi-select prompt with a closing Enter; a lone
+  // single-select was answered by its number alone.
+  else if (provider != "opencode" && !isQuickPick(questions)) keys.push("enter");
+  return keys;
+}
+
+let submitting = false;
+
+async function submitAnswer() {
+  if (!answer || submitting) return;
+  // Never deliver a partial answer, whatever state the Submit button is in: an unanswered question
+  // would be dropped or sent as a default.
+  if (!answerComplete(answer.questions, answer.sel)) return;
+  const keys = buildKeySequence(answer.provider, answer.questions, answer.sel);
+  if (!keys.length) return;
+  // Hold the selection until the send is known to have landed. If it fails, the panel stays with
+  // every pick intact rather than making the user rebuild the whole answer from scratch.
+  const pending = answer;
+  submitting = true;
+  const ok = await send({ keys });
+  submitting = false;
+  // A poll (or an agent switch) may have swapped in a different picker while the send was in flight.
+  // Only clear or re-render the exact one we submitted, never whatever took its place.
+  if (answer !== pending) return;
+  if (ok) {
+    answer = null;
+    $("#alert").style.display = "none";
+  } else {
+    renderQuestions();
   }
 }
 
@@ -862,9 +1023,10 @@ document.addEventListener("click", async e => {
   } else if (b.dataset.key) {
     $("#alert").style.display = "none";
     await send({ key: b.dataset.key });
-  } else if (b.dataset.text) {
-    $("#alert").style.display = "none";
-    await send({ text: b.dataset.text, raw: true });
+  } else if (b.dataset.opt) {
+    toggleOption(b.dataset.opt);
+  } else if (b.dataset.submit) {
+    submitAnswer();
   }
 });
 

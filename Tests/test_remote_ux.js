@@ -80,11 +80,33 @@ assert.match(css, /#alert \.qq a\{/);
 
 // Restyled question banner (header label + badge/label option layout) and film grain.
 assert.match(app, /class="ahead"/);
-assert.match(app, /<b>\$\{i\s*\+\s*1\}<\/b><span>\$\{esc\(o\)\}<\/span>/);
+assert.match(app, /data-opt="\$\{qi\}:\$\{oi\}"/);
+assert.match(app, /class="mark \$\{q\.multi \? "box" : "radio"\}"/);
+assert.match(app, /<span class="olab">/);
 assert.match(css, /feTurbulence/);
 assert.match(css, /button:not\(:disabled\):active/);
 assert.match(css, /\.decision\.reject/);
 assert.match(css, /min-height:44px/);
+
+// Multi-select / multi-question pickers: options toggle in place and a Submit button turns the
+// accumulated choices into the keystrokes each TUI needs.
+assert.match(app, /function buildKeySequence/);
+assert.match(app, /function toggleOption/);
+assert.match(app, /data-submit="1"/);
+assert.match(app, /send\(\{ keys \}\)/);
+// Submit is gated on every question being answered, and the pending answer is keyed by agent pid,
+// so a partial answer is never delivered and one agent's picks never leak to another.
+assert.match(app, /function answerComplete\(qs, sel\)/);
+assert.match(app, /answerComplete\(answer\.questions, answer\.sel\)/);
+assert.match(app, /questionSignature\(a\.pid,/);
+// Signature is collision-proof (JSON), not delimiter-joined.
+assert.match(app, /return JSON\.stringify\(\[pid, provider,/);
+// Options expose their checked state to assistive tech, and a failed submit keeps the picks.
+assert.match(app, /role="\$\{q\.multi \? "checkbox" : "radio"\}" aria-checked="\$\{on\}"/);
+assert.match(app, /const ok = await send\(\{ keys \}\)/);
+assert.match(css, /\.opt \.mark\.box/);
+assert.match(css, /\.opt\.on \.mark/);
+assert.match(css, /\.decision-row\.one/);
 
 // Every element app.js reaches for at load must exist in the page. A missing one throws on the
 // first line that touches it and takes the whole script down with it, which looks from the phone

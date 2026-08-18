@@ -503,5 +503,126 @@ class InitialTranscriptWindowTests(unittest.TestCase):
         self.assertIn({"role": "resolved", "id": "last"}, shown)
 
 
+class QuestionExtractionTests(unittest.TestCase):
+    def test_normalizes_claude_askuserquestion_with_multiselect(self):
+        inp = {
+            "questions": [
+                {
+                    "question": "Which APIs?",
+                    "header": "External APIs",
+                    "multiSelect": True,
+                    "options": [
+                        {"label": "Open Food Facts", "description": "no key"},
+                        {"label": "USDA", "description": ""},
+                    ],
+                }
+            ]
+        }
+        qs = toki_remote.extract_questions("AskUserQuestion", inp)
+        self.assertEqual(len(qs), 1)
+        self.assertTrue(qs[0]["multi"])
+        self.assertEqual(qs[0]["header"], "External APIs")
+        self.assertEqual([o["label"] for o in qs[0]["options"]], ["Open Food Facts", "USDA"])
+        self.assertEqual(qs[0]["options"][0]["description"], "no key")
+
+    def test_extract_questions_ignores_other_tools(self):
+        self.assertIsNone(toki_remote.extract_questions("Bash", {"questions": [{"question": "x"}]}))
+
+    def test_opencode_question_tool_reads_multiple_flag(self):
+        pdata = json.dumps({
+            "type": "tool",
+            "tool": "question",
+            "state": {
+                "status": "running",
+                "input": {
+                    "questions": [
+                        {"question": "Pick some", "header": "MVP", "multiple": True,
+                         "options": [{"label": "A"}, {"label": "B"}]},
+                        {"question": "Pick one", "header": "Next", "multiple": False,
+                         "options": [{"label": "C"}, {"label": "D"}]},
+                    ]
+                },
+            },
+        })
+        qs = toki_remote.opencode_questions(pdata)
+        self.assertEqual([q["multi"] for q in qs], [True, False])
+        self.assertEqual(qs[0]["header"], "MVP")
+
+    def test_question_attention_keeps_first_labels_for_older_clients(self):
+        qs = toki_remote.normalize_questions(
+            [{"question": "Q", "options": [{"label": "One"}, {"label": "Two"}], "multiple": True}],
+            "multiple",
+        )
+        att = toki_remote.question_attention(qs)
+        self.assertEqual(att["kind"], "question")
+        self.assertEqual(att["prompt"], "Q")
+        self.assertEqual(att["options"], ["One", "Two"])
+        self.assertEqual(att["questions"], qs)
+
+    def test_string_options_still_normalize(self):
+        qs = toki_remote.normalize_questions([{"question": "Q", "options": ["One", "Two"]}], "multiSelect")
+        self.assertEqual([o["label"] for o in qs[0]["options"]], ["One", "Two"])
+        self.assertFalse(qs[0]["multi"])
+
+
+class SendSequenceTests(unittest.TestCase):
+    def test_sequence_delivers_named_keys_and_characters_in_order(self):
+        calls = []
+
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
+            calls.append((text, key, raw))
+            return True, "iterm"
+
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", lambda tty: (None, None)), \
+                mock.patch.object(toki_remote, "send_input", fake_send_input), \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, how = toki_remote.send_sequence("ttys000", ["1", "enter", "down"])
+        self.assertTrue(ok)
+        self.assertEqual(how, "iterm")
+        self.assertEqual(calls, [("1", None, True), (None, "enter", False), (None, "down", False)])
+
+    def test_sequence_stops_at_first_failure(self):
+        calls = []
+
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
+            calls.append(key or text)
+            return (False, "iterm") if (key or text) == "enter" else (True, "iterm")
+
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", lambda tty: (None, None)), \
+                mock.patch.object(toki_remote, "send_input", fake_send_input), \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, _ = toki_remote.send_sequence("ttys000", ["1", "enter", "down"])
+        self.assertFalse(ok)
+        self.assertEqual(calls, ["1", "enter"])
+
+    def test_sequence_resolves_the_route_once_and_reuses_it(self):
+        # The route is discovered a single time and handed to every send_input, so no key repeats
+        # `tmux list-panes` -- whichever route it turns out to be.
+        lookups = []
+
+        def fake_pane(tty):
+            lookups.append(tty)
+            return ("/opt/homebrew/bin/tmux", "%3")
+
+        routes = []
+
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
+            routes.append(route)
+            return True, "tmux"
+
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", fake_pane), \
+                mock.patch.object(toki_remote, "send_input", fake_send_input), \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, _ = toki_remote.send_sequence("ttys000", ["1", "enter"])
+        self.assertTrue(ok)
+        self.assertEqual(lookups, ["ttys000"])  # discovered exactly once
+        self.assertEqual(routes, [("/opt/homebrew/bin/tmux", "%3"), ("/opt/homebrew/bin/tmux", "%3")])
+
+    def test_sequence_rejects_an_unsafe_tty(self):
+        ok, how = toki_remote.send_sequence("../etc/passwd", ["1"])
+        self.assertFalse(ok)
+        self.assertEqual(how, "unsafe tty")
+
+
 if __name__ == "__main__":
     unittest.main()
