@@ -66,4 +66,14 @@
   <div class="composer-hint" id="composerhint">Return adds a line <span aria-hidden="true">&middot;</span> &#8984;/Ctrl + Return sends</div>
   <div id="status" role="status" aria-live="polite"></div>
 </footer>
+<div id="confirm" hidden role="dialog" aria-modal="true" aria-labelledby="confirmtitle" aria-describedby="confirmbody">
+  <div class="confirm-card">
+    <h2 id="confirmtitle">Disconnect this device?</h2>
+    <p id="confirmbody">You&#8217;ll return to the connect screen and need Toki&#8217;s code or QR to pair again.</p>
+    <div class="confirm-actions">
+      <button type="button" id="confirmcancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="confirmok" class="btn-danger">Disconnect</button>
+    </div>
+  </div>
+</div>
 <script src="markdown.js"></script><script src="app.js"></script></body></html>
