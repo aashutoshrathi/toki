@@ -972,7 +972,10 @@ function setStatus(message, kind) {
 // passes the agent it was bound to when the user pressed Send, so switching agents mid-flight cannot
 // misdeliver the message.
 async function send(body, pid = current) {
-  if (!pid || sending) return false;
+  // `uploading` blocks every send too: an image upload shares this single in-flight guard, and a
+  // send that slipped in while it was reading would occupy the slot and fail the image's own send.
+  // The image path calls send() only after clearing `uploading`, so it is never blocked by this.
+  if (!pid || sending || uploading) return false;
   const agent = agents.find(a => a.pid == pid);
   if (!agent || !agent.writable) return false;
   sending = true;
@@ -1172,6 +1175,10 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
+  // While an image is uploading, no other send may start (it would occupy the shared send guard and
+  // fail the image reply). Navigation stays live; only the send-capable controls are inert.
+  if (uploading && (b.id == "send" || b.id == "clear" ||
+      b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
     submitComposer();
   } else if (b.id == "attach") {
@@ -1193,6 +1200,8 @@ document.addEventListener("click", async e => {
 $("#log").addEventListener("click", e => {
   // A link inside a failed message opens the link; tapping the bubble around it retries the send.
   if (e.target.closest("a")) return;
+  // Not while an image upload holds the send slot -- the retry would fail against it.
+  if (uploading) return;
   const f = e.target.closest(".m.user.failed");
   if (!f) return;
   // textContent, not the linked markup: a retry has to send what was typed, not what it renders as.
