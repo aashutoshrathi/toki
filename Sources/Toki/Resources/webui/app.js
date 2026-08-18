@@ -594,11 +594,12 @@ async function refreshAgents() {
 let answer = null;
 
 // The pid is in the signature so switching to another agent whose question happens to read the same
-// never carries the first agent's selections onto -- and then submits them to -- the second.
+// never carries the first agent's selections onto -- and then submits them to -- the second. Built
+// with JSON.stringify rather than joined delimiters so a header or label that happens to contain a
+// separator character cannot make two different pickers collide onto one signature.
 function questionSignature(pid, provider, qs) {
-  return pid + "␟" + provider + "␟" + qs.map(q =>
-    (q.header || "") + "‖" + (q.question || "") + "‖" + (q.multi ? "m" : "s") + "‖" +
-    (q.options || []).map(o => o.label).join("¦")).join("‡");
+  return JSON.stringify([pid, provider, qs.map(q =>
+    [q.header || "", q.question || "", q.multi ? 1 : 0, (q.options || []).map(o => o.label)])]);
 }
 
 // Older servers describe a question's options as bare strings (under `options`, or inside the
@@ -645,6 +646,13 @@ function isQuickPick(qs) {
   return qs.length == 1 && !qs[0].multi;
 }
 
+// Every question that actually offers options needs one chosen before the answer can go. An
+// option-less question (malformed, or a free-text-only prompt) is not gated on, or its picker could
+// never be submitted at all.
+function answerComplete(qs, sel) {
+  return sel.every((s, i) => !(qs[i].options || []).length || s.size > 0);
+}
+
 function renderQuestions() {
   const { questions: qs, sel } = answer;
   let html = '<div class="ahead">Agent is asking</div>';
@@ -665,11 +673,10 @@ function renderQuestions() {
     });
   });
   if (!isQuickPick(qs)) {
-    // Every question needs an answer before Submit: an unanswered one is otherwise dropped (Claude)
-    // or silently sent as its first option (OpenCode's fallback in buildKeySequence).
-    const complete = sel.every(s => s.size > 0);
+    // Submit stays disabled until every answerable question has a pick: an unanswered one is
+    // otherwise dropped (Claude) or silently sent as its first option (OpenCode's buildKeySequence).
     html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
-      (complete ? "" : " disabled") + ">Submit</button></div>";
+      (answerComplete(qs, sel) ? "" : " disabled") + ">Submit</button></div>";
   }
   $("#alert").innerHTML = html;
 }
@@ -742,7 +749,7 @@ async function submitAnswer() {
   if (!answer || submitting) return;
   // Never deliver a partial answer, whatever state the Submit button is in: an unanswered question
   // would be dropped or sent as a default.
-  if (!answer.sel.every(s => s.size > 0)) return;
+  if (!answerComplete(answer.questions, answer.sel)) return;
   const keys = buildKeySequence(answer.provider, answer.questions, answer.sel);
   if (!keys.length) return;
   // Hold the selection until the send is known to have landed. If it fails, the panel stays with

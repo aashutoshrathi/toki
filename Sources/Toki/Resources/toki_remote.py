@@ -1212,12 +1212,27 @@ def send_input(tty, text=None, key=None, raw=False):
 def send_sequence(tty, items):
     """Deliver an ordered run of keystrokes -- named keys (Enter/Tab/arrows/Esc) and single
     characters typed as-is -- to answer a picker. Stops at the first failure so a half-delivered
-    answer does not keep going. Returns (ok, how)."""
+    answer does not keep going. Returns (ok, how).
+
+    The tmux pane is resolved once for the whole run rather than per keypress: `tmux list-panes`
+    is a subprocess, and a long walkthrough would otherwise pay for that discovery on every key.
+    Only the tmux route can be pinned cheaply; iTerm/Terminal delivery re-routes per key by nature,
+    so it falls through to send_input.
+    """
+    if not safe_tty(tty):
+        return False, "unsafe tty"
+    tmux, pane = tmux_pane_for_tty(tty)
     how = "sequence"
     for i, item in enumerate(items):
         if i:
             time.sleep(SEQ_KEY_DELAY)
-        if item in NAMED_KEYS:
+        if pane:
+            if item in NAMED_KEYS:
+                ok = shell([tmux, "send-keys", "-t", pane, TMUX_KEYS[item]]) is not None
+            else:
+                ok = shell([tmux, "send-keys", "-t", pane, "-l", item]) is not None
+            how = "tmux"
+        elif item in NAMED_KEYS:
             ok, how = send_input(tty, key=item)
         else:
             ok, how = send_input(tty, text=item, raw=True)
@@ -1817,6 +1832,10 @@ class Handler(BaseHTTPRequestHandler):
         if keys is not None:
             # A picker walkthrough: a run of named keys and single characters. Reject anything else
             # up front so an oversized or malformed run never reaches the terminal.
+            if key is not None or text is not None or body.get("raw") is not None:
+                # One request delivers one thing. Mixing a batch with a single key/text would let a
+                # caller send a payload the server silently half-ignores.
+                return self._json({"error": "keys cannot be combined with key/text/raw"}, 400)
             if not isinstance(keys, list) or not keys or len(keys) > MAX_SEQ_KEYS:
                 return self._json({"error": "bad key sequence"}, 400)
             if not all(isinstance(k, str) and (k in NAMED_KEYS or len(k) == 1) for k in keys):
