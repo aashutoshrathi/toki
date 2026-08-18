@@ -566,7 +566,9 @@ struct SettingsPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 4)
 
-            DisclosureGroup(isExpanded: $advancedExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                advancedHeader
+                if advancedExpanded {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("Host")
@@ -652,13 +654,8 @@ struct SettingsPanel: View {
                     }
                 }
                 .padding(.top, 6)
-            } label: {
-                Text("Advanced")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { withAnimation(.easeInOut(duration: 0.15)) { advancedExpanded.toggle() } }
+                }
             }
-            .font(.system(size: 11))
             .padding(.horizontal, 4)
 
             HStack(spacing: 8) {
@@ -1016,17 +1013,9 @@ struct SettingsPanel: View {
     // The same checklist onboarding shows, kept permanently: a permission can be revoked in
     // System Settings long after setup, and this is where you find out that it was.
     private var permissionsCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            cardLabel(
-                icon: "checklist",
-                iconColor: .green,
-                title: "Permissions",
-                subtitle: "What Toki asks macOS for, and what each one is used for."
-            )
-            SetupChecklistView(store: store, showsHeader: false)
-        }
-        .padding(8)
-        .settingsCard()
+        SetupChecklistView(store: store, showsHeader: false, collapsible: true)
+            .padding(8)
+            .settingsCard()
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -1065,6 +1054,26 @@ struct SettingsPanel: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
+        .pointerOnHover()
+    }
+
+    private var advancedHeader: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { advancedExpanded.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(advancedExpanded ? 90 : 0))
+                Text("Advanced")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .pointerOnHover()
     }
 

@@ -16,8 +16,11 @@ struct SetupChecklistView: View {
     var showsHeader = true
     /// Settings keeps the list around permanently; onboarding lets it be put away once done.
     var showsDismiss = false
+    /// The Settings card folds the whole list behind a one-line summary until it is opened.
+    var collapsible = false
 
     @State private var steps: [SetupStep] = []
+    @State private var expanded = false
     @State private var busyStepID: String?
     @State private var requestingAll = false
     @State private var currentRequest: String?
@@ -26,27 +29,32 @@ struct SetupChecklistView: View {
 
     private var outstanding: [SetupStep] { SetupChecklist.outstanding(steps) }
     private var requestable: [SetupStep] { SetupChecklist.requestOrder(steps) }
+    private var grantedCount: Int { steps.filter { $0.status == .done }.count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if showsHeader {
+            if collapsible {
+                collapsibleHeader
+            } else if showsHeader {
                 header
             }
 
-            VStack(spacing: 4) {
-                ForEach(steps) { step in
-                    row(for: step)
+            if !collapsible || expanded {
+                VStack(spacing: 4) {
+                    ForEach(steps) { step in
+                        row(for: step)
+                    }
                 }
-            }
 
-            if let launchAtLoginError {
-                Text(launchAtLoginError)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                if let launchAtLoginError {
+                    Text(launchAtLoginError)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            footer
+                footer
+            }
         }
         .onAppear(perform: refresh)
         // TCC decisions are made outside Toki, so the list is re-read whenever the app comes back.
@@ -66,6 +74,47 @@ struct SetupChecklistView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var collapsibleHeader: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "checklist")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .frame(width: 18, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Permissions")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(collapsedSummary)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if !outstanding.isEmpty {
+                    Text("\(outstanding.count) to allow")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.15), in: Capsule())
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerOnHover()
+    }
+
+    private var collapsedSummary: String {
+        guard !steps.isEmpty else { return "Checking what Toki has been granted…" }
+        return "\(grantedCount) of \(steps.count) granted — what Toki asks macOS for, and why."
     }
 
     private var headerDetail: LocalizedStringKey {
@@ -247,7 +296,7 @@ struct SetupChecklistView: View {
             case .localNetwork: SystemPermissions.openPrivacySettings(anchor: "Privacy_LocalNetwork")
             default: break
             }
-            refresh()
+            recheck()
             return
         }
         busyStepID = step.id
@@ -255,6 +304,19 @@ struct SetupChecklistView: View {
             await request(step)
             busyStepID = nil
             await refreshAndWait()
+            recheck()
+        }
+    }
+
+    // A grant answered in a system dialog or over in System Settings can land a beat after the
+    // button returns, so re-read the list a couple more times rather than showing a stale status
+    // until the user thinks to press Re-check.
+    private func recheck() {
+        Task {
+            for delay in [0.6, 1.8] as [Double] {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                await refreshAndWait()
+            }
         }
     }
 
