@@ -243,6 +243,7 @@ async function api(p, o) {
 function lockApp() {
   TOKEN = "";
   clearSession();
+  setDocTitle(null);
   document.body.classList.add("locked");
   $("#paircontrols").hidden = false;
   $("#connectmethods").hidden = true;
@@ -254,6 +255,7 @@ function lockApp() {
 function invalidLink(message) {
   TOKEN = "";
   clearSession();
+  setDocTitle(null);
   try {
     localStorage.removeItem(CONN_KEY);
   } catch (e) {}
@@ -454,6 +456,21 @@ function agentRow(a) {
     "</span>";
 }
 
+const DEFAULT_TITLE = "Toki Remote Control";
+
+// The browser tab reads "<Mac name> - <chat title>", so someone with tabs open on several Macs (or
+// several chats) can tell them apart at a glance. The chat title honours the privacy toggle just as
+// it does on screen; the machine name is the device label and stays. Falls back to the plain name
+// on an older server that sends no machine, and to the default when nothing is connected.
+function setDocTitle(agent) {
+  if (!agent) {
+    document.title = DEFAULT_TITLE;
+    return;
+  }
+  const chat = plainTitle(agent.title) || DEFAULT_TITLE;
+  document.title = agent.machine ? agent.machine + " - " + chat : chat;
+}
+
 function renderAgents() {
   const btn = $("#ddbtn");
   const list = $("#ddlist");
@@ -461,11 +478,13 @@ function renderAgents() {
     btn.innerHTML = '<span class="t">no agents found</span>';
     list.innerHTML = "";
     updateComposer(null);
+    setDocTitle(null);
     return;
   }
   const cur = agents.find(a => a.pid == current) || agents[0];
   btn.innerHTML = agentRow(cur) + '<span class="caret">\u25be</span>';
   updateComposer(cur);
+  setDocTitle(cur);
   // The server hands agents back writable-first, so the read-only ones are a single run at the
   // end. Label that run once, where it starts, rather than badging every row in it.
   list.innerHTML = agents.map((a, i) => {
@@ -1027,6 +1046,10 @@ document.addEventListener("click", async e => {
     toggleOption(b.dataset.opt);
   } else if (b.dataset.submit) {
     submitAnswer();
+  } else if (b.dataset.text) {
+    // The footer's numbered "Choice" keys type a single digit into the terminal for a numbered
+    // prompt. Raw, so it lands as the keypress a picker reads rather than a submitted line.
+    await send({ text: b.dataset.text, raw: true });
   }
 });
 
@@ -1140,7 +1163,49 @@ function goHome() {
   location.replace(location.pathname);
 }
 
-$("#home").addEventListener("click", goHome);
+// Leaving the active session drops the pairing and sends you back to the connect screen, so a
+// stray tap on Home should not do it silently. Confirm first. The pairing-screen Home has no live
+// session to lose, so it still goes straight back.
+function showDisconnectConfirm() {
+  $("#confirm").hidden = false;
+  $("#confirmcancel").focus();
+}
+
+function hideDisconnectConfirm() {
+  $("#confirm").hidden = true;
+  // Return focus to the control that opened the dialog, so keyboard and switch users are not
+  // dropped back at the top of the document.
+  $("#home").focus();
+}
+
+$("#home").addEventListener("click", showDisconnectConfirm);
+$("#confirmcancel").addEventListener("click", hideDisconnectConfirm);
+$("#confirmok").addEventListener("click", () => {
+  hideDisconnectConfirm();
+  goHome();
+});
+// Tapping the dimmed backdrop, or Escape, is a cancel -- the same as choosing not to leave.
+$("#confirm").addEventListener("click", e => {
+  if (e.target.id == "confirm") hideDisconnectConfirm();
+});
+// A real modal: Escape closes it, and Tab is trapped on its two buttons so focus cannot wander into
+// the header, terminal controls, or composer sitting behind the dim.
+$("#confirm").addEventListener("keydown", e => {
+  if (e.key == "Tab") {
+    const first = $("#confirmcancel");
+    const last = $("#confirmok");
+    if (e.shiftKey && document.activeElement == first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement == last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.key == "Escape" && !$("#confirm").hidden) hideDisconnectConfirm();
+});
 $("#pairhome").addEventListener("click", goHome);
 
 $("#manualconnect").addEventListener("click", manualConnect);
