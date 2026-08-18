@@ -585,27 +585,149 @@ async function refreshAgents() {
     resetTranscript();
   }
   renderAgents();
-  const a = agents.find(x => x.pid == current);
+  renderAttention(agents.find(x => x.pid == current));
+}
+
+// A picker the phone is answering: the provider whose TUI the keystrokes have to drive, the
+// questions, and the option indices chosen for each. Kept across polls so a selection survives the
+// alert being rebuilt, and reset (in renderAttention) when the pending question changes.
+let answer = null;
+
+function questionSignature(provider, qs) {
+  return provider + "␟" + qs.map(q =>
+    (q.header || "") + "‖" + (q.question || "") + "‖" + (q.multi ? "m" : "s") + "‖" +
+    (q.options || []).map(o => o.label).join("¦")).join("‡");
+}
+
+// Older servers send option labels as bare strings under `options`; wrap them so the renderer only
+// ever deals with {label, description}.
+function attentionQuestions(att) {
+  if (att.questions && att.questions.length) return att.questions;
+  return [{
+    question: att.prompt || "Agent is waiting on you", header: "", multi: false,
+    options: (att.options || []).map(l => (typeof l == "string" ? { label: l, description: "" } : l)),
+  }];
+}
+
+function renderAttention(a) {
   const al = $("#alert");
-  if (a && a.attention) {
-    al.style.display = "block";
-    al.className = a.attention.kind == "question" ? "q" : "";
-    const qs = a.attention.questions && a.attention.questions.length
-      ? a.attention.questions
-      : [{ question: a.attention.prompt || "Agent is waiting on you", options: a.attention.options || [] }];
-    const head = '<div class="ahead">' +
-      (a.attention.kind == "permission" ? "Needs your approval" : "Agent is asking") + "</div>";
-    al.innerHTML = head + qs.map(q =>
-      '<div class="qq">' + md(q.question || "") + "</div>" +
-      (q.options || []).map((o, i) =>
-        `<button class="opt" data-text="${i + 1}"><b>${i + 1}</b><span>${esc(o)}</span></button>`).join("")
-    ).join("") +
-      (a.attention.kind == "permission"
-        ? '<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button><button class="decision reject" data-key="esc">&#10005; Reject</button></div>'
-        : "");
-  } else {
+  if (!a || !a.attention) {
+    answer = null;
     al.style.display = "none";
+    return;
   }
+  al.style.display = "block";
+  al.className = a.attention.kind == "question" ? "q" : "";
+  if (a.attention.kind != "question") {
+    answer = null;
+    al.innerHTML = '<div class="ahead">Needs your approval</div>' +
+      '<div class="qq">' + md(a.attention.prompt || "") + "</div>" +
+      '<div class="decision-row"><button class="decision approve" data-key="enter">&#10003; Approve</button>' +
+      '<button class="decision reject" data-key="esc">&#10005; Reject</button></div>';
+    return;
+  }
+  const qs = attentionQuestions(a.attention);
+  const sig = questionSignature(a.provider, qs);
+  if (!answer || answer.sig != sig)
+    answer = { sig, provider: a.provider, questions: qs, sel: qs.map(() => new Set()) };
+  renderQuestions();
+}
+
+// A lone single-select question keeps the old one-tap behaviour: tapping an option is the answer,
+// with no separate Submit step. Anything with a multi-select or a second question needs the panel
+// to stay open while choices accumulate.
+function isQuickPick(qs) {
+  return qs.length == 1 && !qs[0].multi;
+}
+
+function renderQuestions() {
+  const { questions: qs, sel } = answer;
+  let html = '<div class="ahead">Agent is asking</div>';
+  qs.forEach((q, qi) => {
+    if (q.header)
+      html += '<div class="qhdr">' + esc(q.header) +
+        (q.multi ? '<span class="qtag">select all that apply</span>' : "") + "</div>";
+    html += '<div class="qq">' + md(q.question || "") + "</div>";
+    (q.options || []).forEach((o, oi) => {
+      const on = sel[qi].has(oi);
+      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}">` +
+        `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>` +
+        `<span class="olab"><b>${esc(o.label)}</b>` +
+        (o.description ? `<em>${esc(o.description)}</em>` : "") + "</span></button>";
+    });
+  });
+  if (!isQuickPick(qs)) {
+    const chosen = sel.reduce((n, s) => n + s.size, 0);
+    html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
+      (chosen ? "" : " disabled") + ">Submit</button></div>";
+  }
+  $("#alert").innerHTML = html;
+}
+
+function toggleOption(spec) {
+  if (!answer) return;
+  const [qi, oi] = spec.split(":").map(Number);
+  const set = answer.sel[qi];
+  if (answer.questions[qi].multi) {
+    if (set.has(oi)) set.delete(oi);
+    else set.add(oi);
+  } else {
+    set.clear();
+    set.add(oi);
+  }
+  if (isQuickPick(answer.questions)) submitAnswer();
+  else renderQuestions();
+}
+
+// Translate the accumulated selections into the exact keypresses each TUI needs. The two pickers
+// diverge, so this is the one place that knows how:
+//
+//   OpenCode's `question` tool: arrows move the highlight, Enter toggles a multi-select option and
+//   Tab moves to the next question; a single-select's Enter both selects and advances. A final tab
+//   lands on the "Confirm" step, where Enter submits. (Confirmed against OpenCode's TUI.)
+//
+//   Claude's AskUserQuestion: number keys pick options directly, so a single-select's number is the
+//   whole answer, a multi-select toggles each number then Enter confirms, and Tab moves between
+//   questions in a multi-question prompt.
+function buildKeySequence(provider, questions, sel) {
+  const keys = [];
+  const anyMulti = questions.some(q => q.multi);
+  const last = questions.length - 1;
+  questions.forEach((q, qi) => {
+    const chosen = [...sel[qi]].sort((x, y) => x - y);
+    const n = (q.options || []).length;
+    if (provider == "opencode") {
+      if (q.multi) {
+        for (let i = 0; i < n; i++) {
+          if (sel[qi].has(i)) keys.push("enter");
+          if (i < n - 1) keys.push("down");
+        }
+        keys.push("tab");
+      } else {
+        for (let i = 0, idx = chosen.length ? chosen[0] : 0; i < idx; i++) keys.push("down");
+        keys.push("enter");
+      }
+    } else {
+      chosen.forEach(i => keys.push(String(i + 1)));
+      if (qi < last) keys.push("tab");
+    }
+  });
+  // OpenCode shows a Confirm step whenever there is more than one question or any multi-select;
+  // land on it and submit. A lone single-select has already submitted on its Enter.
+  if (provider == "opencode" && (questions.length > 1 || anyMulti)) keys.push("enter");
+  // Claude submits a multi-question or multi-select prompt with a closing Enter; a lone
+  // single-select was answered by its number alone.
+  else if (provider != "opencode" && !isQuickPick(questions)) keys.push("enter");
+  return keys;
+}
+
+async function submitAnswer() {
+  if (!answer) return;
+  const keys = buildKeySequence(answer.provider, answer.questions, answer.sel);
+  if (!keys.length) return;
+  answer = null;
+  $("#alert").style.display = "none";
+  await send({ keys });
 }
 
 function nearBottom() {
@@ -862,9 +984,10 @@ document.addEventListener("click", async e => {
   } else if (b.dataset.key) {
     $("#alert").style.display = "none";
     await send({ key: b.dataset.key });
-  } else if (b.dataset.text) {
-    $("#alert").style.display = "none";
-    await send({ text: b.dataset.text, raw: true });
+  } else if (b.dataset.opt) {
+    toggleOption(b.dataset.opt);
+  } else if (b.dataset.submit) {
+    submitAnswer();
   }
 });
 

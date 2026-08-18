@@ -53,6 +53,14 @@ QUIET_PERIOD = 10.0  # seconds; same reasoning as Toki's attentionQuietPeriod
 # Claude Code reads the trailing carriage return as part of the paste and inserts a newline
 # instead of submitting; a short pause makes the Enter register as its own keypress.
 SUBMIT_DELAY = 0.15
+# Answering a multi-select picker means driving its TUI one keypress at a time (navigate, toggle,
+# advance, submit). The gap lets each keystroke land and the interface repaint before the next, so
+# a toggle is not eaten while the cursor is still moving.
+SEQ_KEY_DELAY = 0.12
+# A ceiling on a single walkthrough: options plus navigation across every question. Generous enough
+# for a real picker, low enough that one /api/send cannot hold the terminal for long.
+MAX_SEQ_KEYS = 200
+NAMED_KEYS = ("enter", "esc", "up", "down", "tab")
 AUTO_ACCEPTED_EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 CANONICAL_AGENTS = None
 CANONICAL_AGENTS_AT = 0.0
@@ -621,20 +629,51 @@ def claude_tool_detail(name, inp):
     return " · ".join(parts)[:240]
 
 
-def extract_questions(name, inp):
-    """AskUserQuestion payload: all questions, each with tappable option labels."""
-    if name != "AskUserQuestion":
-        return None
-    questions = inp.get("questions")
+def normalize_questions(questions, multi_key):
+    """A picker payload as the phone needs it: every question, its header, whether it takes more
+    than one answer, and each option's label and description.
+
+    Claude's AskUserQuestion and OpenCode's `question` tool carry the same shape under different
+    names -- Claude marks a multi-select with `multiSelect`, OpenCode with `multiple` -- so both
+    reach here with the key that means "more than one" for that provider.
+    """
     if not isinstance(questions, list) or not questions:
         return None
     out = []
     for q in questions:
-        if isinstance(q, dict):
-            out.append({"question": q.get("question", ""),
-                        "options": [o.get("label", "") for o in q.get("options", [])
-                                    if isinstance(o, dict)]})
+        if not isinstance(q, dict):
+            continue
+        options = []
+        for o in q.get("options", []):
+            if isinstance(o, dict) and o.get("label"):
+                options.append({"label": o.get("label", ""),
+                                "description": o.get("description", "") or ""})
+            elif isinstance(o, str) and o:
+                options.append({"label": o, "description": ""})
+        out.append({"question": q.get("question", ""),
+                    "header": q.get("header", "") or "",
+                    "multi": bool(q.get(multi_key)),
+                    "options": options})
     return out or None
+
+
+def extract_questions(name, inp):
+    """AskUserQuestion payload: all questions, each with tappable options."""
+    if name != "AskUserQuestion":
+        return None
+    return normalize_questions(inp.get("questions"), "multiSelect")
+
+
+def question_attention(qs):
+    """An attention payload for a picker. The phone renders every question from `questions`; the
+    top-level `prompt`/`options` stay populated from the first for the notification text and any
+    client that predates multi-question support."""
+    if not qs:
+        return {"kind": "question", "prompt": "Agent is waiting on you", "options": [], "questions": []}
+    first = qs[0]
+    return {"kind": "question", "prompt": first.get("question", ""),
+            "options": [o["label"] for o in first.get("options", [])],
+            "questions": qs}
 
 
 def claude_attention(path):
@@ -656,9 +695,7 @@ def claude_attention(path):
     name = last["tool"]
     if name == "AskUserQuestion":
         qs = last.get("questions") or []
-        first = qs[0] if qs else {"question": "", "options": []}
-        return {"kind": "question", "prompt": first["question"], "options": first["options"],
-                "questions": qs}
+        return question_attention(qs)
     if name in ("ExitPlanMode", "EnterPlanMode"):
         return {"kind": "question", "prompt": "Waiting on plan approval", "options": []}
     if mode == "auto":
@@ -863,18 +900,34 @@ def opencode_title(session_id):
     return rows[0][0] if rows and rows[0][0] else None
 
 
+def opencode_questions(pdata):
+    """The questions a running `question` tool is waiting on, from its stored call arguments."""
+    try:
+        data = json.loads(pdata)
+    except (ValueError, TypeError):
+        return None
+    inp = (data.get("state") or {}).get("input") or {}
+    return normalize_questions(inp.get("questions"), "multiple")
+
+
 def opencode_attention(session_id):
     rows = opencode_query(
-        "SELECT json_extract(data,'$.tool'), time_updated FROM part "
+        "SELECT json_extract(data,'$.tool'), time_updated, data FROM part "
         "WHERE session_id=? AND json_extract(data,'$.state.status')='running' "
         "ORDER BY time_updated DESC LIMIT 1",
         (session_id,),
     )
     if not rows:
         return None
-    tool, ts = rows[0]
+    tool, ts, pdata = rows[0]
     if not ts or time.time() - ts / 1000 < QUIET_PERIOD:
         return None
+    # OpenCode's `question` tool is a structured picker with the same shape as Claude's
+    # AskUserQuestion, so surface it as a question the phone can answer rather than a bare "Allow".
+    if tool == "question":
+        qs = opencode_questions(pdata)
+        if qs:
+            return question_attention(qs)
     return {"kind": "permission", "prompt": f"Allow {tool}?" if tool else "OpenCode is waiting on you", "options": []}
 
 
@@ -910,11 +963,18 @@ def opencode_entries(session_id):
                 entries.append({"role": "assistant" if role == "assistant" else "user", "text": text})
         elif kind == "tool":
             state = data.get("state") or {}
-            entries.append({
+            tool = data.get("tool", "tool")
+            entry = {
                 "role": "tool",
-                "tool": data.get("tool", "tool"),
-                "text": opencode_tool_summary(data.get("tool"), state.get("input") or {}),
-            })
+                "tool": tool,
+                "text": opencode_tool_summary(tool, state.get("input") or {}),
+            }
+            if tool == "question":
+                qs = normalize_questions((state.get("input") or {}).get("questions"), "multiple")
+                if qs:
+                    entry["questions"] = qs
+                    entry["text"] = state.get("title") or opencode_tool_summary(tool, state.get("input") or {})
+            entries.append(entry)
     return entries
 
 
@@ -1147,6 +1207,23 @@ def send_input(tty, text=None, key=None, raw=False):
                 ok = ok and osascript('tell application "System Events" to key code 36')
         return ok, "terminal+system-events"
     return False, "no route to tty (not tmux/iTerm/Terminal?)"
+
+
+def send_sequence(tty, items):
+    """Deliver an ordered run of keystrokes -- named keys (Enter/Tab/arrows/Esc) and single
+    characters typed as-is -- to answer a picker. Stops at the first failure so a half-delivered
+    answer does not keep going. Returns (ok, how)."""
+    how = "sequence"
+    for i, item in enumerate(items):
+        if i:
+            time.sleep(SEQ_KEY_DELAY)
+        if item in NAMED_KEYS:
+            ok, how = send_input(tty, key=item)
+        else:
+            ok, how = send_input(tty, text=item, raw=True)
+        if not ok:
+            return False, how
+    return True, how
 
 
 # ------------------------------------------------------------------- server
@@ -1734,9 +1811,17 @@ class Handler(BaseHTTPRequestHandler):
         # drive those scans in a loop.
         key = body.get("key")
         text = body.get("text")
-        if key not in (None, "enter", "esc", "up", "down", "tab"):
+        keys = body.get("keys")
+        if key not in (None,) + NAMED_KEYS:
             return self._json({"error": "unknown key"}, 400)
-        if not key and not (isinstance(text, str) and text):
+        if keys is not None:
+            # A picker walkthrough: a run of named keys and single characters. Reject anything else
+            # up front so an oversized or malformed run never reaches the terminal.
+            if not isinstance(keys, list) or not keys or len(keys) > MAX_SEQ_KEYS:
+                return self._json({"error": "bad key sequence"}, 400)
+            if not all(isinstance(k, str) and (k in NAMED_KEYS or len(k) == 1) for k in keys):
+                return self._json({"error": "bad key in sequence"}, 400)
+        elif not key and not (isinstance(text, str) and text):
             return self._json({"error": "nothing to send"}, 400)
         if isinstance(text, str) and len(text) > MAX_SEND_CHARS:
             return self._json({"error": "message too long"}, 413)
@@ -1745,8 +1830,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "agent gone"}, 410)
         if not agent_is_writable(agent):
             return self._json({"error": "This non-terminal session is read-only."}, 422)
-        raw = bool(body.get("raw")) and text is not None and len(text) == 1
-        ok, how = send_input(agent["tty"], text=text, key=key, raw=raw)
+        if keys is not None:
+            ok, how = send_sequence(agent["tty"], keys)
+        else:
+            raw = bool(body.get("raw")) and text is not None and len(text) == 1
+            ok, how = send_input(agent["tty"], text=text, key=key, raw=raw)
         self._json({"ok": ok, "how": how}, 200 if ok else 502)
 
 

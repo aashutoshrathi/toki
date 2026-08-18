@@ -163,14 +163,35 @@ body.privacy .eye-off{display:inline}
 #alert .qq:not(:first-of-type){margin-top:14px;padding-top:12px;border-top:1px solid #ffffff1a}
 #readonly{display:none;margin:10px 14px;padding:11px 12px;border-radius:var(--r);
           background:var(--warn-surface);border:1px solid var(--warn-line);color:#e2cc8c;font-size:13px}
-.opt{display:flex;align-items:flex-start;gap:10px;width:100%;margin:8px 0 0;padding:12px;
+/* The header above a question (OpenCode/Claude give each one a short tab label) and, for a
+   multi-select, a reminder that more than one answer is allowed. */
+#alert .qhdr{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:14px 0 2px;
+             font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#8fb4e0}
+#alert .qhdr:first-of-type{margin-top:4px}
+#alert .qtag{font-weight:600;letter-spacing:.02em;text-transform:none;color:#cde0f5;
+             background:#ffffff1f;border-radius:999px;padding:2px 8px;font-size:10px}
+.opt{display:flex;align-items:flex-start;gap:11px;width:100%;margin:8px 0 0;padding:12px;
      border-radius:var(--r);background:#22385480;border:1px solid var(--accent-line);color:#fff;font-size:14px;
      text-align:left;line-height:1.4}
 .opt:not(:disabled):hover{background:#2c496b;border-color:#5a83b0}
-.opt b{flex:none;min-width:23px;height:23px;display:inline-flex;align-items:center;
-       justify-content:center;border-radius:6px;background:#ffffff26;font-size:12px;font-weight:700}
-.opt span{flex:1;min-width:0}
+.opt.on{background:#2d4d73;border-color:#79a6d6}
+/* The tick box (multi-select) or dot (single-select) that shows what's chosen. It fills in when the
+   option's button carries .on, so the state reads the same whether or not the label wraps. */
+.opt .mark{flex:none;width:20px;height:20px;margin-top:1px;border:1.5px solid #ffffff66;
+           display:inline-flex;align-items:center;justify-content:center}
+.opt .mark.box{border-radius:6px}
+.opt .mark.radio{border-radius:50%}
+.opt.on .mark{border-color:#8fc0f2;background:#8fc0f2}
+.opt.on .mark::after{content:"";display:block}
+.opt.on .mark.box::after{width:5px;height:9px;margin-top:-2px;border:solid #12263c;
+                         border-width:0 2px 2px 0;transform:rotate(45deg)}
+.opt.on .mark.radio::after{width:8px;height:8px;border-radius:50%;background:#12263c}
+.opt .olab{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.opt .olab b{font-weight:650}
+.opt .olab em{font-style:normal;font-size:12.5px;line-height:1.35;color:#c8d6e6}
 .decision-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.decision-row.one{grid-template-columns:1fr;margin-top:14px}
+.decision[disabled]{opacity:.5}
 .decision{min-height:46px;border-radius:var(--r);color:#fff;font-weight:650}
 .decision.approve{background:#23563c;border:1px solid #3f8a65}
 .decision.reject{background:#5b2929;border:1px solid #a14a4a}
