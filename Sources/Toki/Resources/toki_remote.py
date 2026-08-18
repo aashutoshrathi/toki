@@ -1266,7 +1266,12 @@ def decode_image_payload(value):
     an oversized payload is rejected without being expanded into memory."""
     if not isinstance(value, str) or not value:
         return None
-    b64 = value.split(",", 1)[1] if value.startswith("data:") else value
+    if value.startswith("data:"):
+        # A data: URL must have a comma before its payload; without one there are no bytes to decode.
+        if "," not in value:
+            return None
+        value = value.split(",", 1)[1]
+    b64 = value
     if len(b64) > MAX_UPLOAD_BODY_BYTES:
         return None
     try:
@@ -1917,6 +1922,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(raw)
         except ValueError:
+            return self._json({"error": "bad json"}, 400)
+        # Valid JSON that is not an object (null, a list, a string) has no `image` field to read.
+        if not isinstance(body, dict):
             return self._json({"error": "bad json"}, 400)
         data = decode_image_payload(body.get("image"))
         # 415 is the caller's fault (not an image, or too big); 500 is ours (could not write).

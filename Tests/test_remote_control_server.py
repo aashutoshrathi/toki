@@ -654,6 +654,9 @@ class ImageUploadTests(unittest.TestCase):
         self.assertIsNone(toki_remote.decode_image_payload("not base64 @@@"))
         self.assertIsNone(toki_remote.decode_image_payload(""))
         self.assertIsNone(toki_remote.decode_image_payload(None))
+        # A data: URL with no comma has no payload and must not raise.
+        self.assertIsNone(toki_remote.decode_image_payload("data:image/png;base64"))
+        self.assertIsNone(toki_remote.decode_image_payload([1, 2, 3]))
         with mock.patch.object(toki_remote, "MAX_IMAGE_BYTES", 4):
             self.assertIsNone(toki_remote.decode_image_payload(base64.b64encode(_PNG_1x1).decode()))
 
