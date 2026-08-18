@@ -108,6 +108,17 @@ assert.match(app, /return JSON\.stringify\(\[pid, provider,/);
 // Options expose their checked state to assistive tech, and a failed submit keeps the picks.
 assert.match(app, /role="\$\{q\.multi \? "checkbox" : "radio"\}" aria-checked="\$\{on\}"/);
 assert.match(app, /const ok = await send\(\{ keys \}\)/);
+
+// The browser tab title is "<machine> - <chat>", the footer's numbered Choice keys still type into
+// the terminal, and leaving an active session asks first.
+assert.match(app, /function setDocTitle/);
+assert.match(app, /agent\.machine \+ " - " \+ chat/);
+assert.match(app, /await send\(\{ text: b\.dataset\.text, raw: true \}\)/);
+assert.match(app, /function showDisconnectConfirm/);
+assert.match(app, /\$\("#home"\)\.addEventListener\("click", showDisconnectConfirm\)/);
+assert.match(html, /id="confirm"[^>]*role="dialog"[^>]*aria-modal="true"/);
+assert.match(html, /id="confirmok"/);
+assert.match(css, /#confirm\[hidden\]\{display:none\}/);
 assert.match(css, /\.opt \.mark\.box/);
 assert.match(css, /\.opt\.on \.mark/);
 assert.match(css, /\.decision-row\.one/);

@@ -308,3 +308,21 @@ footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.4
 .u-row.err .u-value{color:#d1544f}
 .u-stale{padding:4px 0 0;color:#e2b341;font-size:11px}
 #usagetoggle.stale #usagesummary{color:#e2b341}
+
+/* Confirm before leaving an active session: a full-screen dim with a small card, so a stray tap on
+   Home cannot silently drop the pairing. */
+#confirm{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+         padding:24px;background:#000a;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
+         animation:confirm-fade .12s ease}
+#confirm[hidden]{display:none}
+.confirm-card{width:100%;max-width:360px;background:var(--surface-1);border:1px solid var(--line-strong);
+              border-radius:var(--r-lg);padding:20px;box-shadow:0 14px 44px #0009}
+.confirm-card h2{margin:0 0 8px;font-size:17px;font-weight:650;color:var(--text)}
+.confirm-card p{margin:0 0 18px;font-size:14px;line-height:1.45;color:var(--text-2)}
+.confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.confirm-actions button{min-height:44px;border-radius:var(--r);font-size:15px;font-weight:600}
+.btn-ghost{background:var(--surface-2);border:1px solid var(--line);color:var(--text)}
+.btn-ghost:not(:disabled):hover{background:var(--surface-3)}
+.btn-danger{background:#5b2929;border:1px solid #a14a4a;color:#fff}
+.btn-danger:not(:disabled):hover{background:#6d3131}
+@keyframes confirm-fade{from{opacity:0}to{opacity:1}}

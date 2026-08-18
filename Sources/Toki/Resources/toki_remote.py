@@ -989,6 +989,31 @@ def agent_recency(agent):
     return os.path.getmtime(session) if os.path.exists(session) else 0.0
 
 
+_machine_name = None
+
+
+def machine_name():
+    """The Mac's friendly name, so a phone paired to more than one Mac can tell their tabs apart.
+
+    ComputerName is what the user set in System Settings; fall back to the network node name, minus
+    the .local that would otherwise clutter a browser tab title. Resolved once -- it does not change
+    under a running server.
+    """
+    global _machine_name
+    if _machine_name is None:
+        name = shell(["/usr/sbin/scutil", "--get", "ComputerName"])
+        if not name:
+            try:
+                name = os.uname().nodename
+            except OSError:
+                name = ""
+        name = (name or "").strip().splitlines()[0].strip() if name else ""
+        if name.endswith(".local"):
+            name = name[:-len(".local")]
+        _machine_name = name or "Mac"
+    return _machine_name
+
+
 def display_path(cwd):
     """The agent's folder written the way you'd write it: ~/Git/toki, not /Users/you/Git/toki."""
     if not cwd:
@@ -1884,6 +1909,7 @@ class Handler(BaseHTTPRequestHandler):
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,
                     "writable": agent_is_writable(a),
+                    "machine": machine_name(),
                     # Advertises this endpoint, so a hosted UI newer than the Mac only offers image
                     # attachments once it is talking to a server that can receive them.
                     "uploads": True,

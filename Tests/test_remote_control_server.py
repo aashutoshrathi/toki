@@ -1,4 +1,5 @@
 import base64
+import collections
 import importlib.util
 import json
 import os
@@ -719,6 +720,44 @@ class ImageUploadTests(unittest.TestCase):
                 toki_remote.prune_uploads(now=base + 2, reserve=100)
             self.assertFalse(os.path.exists(drop))
             self.assertTrue(os.path.exists(keep))
+
+
+class MachineNameTests(unittest.TestCase):
+    def setUp(self):
+        toki_remote._machine_name = None
+
+    def tearDown(self):
+        toki_remote._machine_name = None
+
+    def test_prefers_computer_name(self):
+        with mock.patch.object(toki_remote, "shell", lambda cmd, timeout=5: "Minato\n"):
+            self.assertEqual(toki_remote.machine_name(), "Minato")
+
+    def test_falls_back_to_node_name_without_local_suffix(self):
+        Uname = collections.namedtuple("Uname", "sysname nodename release version machine")
+        with mock.patch.object(toki_remote, "shell", lambda cmd, timeout=5: None), \
+                mock.patch.object(toki_remote.os, "uname",
+                                  lambda: Uname("Darwin", "minato.local", "", "", "")):
+            self.assertEqual(toki_remote.machine_name(), "minato")
+
+    def test_defaults_when_nothing_is_available(self):
+        Uname = collections.namedtuple("Uname", "sysname nodename release version machine")
+        with mock.patch.object(toki_remote, "shell", lambda cmd, timeout=5: None), \
+                mock.patch.object(toki_remote.os, "uname",
+                                  lambda: Uname("Darwin", "", "", "", "")):
+            self.assertEqual(toki_remote.machine_name(), "Mac")
+
+    def test_is_cached_after_first_resolution(self):
+        calls = []
+
+        def once(cmd, timeout=5):
+            calls.append(cmd)
+            return "Minato"
+
+        with mock.patch.object(toki_remote, "shell", once):
+            toki_remote.machine_name()
+            toki_remote.machine_name()
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":
