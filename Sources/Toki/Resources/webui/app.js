@@ -747,10 +747,13 @@ async function submitAnswer() {
   if (!keys.length) return;
   // Hold the selection until the send is known to have landed. If it fails, the panel stays with
   // every pick intact rather than making the user rebuild the whole answer from scratch.
+  const pending = answer;
   submitting = true;
   const ok = await send({ keys });
   submitting = false;
-  if (!answer) return;
+  // A poll (or an agent switch) may have swapped in a different picker while the send was in flight.
+  // Only clear or re-render the exact one we submitted, never whatever took its place.
+  if (answer !== pending) return;
   if (ok) {
     answer = null;
     $("#alert").style.display = "none";
