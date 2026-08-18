@@ -1327,9 +1327,11 @@ def save_upload(data):
         try:
             os.makedirs(UPLOAD_DIR, exist_ok=True)
             prune_uploads(reserve=len(data))
-            with open(path, "wb") as f:
+            # Create private from the first byte: opening 0o600 rather than writing then chmod'ing
+            # leaves no window where another local user could read the image mid-write.
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as f:
                 f.write(data)
-            os.chmod(path, 0o600)
         except OSError:
             return None
     return path

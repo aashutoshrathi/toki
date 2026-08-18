@@ -1123,21 +1123,28 @@ async function submitComposer() {
     } else {
       // No bubble to retry from -- the send was bound to an agent no longer on screen, or navigating
       // away cleared the echo -- so put the attachment back for a manual retry instead of dropping it.
-      restoreAttachment(image, caption);
+      restoreAttachment(image, caption, pid);
     }
   } catch (e) {
     // Upload itself failed: the preview URL was never revoked, so the same attachment goes back for
     // a retry rather than a redo.
     uploading = false;
-    restoreAttachment(image, caption);
+    restoreAttachment(image, caption, pid);
     feedback("error");
     setStatus("Couldn’t upload the image: " + e.message, "error");
   }
 }
 
-// Put a not-yet-sent image (and its caption) back in the composer, without clobbering a fresh draft
-// the user may have typed while the upload was in flight.
-function restoreAttachment(image, caption) {
+// Put a not-yet-sent image (and caption) back for retry, but only while its agent is still the one
+// on screen -- the composer is shared, so restoring into a different agent's view would send the
+// retry to the wrong agent. When you've navigated away, drop it and say so rather than misdeliver.
+function restoreAttachment(image, caption, pid) {
+  if (current != pid) {
+    URL.revokeObjectURL(image.url);
+    feedback("error");
+    setStatus("Image not sent. Reopen that agent to try again.", "error");
+    return;
+  }
   pendingImage = image;
   renderAttachPreview();
   const input = $("#msg");
