@@ -1141,6 +1141,9 @@ async function submitComposer() {
 function restoreAttachment(image, caption, pid) {
   if (current != pid) {
     URL.revokeObjectURL(image.url);
+    // Re-enable the footer for the agent now on screen: `uploading` was true when navigation
+    // disabled it, and this path would otherwise leave it stuck until the next successful poll.
+    updateComposer(agents.find(a => a.pid == current) || null);
     feedback("error");
     setStatus("Image not sent. Reopen that agent to try again.", "error");
     return;
