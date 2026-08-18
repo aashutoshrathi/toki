@@ -487,6 +487,9 @@ function updateComposer(agent) {
   const writable = !!(agent && agent.writable);
   const enabled = writable && !sending && !uploading;
   $("#readonly").style.display = agent && !writable ? "block" : "none";
+  // Attach only against a server that advertises the upload endpoint: a hosted UI newer than the Mac
+  // must not offer a picker that would POST to a route the older server does not have.
+  $("#attach").hidden = !(agent && agent.uploads);
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
 }
@@ -1035,8 +1038,16 @@ const MAX_SEND_CHARS = 8000;
 // An image chosen (picker/camera) or pasted, waiting to go out with the next Send. One at a time.
 let pendingImage = null;
 
+function uploadsSupported() {
+  const a = agents.find(x => x.pid == current);
+  return !!(a && a.uploads);
+}
+
 function setPendingImage(blob) {
   if (!blob || !(blob.type || "").startsWith("image/")) return;
+  // Guards the paste path (which bypasses the attach button) against an older server with no
+  // upload endpoint; the button itself is already hidden by updateComposer.
+  if (!uploadsSupported()) return;
   if (blob.size > MAX_IMAGE_BYTES) {
     feedback("error");
     setStatus("That image is too large (max 12 MB).", "error");

@@ -1879,6 +1879,9 @@ class Handler(BaseHTTPRequestHandler):
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,
                     "writable": agent_is_writable(a),
+                    # Advertises this endpoint, so a hosted UI newer than the Mac only offers image
+                    # attachments once it is talking to a server that can receive them.
+                    "uploads": True,
                 })
             self._json(result)
         elif url.path == "/api/usage":
