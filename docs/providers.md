@@ -66,6 +66,12 @@ Vercel's `fx`. Auto-detected from its local usage ledger (`~/.fx/usage.jsonl`); 
 
 Detected when either the `cursor-agent` CLI or the Cursor desktop app is installed. When you are signed into Cursor, Toki reads your usage from `cursor.com` using the OAuth token in the desktop app's local state: spend this cycle against your plan's limit as a ring, token counts, and the billing-cycle reset. The desktop agent runs inside the app with no separate process, so the card also reads local AI-edit and chat activity to show **Active** and sort by recency, and falls back to that alone when signed out.
 
+The ring's denominator is the spend cap the API reports, which for a team member is the team's shared cap. If your personal cap differs, set it (in dollars) with a configured account so the ring is yours:
+
+```json
+{ "label": "Cursor", "type": "cursor", "limit": 20 }
+```
+
 ## Copilot, Gemini, Grok, Antigravity
 
 Agent-detection only. Toki shows a local active-session count, and sign-in state for Gemini and Grok, but invents no quota, because none of GitHub, Google, or xAI expose a usage API Toki reads for these. Antigravity (Google's `agy`) is detected by its CLI; its agent rows read the conversation title and last activity from `~/.gemini/antigravity-cli` (its live history log and conversation summaries).

@@ -119,7 +119,9 @@ struct CursorUsageClient {
         let aggregated = try await dashboard("get-aggregated-usage-events", body: body, credentials: credentials)
         var usage = Self.parseAggregated(aggregated)
         usage.plan = profile.plan
-        if let hardLimit = try? await dashboard("get-hard-limit", body: [:], credentials: credentials) {
+        if let configured = account.limit, configured > 0 {
+            usage.hardLimitDollars = Int(configured)
+        } else if let hardLimit = try? await dashboard("get-hard-limit", body: [:], credentials: credentials) {
             usage.hardLimitDollars = Self.parseHardLimit(hardLimit)
         }
         if let teamSpend = try? await dashboard("get-team-spend", body: body, credentials: credentials) {
