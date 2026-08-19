@@ -539,27 +539,44 @@ enum AgentSessionResolver {
     }
 
     private static func newestAntigravitySession(cwd: String?) -> (title: String?, lastActive: Date?)? {
-        guard let cwd, let safe = safeSQLLikePath(cwd) else { return nil }
-        let db = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity-cli/conversation_summaries.db"
-        guard FileManager.default.fileExists(atPath: db) else { return nil }
-        let query = "SELECT title, preview, last_modified_time FROM conversation_summaries "
-            + "WHERE workspace_uris LIKE '%file://\(safe)%' ORDER BY last_modified_time DESC LIMIT 1;"
-        guard let raw = Shell.output("/usr/bin/sqlite3", ["-readonly", "-separator", "\u{1f}", db, query]) else { return nil }
-        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\u{1f}")
-        guard !parts.isEmpty, !(parts.count == 1 && parts[0].isEmpty) else { return nil }
-        let title = parts[0].isEmpty ? nil : parts[0]
-        let preview = parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil
-        let lastActive = parts.count > 2 ? parseAntigravityTimestamp(parts[2]) : nil
-        return (title ?? preview, lastActive)
+        guard let cwd else { return nil }
+        let base = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity-cli"
+        guard let contents = try? String(contentsOfFile: "\(base)/history.jsonl", encoding: .utf8) else { return nil }
+
+        var latestTimestamp: [String: Double] = [:]
+        var renameTitle: [String: String] = [:]
+        for line in contents.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  entry["workspace"] as? String == cwd,
+                  let conversation = entry["conversationId"] as? String else { continue }
+            let timestamp = (entry["timestamp"] as? Double) ?? 0
+            if timestamp > (latestTimestamp[conversation] ?? 0) { latestTimestamp[conversation] = timestamp }
+            if entry["type"] as? String == "slash_command",
+               let display = entry["display"] as? String, display.hasPrefix("/rename ") {
+                let name = display.dropFirst("/rename ".count).trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty { renameTitle[conversation] = name }
+            }
+        }
+        guard let conversation = latestTimestamp.max(by: { $0.value < $1.value })?.key else { return nil }
+
+        let title = renameTitle[conversation] ?? antigravitySummaryTitle(conversation: conversation)
+        let dbModified = (try? FileManager.default.attributesOfItem(
+            atPath: "\(base)/conversations/\(conversation).db")[.modificationDate]) as? Date
+        let historyActivity = latestTimestamp[conversation].flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0 / 1000) : nil }
+        return (title, dbModified ?? historyActivity)
     }
 
-    private static func parseAntigravityTimestamp(_ raw: String) -> Date? {
-        let base = String(raw.prefix { $0 != "." && $0 != "+" }).trimmingCharacters(in: .whitespaces)
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.date(from: base)
+    private static func antigravitySummaryTitle(conversation: String) -> String? {
+        guard conversation.range(of: "^[0-9a-fA-F-]+$", options: .regularExpression) != nil else { return nil }
+        let db = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity-cli/conversation_summaries.db"
+        guard FileManager.default.fileExists(atPath: db) else { return nil }
+        let query = "SELECT title, preview FROM conversation_summaries WHERE conversation_id = '\(conversation)' LIMIT 1;"
+        guard let raw = Shell.output("/usr/bin/sqlite3", ["-readonly", "-separator", "\u{1f}", db, query]) else { return nil }
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\u{1f}")
+        let title = parts.first.flatMap { $0.isEmpty ? nil : $0 }
+        let preview = parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil
+        return title ?? preview
     }
 
     // Walks the process ancestry for the hosting app. Returns the PID too: two builds of a
@@ -694,11 +711,6 @@ enum AgentSessionResolver {
     private static func safeSQLPath(_ value: String) -> String? {
         guard value.hasPrefix("/"), !value.contains("'") else { return nil }
         return value
-    }
-
-    private static func safeSQLLikePath(_ value: String) -> String? {
-        guard let safe = safeSQLPath(value), !safe.contains("%"), !safe.contains("_") else { return nil }
-        return safe
     }
 
     private nonisolated(unsafe) static var regexCache: [String: NSRegularExpression] = [:]
