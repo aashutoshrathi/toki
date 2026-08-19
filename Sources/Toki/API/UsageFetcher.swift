@@ -139,9 +139,7 @@ enum UsageFetcher {
             case .copilot, .grok, .gemini, .antigravity:
                 snapshots = [agentOnlySnapshot(for: account)]
             case .cursor:
-                var snapshot = agentOnlySnapshot(for: account)
-                snapshot.lastActivity = CursorLocalActivity.latest()
-                snapshots = [snapshot]
+                snapshots = [await CursorUsageClient(account: account).snapshot()]
             case .fx:
                 snapshots = [try await FxUsageClient(account: account).snapshot()]
             case .openCode:
@@ -195,9 +193,9 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .antigravity, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .manual:
             return nil
-        case .claudeCode, .codex, .openai, .anthropic, .fx:
+        case .claudeCode, .codex, .openai, .anthropic, .fx, .cursor:
             return "\(account.provider.rawValue):\(account.id)"
         }
     }
@@ -217,9 +215,9 @@ enum UsageFetcher {
         switch provider {
         case .claudeCode:
             return claudeRefreshInterval
-        case .codex, .openai, .anthropic, .fx:
+        case .codex, .openai, .anthropic, .fx, .cursor:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .antigravity, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .manual:
             return 0
         }
     }

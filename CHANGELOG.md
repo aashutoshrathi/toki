@@ -10,7 +10,7 @@
 - **No-usage-API cards are simpler.** Providers with no usage API (Grok, Cursor, Antigravity, and the like) no longer expand on click; the card says "No usage API" in place and keeps its live/idle status. The expanded usage headline is also toned down to match the rest of its row.
 - **The companion app sees Antigravity and fx sessions.** Both now surface on the phone with their own logos, and their terminals accept typed replies and keypresses like Claude, Codex, and OpenCode sessions do.
 - **Cursor is detected from its desktop app, not just the CLI.** The Cursor card now appears when Cursor.app is installed, so desktop-only users see it without the `cursor-agent` CLI on their PATH.
-- **Cursor's card reflects desktop activity.** Since the desktop agent runs inside the app with no separate process, the card reads Cursor's local AI-edit and chat activity instead, showing Active while you are using it and sorting by that recency.
+- **Cursor shows real usage with a spend ring.** When you are signed into Cursor, the card reads your usage from cursor.com: spend this cycle against your plan's limit as a health ring, plus token counts and the cycle reset, alongside your plan tier. Since the desktop agent has no separate process, the card also reads local AI-edit and chat activity to show Active and sort by recency, and falls back to that when signed out.
 
 ## 2.7.0 - 2026-08-19
 
