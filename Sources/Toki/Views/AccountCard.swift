@@ -57,19 +57,23 @@ struct AccountCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
-                Button {
-                    toggleExpanded()
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .frame(width: 12)
+                if canExpand {
+                    Button {
+                        toggleExpanded()
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .frame(width: 12)
+                    }
+                    .buttonStyle(.plain)
+                    .help(isExpanded ? "Collapse account" : "Show account details")
+                    .pointerOnHover()
+                    .padding(.top, 8)
+                } else {
+                    Color.clear.frame(width: 12).padding(.top, 8)
                 }
-                .buttonStyle(.plain)
-                .help(isExpanded ? "Collapse account" : "Show account details")
-                .pointerOnHover()
-                .padding(.top, 8)
 
                 AccountBadge(snapshot: snapshot, size: 26)
                     .overlay(alignment: .topTrailing) {
@@ -157,7 +161,8 @@ struct AccountCard: View {
                         Spacer(minLength: 0)
                     } else {
                         Text(snapshot.primary)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                         Spacer()
@@ -301,7 +306,7 @@ struct AccountCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .gesture(
             TapGesture().onEnded {
-                guard !isEditingAlias else { return }
+                guard canExpand, !isEditingAlias else { return }
                 toggleExpanded()
             },
             including: .all
@@ -597,6 +602,8 @@ struct AccountCard: View {
         store.renameAccount(snapshot: snapshot, alias: aliasDraft)
         isEditingAlias = false
     }
+
+    private var canExpand: Bool { !snapshot.isAgentDetectionOnly }
 
     private func toggleExpanded() {
         let willExpand = !isExpanded

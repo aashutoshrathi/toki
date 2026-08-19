@@ -329,7 +329,7 @@ enum UsageFetcher {
             name: account.name,
             provider: account.provider,
             primary: "No usage API available",
-            subtitle: "Live sessions show in the Agents tab.",
+            subtitle: "No usage API",
             remainingRatio: nil,
             metrics: [],
             isError: false,

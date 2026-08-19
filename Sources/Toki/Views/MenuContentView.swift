@@ -347,12 +347,25 @@ struct MenuContentView: View {
 
     // Active accounts first, then exhausted (0% remaining), then errored/not connected.
     private var sortedSnapshots: [AccountSnapshot] {
-        store.snapshots.sorted { a, b in
+        let order = Dictionary(uniqueKeysWithValues: store.snapshots.enumerated().map { ($0.element.id, $0.offset) })
+        return store.snapshots.sorted { a, b in
             let aPriority = accountSortPriority(a)
             let bPriority = accountSortPriority(b)
             if aPriority != bPriority { return aPriority < bPriority }
-            return false // stable within groups
+            let aActivity = latestActivity(for: a)
+            let bActivity = latestActivity(for: b)
+            if aActivity != bActivity {
+                return (aActivity ?? .distantPast) > (bActivity ?? .distantPast)
+            }
+            return (order[a.id] ?? 0) < (order[b.id] ?? 0)
         }
+    }
+
+    private func latestActivity(for snapshot: AccountSnapshot) -> Date? {
+        store.activeAgents
+            .filter { $0.provider == snapshot.provider }
+            .compactMap { $0.lastActivity }
+            .max()
     }
 
     private func accountSortPriority(_ snapshot: AccountSnapshot) -> Int {

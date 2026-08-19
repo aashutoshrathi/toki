@@ -5,7 +5,9 @@
 ### Added
 
 - **Antigravity and fx join the roster.** Toki detects Google's Antigravity (`agy`) and Vercel's `fx`, each as a card on the main page and a live row in the Agents tab while a session runs. Antigravity has no usage API, so its card reads "No usage API available" like Cursor and Grok; fx gets a real usage card with today, this-week, and this-month token spend read from its local ledger, plus the AI Gateway credit balance.
-- **Antigravity and fx agent rows show the conversation's name.** Both resolve the session title and last activity from each tool's local index (fx's session index, Antigravity's conversation summaries), so their rows read the chat title rather than the folder and sort by recency alongside every other agent.
+- **Antigravity and fx agent rows show the conversation's name.** Both resolve the session title and last activity from each tool's local index (fx's session index, Antigravity's live history log), so their rows read the chat title rather than the folder and sort by recency alongside every other agent.
+- **Cards sort by recent activity.** The account cards now order by the most recent activity of their sessions, so whatever you touched last floats to the top.
+- **No-usage-API cards are simpler.** Providers with no usage API (Grok, Cursor, Antigravity, and the like) no longer expand on click; the card says "No usage API" in place and keeps its live/idle status. The expanded usage headline is also toned down to match the rest of its row.
 - **The companion app sees Antigravity and fx sessions.** Both now surface on the phone with their own logos, and their terminals accept typed replies and keypresses like Claude, Codex, and OpenCode sessions do.
 - **Cursor is detected from its desktop app, not just the CLI.** The Cursor card now appears when Cursor.app is installed, so desktop-only users see it without the `cursor-agent` CLI on their PATH.
 
