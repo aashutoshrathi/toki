@@ -5,6 +5,7 @@
 ### Added
 
 - **Antigravity and fx join the roster.** Toki detects Google's Antigravity (`agy`) and Vercel's `fx`, each as a card on the main page and a live row in the Agents tab while a session runs. Antigravity has no usage API, so its card reads "No usage API available" like Cursor and Grok; fx gets a real usage card with today, this-week, and this-month token spend read from its local ledger, plus the AI Gateway credit balance.
+- **Antigravity and fx agent rows show the conversation's name.** Both resolve the session title and last activity from each tool's local index (fx's session index, Antigravity's conversation summaries), so their rows read the chat title rather than the folder and sort by recency alongside every other agent.
 
 ## 2.7.0 - 2026-08-19
 

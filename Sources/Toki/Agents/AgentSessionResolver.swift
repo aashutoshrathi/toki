@@ -16,6 +16,10 @@ enum AgentSessionResolver {
             return PiUsageClient.latestSession(cwd: cwd)?.title
         case .cursor:
             return newestCursorSession(cwd: cwd)?.title
+        case .fx:
+            return newestFxSession(cwd: cwd)?.title
+        case .antigravity:
+            return newestAntigravitySession(cwd: cwd)?.title
         default:
             return nil
         }
@@ -388,6 +392,10 @@ enum AgentSessionResolver {
             return PiUsageClient.latestSession(cwd: cwd)?.modified
         case .cursor:
             return newestCursorSession(cwd: cwd)?.lastActive
+        case .fx:
+            return newestFxSession(cwd: cwd)?.lastActive
+        case .antigravity:
+            return newestAntigravitySession(cwd: cwd)?.lastActive
         default:
             return nil
         }
@@ -510,6 +518,48 @@ enum AgentSessionResolver {
         guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
         let query = "SELECT title FROM session WHERE directory='\(safe)' AND title != '' ORDER BY time_updated DESC LIMIT 1;"
         return OpenCodeUsageClient.queryValue(query)
+    }
+
+    private static func newestFxSession(cwd: String?) -> (title: String?, lastActive: Date?)? {
+        guard let cwd else { return nil }
+        let path = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.fx/sessions/index.json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sessions = json["sessions"] as? [[String: Any]] else { return nil }
+        var best: (title: String?, lastActive: Date?, updatedAtMs: Double)?
+        for session in sessions where session["workspace_root"] as? String == cwd {
+            let updatedAtMs = (session["updated_at_ms"] as? Double) ?? 0
+            let title = (session["title"] as? String).flatMap {
+                $0.isEmpty || $0 == "Untitled session" ? nil : $0
+            }
+            let lastActive = updatedAtMs > 0 ? Date(timeIntervalSince1970: updatedAtMs / 1000) : nil
+            if best == nil || updatedAtMs > best!.updatedAtMs { best = (title, lastActive, updatedAtMs) }
+        }
+        return best.map { ($0.title, $0.lastActive) }
+    }
+
+    private static func newestAntigravitySession(cwd: String?) -> (title: String?, lastActive: Date?)? {
+        guard let cwd, let safe = safeSQLLikePath(cwd) else { return nil }
+        let db = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity-cli/conversation_summaries.db"
+        guard FileManager.default.fileExists(atPath: db) else { return nil }
+        let query = "SELECT title, preview, last_modified_time FROM conversation_summaries "
+            + "WHERE workspace_uris LIKE '%file://\(safe)%' ORDER BY last_modified_time DESC LIMIT 1;"
+        guard let raw = Shell.output("/usr/bin/sqlite3", ["-readonly", "-separator", "\u{1f}", db, query]) else { return nil }
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\u{1f}")
+        guard !parts.isEmpty, !(parts.count == 1 && parts[0].isEmpty) else { return nil }
+        let title = parts[0].isEmpty ? nil : parts[0]
+        let preview = parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil
+        let lastActive = parts.count > 2 ? parseAntigravityTimestamp(parts[2]) : nil
+        return (title ?? preview, lastActive)
+    }
+
+    private static func parseAntigravityTimestamp(_ raw: String) -> Date? {
+        let base = String(raw.prefix { $0 != "." && $0 != "+" }).trimmingCharacters(in: .whitespaces)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.date(from: base)
     }
 
     // Walks the process ancestry for the hosting app. Returns the PID too: two builds of a
@@ -644,6 +694,11 @@ enum AgentSessionResolver {
     private static func safeSQLPath(_ value: String) -> String? {
         guard value.hasPrefix("/"), !value.contains("'") else { return nil }
         return value
+    }
+
+    private static func safeSQLLikePath(_ value: String) -> String? {
+        guard let safe = safeSQLPath(value), !safe.contains("%"), !safe.contains("_") else { return nil }
+        return safe
     }
 
     private nonisolated(unsafe) static var regexCache: [String: NSRegularExpression] = [:]
