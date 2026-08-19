@@ -72,6 +72,14 @@ enum UsageFetcher {
            let detected = cursorAutoDetectedAccount() {
             accounts.append(detected)
         }
+        if !configured.contains(where: { $0.provider == .antigravity }),
+           let detected = antigravityAutoDetectedAccount() {
+            accounts.append(detected)
+        }
+        if !configured.contains(where: { $0.provider == .fx }),
+           let detected = FxUsageClient.autoDetectedAccount() {
+            accounts.append(detected)
+        }
         return accounts
     }
 
@@ -82,6 +90,17 @@ enum UsageFetcher {
             .contains { FileManager.default.isExecutableFile(atPath: $0) }
         guard installed else { return nil }
         return AccountConfig(id: "cursor-auto", name: "Cursor", provider: .cursor)
+    }
+
+    private static func antigravityAutoDetectedAccount() -> AccountConfig? {
+        guard cliIsInstalled(named: "agy") else { return nil }
+        return AccountConfig(id: "antigravity-auto", name: "Antigravity", provider: .antigravity)
+    }
+
+    static func cliIsInstalled(named name: String) -> Bool {
+        ["~/.local/bin/", "/usr/local/bin/", "/opt/homebrew/bin/"]
+            .map { ($0 + name as NSString).expandingTildeInPath }
+            .contains { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private static func snapshots(
@@ -114,8 +133,10 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .grok, .gemini, .cursor:
+            case .copilot, .grok, .gemini, .cursor, .antigravity:
                 snapshots = [agentOnlySnapshot(for: account)]
+            case .fx:
+                snapshots = [try await FxUsageClient(account: account).snapshot()]
             case .openCode:
                 snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
             case .pi:
@@ -167,9 +188,9 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .antigravity, .manual:
             return nil
-        case .claudeCode, .codex, .openai, .anthropic:
+        case .claudeCode, .codex, .openai, .anthropic, .fx:
             return "\(account.provider.rawValue):\(account.id)"
         }
     }
@@ -189,9 +210,9 @@ enum UsageFetcher {
         switch provider {
         case .claudeCode:
             return claudeRefreshInterval
-        case .codex, .openai, .anthropic:
+        case .codex, .openai, .anthropic, .fx:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .antigravity, .manual:
             return 0
         }
     }
@@ -305,7 +326,7 @@ enum UsageFetcher {
             name: account.name,
             provider: account.provider,
             primary: "No usage API available",
-            subtitle: "Detected only - active sessions still show up below and in the Agents tab.",
+            subtitle: "Live sessions show in the Agents tab.",
             remainingRatio: nil,
             metrics: [],
             isError: false,

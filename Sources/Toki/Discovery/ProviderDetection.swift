@@ -33,6 +33,8 @@ enum ProviderDetection {
             if let grok = detectGrok() { detected.append(grok) }
             if let gemini = detectGemini() { detected.append(gemini) }
             if let cursor = detectCursor() { detected.append(cursor) }
+            if let antigravity = detectAntigravity() { detected.append(antigravity) }
+            if let fx = detectFx() { detected.append(fx) }
             return detected
         }.value
     }
@@ -139,6 +141,28 @@ enum ProviderDetection {
             makeAccount: {
                 AccountConfig(id: "cursor", name: "Cursor", provider: .cursor)
             }
+        )
+    }
+
+    private static func detectAntigravity() -> DetectedProvider? {
+        guard UsageFetcher.cliIsInstalled(named: "agy") else { return nil }
+        return DetectedProvider(
+            provider: .antigravity,
+            title: "Antigravity",
+            detail: "agy CLI detected",
+            makeAccount: {
+                AccountConfig(id: "antigravity", name: "Antigravity", provider: .antigravity)
+            }
+        )
+    }
+
+    private static func detectFx() -> DetectedProvider? {
+        guard FxUsageClient.autoDetectedAccount() != nil else { return nil }
+        return DetectedProvider(
+            provider: .fx,
+            title: "fx",
+            detail: "Auto-detected from local usage - no setup needed",
+            makeAccount: nil
         )
     }
 }

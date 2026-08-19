@@ -40,6 +40,19 @@ struct ProviderLogo: View {
                         .font(.system(size: size * 0.72, weight: .semibold))
                         .foregroundStyle(Color.primary)
                 }
+            case .antigravity:
+                SVGLogoMark(asset: "antigravity-logo", size: size) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: size * 0.72, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                }
+            case .fx:
+                SVGLogoMark(asset: "fx-logo", size: size, template: true) {
+                    Image(systemName: "triangle.fill")
+                        .font(.system(size: size * 0.68, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                }
+                .foregroundStyle(Color.primary)
             case .grok:
                 SVGLogoMark(asset: "grok-logo", size: size, template: true) {
                     Image(systemName: "asterisk")

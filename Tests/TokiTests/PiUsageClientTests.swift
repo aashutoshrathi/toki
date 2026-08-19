@@ -296,6 +296,8 @@ final class PiUsageClientTests: XCTestCase {
             ("/usr/local/bin/claude", .claudeCode),
             ("/usr/local/bin/cursor-agent", .cursor),
             ("/Users/x/.local/bin/cursor-agent --use-system-ca /Users/x/.local/share/cursor-agent/versions/v/index.js", .cursor),
+            ("/Users/x/.local/bin/agy", .antigravity),
+            ("/Users/x/.local/bin/fx", .fx),
             ("/usr/local/bin/grok", .grok),
             ("/usr/local/bin/gemini", .gemini),
             ("node /x/bin/gemini", .gemini),
@@ -316,7 +318,9 @@ final class PiUsageClientTests: XCTestCase {
             "node /tmp/codex-helper.js",
             "node /tmp/gemini-helper.js",
             "node /tmp/cursor-helper.js",
-            "/usr/local/bin/cursor"
+            "/usr/local/bin/cursor",
+            "node /tmp/agy-helper.js",
+            "node /tmp/fx-helper.js"
         ]
         for command in nonMatches {
             XCTAssertNil(ActiveAgentScanner.providerForCommand(command), command)
