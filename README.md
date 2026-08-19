@@ -28,7 +28,7 @@
 
 ## Why Toki
 
-Toki is built for people who jump between Claude Code, Codex, Copilot, Gemini, Grok, OpenCode, and Pi during the day and want a fast, local view of usage and active agents.
+Toki is built for people who jump between Claude Code, Codex, Cursor, Copilot, Gemini, Grok, OpenCode, Pi, Vercel's fx, and Google's Antigravity during the day and want a fast, local view of usage and active agents.
 
 It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
 
@@ -68,9 +68,9 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 ## What it does
 
-**Quota and spend.** Live rate-limit tracking for Claude Code (multi-account via `claude-swap`, with one-click switching) and Codex, plus local token and spend tracking for OpenCode and Pi. Costs are shown in dollars wherever tokens are.
+**Quota and spend.** Live rate-limit tracking for Claude Code (multi-account via `claude-swap`, with one-click switching) and Codex, a spend ring for Cursor read from your account, and local token and spend tracking for OpenCode, Pi, and Vercel's fx. Costs are shown in dollars wherever tokens are.
 
-**Active agents.** Discovery across Codex, Claude Code, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, and ChatGPT-hosted Codex, with best-effort navigation to the terminal tab or app hosting each one.
+**Active agents.** Discovery across Codex, Claude Code, Cursor, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, Vercel's fx, Google's Antigravity, and ChatGPT-hosted Codex, with best-effort navigation to the terminal tab or app hosting each one.
 
 **Agents waiting on you.** A session parked on a permission prompt or a question is called out with a red dot and the question itself — on the card, the tab, and the menu bar — so you don't discover it twenty minutes later.
 
@@ -91,7 +91,7 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 | | |
 |---|---|
 | [Configuration](docs/configuration.md) | Config file, accounts, labels, refresh cadence, state |
-| [Providers](docs/providers.md) | Claude Code, Codex, Pi, OpenCode, and the detection-only ones |
+| [Providers](docs/providers.md) | Claude Code, Codex, Cursor, Pi, OpenCode, fx, and the detection-only ones |
 | [Features](docs/features.md) | Agents, Remote Control, heatmap, widgets, quota rings, notch mode, insights, notifications, updates |
 | [Remote Control](docs/remote-control.md) | Answering agents from your phone over Tailscale: setup, the three gates, paired devices, gotchas |
 | [Development](docs/development.md) | Building, concurrency checking, conventions, troubleshooting |
