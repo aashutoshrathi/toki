@@ -503,6 +503,10 @@ final class RemoteControlServer: ObservableObject {
             return "claude"
         case .openCode:
             return "opencode"
+        case .fx:
+            return "fx"
+        case .antigravity:
+            return "antigravity"
         default:
             return nil
         }

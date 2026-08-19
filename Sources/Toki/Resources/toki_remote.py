@@ -262,6 +262,10 @@ def provider_of(command):
         return "codex"
     if exe == "opencode":
         return "opencode"
+    if exe == "fx":
+        return "fx"
+    if exe == "agy":
+        return "antigravity"
     return None
 
 
@@ -297,8 +301,10 @@ def discover_agents():
             r["session"] = newest_claude_session(r["command"], r["cwd"])
         elif r["provider"] == "codex":
             r["session"] = newest_codex_session(r["command"], r["cwd"])
-        else:
+        elif r["provider"] == "opencode":
             r["session"] = newest_opencode_session(r["command"], r["cwd"])
+        else:
+            r["session"] = None
     return dedupe_agents(roots)
 
 
@@ -323,8 +329,10 @@ def agents_from_snapshot(processes, snapshot):
             agent["session"] = newest_claude_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "codex":
             agent["session"] = newest_codex_session(agent["command"], agent["cwd"])
-        else:
+        elif agent["provider"] == "opencode":
             agent["session"] = newest_opencode_session(agent["command"], agent["cwd"])
+        else:
+            agent["session"] = None
         result.append(agent)
     return result
 
