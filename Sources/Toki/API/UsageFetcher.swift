@@ -136,8 +136,12 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .grok, .gemini, .cursor, .antigravity:
+            case .copilot, .grok, .gemini, .antigravity:
                 snapshots = [agentOnlySnapshot(for: account)]
+            case .cursor:
+                var snapshot = agentOnlySnapshot(for: account)
+                snapshot.lastActivity = CursorLocalActivity.latest()
+                snapshots = [snapshot]
             case .fx:
                 snapshots = [try await FxUsageClient(account: account).snapshot()]
             case .openCode:

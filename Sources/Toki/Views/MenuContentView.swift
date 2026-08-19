@@ -362,10 +362,11 @@ struct MenuContentView: View {
     }
 
     private func latestActivity(for snapshot: AccountSnapshot) -> Date? {
-        store.activeAgents
+        let agentActivity = store.activeAgents
             .filter { $0.provider == snapshot.provider }
             .compactMap { $0.lastActivity }
             .max()
+        return [agentActivity, snapshot.lastActivity].compactMap { $0 }.max()
     }
 
     private func accountSortPriority(_ snapshot: AccountSnapshot) -> Int {

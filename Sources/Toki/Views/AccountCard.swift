@@ -433,9 +433,9 @@ struct AccountCard: View {
             // No usage API to show a percentage for - the session count badge on the
             // account logo above already covers the live signal, so this just says
             // whether anything is running at all.
-            Text(accountAgents.isEmpty ? "Not running" : "Active")
+            Text(agentStatusActive ? "Active" : "Not running")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(accountAgents.isEmpty ? Color.secondary : Color.blue)
+                .foregroundStyle(agentStatusActive ? Color.blue : Color.secondary)
         } else if snapshot.remainingRatio == nil {
             // Cost-based providers (Pi, OpenCode) have no quota percentage - show
             // today's spend prominently, with token counts on a second line.
@@ -604,6 +604,12 @@ struct AccountCard: View {
     }
 
     private var canExpand: Bool { !snapshot.isAgentDetectionOnly }
+
+    private var agentStatusActive: Bool {
+        if !accountAgents.isEmpty { return true }
+        if let last = snapshot.lastActivity { return Date().timeIntervalSince(last) < 300 }
+        return false
+    }
 
     private func toggleExpanded() {
         let willExpand = !isExpanded

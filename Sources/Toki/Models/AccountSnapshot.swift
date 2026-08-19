@@ -42,6 +42,7 @@ struct AccountSnapshot: Identifiable, Hashable {
     // shows identity and active-session count, but never a percentage or progress bar.
     var isAgentDetectionOnly: Bool = false
     var isSignInExpired: Bool = false
+    var lastActivity: Date? = nil
 
     static let loadingPrimary = "Refreshing"
 
