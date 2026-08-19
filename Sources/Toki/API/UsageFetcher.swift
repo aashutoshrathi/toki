@@ -84,12 +84,15 @@ enum UsageFetcher {
     }
 
     private static func cursorAutoDetectedAccount() -> AccountConfig? {
-        let locations = ["~/.local/bin/cursor-agent", "/usr/local/bin/cursor-agent", "/opt/homebrew/bin/cursor-agent"]
-        let installed = locations
-            .map { ($0 as NSString).expandingTildeInPath }
-            .contains { FileManager.default.isExecutableFile(atPath: $0) }
-        guard installed else { return nil }
+        guard cursorIsInstalled() else { return nil }
         return AccountConfig(id: "cursor-auto", name: "Cursor", provider: .cursor)
+    }
+
+    static func cursorIsInstalled() -> Bool {
+        if cliIsInstalled(named: "cursor-agent") { return true }
+        return ["/Applications/Cursor.app", "~/Applications/Cursor.app"]
+            .map { ($0 as NSString).expandingTildeInPath }
+            .contains { FileManager.default.fileExists(atPath: $0) }
     }
 
     private static func antigravityAutoDetectedAccount() -> AccountConfig? {
