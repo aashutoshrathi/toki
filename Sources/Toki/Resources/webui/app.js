@@ -1117,6 +1117,7 @@ function resizeComposer() {
   const input = $("#msg");
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 200) + "px";
+  input.style.overflowY = input.scrollHeight > 200 ? "auto" : "hidden";
 }
 
 $("#msg").addEventListener("input", resizeComposer);
