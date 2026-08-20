@@ -11,6 +11,7 @@
 - **The companion's typing indicator counts up.** While an agent works on your reply, the typing dots now show elapsed time, so a long task reads differently from a stalled one.
 - **The companion's usage list skips no-usage-API accounts.** Providers with nothing to report (Grok, Cursor when signed out, and the like) no longer clutter the phone's usage dropdown.
 - **The companion composer follows ChatGPT/Claude.** Attach and send now live inside one rounded input that grows upward as you type, over a glass footer, instead of buttons flanking a boxed field.
+- **The menu bar shows when Remote Control is on.** A small broadcast glyph sits in the status item while the companion server is accepting connections, and clears when you stop it.
 - **The pairing code counts down to its rotation.** The verification code on the connect sheet now shows a live shrinking bar and seconds until it rotates, like an authenticator app, instead of a static "rotates every 2 minutes" note.
 - **The companion app sees Antigravity and fx sessions.** Both now surface on the phone with their own logos and their conversation transcripts (fx's session events, Antigravity's brain log), and their terminals accept typed replies and keypresses like Claude, Codex, and OpenCode sessions do.
 - **Cursor is detected from its desktop app, not just the CLI.** The Cursor card now appears when Cursor.app is installed, so desktop-only users see it without the `cursor-agent` CLI on their PATH.

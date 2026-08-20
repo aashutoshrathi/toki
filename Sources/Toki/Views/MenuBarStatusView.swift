@@ -4,11 +4,18 @@ struct MenuBarStatusView: View {
     var entries: [MenuBarStatusEntry]
     // Number of agent sessions parked waiting on the user. Zero hides the badge entirely.
     var awaitingInput: Int = 0
+    var remoteControlOn: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
             if awaitingInput > 0 {
                 attentionBadge
+            }
+            if remoteControlOn {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Remote Control is on")
             }
             ForEach(entries) { entry in
                 HStack(spacing: 4) {
