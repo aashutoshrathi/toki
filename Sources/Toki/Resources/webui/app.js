@@ -1149,8 +1149,11 @@ $("#msg").addEventListener("paste", e => {
 });
 
 const footer = $("footer");
-new ResizeObserver(() =>
-  document.documentElement.style.setProperty("--footer-height", footer.offsetHeight + "px")).observe(footer);
+new ResizeObserver(() => {
+  const stick = nearBottom();
+  document.documentElement.style.setProperty("--footer-height", footer.offsetHeight + "px");
+  if (stick) scrollToLatest();
+}).observe(footer);
 resizeComposer();
 
 $("#ddbtn").addEventListener("click", e => {

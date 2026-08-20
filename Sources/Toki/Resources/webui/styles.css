@@ -26,7 +26,7 @@
 /* Flex column pinned to the dynamic viewport height: the transcript scrolls inside #log while the
    header and composer stay put. Avoids iOS/iPadOS Safari's position:fixed-on-body-scroll drift. */
 body{font:15px/1.45 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);
-     display:flex;flex-direction:column;height:100dvh;overflow:hidden;
+     display:flex;flex-direction:column;height:100dvh;overflow:hidden;position:relative;
      -webkit-font-smoothing:antialiased}
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.05;
   background:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>")}
@@ -186,7 +186,8 @@ body.privacy .eye-off{display:inline}
 .decision{min-height:46px;border-radius:var(--r);color:#fff;font-weight:650}
 .decision.approve{background:#23563c;border:1px solid #3f8a65}
 .decision.reject{background:#5b2929;border:1px solid #a14a4a}
-#log{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 14px}
+#log{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+     padding:8px 14px calc(var(--footer-height,180px) + 8px)}
 .m{margin:8px 0;padding:10px 13px;border-radius:var(--r-lg);max-width:88%;border:1px solid transparent;
    word-break:break-word;overflow-wrap:anywhere}
 .m a{color:var(--accent-2);text-decoration:underline;text-underline-offset:2px;
@@ -229,8 +230,7 @@ body.privacy .eye-off{display:inline}
 .tool-detail{display:block;margin:2px 0 0 12px;color:var(--text-3,#8b95a5);font-size:12px;word-break:break-all}
 .tool-took{margin-left:6px;color:var(--text-3,#8b95a5);font-size:11px}
 @keyframes toolpulse{0%,100%{opacity:1}50%{opacity:.35}}
-footer{flex:none;background:color-mix(in srgb,var(--surface-1) 86%,transparent);
-       backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+footer{position:absolute;left:0;right:0;bottom:0;z-index:4;background:var(--surface-1);
        border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
 .keys{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-bottom:8px}
 .keys button{min-width:0;min-height:52px;padding:5px 2px;border-radius:var(--r);
