@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433.6116 399.5841" width="434" height="400">
+  <defs>
+    <clipPath id="shape"><path d="M392.7093,390.1368c24.1674,18.1304,60.4188,6.0437,27.1881-27.1951C320.2075,266.2476,341.3537.3394,217.4969.3394S114.7857,266.2475,15.0959,362.9417c-36.2508,36.2602,3.0208,45.3255,27.1881,27.1952,93.6484-63.4553,87.6065-175.2576,175.2129-175.2576s81.5645,111.8022,175.2124,175.2576h0Z"/></clipPath>
+    
+    <!-- Left side gradient: Blue (bottom) -> Cyan -> Green -> Lime -> Yellow (top) -->
+    <linearGradient id="leftGrad" x1="15%" y1="100%" x2="50%" y2="0%">
+      <stop offset="0%" stop-color="#3087FC"/>
+      <stop offset="25%" stop-color="#2C96D4"/>
+      <stop offset="45%" stop-color="#3DA7AE"/>
+      <stop offset="65%" stop-color="#67C073"/>
+      <stop offset="82%" stop-color="#AEC741"/>
+      <stop offset="100%" stop-color="#DFBB26"/>
+    </linearGradient>
+
+    <!-- Right & Top side gradient: Yellow (top-left) -> Orange -> Red -> Pink -> Purple -> Indigo -> Blue (bottom-right) -->
+    <linearGradient id="rightGrad" x1="50%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#DFBB26"/>
+      <stop offset="12%" stop-color="#ED852E"/>
+      <stop offset="25%" stop-color="#F6563A"/>
+      <stop offset="45%" stop-color="#CB5A77"/>
+      <stop offset="65%" stop-color="#8E77C2"/>
+      <stop offset="82%" stop-color="#578DF7"/>
+      <stop offset="100%" stop-color="#3087FC"/>
+    </linearGradient>
+
+    <!-- Smooth blending mask for the transition across the top and center -->
+    <linearGradient id="blendMask" x1="30%" y1="0%" x2="70%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+    <mask id="maskLeft">
+      <rect width="434" height="400" fill="url(#blendMask)"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#shape)">
+    <rect width="434" height="400" fill="url(#rightGrad)"/>
+    <rect width="434" height="400" fill="url(#leftGrad)" mask="url(#maskLeft)"/>
+  </g>
+</svg>

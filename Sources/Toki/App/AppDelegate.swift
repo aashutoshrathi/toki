@@ -136,6 +136,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 applyNotchMode(enabled: preferences.notchModeEnabled)
             }
         }
+
+        Task { @MainActor in
+            for await _ in RemoteControlServer.shared.$isRunning.values {
+                updateStatusItem()
+            }
+        }
     }
 
     private var latestEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
@@ -186,7 +192,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func updateStatusItem() {
-        let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput)
+        let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput,
+                                        remoteControlOn: RemoteControlServer.shared.isRunning)
         guard let button = statusItem.button else { return }
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {

@@ -262,6 +262,10 @@ def provider_of(command):
         return "codex"
     if exe == "opencode":
         return "opencode"
+    if exe == "fx":
+        return "fx"
+    if exe == "agy":
+        return "antigravity"
     return None
 
 
@@ -297,8 +301,14 @@ def discover_agents():
             r["session"] = newest_claude_session(r["command"], r["cwd"])
         elif r["provider"] == "codex":
             r["session"] = newest_codex_session(r["command"], r["cwd"])
-        else:
+        elif r["provider"] == "opencode":
             r["session"] = newest_opencode_session(r["command"], r["cwd"])
+        elif r["provider"] == "fx":
+            r["session"] = newest_fx_session(r["cwd"])
+        elif r["provider"] == "antigravity":
+            r["session"] = newest_agy_session(r["cwd"])
+        else:
+            r["session"] = None
     return dedupe_agents(roots)
 
 
@@ -323,8 +333,14 @@ def agents_from_snapshot(processes, snapshot):
             agent["session"] = newest_claude_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "codex":
             agent["session"] = newest_codex_session(agent["command"], agent["cwd"])
-        else:
+        elif agent["provider"] == "opencode":
             agent["session"] = newest_opencode_session(agent["command"], agent["cwd"])
+        elif agent["provider"] == "fx":
+            agent["session"] = newest_fx_session(agent["cwd"])
+        elif agent["provider"] == "antigravity":
+            agent["session"] = newest_agy_session(agent["cwd"])
+        else:
+            agent["session"] = None
         result.append(agent)
     return result
 
@@ -793,6 +809,142 @@ def parse_codex_transcript(path, offset=0):
     return entries, offset + consumed
 
 
+def newest_fx_session(cwd):
+    if not cwd:
+        return None
+    base = os.path.expanduser("~/.fx/sessions")
+    try:
+        index = json.load(open(os.path.join(base, "index.json")))
+    except Exception:
+        return None
+    best, best_ts = None, -1
+    for s in index.get("sessions", []):
+        if s.get("workspace_root") != cwd:
+            continue
+        ts = s.get("updated_at_ms") or 0
+        if ts > best_ts:
+            best_ts, best = ts, s.get("id")
+    if not best:
+        return None
+    path = os.path.join(base, best, "events.jsonl")
+    return path if os.path.exists(path) else None
+
+
+def newest_agy_session(cwd):
+    if not cwd:
+        return None
+    base = os.path.expanduser("~/.gemini/antigravity-cli")
+    latest = {}
+    try:
+        for line in open(os.path.join(base, "history.jsonl")):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("workspace") != cwd:
+                continue
+            cid, ts = e.get("conversationId"), e.get("timestamp", 0)
+            if cid and ts > latest.get(cid, 0):
+                latest[cid] = ts
+    except OSError:
+        return None
+    if not latest:
+        return None
+    cid = max(latest, key=latest.get)
+    for name in ("transcript_full.jsonl", "transcript.jsonl"):
+        path = os.path.join(base, "brain", cid, ".system_generated", "logs", name)
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def jsonl_lines(path, offset):
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            data = f.read()
+    except OSError:
+        return None, offset
+    end = data.rfind(b"\n")
+    if end == -1:
+        return None, offset
+    consumed = end + 1
+    out = []
+    for raw in data[:consumed].split(b"\n"):
+        if not raw.strip():
+            continue
+        try:
+            out.append(json.loads(raw))
+        except ValueError:
+            continue
+    return out, offset + consumed
+
+
+def parse_fx_transcript(path, offset=0):
+    records, new_offset = jsonl_lines(path, offset)
+    if records is None:
+        return [], offset
+    entries = []
+    for j in records:
+        if j.get("kind") != "history_turn_committed":
+            continue
+        turn = (j.get("payload") or {}).get("turn") or {}
+        user = turn.get("user") or {}
+        cleaned = clean_user_text(user.get("text") or "") if isinstance(user, dict) else ""
+        if cleaned:
+            entries.append({"role": "user", "text": cleaned})
+        for step in ((turn.get("execution") or {}).get("tool_steps") or []):
+            if isinstance(step, dict):
+                entries.append({"role": "tool", "tool": step.get("name") or "tool",
+                                "id": step.get("id"), "text": "", "questions": None})
+        assistant = turn.get("assistant")
+        if isinstance(assistant, str) and assistant.strip():
+            entries.append({"role": "assistant", "text": assistant.strip()})
+    return entries, new_offset
+
+
+USER_REQUEST_RE = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.S)
+
+
+def parse_agy_transcript(path, offset=0):
+    records, new_offset = jsonl_lines(path, offset)
+    if records is None:
+        return [], offset
+    entries = []
+    for j in records:
+        jtype = j.get("type")
+        if jtype == "USER_INPUT":
+            content = j.get("content")
+            if isinstance(content, str):
+                m = USER_REQUEST_RE.search(content)
+                cleaned = clean_user_text((m.group(1) if m else content).strip())
+                if cleaned:
+                    entries.append({"role": "user", "text": cleaned})
+        elif jtype == "PLANNER_RESPONSE":
+            content = j.get("content")
+            if isinstance(content, str) and content.strip():
+                entries.append({"role": "assistant", "text": content.strip()})
+        for call in (j.get("tool_calls") or []):
+            if isinstance(call, dict):
+                args = call.get("args") or {}
+                summary = args.get("toolAction") if isinstance(args, dict) else ""
+                entries.append({"role": "tool", "tool": call.get("name") or "tool",
+                                "id": call.get("id") or call.get("tool_call_id"),
+                                "text": summary or "", "questions": None})
+    return entries, new_offset
+
+
+TRANSCRIPT_PARSERS = {
+    "claude": parse_claude_transcript,
+    "codex": parse_codex_transcript,
+    "fx": parse_fx_transcript,
+    "antigravity": parse_agy_transcript,
+}
+
+
 def codex_attention(path):
     if not quiet_enough(path):
         return None
@@ -1007,7 +1159,7 @@ def chat_title(provider, path, cwd):
             if title:
                 break
     if not title:
-        parse = parse_claude_transcript if provider == "claude" else parse_codex_transcript
+        parse = TRANSCRIPT_PARSERS.get(provider, parse_codex_transcript)
         entries, _ = parse(path, 0)
         first = next((e["text"] for e in entries if e["role"] == "user"), None)
         if first:
@@ -1833,7 +1985,7 @@ class Handler(BaseHTTPRequestHandler):
                 size = 0
             if offset > size:  # session file rotated/replaced
                 return self._json({"entries": [], "offset": 0, "reset": True, "session": session})
-            parse = parse_claude_transcript if agent["provider"] == "claude" else parse_codex_transcript
+            parse = TRANSCRIPT_PARSERS.get(agent["provider"], parse_codex_transcript)
             entries, new_offset = parse(agent["session"], offset)
             if offset == 0:
                 entries = initial_transcript_window(entries)

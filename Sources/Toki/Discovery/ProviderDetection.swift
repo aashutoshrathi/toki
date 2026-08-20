@@ -33,6 +33,8 @@ enum ProviderDetection {
             if let grok = detectGrok() { detected.append(grok) }
             if let gemini = detectGemini() { detected.append(gemini) }
             if let cursor = detectCursor() { detected.append(cursor) }
+            if let antigravity = detectAntigravity() { detected.append(antigravity) }
+            if let fx = detectFx() { detected.append(fx) }
             return detected
         }.value
     }
@@ -127,18 +129,36 @@ enum ProviderDetection {
     // the presence of the cursor-agent CLI, rendered as an agent-only card that fills with live
     // sessions in the Agents tab.
     private static func detectCursor() -> DetectedProvider? {
-        let locations = ["~/.local/bin/cursor-agent", "/usr/local/bin/cursor-agent", "/opt/homebrew/bin/cursor-agent"]
-        let installed = locations
-            .map { ($0 as NSString).expandingTildeInPath }
-            .contains { FileManager.default.isExecutableFile(atPath: $0) }
-        guard installed else { return nil }
+        guard UsageFetcher.cursorIsInstalled() else { return nil }
         return DetectedProvider(
             provider: .cursor,
             title: "Cursor",
-            detail: "cursor-agent CLI detected",
+            detail: "Cursor detected",
             makeAccount: {
                 AccountConfig(id: "cursor", name: "Cursor", provider: .cursor)
             }
+        )
+    }
+
+    private static func detectAntigravity() -> DetectedProvider? {
+        guard UsageFetcher.cliIsInstalled(named: "agy") else { return nil }
+        return DetectedProvider(
+            provider: .antigravity,
+            title: "Antigravity",
+            detail: "agy CLI detected",
+            makeAccount: {
+                AccountConfig(id: "antigravity", name: "Antigravity", provider: .antigravity)
+            }
+        )
+    }
+
+    private static func detectFx() -> DetectedProvider? {
+        guard FxUsageClient.autoDetectedAccount() != nil else { return nil }
+        return DetectedProvider(
+            provider: .fx,
+            title: "fx",
+            detail: "Auto-detected from local usage - no setup needed",
+            makeAccount: nil
         )
     }
 }

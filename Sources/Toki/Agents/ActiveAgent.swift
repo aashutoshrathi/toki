@@ -217,6 +217,8 @@ enum ActiveAgentScanner {
         if executable == "codex" || executable.hasPrefix("codex-") || (executable == "node" && entrypoint?.contains("/@openai/codex/") == true) { return .codex }
         if executable == "claude" { return .claudeCode }
         if executable == "cursor-agent" { return .cursor }
+        if executable == "agy" { return .antigravity }
+        if executable == "fx" { return .fx }
         if executable == "grok" { return .grok }
         if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
         return nil

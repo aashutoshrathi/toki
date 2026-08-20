@@ -16,6 +16,10 @@ enum AgentSessionResolver {
             return PiUsageClient.latestSession(cwd: cwd)?.title
         case .cursor:
             return newestCursorSession(cwd: cwd)?.title
+        case .fx:
+            return newestFxSession(cwd: cwd)?.title
+        case .antigravity:
+            return newestAntigravitySession(cwd: cwd)?.title
         default:
             return nil
         }
@@ -388,6 +392,10 @@ enum AgentSessionResolver {
             return PiUsageClient.latestSession(cwd: cwd)?.modified
         case .cursor:
             return newestCursorSession(cwd: cwd)?.lastActive
+        case .fx:
+            return newestFxSession(cwd: cwd)?.lastActive
+        case .antigravity:
+            return newestAntigravitySession(cwd: cwd)?.lastActive
         default:
             return nil
         }
@@ -510,6 +518,65 @@ enum AgentSessionResolver {
         guard let cwd, let safe = safeSQLPath(cwd) else { return nil }
         let query = "SELECT title FROM session WHERE directory='\(safe)' AND title != '' ORDER BY time_updated DESC LIMIT 1;"
         return OpenCodeUsageClient.queryValue(query)
+    }
+
+    private static func newestFxSession(cwd: String?) -> (title: String?, lastActive: Date?)? {
+        guard let cwd else { return nil }
+        let path = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.fx/sessions/index.json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sessions = json["sessions"] as? [[String: Any]] else { return nil }
+        var best: (title: String?, lastActive: Date?, updatedAtMs: Double)?
+        for session in sessions where session["workspace_root"] as? String == cwd {
+            let updatedAtMs = (session["updated_at_ms"] as? Double) ?? 0
+            let title = (session["title"] as? String).flatMap {
+                $0.isEmpty || $0 == "Untitled session" ? nil : $0
+            }
+            let lastActive = updatedAtMs > 0 ? Date(timeIntervalSince1970: updatedAtMs / 1000) : nil
+            if best == nil || updatedAtMs > best!.updatedAtMs { best = (title, lastActive, updatedAtMs) }
+        }
+        return best.map { ($0.title, $0.lastActive) }
+    }
+
+    private static func newestAntigravitySession(cwd: String?) -> (title: String?, lastActive: Date?)? {
+        guard let cwd else { return nil }
+        let base = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity-cli"
+        guard let contents = try? String(contentsOfFile: "\(base)/history.jsonl", encoding: .utf8) else { return nil }
+
+        var latestTimestamp: [String: Double] = [:]
+        var renameTitle: [String: String] = [:]
+        for line in contents.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  entry["workspace"] as? String == cwd,
+                  let conversation = entry["conversationId"] as? String else { continue }
+            let timestamp = (entry["timestamp"] as? Double) ?? 0
+            if timestamp > (latestTimestamp[conversation] ?? 0) { latestTimestamp[conversation] = timestamp }
+            if entry["type"] as? String == "slash_command",
+               let display = entry["display"] as? String, display.hasPrefix("/rename ") {
+                let name = display.dropFirst("/rename ".count).trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty { renameTitle[conversation] = name }
+            }
+        }
+        guard let conversation = latestTimestamp.max(by: { $0.value < $1.value })?.key else { return nil }
+
+        let title = renameTitle[conversation] ?? antigravitySummaryTitle(conversation: conversation)
+        let dbModified = (try? FileManager.default.attributesOfItem(
+            atPath: "\(base)/conversations/\(conversation).db")[.modificationDate]) as? Date
+        let historyActivity = latestTimestamp[conversation].flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0 / 1000) : nil }
+        return (title, dbModified ?? historyActivity)
+    }
+
+    private static func antigravitySummaryTitle(conversation: String) -> String? {
+        guard conversation.range(of: "^[0-9a-fA-F-]+$", options: .regularExpression) != nil else { return nil }
+        let db = "\(FileManager.default.homeDirectoryForCurrentUser.path)/.gemini/antigravity-cli/conversation_summaries.db"
+        guard FileManager.default.fileExists(atPath: db) else { return nil }
+        let query = "SELECT title, preview FROM conversation_summaries WHERE conversation_id = '\(conversation)' LIMIT 1;"
+        guard let raw = Shell.output("/usr/bin/sqlite3", ["-readonly", "-separator", "\u{1f}", db, query]) else { return nil }
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\u{1f}")
+        let title = parts.first.flatMap { $0.isEmpty ? nil : $0 }
+        let preview = parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil
+        return title ?? preview
     }
 
     // Walks the process ancestry for the hosting app. Returns the PID too: two builds of a

@@ -99,6 +99,8 @@ final class RemoteControlServer: ObservableObject {
     @Published private(set) var pairedDevices: [PairedDevice] = []
     @Published private(set) var token: String?
     @Published private(set) var pairingCode: String?
+    @Published private(set) var pairingCodeExpiresAt: Date?
+    static let pairingCodeTTL: TimeInterval = 2 * 60
     @Published private(set) var lastError: String?
     @Published private(set) var tailscaleDNSName: String?
     @Published private(set) var serveState: ServeState?
@@ -378,6 +380,7 @@ final class RemoteControlServer: ObservableObject {
         lastError = nil
         token = nil
         pairingCode = nil
+        pairingCodeExpiresAt = nil
         pairedDevices = []
         outputBuffer = ""
 
@@ -448,6 +451,7 @@ final class RemoteControlServer: ObservableObject {
         isRunning = false
         token = nil
         pairingCode = nil
+        pairingCodeExpiresAt = nil
         pairedDevices = []
         outputBuffer = ""
     }
@@ -467,7 +471,7 @@ final class RemoteControlServer: ObservableObject {
 
     /// The phone gets the same numbers the menu bar shows, not a second source of truth.
     nonisolated static func usagePayload(from snapshots: [AccountSnapshot]) -> [[String: Any]] {
-        snapshots.map { snapshot in
+        snapshots.filter { !$0.isAgentDetectionOnly }.map { snapshot in
             var entry: [String: Any] = [
                 "id": snapshot.id,
                 "name": snapshot.name,
@@ -503,6 +507,10 @@ final class RemoteControlServer: ObservableObject {
             return "claude"
         case .openCode:
             return "opencode"
+        case .fx:
+            return "fx"
+        case .antigravity:
+            return "antigravity"
         default:
             return nil
         }
@@ -577,6 +585,7 @@ final class RemoteControlServer: ObservableObject {
             let value = text[range.upperBound...].prefix { $0.isNumber }
             if value.count == 6 {
                 pairingCode = String(value)
+                pairingCodeExpiresAt = Date().addingTimeInterval(Self.pairingCodeTTL)
             }
         }
     }
@@ -587,6 +596,7 @@ final class RemoteControlServer: ObservableObject {
         isRunning = false
         token = nil
         pairingCode = nil
+        pairingCodeExpiresAt = nil
         pairedDevices = []
         outputBuffer = ""
         if status != 0 {

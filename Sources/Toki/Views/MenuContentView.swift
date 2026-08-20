@@ -347,12 +347,26 @@ struct MenuContentView: View {
 
     // Active accounts first, then exhausted (0% remaining), then errored/not connected.
     private var sortedSnapshots: [AccountSnapshot] {
-        store.snapshots.sorted { a, b in
+        let order = Dictionary(store.snapshots.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        return store.snapshots.sorted { a, b in
             let aPriority = accountSortPriority(a)
             let bPriority = accountSortPriority(b)
             if aPriority != bPriority { return aPriority < bPriority }
-            return false // stable within groups
+            let aActivity = latestActivity(for: a)
+            let bActivity = latestActivity(for: b)
+            if aActivity != bActivity {
+                return (aActivity ?? .distantPast) > (bActivity ?? .distantPast)
+            }
+            return (order[a.id] ?? 0) < (order[b.id] ?? 0)
         }
+    }
+
+    private func latestActivity(for snapshot: AccountSnapshot) -> Date? {
+        let agentActivity = store.activeAgents
+            .filter { $0.provider == snapshot.provider }
+            .compactMap { $0.lastActivity }
+            .max()
+        return [agentActivity, snapshot.lastActivity].compactMap { $0 }.max()
     }
 
     private func accountSortPriority(_ snapshot: AccountSnapshot) -> Int {
@@ -382,8 +396,9 @@ struct MenuContentView: View {
     private var accountList: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let snapshots = sortedSnapshots
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snapshot in
+                    ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
                         AccountCard(snapshot: snapshot, store: store) { id in
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                                 withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
@@ -393,7 +408,7 @@ struct MenuContentView: View {
                         }
                         .id(snapshot.id)
 
-                        if index < sortedSnapshots.count - 1 {
+                        if index < snapshots.count - 1 {
                             Divider()
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 2)

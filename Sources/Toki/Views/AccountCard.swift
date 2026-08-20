@@ -157,7 +157,8 @@ struct AccountCard: View {
                         Spacer(minLength: 0)
                     } else {
                         Text(snapshot.primary)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                         Spacer()
@@ -170,7 +171,7 @@ struct AccountCard: View {
 
                 // Sessions only make sense for a connected account; when the account is
                 // not connected, hide the toggle and just show usage (the error state).
-                if !snapshot.isError {
+                if !snapshot.isError && !snapshot.isAgentDetectionOnly {
                     Picker("", selection: $expandedTab) {
                         ForEach(ExpandedTab.allCases) { tab in
                             Text(tab.rawValue).tag(tab)
@@ -180,7 +181,7 @@ struct AccountCard: View {
                     .labelsHidden()
                 }
 
-                if snapshot.isError || expandedTab == .usage {
+                if snapshot.isError || (expandedTab == .usage && !snapshot.isAgentDetectionOnly) {
                     // The Error metric is dropped here because it is now the headline above -
                     // listing it twice in one card is just noise.
                     let rows = snapshot.isError
@@ -428,9 +429,9 @@ struct AccountCard: View {
             // No usage API to show a percentage for - the session count badge on the
             // account logo above already covers the live signal, so this just says
             // whether anything is running at all.
-            Text(accountAgents.isEmpty ? "Not running" : "Active")
+            Text(agentStatusActive ? "Active" : "Not running")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(accountAgents.isEmpty ? Color.secondary : Color.blue)
+                .foregroundStyle(agentStatusActive ? Color.blue : Color.secondary)
         } else if snapshot.remainingRatio == nil {
             // Cost-based providers (Pi, OpenCode) have no quota percentage - show
             // today's spend prominently, with token counts on a second line.
@@ -596,6 +597,12 @@ struct AccountCard: View {
     private func saveAlias() {
         store.renameAccount(snapshot: snapshot, alias: aliasDraft)
         isEditingAlias = false
+    }
+
+    private var agentStatusActive: Bool {
+        if !accountAgents.isEmpty { return true }
+        if let last = snapshot.lastActivity { return Date().timeIntervalSince(last) < 300 }
+        return false
     }
 
     private func toggleExpanded() {
