@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.7.0 - 2026-08-20
 
 ### Added
 
@@ -16,11 +16,6 @@
 - **The companion app sees Antigravity and fx sessions.** Both now surface on the phone with their own logos and their conversation transcripts (fx's session events, Antigravity's brain log), and their terminals accept typed replies and keypresses like Claude, Codex, and OpenCode sessions do.
 - **Cursor is detected from its desktop app, not just the CLI.** The Cursor card now appears when Cursor.app is installed, so desktop-only users see it without the `cursor-agent` CLI on their PATH.
 - **Cursor shows real usage with a spend ring.** When you are signed into Cursor, the card reads your usage from cursor.com: spend this cycle against your plan's limit as a health ring, plus token counts and the cycle reset, alongside your plan tier. Since the desktop agent has no separate process, the card also reads local AI-edit and chat activity to show Active and sort by recency, and falls back to that when signed out.
-
-## 2.7.0 - 2026-08-19
-
-### Added
-
 - **Permissions are a checklist, not a series of surprises.** Every macOS permission Toki needs is one list, in onboarding and permanently under **Settings › Permissions**, each explained and read with a check that never prompts. Nothing is requested until you press its button.
 - **Allow all.** First run can request every permission at once, one dialog at a time with Accessibility last; refusing one only disables what it was for. The list includes starting Toki at login, and a refused permission offers System Settings instead of an **Allow** button macOS would ignore.
 - **Quota on your phone.** The companion app shows the account with least left, expanding to the full list on tap, from the same reading the Mac renders; a reading the Mac stopped refreshing says so.
