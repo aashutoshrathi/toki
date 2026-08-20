@@ -896,13 +896,13 @@ def parse_fx_transcript(path, offset=0):
         cleaned = clean_user_text(user.get("text") or "") if isinstance(user, dict) else ""
         if cleaned:
             entries.append({"role": "user", "text": cleaned})
-        assistant = turn.get("assistant")
-        if isinstance(assistant, str) and assistant.strip():
-            entries.append({"role": "assistant", "text": assistant.strip()})
         for step in ((turn.get("execution") or {}).get("tool_steps") or []):
             if isinstance(step, dict):
                 entries.append({"role": "tool", "tool": step.get("name") or "tool",
                                 "id": step.get("id"), "text": "", "questions": None})
+        assistant = turn.get("assistant")
+        if isinstance(assistant, str) and assistant.strip():
+            entries.append({"role": "assistant", "text": assistant.strip()})
     return entries, new_offset
 
 

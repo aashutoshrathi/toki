@@ -54,8 +54,12 @@ struct CursorUsageClient {
         guard let credentials = CursorAuth.read() else {
             return localSnapshot(activity: activity)
         }
-        let usage = try await fetchUsage(credentials: credentials)
-        return usageSnapshot(usage: usage, activity: activity)
+        do {
+            let usage = try await fetchUsage(credentials: credentials)
+            return usageSnapshot(usage: usage, activity: activity)
+        } catch let error as HTTPStatusError where error.statusCode == 401 || error.statusCode == 403 {
+            return localSnapshot(activity: activity)
+        }
     }
 
     private func usageSnapshot(usage: Usage, activity: Date?) -> AccountSnapshot {
