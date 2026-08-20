@@ -8,6 +8,7 @@
 - **Antigravity and fx agent rows show the conversation's name.** Both resolve the session title and last activity from each tool's local index (fx's session index, Antigravity's live history log), so their rows read the chat title rather than the folder and sort by recency alongside every other agent.
 - **Cards sort by recent activity.** The account cards now order by the most recent activity of their sessions, so whatever you touched last floats to the top.
 - **No-usage-API cards are simpler.** Providers with no usage API (Grok, Cursor, Antigravity, and the like) no longer expand on click; the card says "No usage API" in place and keeps its live/idle status. The expanded usage headline is also toned down to match the rest of its row.
+- **The companion's typing indicator counts up.** While an agent works on your reply, the typing dots now show elapsed time, so a long task reads differently from a stalled one.
 - **The companion's usage list skips no-usage-API accounts.** Providers with nothing to report (Grok, Cursor when signed out, and the like) no longer clutter the phone's usage dropdown.
 - **The companion composer follows ChatGPT/Claude.** Attach and send now live inside one rounded input that grows upward as you type, over a glass footer, instead of buttons flanking a boxed field.
 - **The pairing code counts down to its rotation.** The verification code on the connect sheet now shows a live shrinking bar and seconds until it rotates, like an authenticator app, instead of a static "rotates every 2 minutes" note.

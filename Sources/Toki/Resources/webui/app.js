@@ -736,20 +736,38 @@ function markEchoFailed() {
   pendingEcho = null;
 }
 
+let typingTimer = null;
+let awaitingSince = 0;
+
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+}
+
 function showTyping() {
   if ($("#typing")) return;
+  awaitingSince = Date.now();
   const d = document.createElement("div");
   d.className = "m assistant typing";
   d.id = "typing";
   d.setAttribute("role", "status");
   d.setAttribute("aria-label", "Agent is replying\u2026");
   d.innerHTML = '<span class="td"></span><span class="td"></span><span class="td"></span>';
+  const elapsed = document.createElement("span");
+  elapsed.className = "elapsed";
+  d.appendChild(elapsed);
   $("#log").appendChild(d);
+  clearInterval(typingTimer);
+  const tick = () => { elapsed.textContent = fmtElapsed(Date.now() - awaitingSince); };
+  tick();
+  typingTimer = setInterval(tick, 1000);
 }
 
 function hideTyping() {
   const t = $("#typing");
   if (t) t.remove();
+  clearInterval(typingTimer);
+  typingTimer = null;
 }
 
 function clearPending() {
