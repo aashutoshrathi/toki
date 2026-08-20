@@ -13,7 +13,7 @@ struct MenuBarStatusView: View {
             }
             if remoteControlOn {
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.primary)
                     .accessibilityLabel("Remote Control is on")
             }
