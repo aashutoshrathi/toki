@@ -1116,7 +1116,7 @@ $("#log").addEventListener("click", e => {
 function resizeComposer() {
   const input = $("#msg");
   input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 132) + "px";
+  input.style.height = Math.min(input.scrollHeight, 200) + "px";
 }
 
 $("#msg").addEventListener("input", resizeComposer);

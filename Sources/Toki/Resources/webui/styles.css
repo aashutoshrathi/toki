@@ -229,7 +229,8 @@ body.privacy .eye-off{display:inline}
 .tool-detail{display:block;margin:2px 0 0 12px;color:var(--text-3,#8b95a5);font-size:12px;word-break:break-all}
 .tool-took{margin-left:6px;color:var(--text-3,#8b95a5);font-size:11px}
 @keyframes toolpulse{0%,100%{opacity:1}50%{opacity:.35}}
-footer{flex:none;background:var(--surface-1);
+footer{flex:none;background:color-mix(in srgb,var(--surface-1) 86%,transparent);
+       backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
        border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
 .keys{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-bottom:8px}
 .keys button{min-width:0;min-height:52px;padding:5px 2px;border-radius:var(--r);
@@ -237,17 +238,20 @@ footer{flex:none;background:var(--surface-1);
              box-shadow:0 1px 0 #ffffff12 inset,0 2px 5px #0006;display:flex;
              flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:16px}
 .keys button small{font-size:9px;color:var(--text-3);font-weight:500}
-.row{display:flex;gap:6px;align-items:flex-end}
 input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);color:var(--text);
       border:1px solid var(--line);font-size:16px}
-.row textarea{flex:1;min-width:0;min-height:44px;max-height:132px;padding:11px;
-              resize:none;overflow-y:auto;border-radius:var(--r);background:var(--surface-2);color:var(--text);
-              border:1px solid var(--line);font:16px/1.4 -apple-system,system-ui,sans-serif}
-.row button{width:48px;min-width:48px;height:44px;padding:10px;border-radius:var(--r);
-            background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;border:1px solid var(--accent-line);
-            box-shadow:0 1px 0 #ffffff40 inset,0 3px 10px #0d2a4d55;font-size:15px;font-weight:650;
-            display:flex;align-items:center;justify-content:center;gap:6px}
-.row button svg{width:22px;height:22px;fill:currentColor}
+.composer{display:flex;gap:4px;align-items:flex-end;
+          background:var(--surface-2);border:1px solid var(--line);
+          border-radius:24px;padding:5px 6px}
+.composer textarea{flex:1;min-width:0;min-height:34px;max-height:200px;padding:7px 6px;
+                   resize:none;overflow-y:auto;border:none;background:transparent;color:var(--text);
+                   font:16px/1.4 -apple-system,system-ui,sans-serif}
+.composer textarea:focus-visible{outline:none}
+.composer button{width:38px;min-width:38px;height:38px;padding:0;border-radius:50%;
+                 background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;border:1px solid var(--accent-line);
+                 box-shadow:0 1px 0 #ffffff40 inset,0 2px 8px #0d2a4d55;flex:none;
+                 display:flex;align-items:center;justify-content:center}
+.composer button svg{width:20px;height:20px;fill:currentColor}
 #clear{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
        box-shadow:0 1px 0 #ffffff0d inset}
 #clear svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
