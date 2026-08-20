@@ -139,7 +139,7 @@ enum UsageFetcher {
             case .copilot, .grok, .gemini, .antigravity:
                 snapshots = [agentOnlySnapshot(for: account)]
             case .cursor:
-                snapshots = [await CursorUsageClient(account: account).snapshot()]
+                snapshots = [try await CursorUsageClient(account: account).snapshot()]
             case .fx:
                 snapshots = [try await FxUsageClient(account: account).snapshot()]
             case .openCode:

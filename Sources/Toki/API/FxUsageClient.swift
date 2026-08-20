@@ -35,12 +35,10 @@ struct FxUsageClient {
         let balance: String?
     }
 
-    private static let maximumLedgerBytes = 64 * 1024 * 1024
-
     let account: AccountConfig
 
     func snapshot() async throws -> AccountSnapshot {
-        let totals = (try? Self.aggregate()) ?? Totals()
+        let totals = try Self.aggregate()
         let balance = Self.creditBalance()
 
         var metrics: [MetricLine] = []
@@ -145,10 +143,7 @@ struct FxUsageClient {
             let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
             defer { try? handle.close() }
             var record = Data()
-            var read = 0
             while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
-                read += chunk.count
-                guard read <= maximumLedgerBytes else { break }
                 for byte in chunk {
                     if byte == 0x0A {
                         if !record.isEmpty { body(record) }

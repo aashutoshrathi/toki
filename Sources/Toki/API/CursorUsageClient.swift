@@ -49,14 +49,12 @@ struct CursorUsageClient {
 
     let account: AccountConfig
 
-    func snapshot() async -> AccountSnapshot {
+    func snapshot() async throws -> AccountSnapshot {
         let activity = CursorLocalActivity.latest()
         guard let credentials = CursorAuth.read() else {
             return localSnapshot(activity: activity)
         }
-        guard let usage = try? await fetchUsage(credentials: credentials) else {
-            return localSnapshot(activity: activity)
-        }
+        let usage = try await fetchUsage(credentials: credentials)
         return usageSnapshot(usage: usage, activity: activity)
     }
 

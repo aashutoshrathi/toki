@@ -347,7 +347,7 @@ struct MenuContentView: View {
 
     // Active accounts first, then exhausted (0% remaining), then errored/not connected.
     private var sortedSnapshots: [AccountSnapshot] {
-        let order = Dictionary(uniqueKeysWithValues: store.snapshots.enumerated().map { ($0.element.id, $0.offset) })
+        let order = Dictionary(store.snapshots.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
         return store.snapshots.sorted { a, b in
             let aPriority = accountSortPriority(a)
             let bPriority = accountSortPriority(b)
