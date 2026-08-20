@@ -10,7 +10,7 @@ Clicking an agent with a terminal TTY selects its tab in iTerm2 or Terminal; oth
 
 ## Remote Control
 
-Follow a running agent from your phone and answer it: send a message, approve or reject a permission prompt, tap one of the options it offered, send a bare terminal key, or clear the session. Claude Code, Codex, OpenCode, Vercel's fx, and Google's Antigravity sessions are supported (fx and Antigravity relay keypresses without an on-phone transcript). Off by default; turn it on in Settings.
+Follow a running agent from your phone and answer it: send a message, approve or reject a permission prompt, tap one of the options it offered, send a bare terminal key, or clear the session. Claude Code, Codex, OpenCode, Vercel's fx, and Google's Antigravity sessions are supported, each with its transcript on the phone. Off by default; turn it on in Settings.
 
 **Replies go to the agent's TTY.** The same terminal discovery the Agents tab uses to jump to a session is what delivers input to it, in order of preference:
 
