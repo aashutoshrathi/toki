@@ -45,9 +45,23 @@ struct RemoteConnectSheet: View {
                             Text("Click to copy")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                            Text("Rotates every 2 minutes")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            if let expiresAt = server.pairingCodeExpiresAt {
+                                TimelineView(.periodic(from: .now, by: 1)) { context in
+                                    let remaining = max(0, expiresAt.timeIntervalSince(context.date))
+                                    VStack(spacing: 2) {
+                                        ProgressView(value: remaining, total: RemoteControlServer.pairingCodeTTL)
+                                            .progressViewStyle(.linear)
+                                            .tint(remaining <= 20 ? .orange : .secondary)
+                                            .frame(width: 96)
+                                            .scaleEffect(y: 0.55)
+                                        Text("New code in \(Int(remaining.rounded()))s")
+                                            .font(.caption2)
+                                            .monospacedDigit()
+                                            .foregroundStyle(remaining <= 20 ? .orange : .secondary)
+                                    }
+                                    .padding(.top, 1)
+                                }
+                            }
                         }
                     }
                     .buttonStyle(.plain)
