@@ -57,23 +57,19 @@ struct AccountCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
-                if canExpand {
-                    Button {
-                        toggleExpanded()
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .frame(width: 12)
-                    }
-                    .buttonStyle(.plain)
-                    .help(isExpanded ? "Collapse account" : "Show account details")
-                    .pointerOnHover()
-                    .padding(.top, 8)
-                } else {
-                    Color.clear.frame(width: 12).padding(.top, 8)
+                Button {
+                    toggleExpanded()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 12)
                 }
+                .buttonStyle(.plain)
+                .help(isExpanded ? "Collapse account" : "Show account details")
+                .pointerOnHover()
+                .padding(.top, 8)
 
                 AccountBadge(snapshot: snapshot, size: 26)
                     .overlay(alignment: .topTrailing) {
@@ -175,7 +171,7 @@ struct AccountCard: View {
 
                 // Sessions only make sense for a connected account; when the account is
                 // not connected, hide the toggle and just show usage (the error state).
-                if !snapshot.isError {
+                if !snapshot.isError && !snapshot.isAgentDetectionOnly {
                     Picker("", selection: $expandedTab) {
                         ForEach(ExpandedTab.allCases) { tab in
                             Text(tab.rawValue).tag(tab)
@@ -306,7 +302,7 @@ struct AccountCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .gesture(
             TapGesture().onEnded {
-                guard canExpand, !isEditingAlias else { return }
+                guard !isEditingAlias else { return }
                 toggleExpanded()
             },
             including: .all
@@ -602,8 +598,6 @@ struct AccountCard: View {
         store.renameAccount(snapshot: snapshot, alias: aliasDraft)
         isEditingAlias = false
     }
-
-    private var canExpand: Bool { !snapshot.isAgentDetectionOnly }
 
     private var agentStatusActive: Bool {
         if !accountAgents.isEmpty { return true }
