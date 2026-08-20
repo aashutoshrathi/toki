@@ -396,8 +396,9 @@ struct MenuContentView: View {
     private var accountList: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let snapshots = sortedSnapshots
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snapshot in
+                    ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
                         AccountCard(snapshot: snapshot, store: store) { id in
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                                 withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
@@ -407,7 +408,7 @@ struct MenuContentView: View {
                         }
                         .id(snapshot.id)
 
-                        if index < sortedSnapshots.count - 1 {
+                        if index < snapshots.count - 1 {
                             Divider()
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 2)

@@ -14,6 +14,7 @@ struct FxUsageClient {
         var monthCost = 0.0
         var allTimeCost = 0.0
         var requestCount = 0
+        var lastActivityMs = 0.0
     }
 
     private struct Entry: Decodable {
@@ -62,7 +63,8 @@ struct FxUsageClient {
             remainingRatio: nil,
             metrics: metrics,
             isError: false,
-            menuBarValue: formatUSD(totals.todayCost)
+            menuBarValue: formatUSD(totals.todayCost),
+            lastActivity: totals.lastActivityMs > 0 ? Date(timeIntervalSince1970: totals.lastActivityMs / 1000) : nil
         )
     }
 
@@ -105,6 +107,7 @@ struct FxUsageClient {
             totals.requestCount += 1
 
             guard let createdAtMs = fact.createdAtMs, createdAtMs > 0 else { return }
+            if createdAtMs > totals.lastActivityMs { totals.lastActivityMs = createdAtMs }
             let date = Date(timeIntervalSince1970: createdAtMs / 1000)
             if date >= startOfDay, date < nextDay {
                 totals.todayInput += number(fact.inputTokens)

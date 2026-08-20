@@ -40,7 +40,7 @@ enum CursorAuth {
 struct CursorUsageClient {
     struct Usage: Equatable {
         var spentCents: Double
-        var hardLimitDollars: Int?
+        var hardLimitDollars: Double?
         var inputTokens: Int
         var outputTokens: Int
         var plan: String?
@@ -62,13 +62,13 @@ struct CursorUsageClient {
         let spent = usage.spentCents / 100
         var ratio: Double?
         if let limit = usage.hardLimitDollars, limit > 0 {
-            ratio = max(0, min(1, 1 - spent / Double(limit)))
+            ratio = max(0, min(1, 1 - spent / limit))
         }
 
         var metrics: [MetricLine] = []
         if let plan = usage.plan { metrics.append(MetricLine(label: "Plan", value: plan.capitalized)) }
         if let limit = usage.hardLimitDollars, limit > 0 {
-            metrics.append(MetricLine(label: "Spend", value: "\(formatUSD(spent)) / \(formatUSD(Double(limit)))"))
+            metrics.append(MetricLine(label: "Spend", value: "\(formatUSD(spent)) / \(formatUSD(limit))"))
         } else {
             metrics.append(MetricLine(label: "Spend", value: formatUSD(spent)))
         }
@@ -118,7 +118,7 @@ struct CursorUsageClient {
         var usage = Self.parseAggregated(aggregated)
         usage.plan = profile.plan
         if let configured = account.limit, configured > 0 {
-            usage.hardLimitDollars = Int(configured)
+            usage.hardLimitDollars = configured
         } else if let hardLimit = try? await dashboard("get-hard-limit", body: [:], credentials: credentials) {
             usage.hardLimitDollars = Self.parseHardLimit(hardLimit)
         }
@@ -139,8 +139,8 @@ struct CursorUsageClient {
         )
     }
 
-    static func parseHardLimit(_ object: [String: Any]) -> Int? {
-        let limit = intFrom(object["hardLimit"])
+    static func parseHardLimit(_ object: [String: Any]) -> Double? {
+        let limit = doubleFrom(object["hardLimit"])
         return limit > 0 ? limit : nil
     }
 
