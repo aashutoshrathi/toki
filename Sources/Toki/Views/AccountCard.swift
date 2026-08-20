@@ -181,7 +181,7 @@ struct AccountCard: View {
                     .labelsHidden()
                 }
 
-                if snapshot.isError || expandedTab == .usage {
+                if snapshot.isError || (expandedTab == .usage && !snapshot.isAgentDetectionOnly) {
                     // The Error metric is dropped here because it is now the headline above -
                     // listing it twice in one card is just noise.
                     let rows = snapshot.isError
