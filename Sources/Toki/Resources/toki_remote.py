@@ -945,6 +945,32 @@ TRANSCRIPT_PARSERS = {
 }
 
 
+# Read-only tools (view_file, grep_search, find_by_name) run without asking, so only these leave the
+# transcript resting on a proposal antigravity is blocked on.
+AGY_APPROVAL_TOOLS = ("run_command",)
+
+
+def agy_attention(path):
+    """Antigravity writes the tool call it wants to run, then blocks for approval, so a pending
+    permission is the final record carrying an approval-gated call with nothing appended after it.
+    Approving appends the command's result, moving the tail past the call and clearing this."""
+    if not quiet_enough(path):
+        return None
+    records, _ = jsonl_lines(path, 0)
+    last = records[-1] if records else None
+    if not isinstance(last, dict):
+        return None
+    calls = last.get("tool_calls") or []
+    pending = next((c for c in reversed(calls)
+                    if isinstance(c, dict) and c.get("name") in AGY_APPROVAL_TOOLS), None)
+    if not pending:
+        return None
+    args = pending.get("args") if isinstance(pending.get("args"), dict) else {}
+    label = (args.get("toolSummary") or args.get("toolAction")
+             or args.get("CommandLine") or pending.get("name"))
+    return {"kind": "permission", "prompt": f"Allow: {label}?", "options": []}
+
+
 def codex_attention(path):
     if not quiet_enough(path):
         return None
@@ -1950,8 +1976,12 @@ class Handler(BaseHTTPRequestHandler):
                         att = claude_attention(a["session"])
                     elif a["provider"] == "codex":
                         att = codex_attention(a["session"])
-                    else:
+                    elif a["provider"] == "antigravity":
+                        att = agy_attention(a["session"])
+                    elif a["provider"] == "opencode":
                         att = opencode_attention(a["session"])
+                    # fx has no attention parser yet; leave it None rather than misreading it
+                    # through opencode's, which expects a session id and not a transcript path.
                 result.append({
                     "pid": a["pid"], "tty": a["tty"], "cwd": a["cwd"],
                     "path": display_path(a["cwd"]),
