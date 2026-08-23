@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.0.0 - 2026-08-23
+
+### Added
+
+- **Change an agent's model from your phone.** The companion app's composer has a Model button that opens the running CLI's own model picker (`/model`, or `/models` for OpenCode) and mirrors it live on your phone, so you choose with the same arrow, Tab, and Enter controls you already answer prompts with. It works for Claude, Codex, OpenCode, fx, and Antigravity, wherever Toki can read the terminal (tmux, iTerm, or Terminal).
+- **Each agent shows the model it is running.** A small badge next to every agent's name in the companion app reads the current model from the provider's own session (best-effort for Antigravity), so you can tell at a glance what each one is on.
+
+### Fixed
+
+- **Antigravity permission prompts reach Remote Control.** A pending approval in an Antigravity (`agy`) session now surfaces on your phone the way Claude, Codex, and OpenCode prompts already do. Its attention was being read through OpenCode's path, which expects a session id rather than a transcript, so the prompt never appeared.
+
 ## 2.7.0 - 2026-08-20
 
 ### Added
