@@ -1294,6 +1294,76 @@ def focus_terminal_tab(tty):
         error "tty not found"''')
 
 
+def osascript_out(source):
+    return shell(["/usr/bin/osascript", "-e", source], timeout=6)
+
+
+def iterm_read(tty):
+    dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
+    return osascript_out(f'''
+        if application id "com.googlecode.iterm2" is running then
+          tell application id "com.googlecode.iterm2"
+            repeat with w in windows
+              repeat with t in tabs of w
+                repeat with s in sessions of t
+                  if tty of s is "{dev}" then
+                    return text of s
+                  end if
+                end repeat
+              end repeat
+            end repeat
+          end tell
+        end if
+        error "tty not found"''')
+
+
+def terminal_read(tty):
+    dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
+    return osascript_out(f'''
+        if application id "com.apple.Terminal" is running then
+          tell application id "com.apple.Terminal"
+            repeat with w in windows
+              repeat with t in tabs of w
+                if tty of t is "{dev}" then
+                  return contents of t
+                end if
+              end repeat
+            end repeat
+          end tell
+        end if
+        error "tty not found"''')
+
+
+def trim_screen(text):
+    """The tail of a captured screen, bounded by lines and bytes. Trailing blank lines a pane pads
+    itself with are dropped so the picker sits at the bottom of the mirror."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
+    lines = text.split("\n")
+    if len(lines) > MAX_SCREEN_LINES:
+        lines = lines[-MAX_SCREEN_LINES:]
+    out = "\n".join(lines)
+    if len(out) > MAX_SCREEN_CHARS:
+        out = out[-MAX_SCREEN_CHARS:]
+    return out
+
+
+def capture_screen(tty, route=None):
+    """The visible terminal text for an agent's tty, or None when no route can read it. Mirrors an
+    interactive picker (e.g. /model) on the phone through the same three routes send_input writes to:
+    tmux, iTerm, then Terminal. tmux and both apps report only the visible region, not scrollback."""
+    if not safe_tty(tty):
+        return None
+    tmux, pane = route if route is not None else tmux_pane_for_tty(tty)
+    if pane:
+        out = shell([tmux, "capture-pane", "-p", "-t", pane])
+        return trim_screen(out) if out is not None else None
+    for reader in (iterm_read, terminal_read):
+        out = reader(tty)
+        if out is not None:
+            return trim_screen(out)
+    return None
+
+
 def send_input(tty, text=None, key=None, raw=False, route=None):
     """Deliver input to the agent's terminal. Returns (ok, how).
 
@@ -1537,6 +1607,9 @@ PAIRING_MAX_FAILURES = 5
 MAX_BODY_BYTES = 256 * 1024
 # Bound terminal injection independently of the general request-body cap.
 MAX_SEND_CHARS = 8_000
+# The mirrored picker only needs the tail of what is on screen; keep the payload small.
+MAX_SCREEN_LINES = 80
+MAX_SCREEN_CHARS = 8_000
 # Base64 adds roughly 33%, so the upload-body cap exceeds the decoded-image cap.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_UPLOAD_BODY_BYTES = 17 * 1024 * 1024
@@ -1964,6 +2037,17 @@ class Handler(BaseHTTPRequestHandler):
                     "uploads": True,
                 })
             self._json(result)
+        elif url.path == "/api/screen":
+            pid = int_param(q, "pid")
+            agent = next((a for a in discover_agents() if a["pid"] == pid), None)
+            if not agent:
+                return self._json({"error": "agent gone"}, 410)
+            if not agent_is_writable(agent):
+                return self._json({"error": "This non-terminal session has no screen to read."}, 422)
+            text = capture_screen(agent["tty"])
+            if text is None:
+                return self._json({"ok": False, "error": "no route to tty (not tmux/iTerm/Terminal?)"})
+            self._json({"ok": True, "text": text})
         elif url.path == "/api/usage":
             self._json(current_usage())
         elif url.path == "/api/transcript":

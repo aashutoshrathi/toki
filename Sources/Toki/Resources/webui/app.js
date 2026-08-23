@@ -462,6 +462,8 @@ function updateComposer(agent) {
   $("#readonly").style.display = agent && !writable ? "block" : "none";
   // Hosted UI versions can be newer than the server; gate uploads on its capability flag.
   $("#attach").hidden = !(agent && agent.uploads);
+  $("#model").hidden = !(writable && agent && MODEL_COMMANDS[agent.provider]);
+  if (!writable || (modelMirror && (!agent || modelMirror.pid != agent.pid))) closeModelMirror();
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
 }
@@ -491,6 +493,53 @@ function clearContext() {
   send({ text: "/clear" }).then(ok => {
     if (ok) resetTranscript();
   });
+}
+
+// The slash command that opens each writable provider's model picker. Toki mirrors the picker the
+// command draws; selection is driven with the arrow/Enter footer, so no per-provider parsing.
+const MODEL_COMMANDS = {
+  claude: "/model",
+  codex: "/model",
+  opencode: "/models",
+  fx: "/model",
+  antigravity: "/model",
+};
+
+// While mirroring, hold the agent whose picker is open and the poll that repaints it.
+let modelMirror = null;
+
+async function refreshModelMirror() {
+  const pid = modelMirror && modelMirror.pid;
+  if (!pid) return;
+  const pre = $("#modelscreen");
+  try {
+    const r = await api("/api/screen?pid=" + pid);
+    if (!modelMirror || modelMirror.pid != pid) return;
+    if (r.ok && r.text) pre.textContent = r.text;
+    else pre.textContent = r.error ? "Can’t read this terminal: " + r.error : "No picker on screen.";
+  } catch (e) {
+    if (modelMirror && modelMirror.pid == pid) pre.textContent = "Couldn’t read the screen: " + e.message;
+  }
+}
+
+function openModelMirror(agent) {
+  const cmd = agent && MODEL_COMMANDS[agent.provider];
+  if (!cmd) return;
+  closeModelMirror();
+  // Fire the CLI's own model command, then mirror the picker it opens on the terminal.
+  send({ text: cmd });
+  modelMirror = { pid: agent.pid };
+  $("#modelmirror").hidden = false;
+  $("#modelscreen").textContent = "Opening " + cmd + "…";
+  modelMirror.timer = setInterval(refreshModelMirror, 700);
+  setTimeout(refreshModelMirror, 450);
+}
+
+function closeModelMirror() {
+  if (!modelMirror) return;
+  clearInterval(modelMirror.timer);
+  modelMirror = null;
+  $("#modelmirror").hidden = true;
 }
 
 let notifiedAttention = {};
@@ -1098,7 +1147,7 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
-  if (uploading && (b.id == "send" || b.id == "clear" ||
+  if (uploading && (b.id == "send" || b.id == "clear" || b.id == "model" ||
       b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
     submitComposer();
@@ -1108,15 +1157,21 @@ document.addEventListener("click", async e => {
     clearPendingImage();
   } else if (b.id == "clear") {
     clearContext();
+  } else if (b.id == "model") {
+    openModelMirror(agents.find(a => a.pid == current));
+  } else if (b.id == "modelclose") {
+    closeModelMirror();
   } else if (b.dataset.key) {
     $("#alert").style.display = "none";
     await send({ key: b.dataset.key });
+    if (modelMirror) refreshModelMirror();
   } else if (b.dataset.opt) {
     toggleOption(b.dataset.opt);
   } else if (b.dataset.submit) {
     submitAnswer();
   } else if (b.dataset.text) {
     await send({ text: b.dataset.text, raw: true });
+    if (modelMirror) refreshModelMirror();
   }
 });
 

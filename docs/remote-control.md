@@ -1,7 +1,7 @@
 # Remote Control
 
 Remote Control lets you watch your running agents from your phone and reply to them: approve a
-permission prompt, answer a question, send a message, clear a session. Toki starts a small HTTP
+permission prompt, answer a question, send a message, clear a session, change the model. Toki starts a small HTTP
 server on this Mac, your phone opens a web app, and the two talk directly. Nothing goes through a
 cloud service, and no transcript leaves your machine.
 
@@ -155,6 +155,17 @@ Agents without a terminal — Codex desktop, VS Code extensions, anything not at
 show up but cannot be replied to. There is no keyboard to type into. They are grouped under
 **Read-only** at the bottom of the picker, so the agent that is actually waiting on you is the one
 selected by default.
+
+### Changing an agent's model
+
+The **Model** button in the composer opens the running CLI's own model picker (`/model` for
+Claude, Codex, fx, and Antigravity; `/models` for OpenCode) and then mirrors that picker on the
+phone so you can see the options and the highlighted row. You drive the selection with the same
+**↑ ↓ Tab Enter** controls used to answer any other picker, and **Done** closes the mirror.
+
+The mirror reads the visible terminal through the same routes replies are typed into: tmux, iTerm,
+and Terminal. An agent in a terminal Toki cannot read that way still opens its picker on the Mac,
+but the phone shows nothing to steer by, so the mirror reports it has no route.
 
 ### The first connection can be blocked by the macOS firewall
 
