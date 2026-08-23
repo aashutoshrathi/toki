@@ -1034,6 +1034,118 @@ def opencode_attention(session_id):
     return {"kind": "permission", "prompt": f"Allow {tool}?" if tool else "OpenCode is waiting on you", "options": []}
 
 
+def _claude_model(j):
+    msg = j.get("message")
+    return msg.get("model") if isinstance(msg, dict) else None
+
+
+def _codex_model(j):
+    return (j.get("payload") or {}).get("model") if j.get("type") == "turn_context" else None
+
+
+def _fx_model(j):
+    """fx records the model on session_started and on each usage checkpoint, both under a `model`
+    key nested in the payload; walk the record for the last one so a mid-session switch is caught."""
+    if j.get("kind") not in ("session_started", "usage_checkpointed"):
+        return None
+    found, stack = None, [j.get("payload")]
+    while stack:
+        o = stack.pop()
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k == "model" and isinstance(v, str):
+                    found = v
+                elif isinstance(v, (dict, list)):
+                    stack.append(v)
+        elif isinstance(o, list):
+            stack.extend(o)
+    return found
+
+
+AGY_MODEL_RE = re.compile(r"gemini-[0-9]+(?:\.[0-9]+)*(?:-[a-z]+)*", re.I)
+
+
+def agy_model(session_path):
+    """Antigravity keeps the model only inside a metadata blob in its per-conversation db, so read
+    the newest gen_metadata row and pull the id out of it. Best-effort: None when it is not found."""
+    parts = session_path.split(os.sep)
+    try:
+        cid = parts[parts.index("brain") + 1]
+    except (ValueError, IndexError):
+        return None
+    db = os.path.join(HOME, ".gemini", "antigravity-cli", "conversations", cid + ".db")
+    if not os.path.exists(db):
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1)
+        try:
+            row = con.execute("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 1").fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    if not row or row[0] is None:
+        return None
+    blob = row[0] if isinstance(row[0], str) else row[0].decode("utf-8", "replace")
+    m = AGY_MODEL_RE.search(blob)
+    return m.group(0) if m else None
+
+
+def opencode_model(session_id):
+    rows = opencode_query("SELECT model FROM session WHERE id=?", (session_id,))
+    raw = rows[0][0] if rows and rows[0][0] else None
+    if not raw:
+        return None
+    # OpenCode stores the model as a JSON object ({"id","providerID","variant"}); show its id.
+    try:
+        obj = json.loads(raw)
+    except (ValueError, TypeError):
+        return raw
+    return obj.get("id") or obj.get("model") or raw if isinstance(obj, dict) else raw
+
+
+JSONL_MODEL_EXTRACTORS = {"claude": _claude_model, "codex": _codex_model, "fx": _fx_model}
+# path -> (offset, model): the model as of the bytes read so far, so each poll parses only what was
+# appended since the last one rather than re-reading a growing session in full.
+_model_stream = {}
+
+
+def jsonl_model(path, extract):
+    """The current model in a jsonl session, read incrementally. The model line can sit anywhere --
+    far behind the tail in a long session -- so a bounded tail scan would miss it, but re-reading the
+    whole file every poll would not; this keeps the last value and consumes only the new bytes."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        _model_stream.pop(path, None)
+        return None
+    prev = _model_stream.get(path)
+    # A shorter file than last time means the session was replaced; start over.
+    offset, model = prev if prev and prev[0] <= size else (0, None)
+    records, new_offset = jsonl_lines(path, offset)
+    for j in (records or []):
+        v = extract(j)
+        if v:
+            model = v
+    _model_stream[path] = (new_offset if records is not None else offset, model)
+    if len(_model_stream) > 128:
+        _model_stream.pop(next(iter(_model_stream)))
+    return model
+
+
+def model_of(agent):
+    """The model an agent is currently running, or None when it cannot be read for that provider."""
+    provider, session = agent.get("provider"), agent.get("session")
+    if not session:
+        return None
+    if provider == "antigravity":
+        return agy_model(session)
+    if provider == "opencode":
+        return opencode_model(session)
+    extract = JSONL_MODEL_EXTRACTORS.get(provider)
+    return jsonl_model(session, extract) if extract else None
+
+
 def opencode_tool_summary(tool, inp):
     if not isinstance(inp, dict):
         return ""
@@ -2031,10 +2143,13 @@ class Handler(BaseHTTPRequestHandler):
                     "provider": a["provider"],
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,
+                    "model": model_of(a),
                     "writable": agent_is_writable(a),
                     "machine": machine_name(),
                     # Lets newer hosted UIs hide uploads when connected to an older server.
                     "uploads": True,
+                    # Signals /api/screen support so older servers do not expose model control.
+                    "screen": True,
                 })
             self._json(result)
         elif url.path == "/api/screen":

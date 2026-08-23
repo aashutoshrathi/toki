@@ -167,6 +167,10 @@ The mirror reads the visible terminal through the same routes replies are typed 
 and Terminal. An agent in a terminal Toki cannot read that way still opens its picker on the Mac,
 but the phone shows nothing to steer by, so the mirror reports it has no route.
 
+Each agent also shows the model it is currently running as a small badge next to its name, read
+from the provider's own session (Antigravity's is best-effort, and a few session kinds such as a
+one-off review run record no model, so the badge is simply omitted there).
+
 ### The first connection can be blocked by the macOS firewall
 
 macOS prompts once to allow incoming connections for `python3`. If you dismissed that prompt, the
