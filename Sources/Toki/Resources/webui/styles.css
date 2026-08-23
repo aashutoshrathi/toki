@@ -124,8 +124,12 @@ body.privacy .eye-off{display:inline}
        background:var(--surface-2);color:var(--text);border:1px solid var(--line);font-size:15px;text-align:left}
 #dd .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;
        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#dd .tl,#dd .tp{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dd .tl{display:flex;align-items:center;gap:6px;min-width:0}
+#dd .ttl,#dd .tp{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #dd .tp{color:var(--text-3);font-size:11px;font-family:ui-monospace,monospace}
+#dd .tm{flex:none;padding:1px 6px;border-radius:6px;background:var(--surface-1);
+        border:1px solid var(--line);color:var(--text-3);font-size:10px;
+        font-family:ui-monospace,monospace;white-space:nowrap}
 #dd .caret{color:var(--text-3);flex:none}
 #dd .dot{color:var(--danger)}
 #ddlist{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:5;
@@ -261,6 +265,21 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
 #attach{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
         box-shadow:0 1px 0 #ffffff0d inset}
 #attach svg{fill:none;stroke:currentColor}
+#model{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
+       box-shadow:0 1px 0 #ffffff0d inset}
+#model[hidden]{display:none}
+#model svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#modelmirror{margin-bottom:8px;border:1px solid var(--line-strong);border-radius:var(--r);
+             background:var(--surface-2);overflow:hidden}
+#modelmirror[hidden]{display:none}
+.mm-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+         padding:6px 10px;font-size:11px;color:var(--text-2);border-bottom:1px solid var(--line)}
+.mm-head button{width:auto;min-width:0;height:auto;flex:none;padding:3px 12px;border-radius:8px;
+                background:var(--surface);border:1px solid var(--line-strong);color:var(--text);
+                box-shadow:none;font:600 12px/1 -apple-system,system-ui,sans-serif}
+#modelscreen{margin:0;padding:8px 10px;max-height:220px;overflow:auto;
+             font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);
+             white-space:pre;-webkit-overflow-scrolling:touch}
 #attachpreview{position:relative;display:inline-block;margin-bottom:8px}
 #attachpreview[hidden]{display:none}
 #attachpreview img{max-height:96px;max-width:100%;display:block;border-radius:var(--r);

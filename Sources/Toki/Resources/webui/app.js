@@ -401,11 +401,19 @@ function providerLogo(p) {
   return '<svg class="plogo" viewBox="0 0 24 24" fill="#888"><circle cx="12" cy="12" r="8"/></svg>';
 }
 
+// Trim a model id to the part worth glancing at on a phone: drop a provider path prefix
+// (anthropic/\u2026, zai/\u2026) and the redundant "claude-" vendor tag.
+function shortModel(m) {
+  return String(m).split("/").pop().replace(/^claude-/, "");
+}
+
 function agentRow(a) {
   const path = dispPath(a.path);
+  const model = a.model ? '<span class="tm">' + esc(shortModel(a.model)) + "</span>" : "";
+  const dot = a.attention ? '<span class="dot">\u25cf</span>' : "";
   return providerLogo(a.provider) +
     '<span class="t">' +
-    '<span class="tl">' + (a.attention ? '<span class="dot">\u25cf</span> ' : "") + dispTitle(a.title) + "</span>" +
+    '<span class="tl">' + dot + '<span class="ttl">' + dispTitle(a.title) + "</span>" + model + "</span>" +
     (path ? '<span class="tp">' + path + "</span>" : "") +
     "</span>";
 }
@@ -462,6 +470,9 @@ function updateComposer(agent) {
   $("#readonly").style.display = agent && !writable ? "block" : "none";
   // Hosted UI versions can be newer than the server; gate uploads on its capability flag.
   $("#attach").hidden = !(agent && agent.uploads);
+  // agent.screen gates the button off for older servers that lack /api/screen to mirror the picker.
+  $("#model").hidden = !(writable && agent && agent.screen && MODEL_COMMANDS[agent.provider]);
+  if (!writable || (modelMirror && (!agent || modelMirror.pid != agent.pid))) closeModelMirror();
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
 }
@@ -491,6 +502,61 @@ function clearContext() {
   send({ text: "/clear" }).then(ok => {
     if (ok) resetTranscript();
   });
+}
+
+// The slash command that opens each writable provider's model picker. Toki mirrors the picker the
+// command draws; selection is driven with the arrow/Enter footer, so no per-provider parsing.
+const MODEL_COMMANDS = {
+  claude: "/model",
+  codex: "/model",
+  opencode: "/models",
+  fx: "/model",
+  antigravity: "/model",
+};
+
+// While mirroring, hold the agent whose picker is open and the poll that repaints it.
+let modelMirror = null;
+
+// One capture in flight at a time: a slow AppleScript reader can take seconds, so the next poll is
+// scheduled only after this one settles rather than on a fixed interval that would stack requests.
+async function refreshModelMirror() {
+  const pid = modelMirror && modelMirror.pid;
+  if (!pid || modelMirror.inflight) return;
+  clearTimeout(modelMirror.timer);  // a manual refresh takes over any scheduled poll, never stacks
+  modelMirror.inflight = true;
+  const pre = $("#modelscreen");
+  try {
+    const r = await api("/api/screen?pid=" + pid);
+    if (!modelMirror || modelMirror.pid != pid) return;
+    if (r.ok && r.text) pre.textContent = r.text;
+    else pre.textContent = r.error ? "Can’t read this terminal: " + r.error : "No picker on screen.";
+  } catch (e) {
+    if (modelMirror && modelMirror.pid == pid) pre.textContent = "Couldn’t read the screen: " + e.message;
+  } finally {
+    if (modelMirror && modelMirror.pid == pid) {
+      modelMirror.inflight = false;
+      modelMirror.timer = setTimeout(refreshModelMirror, 700);
+    }
+  }
+}
+
+function openModelMirror(agent) {
+  const cmd = agent && MODEL_COMMANDS[agent.provider];
+  if (!cmd) return;
+  closeModelMirror();
+  // Fire the CLI's own model command, then mirror the picker it opens on the terminal.
+  send({ text: cmd });
+  modelMirror = { pid: agent.pid, inflight: false };
+  $("#modelmirror").hidden = false;
+  $("#modelscreen").textContent = "Opening " + cmd + "…";
+  modelMirror.timer = setTimeout(refreshModelMirror, 450);
+}
+
+function closeModelMirror() {
+  if (!modelMirror) return;
+  clearTimeout(modelMirror.timer);
+  modelMirror = null;
+  $("#modelmirror").hidden = true;
 }
 
 let notifiedAttention = {};
@@ -1098,7 +1164,7 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
-  if (uploading && (b.id == "send" || b.id == "clear" ||
+  if (uploading && (b.id == "send" || b.id == "clear" || b.id == "model" ||
       b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
     submitComposer();
@@ -1108,15 +1174,21 @@ document.addEventListener("click", async e => {
     clearPendingImage();
   } else if (b.id == "clear") {
     clearContext();
+  } else if (b.id == "model") {
+    openModelMirror(agents.find(a => a.pid == current));
+  } else if (b.id == "modelclose") {
+    closeModelMirror();
   } else if (b.dataset.key) {
     $("#alert").style.display = "none";
     await send({ key: b.dataset.key });
+    if (modelMirror) refreshModelMirror();
   } else if (b.dataset.opt) {
     toggleOption(b.dataset.opt);
   } else if (b.dataset.submit) {
     submitAnswer();
   } else if (b.dataset.text) {
     await send({ text: b.dataset.text, raw: true });
+    if (modelMirror) refreshModelMirror();
   }
 });
 
