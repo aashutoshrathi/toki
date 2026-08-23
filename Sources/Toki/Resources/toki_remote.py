@@ -952,13 +952,19 @@ AGY_APPROVAL_TOOLS = ("run_command",)
 
 def agy_attention(path):
     """Antigravity writes the tool call it wants to run, then blocks for approval, so a pending
-    permission is the final record carrying an approval-gated call with nothing appended after it.
-    Approving appends the command's result, moving the tail past the call and clearing this."""
+    permission is the final record: a model proposal (PLANNER_RESPONSE) holding an approval-gated
+    call with nothing appended after it. Approving appends the command's result, moving the tail
+    past the call and clearing this.
+
+    This does not fire for an auto-approved command that is merely executing. The instant such a
+    command starts, Antigravity appends a "running as a background task" record (verified against a
+    live session), and then more planner output, so the tail is no longer a lone call. A trailing
+    approval-gated call therefore means the agent is waiting on the human, not running a command."""
     if not quiet_enough(path):
         return None
     records, _ = jsonl_lines(path, 0)
     last = records[-1] if records else None
-    if not isinstance(last, dict):
+    if not isinstance(last, dict) or last.get("type") != "PLANNER_RESPONSE":
         return None
     calls = last.get("tool_calls") or []
     pending = next((c for c in reversed(calls)
