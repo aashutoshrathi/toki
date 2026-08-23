@@ -945,6 +945,38 @@ TRANSCRIPT_PARSERS = {
 }
 
 
+# Read-only tools (view_file, grep_search, find_by_name) run without asking, so only these leave the
+# transcript resting on a proposal antigravity is blocked on.
+AGY_APPROVAL_TOOLS = ("run_command",)
+
+
+def agy_attention(path):
+    """Antigravity writes the tool call it wants to run, then blocks for approval, so a pending
+    permission is the final record: a model proposal (PLANNER_RESPONSE) holding an approval-gated
+    call with nothing appended after it. Approving appends the command's result, moving the tail
+    past the call and clearing this.
+
+    This does not fire for an auto-approved command that is merely executing. The instant such a
+    command starts, Antigravity appends a "running as a background task" record (verified against a
+    live session), and then more planner output, so the tail is no longer a lone call. A trailing
+    approval-gated call therefore means the agent is waiting on the human, not running a command."""
+    if not quiet_enough(path):
+        return None
+    records, _ = jsonl_lines(path, 0)
+    last = records[-1] if records else None
+    if not isinstance(last, dict) or last.get("type") != "PLANNER_RESPONSE":
+        return None
+    calls = last.get("tool_calls") or []
+    pending = next((c for c in reversed(calls)
+                    if isinstance(c, dict) and c.get("name") in AGY_APPROVAL_TOOLS), None)
+    if not pending:
+        return None
+    args = pending.get("args") if isinstance(pending.get("args"), dict) else {}
+    label = (args.get("toolSummary") or args.get("toolAction")
+             or args.get("CommandLine") or pending.get("name"))
+    return {"kind": "permission", "prompt": f"Allow: {label}?", "options": []}
+
+
 def codex_attention(path):
     if not quiet_enough(path):
         return None
@@ -2135,8 +2167,12 @@ class Handler(BaseHTTPRequestHandler):
                         att = claude_attention(a["session"])
                     elif a["provider"] == "codex":
                         att = codex_attention(a["session"])
-                    else:
+                    elif a["provider"] == "antigravity":
+                        att = agy_attention(a["session"])
+                    elif a["provider"] == "opencode":
                         att = opencode_attention(a["session"])
+                    # fx has no attention parser yet; leave it None rather than misreading it
+                    # through opencode's, which expects a session id and not a transcript path.
                 result.append({
                     "pid": a["pid"], "tty": a["tty"], "cwd": a["cwd"],
                     "path": display_path(a["cwd"]),
