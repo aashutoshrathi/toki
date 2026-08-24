@@ -522,6 +522,65 @@ function isSlashCommand(text) {
   return SLASH_COMMAND_RE.test(text);
 }
 
+// Render a captured terminal screen (with the ANSI color codes tmux -e keeps) as HTML, so a picker
+// whose selection is shown only by a highlight color reads correctly on the phone. Plain text with
+// no codes passes straight through, escaped; non-color escape sequences are dropped.
+const ANSI_BASIC = ["#1a1d23", "#e06c75", "#98c379", "#d5b26a", "#61afef", "#c678dd", "#56b6c2", "#c8cdd6"];
+const ANSI_BRIGHT = ["#5c6370", "#ef5f6b", "#a6d189", "#e5c07b", "#7cc0ff", "#d19aea", "#66d0dc", "#ffffff"];
+
+function ansiColor(n) {
+  if (n < 8) return ANSI_BASIC[n];
+  if (n < 16) return ANSI_BRIGHT[n - 8];
+  if (n < 232) {
+    n -= 16;
+    const c = v => (v ? v * 40 + 55 : 0);
+    return `rgb(${c((n / 36 | 0) % 6)},${c((n / 6 | 0) % 6)},${c(n % 6)})`;
+  }
+  const v = (n - 232) * 10 + 8;
+  return `rgb(${v},${v},${v})`;
+}
+
+function ansiToHtml(text) {
+  // Drop cursor moves and other non-color escapes tmux -e can still emit.
+  text = text.replace(/\x1b\[[0-9;?]*[A-Za-ln-z]/g, "").replace(/\x1b\].*?(\x07|\x1b\\)/g, "");
+  let fg = null, bg = null, bold = false, rev = false, out = "";
+  const flush = seg => {
+    if (!seg) return;
+    let f = rev ? bg || "#0b0d10" : fg, b = rev ? fg || "#e6edf3" : bg;
+    const s = (f ? "color:" + f + ";" : "") + (b ? "background:" + b + ";" : "") + (bold ? "font-weight:700" : "");
+    out += s ? `<span style="${s}">` + esc(seg) + "</span>" : esc(seg);
+  };
+  const re = /\x1b\[([0-9;]*)m/g;
+  let m, last = 0;
+  while ((m = re.exec(text))) {
+    flush(text.slice(last, m.index));
+    last = re.lastIndex;
+    const codes = m[1] ? m[1].split(";").map(Number) : [0];
+    for (let j = 0; j < codes.length; j++) {
+      const c = codes[j];
+      if (c === 0) { fg = bg = null; bold = rev = false; }
+      else if (c === 1) bold = true;
+      else if (c === 22) bold = false;
+      else if (c === 7) rev = true;
+      else if (c === 27) rev = false;
+      else if (c === 39) fg = null;
+      else if (c === 49) bg = null;
+      else if (c >= 30 && c <= 37) fg = ANSI_BASIC[c - 30];
+      else if (c >= 90 && c <= 97) fg = ANSI_BRIGHT[c - 90];
+      else if (c >= 40 && c <= 47) bg = ANSI_BASIC[c - 40];
+      else if (c >= 100 && c <= 107) bg = ANSI_BRIGHT[c - 100];
+      else if (c === 38 || c === 48) {
+        const col = codes[j + 1] === 5 ? ansiColor(codes[j + 2])
+          : codes[j + 1] === 2 ? `rgb(${codes[j + 2] || 0},${codes[j + 3] || 0},${codes[j + 4] || 0})` : null;
+        j += codes[j + 1] === 5 ? 2 : codes[j + 1] === 2 ? 4 : 0;
+        if (c === 38) fg = col; else bg = col;
+      }
+    }
+  }
+  flush(text.slice(last));
+  return out;
+}
+
 // While mirroring, hold the agent whose picker is open and the poll that repaints it.
 let modelMirror = null;
 
@@ -536,7 +595,7 @@ async function refreshModelMirror() {
   try {
     const r = await api("/api/screen?pid=" + pid);
     if (!modelMirror || modelMirror.pid != pid) return;
-    if (r.ok && r.text) pre.textContent = r.text;
+    if (r.ok && r.text) pre.innerHTML = ansiToHtml(r.text);
     else pre.textContent = r.error ? "Can’t read this terminal: " + r.error : "No picker on screen.";
   } catch (e) {
     if (modelMirror && modelMirror.pid == pid) pre.textContent = "Couldn’t read the screen: " + e.message;

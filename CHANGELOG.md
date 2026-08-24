@@ -12,6 +12,7 @@
 
 - **Antigravity clarifying questions are answerable from your phone, options and all.** When an Antigravity (`agy`) session asks a question (`ask_question`), the phone shows every question with its options, single- or multi-select, instead of a blank panel; before, its attention parser only recognized approval-gated commands, so a pending question left the agent stuck. You make your picks and hit Submit, and Toki drives Antigravity's own picker with the exact keystrokes it expects (a single-select number selects and advances, a multi-select toggles and Enter submits), so multi-question and multi-select prompts answer correctly.
 - **Antigravity permission prompts reach Remote Control.** A pending approval in an Antigravity (`agy`) session now surfaces on your phone the way Claude, Codex, and OpenCode prompts already do. Its attention was being read through OpenCode's path, which expects a session id rather than a transcript, so the prompt never appeared.
+- **The mirrored picker shows its colors, so OpenCode's model list is usable.** The companion mirrors a CLI's own picker by capturing its terminal, but it was dropping color, and OpenCode marks the selected row only with a highlight color, not a text cursor, so the phone showed a list with no visible selection to move. The mirror now keeps and renders terminal color, so the highlighted row reads clearly (as do OpenCode's two-step model and variant dialogs); Claude and Codex pickers, which already drew a text cursor, just gain their real colors.
 
 ## 2.7.0 - 2026-08-20
 

@@ -1484,11 +1484,17 @@ def terminal_read(tty):
         error "tty not found"''')
 
 
+ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def trim_screen(text):
     """The tail of a captured screen, bounded by lines and bytes. Trailing blank lines a pane pads
-    itself with are dropped so the picker sits at the bottom of the mirror."""
-    text = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
+    itself with are dropped so the picker sits at the bottom of the mirror. Color escape codes are
+    kept for the phone to render, but ignored when judging whether a trailing line is blank."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = text.split("\n")
+    while lines and not ANSI_SGR_RE.sub("", lines[-1]).strip():
+        lines.pop()
     if len(lines) > MAX_SCREEN_LINES:
         lines = lines[-MAX_SCREEN_LINES:]
     out = "\n".join(lines)
@@ -1500,12 +1506,16 @@ def trim_screen(text):
 def capture_screen(tty, route=None):
     """The visible terminal text for an agent's tty, or None when no route can read it. Mirrors an
     interactive picker (e.g. /model) on the phone through the same three routes send_input writes to:
-    tmux, iTerm, then Terminal. tmux and both apps report only the visible region, not scrollback."""
+    tmux, iTerm, then Terminal. tmux and both apps report only the visible region, not scrollback.
+
+    The tmux route keeps color escape codes (`-e`) so a picker whose selection is shown only by a
+    highlight color -- OpenCode's, for one -- is legible on the phone; the app-scripted routes can
+    only read plain text."""
     if not safe_tty(tty):
         return None
     tmux, pane = route if route is not None else tmux_pane_for_tty(tty)
     if pane:
-        out = shell([tmux, "capture-pane", "-p", "-t", pane])
+        out = shell([tmux, "capture-pane", "-e", "-p", "-t", pane])
         return trim_screen(out) if out is not None else None
     for reader in (iterm_read, terminal_read):
         out = reader(tty)
