@@ -470,8 +470,11 @@ function updateComposer(agent) {
   $("#readonly").style.display = agent && !writable ? "block" : "none";
   // Hosted UI versions can be newer than the server; gate uploads on its capability flag.
   $("#attach").hidden = !(agent && agent.uploads);
-  // agent.screen gates the button off for older servers that lack /api/screen to mirror the picker.
-  $("#model").hidden = !(writable && agent && agent.screen && MODEL_COMMANDS[agent.provider]);
+  // agent.screen gates the buttons off for older servers that lack /api/screen. The Model button
+  // is a shortcut for providers with a known command; the Screen button mirrors any app's terminal.
+  const canMirror = writable && agent && agent.screen;
+  $("#model").hidden = !(canMirror && MODEL_COMMANDS[agent.provider]);
+  $("#screen").hidden = !canMirror;
   if (!writable || (modelMirror && (!agent || modelMirror.pid != agent.pid))) closeModelMirror();
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
@@ -514,6 +517,73 @@ const MODEL_COMMANDS = {
   antigravity: "/model",
 };
 
+// A leading slash command (/usage, /help, /model) opens an interactive view or picker in the CLI's
+// own TUI, so it is mirrored and driven with the key footer rather than sent as a plain reply that
+// would strand the phone waiting on an answer. A path like /Users/me is deliberately not matched.
+const SLASH_COMMAND_RE = /^\/[a-zA-Z][\w-]*( .*)?$/;
+function isSlashCommand(text) {
+  return SLASH_COMMAND_RE.test(text);
+}
+
+// Render a captured terminal screen (with the ANSI color codes tmux -e keeps) as HTML, so a picker
+// whose selection is shown only by a highlight color reads correctly on the phone. Plain text with
+// no codes passes straight through, escaped; non-color escape sequences are dropped.
+const ANSI_BASIC = ["#1a1d23", "#e06c75", "#98c379", "#d5b26a", "#61afef", "#c678dd", "#56b6c2", "#c8cdd6"];
+const ANSI_BRIGHT = ["#5c6370", "#ef5f6b", "#a6d189", "#e5c07b", "#7cc0ff", "#d19aea", "#66d0dc", "#ffffff"];
+
+function ansiColor(n) {
+  if (n < 8) return ANSI_BASIC[n];
+  if (n < 16) return ANSI_BRIGHT[n - 8];
+  if (n < 232) {
+    n -= 16;
+    const c = v => (v ? v * 40 + 55 : 0);
+    return `rgb(${c((n / 36 | 0) % 6)},${c((n / 6 | 0) % 6)},${c(n % 6)})`;
+  }
+  const v = (n - 232) * 10 + 8;
+  return `rgb(${v},${v},${v})`;
+}
+
+function ansiToHtml(text) {
+  // Drop cursor moves and other non-color escapes tmux -e can still emit.
+  text = text.replace(/\x1b\[[0-9;?]*[A-Za-ln-z]/g, "").replace(/\x1b\][\s\S]*?(\x07|\x1b\\)/g, "");
+  let fg = null, bg = null, bold = false, rev = false, out = "";
+  const flush = seg => {
+    if (!seg) return;
+    let f = rev ? bg || "#0b0d10" : fg, b = rev ? fg || "#e6edf3" : bg;
+    const s = (f ? "color:" + f + ";" : "") + (b ? "background:" + b + ";" : "") + (bold ? "font-weight:700" : "");
+    out += s ? `<span style="${s}">` + esc(seg) + "</span>" : esc(seg);
+  };
+  const re = /\x1b\[([0-9;]*)m/g;
+  let m, last = 0;
+  while ((m = re.exec(text))) {
+    flush(text.slice(last, m.index));
+    last = re.lastIndex;
+    const codes = m[1] ? m[1].split(";").map(Number) : [0];
+    for (let j = 0; j < codes.length; j++) {
+      const c = codes[j];
+      if (c === 0) { fg = bg = null; bold = rev = false; }
+      else if (c === 1) bold = true;
+      else if (c === 22) bold = false;
+      else if (c === 7) rev = true;
+      else if (c === 27) rev = false;
+      else if (c === 39) fg = null;
+      else if (c === 49) bg = null;
+      else if (c >= 30 && c <= 37) fg = ANSI_BASIC[c - 30];
+      else if (c >= 90 && c <= 97) fg = ANSI_BRIGHT[c - 90];
+      else if (c >= 40 && c <= 47) bg = ANSI_BASIC[c - 40];
+      else if (c >= 100 && c <= 107) bg = ANSI_BRIGHT[c - 100];
+      else if (c === 38 || c === 48) {
+        const col = codes[j + 1] === 5 ? (Number.isFinite(codes[j + 2]) ? ansiColor(codes[j + 2]) : null)
+          : codes[j + 1] === 2 ? `rgb(${codes[j + 2] || 0},${codes[j + 3] || 0},${codes[j + 4] || 0})` : null;
+        j += codes[j + 1] === 5 ? 2 : codes[j + 1] === 2 ? 4 : 0;
+        if (c === 38) fg = col; else bg = col;
+      }
+    }
+  }
+  flush(text.slice(last));
+  return out;
+}
+
 // While mirroring, hold the agent whose picker is open and the poll that repaints it.
 let modelMirror = null;
 
@@ -528,7 +598,7 @@ async function refreshModelMirror() {
   try {
     const r = await api("/api/screen?pid=" + pid);
     if (!modelMirror || modelMirror.pid != pid) return;
-    if (r.ok && r.text) pre.textContent = r.text;
+    if (r.ok && r.text) pre.innerHTML = ansiToHtml(r.text);
     else pre.textContent = r.error ? "Can’t read this terminal: " + r.error : "No picker on screen.";
   } catch (e) {
     if (modelMirror && modelMirror.pid == pid) pre.textContent = "Couldn’t read the screen: " + e.message;
@@ -540,16 +610,34 @@ async function refreshModelMirror() {
   }
 }
 
+function openMirror(agent, label, opening, delay) {
+  if (!agent) return;
+  closeModelMirror();
+  modelMirror = { pid: agent.pid, inflight: false };
+  $("#mmlabel").textContent = label;
+  $("#modelmirror").hidden = false;
+  $("#modelscreen").textContent = opening;
+  modelMirror.timer = setTimeout(refreshModelMirror, delay);
+}
+
+// Mirror whatever the agent's terminal is already showing, for any app -- no command sent, so the
+// phone can watch and drive an arbitrary picker or prompt with the key footer.
+function openScreenMirror(agent) {
+  openMirror(agent, "Live terminal: drive it with the keys below", "Reading the screen…", 250);
+}
+
+function openCommandMirror(agent, cmd, label) {
+  if (!agent || !cmd) return;
+  // Fire the command in the CLI's own TUI, then mirror whatever it draws -- a picker, /usage
+  // output, /help -- and let the key footer drive it, rather than sending it as a reply.
+  send({ text: cmd });
+  openMirror(agent, label, "Opening " + cmd + "…", 450);
+}
+
 function openModelMirror(agent) {
   const cmd = agent && MODEL_COMMANDS[agent.provider];
   if (!cmd) return;
-  closeModelMirror();
-  // Fire the CLI's own model command, then mirror the picker it opens on the terminal.
-  send({ text: cmd });
-  modelMirror = { pid: agent.pid, inflight: false };
-  $("#modelmirror").hidden = false;
-  $("#modelscreen").textContent = "Opening " + cmd + "…";
-  modelMirror.timer = setTimeout(refreshModelMirror, 450);
+  openCommandMirror(agent, cmd, "Model picker: choose with the keys below");
 }
 
 function closeModelMirror() {
@@ -679,8 +767,7 @@ function answerComplete(qs, sel) {
 }
 
 function renderQuestions() {
-  const { questions: qs, sel, provider } = answer;
-  const tapToSend = provider == "antigravity";
+  const { questions: qs, sel } = answer;
   let html = '<div class="ahead">Agent is asking</div>';
   qs.forEach((q, qi) => {
     if (q.header)
@@ -688,44 +775,26 @@ function renderQuestions() {
         (q.multi ? '<span class="qtag">select all that apply</span>' : "") + "</div>";
     html += '<div class="qq">' + md(q.question || "") + "</div>";
     (q.options || []).forEach((o, oi) => {
-      const on = !tapToSend && sel[qi].has(oi);
-      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}"` +
-        (tapToSend ? ">" : ` role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
-          `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>`) +
+      const on = sel[qi].has(oi);
+      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}" ` +
+        `role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
+        `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>` +
         `<span class="olab"><b>${esc(o.label)}</b>` +
         (o.description ? `<em>${esc(o.description)}</em>` : "") + "</span></button>";
     });
   });
-  if (!tapToSend && !isQuickPick(qs)) {
-    // Both TUIs default or drop unanswered questions, so require every available choice.
+  if (!isQuickPick(qs)) {
+    // The TUIs default or drop unanswered questions, so require every available choice.
     html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
       (answerComplete(qs, sel) ? "" : " disabled") + ">Submit</button></div>";
   }
   $("#alert").innerHTML = html;
 }
 
-async function sendOptionText(qi, oi) {
-  if (submitting) return;
-  const opt = (answer.questions[qi].options || [])[oi];
-  if (!opt) return;
-  const pending = answer;
-  submitting = true;
-  const ok = await send({ text: opt.label });
-  submitting = false;
-  if (answer !== pending) return;
-  if (ok) {
-    answer = null;
-    $("#alert").style.display = "none";
-  } else {
-    renderQuestions();
-  }
-}
-
 function toggleOption(spec) {
   // Freeze selection while its computed keystrokes are in flight.
   if (!answer || submitting) return;
   const [qi, oi] = spec.split(":").map(Number);
-  if (answer.provider == "antigravity") return void sendOptionText(qi, oi);
   const set = answer.sel[qi];
   if (answer.questions[qi].multi) {
     if (set.has(oi)) set.delete(oi);
@@ -739,6 +808,8 @@ function toggleOption(spec) {
 }
 
 // OpenCode navigates with arrows/Enter/Tab; Claude selects by number and advances with Tab.
+// Antigravity numbers its options too, but a single-select number both selects and advances (and on
+// the last question submits), while a multi-select number toggles and Enter advances or submits.
 function buildKeySequence(provider, questions, sel) {
   const keys = [];
   const anyMulti = questions.some(q => q.multi);
@@ -757,6 +828,11 @@ function buildKeySequence(provider, questions, sel) {
         for (let i = 0, idx = chosen.length ? chosen[0] : 0; i < idx; i++) keys.push("down");
         keys.push("enter");
       }
+    } else if (provider == "antigravity") {
+      // The cursor resets to the top of each question, so no inter-question separator: a
+      // single-select number carries straight on, and a multi-select needs Enter to move past it.
+      chosen.forEach(i => keys.push(String(i + 1)));
+      if (q.multi) keys.push("enter");
     } else {
       // Claude's picker caps options to single-digit shortcuts.
       chosen.forEach(i => keys.push(String(i + 1)));
@@ -764,7 +840,7 @@ function buildKeySequence(provider, questions, sel) {
     }
   });
   if (provider == "opencode" && (questions.length > 1 || anyMulti)) keys.push("enter");
-  else if (provider != "opencode" && !isQuickPick(questions)) keys.push("enter");
+  else if (provider != "opencode" && provider != "antigravity" && !isQuickPick(questions)) keys.push("enter");
   return keys;
 }
 
@@ -1104,6 +1180,11 @@ async function submitComposer() {
     if (!caption) return;
     input.value = "";
     resizeComposer();
+    const agent = agents.find(a => a.pid == current);
+    if (isSlashCommand(caption) && agent && agent.writable && agent.screen) {
+      openCommandMirror(agent, caption, "Running " + caption + ": drive it with the keys below");
+      return;
+    }
     sendText(caption);
     return;
   }
@@ -1183,7 +1264,7 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
-  if (uploading && (b.id == "send" || b.id == "clear" || b.id == "model" ||
+  if (uploading && (b.id == "send" || b.id == "clear" || b.id == "model" || b.id == "screen" ||
       b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
     submitComposer();
@@ -1195,6 +1276,8 @@ document.addEventListener("click", async e => {
     clearContext();
   } else if (b.id == "model") {
     openModelMirror(agents.find(a => a.pid == current));
+  } else if (b.id == "screen") {
+    openScreenMirror(agents.find(a => a.pid == current));
   } else if (b.id == "modelclose") {
     closeModelMirror();
   } else if (b.dataset.key) {

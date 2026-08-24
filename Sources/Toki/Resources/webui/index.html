@@ -51,7 +51,7 @@
 <button id="tolatest" type="button" hidden aria-label="Jump to latest">&#8595; New messages</button>
 <footer>
   <div id="modelmirror" hidden>
-    <div class="mm-head"><span>Model picker: choose with the keys below</span><button id="modelclose" type="button">Done</button></div>
+    <div class="mm-head"><span id="mmlabel">Model picker: choose with the keys below</span><button id="modelclose" type="button">Done</button></div>
     <pre id="modelscreen" aria-live="polite"></pre>
   </div>
   <div class="keys" aria-label="Terminal controls">
@@ -66,7 +66,7 @@
   </div>
   <div id="attachpreview" hidden></div>
   <input id="fileinput" type="file" accept="image/*" hidden>
-  <div class="composer"><button id="attach" type="button" aria-label="Attach an image" title="Attach an image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></button><button id="model" type="button" hidden aria-label="Change the agent&#8217;s model" title="Change model"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15.5" cy="7" r="2.2"/><circle cx="7.5" cy="17" r="2.2"/></svg></button><textarea id="msg" rows="1" placeholder="Reply to the agent&#8230;" aria-describedby="composerhint"></textarea>
+  <div class="composer"><button id="attach" type="button" aria-label="Attach an image" title="Attach an image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></button><button id="model" type="button" hidden aria-label="Change the agent&#8217;s model" title="Change model"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15.5" cy="7" r="2.2"/><circle cx="7.5" cy="17" r="2.2"/></svg></button><button id="screen" type="button" hidden aria-label="Mirror the agent&#8217;s terminal" title="Mirror the terminal"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m7 9 3 2.5L7 14"/><path d="M13 14h4"/></svg></button><textarea id="msg" rows="1" placeholder="Reply to the agent&#8230;" aria-describedby="composerhint"></textarea>
   <button id="clear" type="button" aria-label="Clear the agent&#8217;s context" title="Clear the agent&#8217;s context (/clear)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6M18.5 6l-.8 13.1a2 2 0 0 1-2 1.9H8.3a2 2 0 0 1-2-1.9L5.5 6"/></svg></button>
   <button id="send" aria-label="Send reply" aria-keyshortcuts="Meta+Enter Control+Enter" title="Send reply"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6l-.1 6.5L15 12 3.3 13.9Z"/></svg></button></div>
   <div class="composer-hint" id="composerhint">Return adds a line <span aria-hidden="true">&middot;</span> &#8984;/Ctrl + Return sends</div>
