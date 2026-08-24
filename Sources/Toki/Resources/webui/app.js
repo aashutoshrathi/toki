@@ -679,8 +679,7 @@ function answerComplete(qs, sel) {
 }
 
 function renderQuestions() {
-  const { questions: qs, sel, provider } = answer;
-  const tapToSend = provider == "antigravity";
+  const { questions: qs, sel } = answer;
   let html = '<div class="ahead">Agent is asking</div>';
   qs.forEach((q, qi) => {
     if (q.header)
@@ -688,44 +687,26 @@ function renderQuestions() {
         (q.multi ? '<span class="qtag">select all that apply</span>' : "") + "</div>";
     html += '<div class="qq">' + md(q.question || "") + "</div>";
     (q.options || []).forEach((o, oi) => {
-      const on = !tapToSend && sel[qi].has(oi);
-      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}"` +
-        (tapToSend ? ">" : ` role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
-          `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>`) +
+      const on = sel[qi].has(oi);
+      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}" ` +
+        `role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
+        `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>` +
         `<span class="olab"><b>${esc(o.label)}</b>` +
         (o.description ? `<em>${esc(o.description)}</em>` : "") + "</span></button>";
     });
   });
-  if (!tapToSend && !isQuickPick(qs)) {
-    // Both TUIs default or drop unanswered questions, so require every available choice.
+  if (!isQuickPick(qs)) {
+    // The TUIs default or drop unanswered questions, so require every available choice.
     html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
       (answerComplete(qs, sel) ? "" : " disabled") + ">Submit</button></div>";
   }
   $("#alert").innerHTML = html;
 }
 
-async function sendOptionText(qi, oi) {
-  if (submitting) return;
-  const opt = (answer.questions[qi].options || [])[oi];
-  if (!opt) return;
-  const pending = answer;
-  submitting = true;
-  const ok = await send({ text: opt.label });
-  submitting = false;
-  if (answer !== pending) return;
-  if (ok) {
-    answer = null;
-    $("#alert").style.display = "none";
-  } else {
-    renderQuestions();
-  }
-}
-
 function toggleOption(spec) {
   // Freeze selection while its computed keystrokes are in flight.
   if (!answer || submitting) return;
   const [qi, oi] = spec.split(":").map(Number);
-  if (answer.provider == "antigravity") return void sendOptionText(qi, oi);
   const set = answer.sel[qi];
   if (answer.questions[qi].multi) {
     if (set.has(oi)) set.delete(oi);
@@ -739,6 +720,8 @@ function toggleOption(spec) {
 }
 
 // OpenCode navigates with arrows/Enter/Tab; Claude selects by number and advances with Tab.
+// Antigravity numbers its options too, but a single-select number both selects and advances (and on
+// the last question submits), while a multi-select number toggles and Enter advances or submits.
 function buildKeySequence(provider, questions, sel) {
   const keys = [];
   const anyMulti = questions.some(q => q.multi);
@@ -757,6 +740,11 @@ function buildKeySequence(provider, questions, sel) {
         for (let i = 0, idx = chosen.length ? chosen[0] : 0; i < idx; i++) keys.push("down");
         keys.push("enter");
       }
+    } else if (provider == "antigravity") {
+      // The cursor resets to the top of each question, so no inter-question separator: a
+      // single-select number carries straight on, and a multi-select needs Enter to move past it.
+      chosen.forEach(i => keys.push(String(i + 1)));
+      if (q.multi) keys.push("enter");
     } else {
       // Claude's picker caps options to single-digit shortcuts.
       chosen.forEach(i => keys.push(String(i + 1)));
@@ -764,7 +752,7 @@ function buildKeySequence(provider, questions, sel) {
     }
   });
   if (provider == "opencode" && (questions.length > 1 || anyMulti)) keys.push("enter");
-  else if (provider != "opencode" && !isQuickPick(questions)) keys.push("enter");
+  else if (provider != "opencode" && provider != "antigravity" && !isQuickPick(questions)) keys.push("enter");
   return keys;
 }
 
