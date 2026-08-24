@@ -514,6 +514,14 @@ const MODEL_COMMANDS = {
   antigravity: "/model",
 };
 
+// A leading slash command (/usage, /help, /model) opens an interactive view or picker in the CLI's
+// own TUI, so it is mirrored and driven with the key footer rather than sent as a plain reply that
+// would strand the phone waiting on an answer. A path like /Users/me is deliberately not matched.
+const SLASH_COMMAND_RE = /^\/[a-zA-Z][\w-]*( .*)?$/;
+function isSlashCommand(text) {
+  return SLASH_COMMAND_RE.test(text);
+}
+
 // While mirroring, hold the agent whose picker is open and the poll that repaints it.
 let modelMirror = null;
 
@@ -540,16 +548,23 @@ async function refreshModelMirror() {
   }
 }
 
-function openModelMirror(agent) {
-  const cmd = agent && MODEL_COMMANDS[agent.provider];
-  if (!cmd) return;
+function openCommandMirror(agent, cmd, label) {
+  if (!agent || !cmd) return;
   closeModelMirror();
-  // Fire the CLI's own model command, then mirror the picker it opens on the terminal.
+  // Fire the command in the CLI's own TUI, then mirror whatever it draws -- a picker, /usage
+  // output, /help -- and let the key footer drive it, rather than sending it as a reply.
   send({ text: cmd });
   modelMirror = { pid: agent.pid, inflight: false };
+  $("#mmlabel").textContent = label;
   $("#modelmirror").hidden = false;
   $("#modelscreen").textContent = "Opening " + cmd + "…";
   modelMirror.timer = setTimeout(refreshModelMirror, 450);
+}
+
+function openModelMirror(agent) {
+  const cmd = agent && MODEL_COMMANDS[agent.provider];
+  if (!cmd) return;
+  openCommandMirror(agent, cmd, "Model picker: choose with the keys below");
 }
 
 function closeModelMirror() {
@@ -1092,6 +1107,11 @@ async function submitComposer() {
     if (!caption) return;
     input.value = "";
     resizeComposer();
+    const agent = agents.find(a => a.pid == current);
+    if (isSlashCommand(caption) && agent && agent.writable && agent.screen) {
+      openCommandMirror(agent, caption, "Running " + caption + ": drive it with the keys below");
+      return;
+    }
     sendText(caption);
     return;
   }
