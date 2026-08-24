@@ -1,6 +1,6 @@
 # Configuration
 
-Toki connects providers automatically. Every time the popover opens it scans for Claude Code (Keychain), Codex (`~/.codex/auth.json`), OpenCode (its local database), Pi (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`). There is no Connect button and no JSON to hand-write; signing into a new provider later is picked up on the next open.
+Toki connects providers automatically. Every time the popover opens it scans for Claude Code (Keychain), Codex (through its local app-server), OpenCode (its local database), Pi (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`). There is no Connect button and no JSON to hand-write; signing into a new provider later is picked up on the next open.
 
 Editing the config yourself is only needed for scripting, multi-account setups, or fields the scan cannot infer — API keys, budgets, manual ledgers.
 
@@ -28,7 +28,7 @@ cp examples/config.example.json ~/.toki/config.json
   ],
   "accounts": [
     { "label": "Claude", "type": "claudeCode", "claudeSwapCommand": "claude-swap" },
-    { "label": "Codex", "type": "codex", "codexAuthPath": "~/.codex/auth.json" }
+    { "label": "Codex", "type": "codex" }
   ]
 }
 ```
@@ -36,6 +36,8 @@ cp examples/config.example.json ~/.toki/config.json
 ## Fields
 
 **`accounts`** — each needs a `label` (display name) and a `type` (provider). `id` is optional and derived from the label. Configs using the old `name`/`provider` keys are migrated on launch, keeping a `.bak` of the original.
+
+**`codexAuthPath`** — optional multi-account override. Toki launches Codex with the containing directory as `CODEX_HOME`; omit it for the default `~/.codex` login, including Keychain-backed sign-ins.
 
 **`accountLabels`** — presentation overrides only. Matched against discovered Claude accounts by email and, when given, organization UUID or name. They never affect credentials or switching.
 

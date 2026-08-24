@@ -1,13 +1,5 @@
 import Foundation
 
-struct CodexCredentials {
-    var accessToken: String
-    var accountID: String?
-    var authMode: String?
-    var email: String?
-    var source: String
-}
-
 struct CodexAppServerPayload {
     var usage: Any?
     var rateLimits: Any?
@@ -222,11 +214,20 @@ struct CodexRateLimits {
 }
 
 struct CodexAccountInfo {
-    static func lines(from value: Any?) -> [MetricLine] {
-        guard let data = value as? [String: Any],
-              let account = data["account"] as? [String: Any] else {
-            return []
+    static func isSignedIn(_ value: Any?) -> Bool {
+        account(from: value) != nil
+    }
+
+    static func email(from value: Any?) -> String? {
+        guard let email = firstValue(account(from: value) ?? [:], keys: ["email"]) as? String,
+              !email.isEmpty else {
+            return nil
         }
+        return email
+    }
+
+    static func lines(from value: Any?) -> [MetricLine] {
+        guard let account = account(from: value) else { return [] }
 
         var lines: [MetricLine] = []
         if let type = firstValue(account, keys: ["type"]) as? String {
@@ -239,5 +240,10 @@ struct CodexAccountInfo {
             lines.append(MetricLine(label: "Email", value: email))
         }
         return lines
+    }
+
+    private static func account(from value: Any?) -> [String: Any]? {
+        guard let data = value as? [String: Any] else { return nil }
+        return data["account"] as? [String: Any]
     }
 }
