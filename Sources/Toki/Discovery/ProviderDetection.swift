@@ -18,16 +18,17 @@ struct DetectedProvider: Identifiable, Sendable {
 // for, so onboarding can offer them as one-click connects instead of asking the user
 // to hand-write config.json. Read-only: never touches config.json itself.
 enum ProviderDetection {
-    // Shells out to `security` and touches the filesystem, so this runs off the main
+    // Shells out to provider tools and touches the filesystem, so this runs off the main
     // actor (mirrors ActiveAgent.scan()) to avoid blocking the UI while onboarding loads.
     // `allowsKeychain` is what the setup checklist gates: reading Claude Code's sign-in raises the
     // system Keychain dialog, and a scan runs every time the popover opens, so on a fresh install
-    // that dialog would arrive unasked-for. Everything else here reads files and always runs.
+    // that dialog would arrive unasked-for. Codex resolves its own credential store inside the
+    // Codex process, so it does not require Toki to read a Keychain secret directly.
     static func scan(allowsKeychain: Bool = true) async -> [DetectedProvider] {
         await Task.detached(priority: .utility) {
             var detected: [DetectedProvider] = []
             if let claude = detectClaudeCode(allowsKeychain: allowsKeychain) { detected.append(claude) }
-            if let codex = detectCodex() { detected.append(codex) }
+            if let codex = await detectCodex() { detected.append(codex) }
             if let openCode = detectOpenCode() { detected.append(openCode) }
             if let pi = detectPi() { detected.append(pi) }
             if let grok = detectGrok() { detected.append(grok) }
@@ -57,20 +58,20 @@ enum ProviderDetection {
         )
     }
 
-    // Requires readCredentials() to actually succeed (file exists, parses, and contains a
-    // non-empty OAuth access token) rather than just checking the auth file exists - a file
-    // that's present but stale/malformed shouldn't be offered as a one-click connect.
-    private static func detectCodex() -> DetectedProvider? {
+    // account/read is the one source of truth across Codex's file, keyring, and auto stores.
+    // Toki never needs to read or duplicate the underlying access token.
+    private static func detectCodex() async -> DetectedProvider? {
         let probeAccount = AccountConfig(id: "codex-probe", name: "Codex", provider: .codex)
-        guard let credentials = try? CodexCredentialReader.readCredentials(account: probeAccount) else { return nil }
+        guard let account = try? await CodexAppServerClient.readAccount(account: probeAccount),
+              CodexAccountInfo.isSignedIn(account) else {
+            return nil
+        }
         return DetectedProvider(
             provider: .codex,
             title: "Codex",
-            detail: credentials.email ?? "Signed in",
+            detail: CodexAccountInfo.email(from: account) ?? "Signed in through Codex",
             makeAccount: {
-                var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
-                account.codexAuthPath = "~/.codex/auth.json"
-                return account
+                AccountConfig(id: "codex", name: "Codex", provider: .codex)
             }
         )
     }

@@ -6,8 +6,14 @@ struct CodexUsageClient {
     let account: AccountConfig
 
     func snapshot() async throws -> AccountSnapshot {
-        let credentials = try CodexCredentialReader.readCredentials(account: account)
         let payload = try await CodexAppServerClient.fetch(account: account)
+        return try snapshot(from: payload)
+    }
+
+    // Authentication belongs to the selected Codex process. A file preflight here would reject
+    // valid `keyring` and `auto` sessions before app-server gets the chance to resolve them, and
+    // would make Toki handle an access token it never needs to see.
+    func snapshot(from payload: CodexAppServerPayload) throws -> AccountSnapshot {
         let usage = CodexUsage(json: payload.usage ?? [:])
         let rateLimits = CodexRateLimits(json: payload.rateLimits ?? [:])
         guard usage.hasUsage || rateLimits.hasUsage else {
@@ -30,13 +36,12 @@ struct CodexUsageClient {
             name: account.name,
             provider: .codex,
             primary: primary,
-            subtitle: rateLimits.subtitle ?? credentials.email ?? "OpenAI Codex usage",
+            subtitle: rateLimits.subtitle ?? CodexAccountInfo.email(from: payload.account) ?? "OpenAI Codex usage",
             remainingRatio: rateLimits.remainingRatio,
             progressRatio: rateLimits.progressRatio,
             resetCreditsAvailable: rateLimits.resetCreditsAvailable,
             metrics: rateLimits.metrics + usage.metrics,
-            accountInfo: CodexCredentialReader.accountInfo(from: credentials)
-                + CodexAccountInfo.lines(from: payload.account)
+            accountInfo: CodexAccountInfo.lines(from: payload.account)
                 + Self.binaryInfoLines(payload.binarySource),
             primaryWindow: rateLimits.primaryWindow,
             secondaryWindow: rateLimits.secondaryWindow
@@ -73,7 +78,7 @@ enum CodexAppServerClient {
         let responses = try call(account: account, binary: binary, requests: [
             (id: 2, method: "account/usage/read", params: "null"),
             (id: 3, method: "account/rateLimits/read", params: "null"),
-            (id: 4, method: "account/read", params: "{}")
+            (id: 4, method: "account/read", params: #"{"refreshToken":false}"#)
         ])
 
         var payload = CodexAppServerPayload()
@@ -94,6 +99,21 @@ enum CodexAppServerClient {
             throw LocalizedErrorMessage(responses.errors.first ?? "Codex app-server did not return rate limits")
         }
         return payload
+    }
+
+    // Provider discovery must ask Codex whether its selected credential store is signed in.
+    // Looking for auth.json cannot distinguish a missing login from a valid macOS Keychain login.
+    static func readAccount(account: AccountConfig) async throws -> Any {
+        let binary = try await resolvedBinary()
+        let responses = try call(
+            account: account,
+            binary: binary,
+            requests: [(id: 2, method: "account/read", params: #"{"refreshToken":false}"#)]
+        )
+        guard let account = responses.results[2] else {
+            throw LocalizedErrorMessage(responses.errors.first ?? "Codex app-server did not return an account")
+        }
+        return account
     }
 
     static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?) async throws -> String {
@@ -117,7 +137,7 @@ enum CodexAppServerClient {
     // account's configured codexAuthPath keeps multi-account setups scoped to the right
     // session instead of silently acting on the CLI's default one - most load-bearing for
     // consumeRateLimitResetCredit, since a reset credit is a limited resource.
-    private static func codexHomeDirectory(for account: AccountConfig) -> String {
+    static func codexHomeDirectory(for account: AccountConfig) -> String {
         let authPath = expandedPath(account.codexAuthPath ?? "~/.codex/auth.json")
         return (authPath as NSString).deletingLastPathComponent
     }

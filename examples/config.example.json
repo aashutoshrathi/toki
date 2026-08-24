@@ -23,8 +23,7 @@
     {
       "label": "Codex",
       "type": "codex",
-      "codexAuthPath": "~/.codex/auth.json",
-      "notes": "Reads local Codex login from ~/.codex/auth.json and asks Codex app-server for usage."
+      "notes": "Asks Codex app-server for the account and usage; Codex resolves file or Keychain credentials."
     },
     {
       "label": "ChatGPT",
