@@ -54,6 +54,12 @@ Session root discovery, in order:
 
 Override paths must be absolute, exactly `~`, or start with `~/`. Project-local `.pi/settings.json` values and per-invocation `--session-dir` are not globally discoverable, so sessions stored only that way are not tracked.
 
+## Sarvam Code
+
+No configuration needed. Toki auto-detects the `sarvam-code` CLI or its state under `$SARVAM_HOME` (normally `~/.sarvam`) and reads cumulative token counters from local session JSONL without loading transcript content. Input, cached input, output, reasoning, daily, weekly, monthly, and all-time usage are shown.
+
+When a log contains cost data, Toki uses its currency; otherwise it assumes USD. Current Sarvam Code logs do not record cost, so the card shows `$0.00` while keeping the parser ready for future cost fields. Sarvam Code does not expose usable quota limits through its local app-server, so Toki does not invent a quota ring.
+
 ## OpenCode
 
 Auto-detected from its local database and surfaced as an account. Also the second provider (with Claude Code) where Toki can tell that a session is parked waiting on you.

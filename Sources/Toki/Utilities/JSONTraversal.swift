@@ -26,21 +26,23 @@ func maxNumber(in value: Any, keys: Set<String>) -> Double {
     return 0
 }
 
-func sumOpenAICosts(_ value: Any) -> Double {
+func sumOpenAICostsByCurrency(_ value: Any) -> MoneyTotals {
+    var totals = MoneyTotals()
     if let dict = value as? [String: Any] {
-        var total = 0.0
         if let amount = dict["amount"] as? [String: Any] {
-            total += numericValue(amount["value"] ?? 0)
+            let value = numericValue(amount["value"] ?? 0)
+            let currency = (amount["currency"] as? String) ?? "USD"
+            totals.add(Money(amount: value, currencyCode: currency))
         }
         for child in dict.values {
-            total += sumOpenAICosts(child)
+            totals.add(sumOpenAICostsByCurrency(child))
         }
-        return total
+        return totals
     }
     if let array = value as? [Any] {
-        return array.reduce(0) { $0 + sumOpenAICosts($1) }
+        for child in array { totals.add(sumOpenAICostsByCurrency(child)) }
     }
-    return 0
+    return totals
 }
 
 func sumAnthropicCosts(_ value: Any) -> Double {

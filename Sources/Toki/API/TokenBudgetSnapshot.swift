@@ -10,7 +10,7 @@ extension AccountConfig {
     func tokenBudgetSnapshot(
         provider: Provider,
         usage: TokenUsage,
-        monthlyCost: Double,
+        monthlyCosts: MoneyTotals,
         subtitleFallback: String,
         extraMetrics: [MetricLine] = []
     ) -> AccountSnapshot {
@@ -26,11 +26,12 @@ extension AccountConfig {
             MetricLine(label: "Today", value: "\(formatCompact(usage.totalTokens)) tokens"),
             MetricLine(label: "Input", value: formatCompact(usage.inputTokens)),
             MetricLine(label: "Output", value: formatCompact(usage.outputTokens)),
-            MetricLine(label: "Month", value: formatUSD(monthlyCost))
+            MetricLine(label: "Month", value: monthlyCosts.isEmpty ? formatUSD(0) : monthlyCosts.formatted)
         ]
         metrics.append(contentsOf: extraMetrics)
-        if let monthlyUsdBudget {
-            metrics.append(MetricLine(label: "Budget", value: "\(formatUSD(max(monthlyUsdBudget - monthlyCost, 0))) left"))
+        let hasNonUSDCost = monthlyCosts.sortedMoney.contains { $0.currencyCode != "USD" }
+        if let monthlyUsdBudget, !hasNonUSDCost {
+            metrics.append(MetricLine(label: "Budget", value: "\(formatUSD(max(monthlyUsdBudget - monthlyCosts.amount(for: "USD"), 0))) left"))
         }
 
         return AccountSnapshot(

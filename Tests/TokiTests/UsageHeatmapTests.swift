@@ -99,7 +99,7 @@ final class UsageHeatmapTests: XCTestCase {
             activity(daysAgo: 0, tokens: 5_000, cost: 1.25, provider: .pi),
             activity(daysAgo: 0, tokens: 2_000, cost: 0.5, provider: .openCode),
         ])
-        XCTAssertEqual(try XCTUnwrap(result.last?.cost), 1.75, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(result.last).costs.amount(for: "USD"), 1.75, accuracy: 0.0001)
         XCTAssertEqual(result.last?.accounts.first?.name, Provider.pi.displayName, "heaviest provider leads")
     }
 

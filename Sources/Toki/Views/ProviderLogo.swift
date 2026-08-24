@@ -53,6 +53,13 @@ struct ProviderLogo: View {
                         .foregroundStyle(Color.primary)
                 }
                 .foregroundStyle(Color.primary)
+            case .sarvamCode:
+                SVGLogoMark(asset: "sarvam-code-logo", size: size, template: true) {
+                    Text("S")
+                        .font(.system(size: size * 0.72, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.primary)
+                }
+                .foregroundStyle(Color.primary)
             case .grok:
                 SVGLogoMark(asset: "grok-logo", size: size, template: true) {
                     Image(systemName: "asterisk")

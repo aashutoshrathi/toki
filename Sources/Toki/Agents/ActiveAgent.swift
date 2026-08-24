@@ -4,11 +4,19 @@ import Foundation
 
 struct AgentSessionUsage: Hashable, Sendable {
     let cost: Double?
+    let currencyCode: String
     let tokensInput: Int
     let tokensOutput: Int
 
+    init(cost: Double?, tokensInput: Int, tokensOutput: Int, currencyCode: String = "USD") {
+        self.cost = cost
+        self.currencyCode = Money(amount: 0, currencyCode: currencyCode).currencyCode
+        self.tokensInput = tokensInput
+        self.tokensOutput = tokensOutput
+    }
+
     var displayCost: String? {
-        cost.map { formatUSD($0) }
+        cost.map { formatMoney(Money(amount: $0, currencyCode: currencyCode)) }
     }
 
     var displayTokens: String {
@@ -16,7 +24,7 @@ struct AgentSessionUsage: Hashable, Sendable {
     }
 
     var displayLine: String? {
-        guard tokensInput > 0 || tokensOutput > 0 else { return cost.map { formatUSD($0) } }
+        guard tokensInput > 0 || tokensOutput > 0 else { return displayCost }
         if let costStr = displayCost {
             return "\(costStr) • \(displayTokens)"
         }
@@ -221,6 +229,7 @@ enum ActiveAgentScanner {
         if executable == "fx" { return .fx }
         if executable == "grok" { return .grok }
         if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
+        if executable == "sarvam-code" { return .sarvamCode }
         return nil
     }
 

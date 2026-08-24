@@ -8,7 +8,7 @@ struct AnthropicUsageClient {
         async let usage = fetchUsage(apiKey: key)
         async let costs = fetchCosts(apiKey: key)
         async let rateLimits = fetchRateLimits(apiKey: key)
-        let (tokenUsage, monthlyCost, tokenLimitPerMinute) = try await (usage, costs, rateLimits)
+        let (tokenUsage, monthlyCosts, tokenLimitPerMinute) = try await (usage, costs, rateLimits)
 
         var extraMetrics: [MetricLine] = []
         if tokenLimitPerMinute > 0 {
@@ -18,7 +18,7 @@ struct AnthropicUsageClient {
         return account.tokenBudgetSnapshot(
             provider: .anthropic,
             usage: tokenUsage,
-            monthlyCost: monthlyCost,
+            monthlyCosts: monthlyCosts,
             subtitleFallback: "Usage from Anthropic Admin API",
             extraMetrics: extraMetrics
         )
@@ -35,14 +35,16 @@ struct AnthropicUsageClient {
         return TokenUsage.fromAnthropic(json)
     }
 
-    private func fetchCosts(apiKey: String) async throws -> Double {
+    private func fetchCosts(apiKey: String) async throws -> MoneyTotals {
         var components = URLComponents(string: "https://api.anthropic.com/v1/organizations/cost_report")!
         components.queryItems = [
             URLQueryItem(name: "starting_at", value: iso8601(Calendar.current.startOfCurrentMonth())),
             URLQueryItem(name: "ending_at", value: iso8601(Date()))
         ]
         let json = try await requestJSON(url: components.url!, headers: anthropicHeaders(apiKey))
-        return sumAnthropicCosts(json)
+        var totals = MoneyTotals()
+        totals.add(.usd(sumAnthropicCosts(json)), includingZero: true)
+        return totals
     }
 
     private func fetchRateLimits(apiKey: String) async throws -> Double {
