@@ -31,10 +31,12 @@ Toki reads usage from the subscription sign-in that `/login` writes, which is th
 ## Codex
 
 ```json
-{ "label": "Codex", "type": "codex", "codexAuthPath": "~/.codex/auth.json" }
+{ "label": "Codex", "type": "codex" }
 ```
 
-Toki reads the auth file and asks the local Codex app-server for usage and rate limits. This is separate from OpenAI organization API usage.
+Toki asks the local Codex app-server for the signed-in account, usage, and rate limits. Codex resolves its own configured credential store, so file-based `auth.json`, macOS Keychain, and `auto` storage all work without Toki reading the access token. This is separate from OpenAI organization API usage.
+
+For a multi-account setup, `codexAuthPath` can point at the `auth.json` inside another Codex home. Toki uses its containing directory as `CODEX_HOME` when launching app-server; the default is `~/.codex`.
 
 The app-server is launched through a login shell, which sources `.zprofile` but not `.zshrc`. Since the version managers most CLIs are installed through (nvm, fnm, volta, bun, pnpm, mise, asdf) set `PATH` from `.zshrc`, their bin directories are appended explicitly, so a `codex` installed that way is found rather than reported as `command not found`.
 

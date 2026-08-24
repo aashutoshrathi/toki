@@ -163,16 +163,6 @@ final class ShellNoiseAndDiagnosticsTests: XCTestCase {
         XCTAssertFalse(agentCommandSearchPath.contains("$HOME/node_modules"), agentCommandSearchPath)
     }
 
-    func testMissingCodexAuthFileNamesThePathAndTheCommand() {
-        var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
-        account.codexAuthPath = "~/.codex/definitely-not-here.json"
-        XCTAssertThrowsError(try CodexCredentialReader.readCredentials(account: account)) { error in
-            let message = error.localizedDescription
-            XCTAssertTrue(message.contains("~/.codex/definitely-not-here.json"), message)
-            XCTAssertTrue(message.contains("codex login"), message)
-        }
-    }
-
     func testCodexNotFoundMessageNamesBothInstalls() {
         let message = CodexBinaryResolver.notFoundMessage
         XCTAssertTrue(message.contains("Codex CLI"), message)

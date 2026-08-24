@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Codex accounts using macOS Keychain-backed credentials are detected and refreshed without requiring `~/.codex/auth.json`; Toki now lets Codex app-server resolve its configured credential store.
+
 ## 3.0.0 - 2026-08-23
 
 ### Added
