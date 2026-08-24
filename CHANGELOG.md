@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **Antigravity questions reach Remote Control.** When an Antigravity (`agy`) session asks a clarifying question (`ask_question`), the phone now shows each question with its options instead of a blank panel. Its attention parser only recognized approval-gated commands, so a pending question left the agent stuck with nothing to answer. Because Antigravity records an answer as each question's own text, tapping an option sends that option verbatim as your reply, and the composer stays open for a free-text answer.
 - **Antigravity permission prompts reach Remote Control.** A pending approval in an Antigravity (`agy`) session now surfaces on your phone the way Claude, Codex, and OpenCode prompts already do. Its attention was being read through OpenCode's path, which expects a session id rather than a transcript, so the prompt never appeared.
 
 ## 2.7.0 - 2026-08-20
