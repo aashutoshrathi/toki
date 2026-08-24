@@ -1499,7 +1499,10 @@ def trim_screen(text):
         lines = lines[-MAX_SCREEN_LINES:]
     out = "\n".join(lines)
     if len(out) > MAX_SCREEN_CHARS:
+        # Cut on a line boundary so a kept color escape is never split mid-sequence.
         out = out[-MAX_SCREEN_CHARS:]
+        nl = out.find("\n")
+        out = out[nl + 1:] if nl != -1 else out
     return out
 
 

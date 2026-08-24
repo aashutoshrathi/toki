@@ -545,7 +545,7 @@ function ansiColor(n) {
 
 function ansiToHtml(text) {
   // Drop cursor moves and other non-color escapes tmux -e can still emit.
-  text = text.replace(/\x1b\[[0-9;?]*[A-Za-ln-z]/g, "").replace(/\x1b\].*?(\x07|\x1b\\)/g, "");
+  text = text.replace(/\x1b\[[0-9;?]*[A-Za-ln-z]/g, "").replace(/\x1b\][\s\S]*?(\x07|\x1b\\)/g, "");
   let fg = null, bg = null, bold = false, rev = false, out = "";
   const flush = seg => {
     if (!seg) return;
@@ -573,7 +573,7 @@ function ansiToHtml(text) {
       else if (c >= 40 && c <= 47) bg = ANSI_BASIC[c - 40];
       else if (c >= 100 && c <= 107) bg = ANSI_BRIGHT[c - 100];
       else if (c === 38 || c === 48) {
-        const col = codes[j + 1] === 5 ? ansiColor(codes[j + 2])
+        const col = codes[j + 1] === 5 ? (Number.isFinite(codes[j + 2]) ? ansiColor(codes[j + 2]) : null)
           : codes[j + 1] === 2 ? `rgb(${codes[j + 2] || 0},${codes[j + 3] || 0},${codes[j + 4] || 0})` : null;
         j += codes[j + 1] === 5 ? 2 : codes[j + 1] === 2 ? 4 : 0;
         if (c === 38) fg = col; else bg = col;
