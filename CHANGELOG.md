@@ -7,6 +7,7 @@
 - **Change an agent's model from your phone.** The companion app's composer has a Model button that opens the running CLI's own model picker (`/model`, or `/models` for OpenCode) and mirrors it live on your phone, so you choose with the same arrow, Tab, and Enter controls you already answer prompts with. It works for Claude, Codex, OpenCode, fx, and Antigravity, wherever Toki can read the terminal (tmux, iTerm, or Terminal).
 - **Each agent shows the model it is running.** A small badge next to every agent's name in the companion app reads the current model from the provider's own session (best-effort for Antigravity), so you can tell at a glance what each one is on.
 - **Slash commands from the companion open the CLI's own view.** Sending `/usage`, `/help`, or any slash command from the composer now mirrors the screen it draws and lets you drive it with the key footer, the same way the Model button does, instead of sending it as a plain reply that leaves the phone waiting on an answer that never comes. A path like `/Users/...` is still sent as text.
+- **Mirror any agent's terminal from your phone.** A new Screen button on the composer opens a live mirror of whatever the agent's terminal is showing, for every app Toki can read (tmux, iTerm, Terminal), without sending a command first. Whatever picker or prompt is on screen, you watch it and drive it with the arrow, Tab, Enter, and Esc footer, so the mirror is no longer limited to the model picker and slash commands.
 
 ### Fixed
 

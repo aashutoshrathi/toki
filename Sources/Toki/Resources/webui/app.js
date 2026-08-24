@@ -470,8 +470,11 @@ function updateComposer(agent) {
   $("#readonly").style.display = agent && !writable ? "block" : "none";
   // Hosted UI versions can be newer than the server; gate uploads on its capability flag.
   $("#attach").hidden = !(agent && agent.uploads);
-  // agent.screen gates the button off for older servers that lack /api/screen to mirror the picker.
-  $("#model").hidden = !(writable && agent && agent.screen && MODEL_COMMANDS[agent.provider]);
+  // agent.screen gates the buttons off for older servers that lack /api/screen. The Model button
+  // is a shortcut for providers with a known command; the Screen button mirrors any app's terminal.
+  const canMirror = writable && agent && agent.screen;
+  $("#model").hidden = !(canMirror && MODEL_COMMANDS[agent.provider]);
+  $("#screen").hidden = !canMirror;
   if (!writable || (modelMirror && (!agent || modelMirror.pid != agent.pid))) closeModelMirror();
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
   $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
@@ -607,17 +610,28 @@ async function refreshModelMirror() {
   }
 }
 
-function openCommandMirror(agent, cmd, label) {
-  if (!agent || !cmd) return;
+function openMirror(agent, label, opening, delay) {
+  if (!agent) return;
   closeModelMirror();
-  // Fire the command in the CLI's own TUI, then mirror whatever it draws -- a picker, /usage
-  // output, /help -- and let the key footer drive it, rather than sending it as a reply.
-  send({ text: cmd });
   modelMirror = { pid: agent.pid, inflight: false };
   $("#mmlabel").textContent = label;
   $("#modelmirror").hidden = false;
-  $("#modelscreen").textContent = "Opening " + cmd + "…";
-  modelMirror.timer = setTimeout(refreshModelMirror, 450);
+  $("#modelscreen").textContent = opening;
+  modelMirror.timer = setTimeout(refreshModelMirror, delay);
+}
+
+// Mirror whatever the agent's terminal is already showing, for any app -- no command sent, so the
+// phone can watch and drive an arbitrary picker or prompt with the key footer.
+function openScreenMirror(agent) {
+  openMirror(agent, "Live terminal: drive it with the keys below", "Reading the screen…", 250);
+}
+
+function openCommandMirror(agent, cmd, label) {
+  if (!agent || !cmd) return;
+  // Fire the command in the CLI's own TUI, then mirror whatever it draws -- a picker, /usage
+  // output, /help -- and let the key footer drive it, rather than sending it as a reply.
+  send({ text: cmd });
+  openMirror(agent, label, "Opening " + cmd + "…", 450);
 }
 
 function openModelMirror(agent) {
@@ -1250,7 +1264,7 @@ document.addEventListener("pointerdown", e => {
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
   if (!b) return;
-  if (uploading && (b.id == "send" || b.id == "clear" || b.id == "model" ||
+  if (uploading && (b.id == "send" || b.id == "clear" || b.id == "model" || b.id == "screen" ||
       b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
     submitComposer();
@@ -1262,6 +1276,8 @@ document.addEventListener("click", async e => {
     clearContext();
   } else if (b.id == "model") {
     openModelMirror(agents.find(a => a.pid == current));
+  } else if (b.id == "screen") {
+    openScreenMirror(agents.find(a => a.pid == current));
   } else if (b.id == "modelclose") {
     closeModelMirror();
   } else if (b.dataset.key) {

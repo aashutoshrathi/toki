@@ -265,10 +265,10 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
 #attach{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
         box-shadow:0 1px 0 #ffffff0d inset}
 #attach svg{fill:none;stroke:currentColor}
-#model{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
+#model,#screen{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
        box-shadow:0 1px 0 #ffffff0d inset}
-#model[hidden]{display:none}
-#model svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#model[hidden],#screen[hidden]{display:none}
+#model svg,#screen svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #modelmirror{margin-bottom:8px;border:1px solid var(--line-strong);border-radius:var(--r);
              background:var(--surface-2);overflow:hidden}
 #modelmirror[hidden]{display:none}
