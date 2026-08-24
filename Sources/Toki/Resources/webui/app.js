@@ -679,7 +679,8 @@ function answerComplete(qs, sel) {
 }
 
 function renderQuestions() {
-  const { questions: qs, sel } = answer;
+  const { questions: qs, sel, provider } = answer;
+  const tapToSend = provider == "antigravity";
   let html = '<div class="ahead">Agent is asking</div>';
   qs.forEach((q, qi) => {
     if (q.header)
@@ -687,15 +688,15 @@ function renderQuestions() {
         (q.multi ? '<span class="qtag">select all that apply</span>' : "") + "</div>";
     html += '<div class="qq">' + md(q.question || "") + "</div>";
     (q.options || []).forEach((o, oi) => {
-      const on = sel[qi].has(oi);
-      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}" ` +
-        `role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
-        `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>` +
+      const on = !tapToSend && sel[qi].has(oi);
+      html += `<button class="opt${on ? " on" : ""}" data-opt="${qi}:${oi}"` +
+        (tapToSend ? ">" : ` role="${q.multi ? "checkbox" : "radio"}" aria-checked="${on}">` +
+          `<span class="mark ${q.multi ? "box" : "radio"}" aria-hidden="true"></span>`) +
         `<span class="olab"><b>${esc(o.label)}</b>` +
         (o.description ? `<em>${esc(o.description)}</em>` : "") + "</span></button>";
     });
   });
-  if (!isQuickPick(qs)) {
+  if (!tapToSend && !isQuickPick(qs)) {
     // Both TUIs default or drop unanswered questions, so require every available choice.
     html += '<div class="decision-row one"><button class="decision approve" data-submit="1"' +
       (answerComplete(qs, sel) ? "" : " disabled") + ">Submit</button></div>";
@@ -703,10 +704,28 @@ function renderQuestions() {
   $("#alert").innerHTML = html;
 }
 
+async function sendOptionText(qi, oi) {
+  if (submitting) return;
+  const opt = (answer.questions[qi].options || [])[oi];
+  if (!opt) return;
+  const pending = answer;
+  submitting = true;
+  const ok = await send({ text: opt.label });
+  submitting = false;
+  if (answer !== pending) return;
+  if (ok) {
+    answer = null;
+    $("#alert").style.display = "none";
+  } else {
+    renderQuestions();
+  }
+}
+
 function toggleOption(spec) {
   // Freeze selection while its computed keystrokes are in flight.
   if (!answer || submitting) return;
   const [qi, oi] = spec.split(":").map(Number);
+  if (answer.provider == "antigravity") return void sendOptionText(qi, oi);
   const set = answer.sel[qi];
   if (answer.questions[qi].multi) {
     if (set.has(oi)) set.delete(oi);

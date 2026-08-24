@@ -948,18 +948,21 @@ TRANSCRIPT_PARSERS = {
 # Read-only tools (view_file, grep_search, find_by_name) run without asking, so only these leave the
 # transcript resting on a proposal antigravity is blocked on.
 AGY_APPROVAL_TOOLS = ("run_command",)
+AGY_QUESTION_TOOL = "ask_question"
+AGY_BLOCKING_TOOLS = AGY_APPROVAL_TOOLS + (AGY_QUESTION_TOOL,)
 
 
 def agy_attention(path):
     """Antigravity writes the tool call it wants to run, then blocks for approval, so a pending
-    permission is the final record: a model proposal (PLANNER_RESPONSE) holding an approval-gated
-    call with nothing appended after it. Approving appends the command's result, moving the tail
-    past the call and clearing this.
+    permission is the final record: a model proposal (PLANNER_RESPONSE) holding a blocking call
+    with nothing appended after it. Answering appends the call's result, moving the tail past the
+    call and clearing this. A blocking call is either an approval-gated command or an ask_question
+    picker; the latter carries the questions to show instead of an approve/reject.
 
     This does not fire for an auto-approved command that is merely executing. The instant such a
     command starts, Antigravity appends a "running as a background task" record (verified against a
     live session), and then more planner output, so the tail is no longer a lone call. A trailing
-    approval-gated call therefore means the agent is waiting on the human, not running a command."""
+    blocking call therefore means the agent is waiting on the human, not running a command."""
     if not quiet_enough(path):
         return None
     records, _ = jsonl_lines(path, 0)
@@ -968,10 +971,13 @@ def agy_attention(path):
         return None
     calls = last.get("tool_calls") or []
     pending = next((c for c in reversed(calls)
-                    if isinstance(c, dict) and c.get("name") in AGY_APPROVAL_TOOLS), None)
+                    if isinstance(c, dict) and c.get("name") in AGY_BLOCKING_TOOLS), None)
     if not pending:
         return None
     args = pending.get("args") if isinstance(pending.get("args"), dict) else {}
+    if pending.get("name") == AGY_QUESTION_TOOL:
+        qs = normalize_questions(args.get("questions"), "is_multi_select")
+        return question_attention(qs) if qs else None
     label = (args.get("toolSummary") or args.get("toolAction")
              or args.get("CommandLine") or pending.get("name"))
     return {"kind": "permission", "prompt": f"Allow: {label}?", "options": []}
