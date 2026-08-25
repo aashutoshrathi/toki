@@ -448,7 +448,7 @@ private struct ProviderGlyph: View {
     var body: some View {
         Group {
             if let assetName {
-                WidgetSVGLogo(asset: assetName, size: size, template: item.provider == "grok" || item.provider == "fx")
+                WidgetSVGLogo(asset: assetName, size: size, template: item.provider == "grok" || item.provider == "fx" || item.provider == "sarvamCode")
             } else if let leadingText = item.leadingText, !leadingText.isEmpty {
                 Text(leadingText)
             } else {
@@ -471,6 +471,7 @@ private struct ProviderGlyph: View {
         case "cursor": return "cursor-logo"
         case "antigravity": return "antigravity-logo"
         case "fx": return "fx-logo"
+        case "sarvamCode": return "sarvam-code-logo"
         default: return nil
         }
     }
@@ -482,6 +483,7 @@ private struct ProviderGlyph: View {
         case "copilot": return "chevron.left.forwardslash.chevron.right"
         case "gemini": return "sparkles"
         case "grok": return "asterisk"
+        case "sarvamCode": return "s.circle.fill"
         default: return "terminal"
         }
     }
@@ -490,6 +492,7 @@ private struct ProviderGlyph: View {
         switch item.provider {
         case "claude", "claudeCode", "anthropic": return Color(red: 0.85, green: 0.47, blue: 0.34)
         case "codex", "openai", "chatgpt": return Color(red: 0.48, green: 0.61, blue: 1)
+        case "sarvamCode": return Color(red: 0.96, green: 0.38, blue: 0.20)
         default: return .primary
         }
     }

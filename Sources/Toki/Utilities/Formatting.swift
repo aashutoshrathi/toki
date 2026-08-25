@@ -73,17 +73,67 @@ func formatCompact(_ value: Double) -> String {
     return (formatter.string(from: NSNumber(value: scaled)) ?? "0") + suffix
 }
 
-func formatUSD(_ value: Double) -> String {
+struct Money: Hashable, Sendable {
+    let amount: Double
+    let currencyCode: String
+
+    init(amount: Double, currencyCode: String = "USD") {
+        self.amount = amount.isFinite && amount >= 0 ? amount : 0
+        let normalized = currencyCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        self.currencyCode = normalized.isEmpty ? "USD" : normalized
+    }
+
+    static func usd(_ amount: Double) -> Money {
+        Money(amount: amount, currencyCode: "USD")
+    }
+}
+
+struct MoneyTotals: Hashable, Sendable {
+    private(set) var amounts: [String: Double] = [:]
+
+    var isEmpty: Bool { amounts.isEmpty }
+
+    mutating func add(_ money: Money, includingZero: Bool = false) {
+        guard money.amount > 0 || includingZero else { return }
+        amounts[money.currencyCode, default: 0] += money.amount
+    }
+
+    mutating func add(_ other: MoneyTotals) {
+        for (currency, amount) in other.amounts {
+            add(Money(amount: amount, currencyCode: currency), includingZero: true)
+        }
+    }
+
+    func amount(for currencyCode: String) -> Double {
+        amounts[currencyCode.uppercased()] ?? 0
+    }
+
+    var sortedMoney: [Money] {
+        amounts.keys.sorted().map { Money(amount: amounts[$0] ?? 0, currencyCode: $0) }
+    }
+
+    var formatted: String {
+        sortedMoney.map(formatMoney).joined(separator: " + ")
+    }
+}
+
+func formatMoney(_ money: Money) -> String {
+    let value = money.amount
     // A non-zero spend below a cent would round to "$0.00", which reads as free rather than
     // as small - surface it as a floor instead so a just-started session never looks costless.
     if value > 0, value < 0.01 {
-        return "<$0.01"
+        let floor = Money(amount: 0.01, currencyCode: money.currencyCode)
+        return "<\(formatMoney(floor))"
     }
     let formatter = NumberFormatter()
     formatter.numberStyle = .currency
-    formatter.currencyCode = "USD"
+    formatter.currencyCode = money.currencyCode
     formatter.maximumFractionDigits = value >= 10 ? 0 : 2
-    return formatter.string(from: NSNumber(value: value)) ?? "$0"
+    return formatter.string(from: NSNumber(value: value)) ?? "\(money.currencyCode) \(value)"
+}
+
+func formatUSD(_ value: Double) -> String {
+    formatMoney(.usd(value))
 }
 
 func formatDuration(seconds: Double) -> String {

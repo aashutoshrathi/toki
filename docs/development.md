@@ -5,7 +5,7 @@
 - macOS 14 or newer
 - Swift 6 toolchain
 
-Providers are optional — Toki shows what is installed and authenticated. Claude Code plus `claude-swap` covers multi-account Claude workflows; Codex, Pi, OpenCode, Copilot CLI, Gemini CLI, and Grok CLI are each picked up when present.
+Providers are optional — Toki shows what is installed and authenticated. Claude Code plus `claude-swap` covers multi-account Claude workflows; Codex, Pi, Sarvam Code, OpenCode, Copilot CLI, Gemini CLI, and Grok CLI are each picked up when present.
 
 ## Building
 

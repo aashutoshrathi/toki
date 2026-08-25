@@ -315,19 +315,20 @@ struct UsageHeatmap: View {
         return (0..<dayCount).reversed().compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
             guard let entries = byDay[date], !entries.isEmpty else {
-                return HeatmapDay(date: date, level: nil, accounts: [], tokens: 0, cost: 0)
+                return HeatmapDay(date: date, level: nil, accounts: [], tokens: 0, costs: MoneyTotals())
             }
             let tokens = entries.reduce(0) { $0 + $1.tokens }
-            let cost = entries.reduce(0) { $0 + $1.cost }
+            var costs = MoneyTotals()
+            for entry in entries { costs.add(entry.costs) }
             let accounts = entries
                 .sorted { $0.tokens > $1.tokens }
-                .map { AccountUsage(name: $0.provider.displayName, tokens: $0.tokens, cost: $0.cost) }
+                .map { AccountUsage(name: $0.provider.displayName, tokens: $0.tokens, costs: $0.costs) }
             return HeatmapDay(
                 date: date,
                 level: rankLevel(tokens: tokens, among: distinct),
                 accounts: accounts,
                 tokens: tokens,
-                cost: cost
+                costs: costs
             )
         }
     }
@@ -341,7 +342,21 @@ struct UsageHeatmap: View {
 struct AccountUsage: Hashable {
     let name: String
     let tokens: Int
-    let cost: Double
+    let costs: MoneyTotals
+
+    init(name: String, tokens: Int, cost: Double, currencyCode: String = "USD") {
+        self.name = name
+        self.tokens = tokens
+        var totals = MoneyTotals()
+        totals.add(Money(amount: cost, currencyCode: currencyCode))
+        costs = totals
+    }
+
+    init(name: String, tokens: Int, costs: MoneyTotals) {
+        self.name = name
+        self.tokens = tokens
+        self.costs = costs
+    }
 }
 
 struct HeatmapDay: Identifiable {
@@ -352,7 +367,7 @@ struct HeatmapDay: Identifiable {
     /// Per-provider breakdown for the day, heaviest first.
     let accounts: [AccountUsage]
     let tokens: Int
-    let cost: Double
+    let costs: MoneyTotals
 
     init(date: Date, level: Int?, accounts: [AccountUsage] = [], tokens: Int = 0, cost: Double = 0) {
         self.id = ISO8601DateFormatter().string(from: date)
@@ -361,7 +376,19 @@ struct HeatmapDay: Identifiable {
         self.isPlaceholder = false
         self.accounts = accounts
         self.tokens = tokens
-        self.cost = cost
+        var totals = MoneyTotals()
+        totals.add(.usd(cost))
+        self.costs = totals
+    }
+
+    init(date: Date, level: Int?, accounts: [AccountUsage] = [], tokens: Int = 0, costs: MoneyTotals) {
+        self.id = ISO8601DateFormatter().string(from: date)
+        self.date = date
+        self.level = level
+        self.isPlaceholder = false
+        self.accounts = accounts
+        self.tokens = tokens
+        self.costs = costs
     }
 
     private init(placeholderIndex: Int) {
@@ -371,7 +398,7 @@ struct HeatmapDay: Identifiable {
         self.isPlaceholder = true
         self.accounts = []
         self.tokens = 0
-        self.cost = 0
+        self.costs = MoneyTotals()
     }
 
     static func placeholder(index: Int) -> HeatmapDay {
@@ -390,7 +417,7 @@ struct HeatmapDay: Identifiable {
     var figures: String {
         guard level != nil else { return "No usage" }
         var text = "\(formatCompact(Double(tokens))) tokens"
-        if cost > 0 { text += "  \(formatUSD(cost))" }
+        if !costs.isEmpty { text += "  \(costs.formatted)" }
         return text
     }
 
@@ -399,7 +426,7 @@ struct HeatmapDay: Identifiable {
         guard accounts.count > 1 || (accounts.count == 1 && level != nil) else { return "" }
         return accounts.prefix(4).map { account in
             var text = "\(account.name) \(formatCompact(Double(account.tokens)))"
-            if account.cost > 0 { text += " (\(formatUSD(account.cost)))" }
+            if !account.costs.isEmpty { text += " (\(account.costs.formatted))" }
             return text
         }.joined(separator: "  ·  ")
     }
@@ -416,12 +443,12 @@ struct HeatmapDay: Identifiable {
         // your other days", so repeating it as a percentage would say nothing new, and a
         // relative percentage is easily misread as a share of some quota.
         var lines = ["\(day) - \(formatCompact(Double(tokens))) tokens"]
-        if cost > 0 {
-            lines[0] += " · \(formatUSD(cost))"
+        if !costs.isEmpty {
+            lines[0] += " · \(costs.formatted)"
         }
         for account in accounts.prefix(4) {
             var line = "\(account.name): \(formatCompact(Double(account.tokens)))"
-            if account.cost > 0 { line += " · \(formatUSD(account.cost))" }
+            if !account.costs.isEmpty { line += " · \(account.costs.formatted)" }
             lines.append(line)
         }
         if accounts.count > 4 {

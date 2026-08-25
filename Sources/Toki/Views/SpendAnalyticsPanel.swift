@@ -5,6 +5,7 @@ struct SpendAnalyticsPanel: View {
     @ObservedObject var store: UsageStore
     @State private var piTotals: PiUsageClient.Totals?
     @State private var openCodeTotals: OpenCodeUsageClient.Totals?
+    @State private var sarvamCodeTotals: SarvamCodeUsageClient.Totals?
     @State private var isLoadingLocalTotals = true
     @State private var selectedRange: TimeRange = .day
     @State private var selectedAgentID: Int32?
@@ -98,143 +99,52 @@ struct SpendAnalyticsPanel: View {
                 }
             }
 
-            // Combined spend breakdown across all cost providers
-            let today = (piTotals?.todayCost ?? 0) + (openCodeTotals?.todayCost ?? 0)
-            let week = (piTotals?.weekCost ?? 0) + (openCodeTotals?.weekCost ?? 0)
-            let month = (piTotals?.monthCost ?? 0) + (openCodeTotals?.monthCost ?? 0)
-            let allTime = (piTotals?.allTimeCost ?? 0) + (openCodeTotals?.allTimeCost ?? 0)
             if isLoadingLocalTotals && hasLocalCostProvider {
                 HStack(spacing: 4) {
-                    spendBlock(label: "Today", cost: 0)
-                    spendBlock(label: "Week", cost: 0)
-                    spendBlock(label: "Month", cost: 0)
-                    spendBlock(label: "All Time", cost: 0)
+                    spendBlock(label: "Today", money: .usd(0))
+                    spendBlock(label: "Week", money: .usd(0))
+                    spendBlock(label: "Month", money: .usd(0))
+                    spendBlock(label: "All Time", money: .usd(0))
                 }
                 .redacted(reason: .placeholder)
-            } else if piTotals != nil || openCodeTotals != nil {
-                HStack(spacing: 4) {
-                    spendBlock(label: "Today", cost: today)
-                    spendBlock(label: "Week", cost: week)
-                    spendBlock(label: "Month", cost: month)
-                    spendBlock(label: "All Time", cost: allTime)
+            } else {
+                ForEach(localSpendRows, id: \.currencyCode) { row in
+                    VStack(alignment: .leading, spacing: 4) {
+                        if localSpendRows.count > 1 {
+                            Text(row.currencyCode)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                        }
+                        HStack(spacing: 4) {
+                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode))
+                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode))
+                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode))
+                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode))
+                        }
+                    }
                 }
             }
 
-            // Session costs donut
             let costAgents = store.activeAgents.filter { $0.sessionUsage?.cost != nil }
             if !costAgents.isEmpty {
-                let totalCost = costAgents.compactMap(\.sessionUsage?.cost).reduce(0, +)
-
                 Text("Session Costs")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
-
-                Chart {
-                    ForEach(costAgents) { agent in
-                        if let cost = agent.sessionUsage?.cost {
-                            SectorMark(
-                                angle: .value("Cost", cost),
-                                innerRadius: .ratio(0.62),
-                                angularInset: 2
-                            )
-                            .foregroundStyle(by: .value("Agent", agent.title))
-                            .opacity(selectedAgentID == nil || selectedAgentID == agent.id ? 1 : 0.3)
-                        }
-                    }
-                }
-                .chartLegend(position: .bottom, spacing: 8)
-                .frame(height: 160)
-                // The chart itself was inert - only the legend rows below responded to hover,
-                // so pointing at a slice did nothing, which is the first thing anyone tries.
-                //
-                // Hit testing is done by hand rather than with chartAngleSelection because that
-                // requires macOS 15 and this app targets 14. SectorMark lays slices out
-                // clockwise from twelve o'clock, so the pointer's angle about the centre maps
-                // directly onto the cumulative cost fractions.
-                .chartOverlay { _ in
-                    GeometryReader { geometry in
-                        Rectangle()
-                            .fill(.clear)
-                            .contentShape(Rectangle())
-                            .onContinuousHover { phase in
-                                switch phase {
-                                case .active(let location):
-                                    selectedAgentID = Self.agentID(
-                                        at: location,
-                                        in: geometry.size,
-                                        agents: costAgents
-                                    )
-                                case .ended:
-                                    selectedAgentID = nil
-                                }
-                            }
-                    }
-                }
-
-                // Hover detail / total line
-                Group {
-                    if let selID = selectedAgentID,
-                       let agent = costAgents.first(where: { $0.id == selID }),
-                       let cost = agent.sessionUsage?.cost {
-                        HStack(spacing: 6) {
-                            ProviderLogo(provider: agent.provider, size: 14)
-                            Text(agent.title)
-                                .font(.system(size: 10, weight: .medium))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
-                            Text(cost, format: .currency(code: "USD").precision(.fractionLength(2)))
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        }
-                    } else {
-                        HStack {
-                            Text("Total")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                            Spacer()
-                            Text(totalCost, format: .currency(code: "USD").precision(.fractionLength(2)))
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        }
-                    }
-                }
-                .frame(height: 14)
-                .padding(.horizontal, 4)
-
-                ForEach(costAgents) { agent in
-                    HStack(spacing: 8) {
-                        ProviderLogo(provider: agent.provider, size: 16)
-                        Text(agent.title)
-                            .font(.system(size: 11, weight: .medium))
-                            .lineLimit(1)
-                        Spacer()
-                        if let cost = agent.sessionUsage?.cost {
-                            Text(cost, format: .currency(code: "USD").precision(.fractionLength(2)))
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        }
-                        if let usage = agent.sessionUsage {
-                            Text("\(formatCompact(Double(usage.tokensInput + usage.tokensOutput))) tokens")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .padding(8)
-                    .contentSurface()
-                    .onHover { isHovered in
-                        selectedAgentID = isHovered ? agent.id : nil
-                    }
+                ForEach(sessionCostGroups(costAgents), id: \.currencyCode) { group in
+                    sessionCostChart(agents: group.agents, currencyCode: group.currencyCode)
                 }
             }
 
-            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && costAgents.isEmpty {
+            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && sarvamCodeTotals == nil && costAgents.isEmpty {
                 emptyState(icon: "dollarsign.circle", text: "No spend data yet")
             }
         }
     }
 
-    private func spendBlock(label: String, cost: Double) -> some View {
+    private func spendBlock(label: String, money: Money) -> some View {
         VStack(spacing: 4) {
-            Text(cost, format: .currency(code: "USD").precision(.fractionLength(2)))
+            Text(formatMoney(money))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
             Text(label)
                 .font(.system(size: 9))
@@ -243,6 +153,104 @@ struct SpendAnalyticsPanel: View {
         .frame(maxWidth: .infinity)
         .padding(8)
         .contentSurface()
+    }
+
+    @ViewBuilder
+    private func sessionCostChart(agents: [ActiveAgent], currencyCode: String) -> some View {
+        let totalCost = agents.compactMap(\.sessionUsage?.cost).reduce(0, +)
+        if sessionCostGroups(store.activeAgents).count > 1 {
+            Text(currencyCode)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+        Chart {
+            ForEach(agents) { agent in
+                if let cost = agent.sessionUsage?.cost {
+                    SectorMark(
+                        angle: .value("Cost", cost),
+                        innerRadius: .ratio(0.62),
+                        angularInset: 2
+                    )
+                    .foregroundStyle(by: .value("Agent", agent.title))
+                    .opacity(selectedAgentID == nil || selectedAgentID == agent.id ? 1 : 0.3)
+                }
+            }
+        }
+        .chartLegend(position: .bottom, spacing: 8)
+        .frame(height: 160)
+        .chartOverlay { _ in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            selectedAgentID = Self.agentID(at: location, in: geometry.size, agents: agents)
+                        case .ended:
+                            selectedAgentID = nil
+                        }
+                    }
+            }
+        }
+
+        Group {
+            if let selectedAgentID,
+               let agent = agents.first(where: { $0.id == selectedAgentID }),
+               let cost = agent.sessionUsage?.cost {
+                HStack(spacing: 6) {
+                    ProviderLogo(provider: agent.provider, size: 14)
+                    Text(agent.title)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Text(formatMoney(Money(amount: cost, currencyCode: currencyCode)))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                }
+            } else {
+                HStack {
+                    Text("Total")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Text(formatMoney(Money(amount: totalCost, currencyCode: currencyCode)))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                }
+            }
+        }
+        .frame(height: 14)
+        .padding(.horizontal, 4)
+
+        ForEach(agents) { agent in
+            HStack(spacing: 8) {
+                ProviderLogo(provider: agent.provider, size: 16)
+                Text(agent.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                Spacer()
+                if let usage = agent.sessionUsage, let cost = usage.cost {
+                    Text(formatMoney(Money(amount: cost, currencyCode: usage.currencyCode)))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Text("\(formatCompact(Double(usage.tokensInput + usage.tokensOutput))) tokens")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(8)
+            .contentSurface()
+            .onHover { isHovered in
+                selectedAgentID = isHovered ? agent.id : nil
+            }
+        }
+    }
+
+    private func sessionCostGroups(_ agents: [ActiveAgent]) -> [(currencyCode: String, agents: [ActiveAgent])] {
+        Dictionary(grouping: agents.filter { $0.sessionUsage?.cost != nil }) {
+            $0.sessionUsage?.currencyCode ?? "USD"
+        }
+        .map { (currencyCode: $0.key, agents: $0.value) }
+        .sorted { $0.currencyCode < $1.currencyCode }
     }
 
     // MARK: - Quota (%)
@@ -461,10 +469,53 @@ struct SpendAnalyticsPanel: View {
         if store.snapshots.contains(where: { $0.provider == .openCode }) {
             openCodeTotals = try? OpenCodeUsageClient.aggregate()
         }
+        if store.snapshots.contains(where: { $0.provider == .sarvamCode }) {
+            sarvamCodeTotals = try? SarvamCodeUsageClient.aggregate()
+        }
     }
 
     private var hasLocalCostProvider: Bool {
-        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode }
+        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode }
+    }
+
+    private struct LocalSpendRow {
+        let currencyCode: String
+        var today = 0.0
+        var week = 0.0
+        var month = 0.0
+        var allTime = 0.0
+    }
+
+    private var localSpendRows: [LocalSpendRow] {
+        var rows: [String: LocalSpendRow] = [:]
+        func add(_ amount: Double, currency: String, keyPath: WritableKeyPath<LocalSpendRow, Double>) {
+            var row = rows[currency] ?? LocalSpendRow(currencyCode: currency)
+            row[keyPath: keyPath] += amount
+            rows[currency] = row
+        }
+        var usdSources: [(Double, Double, Double, Double)] = []
+        if let piTotals {
+            usdSources.append((piTotals.todayCost, piTotals.weekCost, piTotals.monthCost, piTotals.allTimeCost))
+        }
+        if let openCodeTotals {
+            usdSources.append((openCodeTotals.todayCost, openCodeTotals.weekCost, openCodeTotals.monthCost, openCodeTotals.allTimeCost))
+        }
+        for source in usdSources {
+            add(source.0, currency: "USD", keyPath: \.today)
+            add(source.1, currency: "USD", keyPath: \.week)
+            add(source.2, currency: "USD", keyPath: \.month)
+            add(source.3, currency: "USD", keyPath: \.allTime)
+        }
+        if let sarvamCodeTotals {
+            for money in sarvamCodeTotals.todayCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.today) }
+            for money in sarvamCodeTotals.weekCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.week) }
+            for money in sarvamCodeTotals.monthCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.month) }
+            for money in sarvamCodeTotals.allTimeCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.allTime) }
+            if sarvamCodeTotals.allTimeCosts.isEmpty, rows["USD"] == nil {
+                rows["USD"] = LocalSpendRow(currencyCode: "USD")
+            }
+        }
+        return rows.values.sorted { $0.currencyCode < $1.currencyCode }
     }
 }
 

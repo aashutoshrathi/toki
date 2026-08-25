@@ -36,6 +36,7 @@ enum ProviderDetection {
             if let cursor = detectCursor() { detected.append(cursor) }
             if let antigravity = detectAntigravity() { detected.append(antigravity) }
             if let fx = detectFx() { detected.append(fx) }
+            if let sarvam = detectSarvamCode() { detected.append(sarvam) }
             return detected
         }.value
     }
@@ -158,6 +159,16 @@ enum ProviderDetection {
         return DetectedProvider(
             provider: .fx,
             title: "fx",
+            detail: "Auto-detected from local usage - no setup needed",
+            makeAccount: nil
+        )
+    }
+
+    private static func detectSarvamCode() -> DetectedProvider? {
+        guard SarvamCodeUsageClient.autoDetectedAccount() != nil else { return nil }
+        return DetectedProvider(
+            provider: .sarvamCode,
+            title: "Sarvam Code",
             detail: "Auto-detected from local usage - no setup needed",
             makeAccount: nil
         )

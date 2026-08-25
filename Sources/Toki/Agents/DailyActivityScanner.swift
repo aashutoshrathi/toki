@@ -5,7 +5,23 @@ struct DailyActivity: Hashable, Sendable {
     let day: Date
     let provider: Provider
     let tokens: Int
-    let cost: Double
+    let costs: MoneyTotals
+
+    init(day: Date, provider: Provider, tokens: Int, cost: Double, currencyCode: String = "USD") {
+        self.day = day
+        self.provider = provider
+        self.tokens = tokens
+        var totals = MoneyTotals()
+        totals.add(Money(amount: cost, currencyCode: currencyCode))
+        costs = totals
+    }
+
+    init(day: Date, provider: Provider, tokens: Int, costs: MoneyTotals) {
+        self.day = day
+        self.provider = provider
+        self.tokens = tokens
+        self.costs = costs
+    }
 }
 
 // Daily activity from each tool's own session store, not from Toki's recorded quota samples.
@@ -31,6 +47,7 @@ enum DailyActivityScanner {
                 (Provider.claudeCode, claudeActivity(since: earliest, calendar: calendar)),
                 (Provider.openCode, openCodeActivity(since: earliest, calendar: calendar)),
                 (Provider.pi, piActivity(since: earliest, calendar: calendar)),
+                (Provider.sarvamCode, sarvamCodeActivity(since: earliest, calendar: calendar)),
             ] {
                 guard let activity else {
                     outcome.unreadable.append(provider)
@@ -164,6 +181,15 @@ enum DailyActivityScanner {
         return totals
             .filter { $0.key >= earliest }
             .map { DailyActivity(day: $0.key, provider: .pi, tokens: $0.value.tokens, cost: $0.value.cost) }
+    }
+
+    private static func sarvamCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
+        let root = SarvamCodeUsageClient.sessionRoot()
+        guard FileManager.default.fileExists(atPath: root) else { return [] }
+        guard let totals = try? SarvamCodeUsageClient.dailyTotals(calendar: calendar) else { return nil }
+        return totals
+            .filter { $0.key >= earliest }
+            .map { DailyActivity(day: $0.key, provider: .sarvamCode, tokens: $0.value.tokens, costs: $0.value.costs) }
     }
 
     // MARK: - Parsing

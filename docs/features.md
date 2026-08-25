@@ -38,7 +38,7 @@ Tailscale is recommended because it is private by construction: your Mac and pho
 
 ## Daily usage heatmap
 
-Thirty days of activity, filterable by provider, covering Claude Code, OpenCode, and Pi. Read from each tool's own session history, so it reflects work done before Toki was installed. Hover a day for its detail.
+Thirty days of activity, filterable by provider, covering Claude Code, OpenCode, Pi, and Sarvam Code. Read from each tool's own session history, so it reflects work done before Toki was installed. Hover a day for its detail.
 
 The scale runs through 64 interpolated shades. Adjacent shades are deliberately *not* separately identifiable — that is what a spectrum is for — so exact figures stay in the hover line and the accessibility label. Colour carries the shape; text carries the value.
 

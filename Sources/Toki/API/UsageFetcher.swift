@@ -80,6 +80,10 @@ enum UsageFetcher {
            let detected = FxUsageClient.autoDetectedAccount() {
             accounts.append(detected)
         }
+        if !configured.contains(where: { $0.provider == .sarvamCode }),
+           let detected = SarvamCodeUsageClient.autoDetectedAccount() {
+            accounts.append(detected)
+        }
         return accounts
     }
 
@@ -146,6 +150,8 @@ enum UsageFetcher {
                 snapshots = [try await OpenCodeUsageClient(account: account).snapshot()]
             case .pi:
                 snapshots = [try await PiUsageClient(account: account).snapshot()]
+            case .sarvamCode:
+                snapshots = [try await SarvamCodeUsageClient(account: account).snapshot()]
             case .openai:
                 snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
             case .codex:
@@ -193,7 +199,7 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic, .fx, .cursor:
             return "\(account.provider.rawValue):\(account.id)"
@@ -217,7 +223,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic, .fx, .cursor:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .manual:
             return 0
         }
     }
