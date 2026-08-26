@@ -344,6 +344,41 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         )
 
 
+class RemoteControlCodexAttentionTests(unittest.TestCase):
+    def _transcript(self, payloads):
+        f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        self.addCleanup(os.unlink, f.name)
+        for payload in payloads:
+            f.write(json.dumps({"type": "response_item", "payload": payload}) + "\n")
+        f.close()
+        quiet = time.time() - 60
+        os.utime(f.name, (quiet, quiet))
+        return f.name
+
+    def test_pending_wait_is_a_running_command_not_an_approval(self):
+        path = self._transcript([{
+            "type": "function_call", "name": "wait", "call_id": "c1",
+            "arguments": '{"cell_id":"190","yield_time_ms":25000,"max_tokens":100}',
+        }])
+        self.assertIsNone(toki_remote.codex_attention(path))
+
+    def test_pending_exec_approval_shows_its_command(self):
+        path = self._transcript([{
+            "type": "custom_tool_call", "name": "exec", "call_id": "c2",
+            "input": "pnpm test --filter members\n",
+        }])
+        attention = toki_remote.codex_attention(path)
+        self.assertEqual(attention["prompt"], "Approve: pnpm test --filter members?")
+
+    def test_dict_arguments_read_as_pairs_not_raw_json(self):
+        name, summary = toki_remote.codex_call_summary({
+            "type": "function_call", "name": "wait",
+            "arguments": '{"cell_id":"190","yield_time_ms":25000,"max_tokens":100}',
+        })
+        self.assertEqual(name, "wait")
+        self.assertEqual(summary, "cell_id=190 yield_time_ms=25000 max_tokens=100")
+
+
 class RemoteControlAgentOrderTests(unittest.TestCase):
     def order(self, agents):
         with mock.patch.object(toki_remote, "agent_recency", lambda a: a["recency"]):

@@ -771,7 +771,15 @@ def codex_call_summary(payload):
                 return name, " ".join(map(str, cmd))[:160]
             if isinstance(cmd, str):
                 return name, cmd[:160]
+            pairs = " ".join(f"{k}={v}" for k, v in parsed.items()
+                             if isinstance(v, (str, int, float)))
+            if pairs:
+                return name, pairs[:160]
         return name, args[:160]
+    # Unified-exec calls carry the command text in `input`, not `arguments`.
+    text = payload.get("input")
+    if isinstance(text, str) and text.strip():
+        return name, " ".join(text.split())[:160]
     return name, ""
 
 
@@ -1006,6 +1014,10 @@ def codex_attention(path):
         if e["role"] == "meta":
             policy = e.get("mode", policy)
         elif e["role"] == "tool":
+            # `wait` polls a running unified-exec cell for up to its yield_time_ms, so an
+            # unresolved wait means the command is still running, not that it needs approval.
+            if e["tool"] == "wait":
+                continue
             pending[e["id"]] = e
             order.append(e["id"])
         elif e["role"] == "resolved":
