@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Sarvam Code sessions in Remote Control.** A running `sarvam-code` CLI now shows up on your phone like Claude, Codex, and OpenCode do: its transcript streams live, permission prompts surface as attention alerts, the model badge reads the session's current model, and the Model button opens its `/model` picker. Sarvam Code shares Codex's session format, so its sessions resolve from `~/.sarvam/sessions` (honoring `SARVAM_HOME`) through the same reader.
+
 ## 3.0.0 - 2026-08-23
 
 ### Added

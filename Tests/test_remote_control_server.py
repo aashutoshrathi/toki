@@ -319,6 +319,30 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         self.assertFalse(toki_remote.agent_is_writable({"tty": None}))
         self.assertTrue(toki_remote.agent_is_writable({"tty": "ttys001"}))
 
+    def test_sarvam_cli_is_classified_narrowly(self):
+        self.assertEqual(toki_remote.provider_of("/Users/me/.local/bin/sarvam-code"), "sarvam")
+        self.assertIsNone(toki_remote.provider_of("node /tmp/sarvam-helper.js"))
+
+    def test_sarvam_session_resolves_from_its_own_home(self):
+        with tempfile.TemporaryDirectory() as sarvam_home:
+            session = os.path.join(sarvam_home, "rollout-1.jsonl")
+            with open(session, "w") as f:
+                f.write(json.dumps({
+                    "type": "session_meta",
+                    "payload": {"id": "abc", "cwd": "/tmp/project"},
+                }) + "\n")
+            with mock.patch.object(toki_remote, "SARVAM_SESSIONS", sarvam_home):
+                self.assertEqual(
+                    toki_remote.newest_sarvam_session("sarvam-code", "/tmp/project"),
+                    session,
+                )
+
+    def test_sarvam_transcript_reads_through_the_codex_parser(self):
+        self.assertIs(
+            toki_remote.TRANSCRIPT_PARSERS["sarvam"],
+            toki_remote.parse_codex_transcript,
+        )
+
 
 class RemoteControlAgentOrderTests(unittest.TestCase):
     def order(self, agents):
