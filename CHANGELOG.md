@@ -25,6 +25,10 @@
 - **Token totals follow the currency each provider bills in.** They were pinned to the USD row, so an install billing in something else (Sarvam Code in INR, say) grew a phantom USD row reading `$0.00` for every period beside the real one. Each provider's tokens now land on its own currency row, and the four blocks in a row keep a matching height when only some periods have usage.
 - **Session Costs stays inside its panel.** The donut's legend wrapped onto several lines once eight or more sessions were running and overlapped both the chart and the list under it. That list already names every session with its logo, cost, and token count, so the legend is gone and the list scrolls within a fixed height rather than pushing the spend blocks and quota chart out of view. Sessions are ordered costliest first.
 
+### Thanks
+
+[@thepushkarp](https://github.com/thepushkarp) contributed Sarvam Code usage tracking and the Codex Keychain sign-in fix.
+
 ## 2.7.0 - 2026-08-20
 
 ### Added
