@@ -173,5 +173,12 @@ hdiutil create \
   "$DMG_PATH"
 
 rm -rf "$STAGING_DIR"
+
+# A DMG that hdiutil cannot attach is worthless to the updater, which mounts it to swap the
+# app in. Failing here keeps a bad image from being uploaded to a release, where the only
+# symptom is "hdiutil: attach failed - corrupt image" on every machine that tries to update.
+echo "==> Verifying DMG"
+hdiutil verify "$DMG_PATH"
+
 echo ""
 echo "==> Done: $DMG_PATH"
