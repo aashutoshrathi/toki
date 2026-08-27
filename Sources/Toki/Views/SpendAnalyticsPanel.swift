@@ -6,6 +6,7 @@ struct SpendAnalyticsPanel: View {
     @State private var piTotals: PiUsageClient.Totals?
     @State private var openCodeTotals: OpenCodeUsageClient.Totals?
     @State private var sarvamCodeTotals: SarvamCodeUsageClient.Totals?
+    @State private var fxTotals: FxUsageClient.Totals?
     @State private var isLoadingLocalTotals = true
     @State private var selectedRange: TimeRange = .day
     @State private var selectedAgentID: Int32?
@@ -116,10 +117,10 @@ struct SpendAnalyticsPanel: View {
                                 .foregroundStyle(.tertiary)
                         }
                         HStack(spacing: 4) {
-                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode))
-                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode))
-                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode))
-                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode))
+                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode), tokens: row.todayTokens)
+                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode), tokens: row.weekTokens)
+                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode), tokens: row.monthTokens)
+                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode), tokens: row.allTimeTokens)
                         }
                     }
                 }
@@ -136,16 +137,21 @@ struct SpendAnalyticsPanel: View {
                 }
             }
 
-            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && sarvamCodeTotals == nil && costAgents.isEmpty {
+            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && sarvamCodeTotals == nil && fxTotals == nil && costAgents.isEmpty {
                 emptyState(icon: "dollarsign.circle", text: "No spend data yet")
             }
         }
     }
 
-    private func spendBlock(label: String, money: Money) -> some View {
+    private func spendBlock(label: String, money: Money, tokens: Double = 0) -> some View {
         VStack(spacing: 4) {
             Text(formatMoney(money))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            if tokens > 0 {
+                Text(formatCompact(tokens))
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
             Text(label)
                 .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
@@ -176,8 +182,11 @@ struct SpendAnalyticsPanel: View {
                 }
             }
         }
-        .chartLegend(position: .bottom, spacing: 8)
-        .frame(height: 160)
+        // The agent list below the chart already serves as a legend (provider logo, title,
+        // cost, token count), so the chart's built-in legend is redundant. With 8+ sessions
+        // it wrapped to multiple lines and overlapped the chart and the list below it.
+        .chartLegend(.hidden)
+        .frame(height: 140)
         .chartOverlay { _ in
             GeometryReader { geometry in
                 Rectangle()
@@ -472,10 +481,13 @@ struct SpendAnalyticsPanel: View {
         if store.snapshots.contains(where: { $0.provider == .sarvamCode }) {
             sarvamCodeTotals = try? SarvamCodeUsageClient.aggregate()
         }
+        if store.snapshots.contains(where: { $0.provider == .fx }) {
+            fxTotals = try? FxUsageClient.aggregate()
+        }
     }
 
     private var hasLocalCostProvider: Bool {
-        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode }
+        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode || $0.provider == .fx }
     }
 
     private struct LocalSpendRow {
@@ -484,6 +496,12 @@ struct SpendAnalyticsPanel: View {
         var week = 0.0
         var month = 0.0
         var allTime = 0.0
+        // Token totals are currency-agnostic, so they are tracked on the USD row only and
+        // displayed alongside the cost in each spend block.
+        var todayTokens = 0.0
+        var weekTokens = 0.0
+        var monthTokens = 0.0
+        var allTimeTokens = 0.0
     }
 
     private var localSpendRows: [LocalSpendRow] {
@@ -493,12 +511,32 @@ struct SpendAnalyticsPanel: View {
             row[keyPath: keyPath] += amount
             rows[currency] = row
         }
+        func addTokens(_ tokens: Double, keyPath: WritableKeyPath<LocalSpendRow, Double>) {
+            var row = rows["USD"] ?? LocalSpendRow(currencyCode: "USD")
+            row[keyPath: keyPath] += tokens
+            rows["USD"] = row
+        }
         var usdSources: [(Double, Double, Double, Double)] = []
         if let piTotals {
             usdSources.append((piTotals.todayCost, piTotals.weekCost, piTotals.monthCost, piTotals.allTimeCost))
+            addTokens(piTotals.todayTokens, keyPath: \.todayTokens)
+            addTokens(piTotals.weekTokens, keyPath: \.weekTokens)
+            addTokens(piTotals.monthTokens, keyPath: \.monthTokens)
+            addTokens(piTotals.allTimeTokens, keyPath: \.allTimeTokens)
         }
         if let openCodeTotals {
             usdSources.append((openCodeTotals.todayCost, openCodeTotals.weekCost, openCodeTotals.monthCost, openCodeTotals.allTimeCost))
+            addTokens(openCodeTotals.todayTokens, keyPath: \.todayTokens)
+            addTokens(openCodeTotals.weekTokens, keyPath: \.weekTokens)
+            addTokens(openCodeTotals.monthTokens, keyPath: \.monthTokens)
+            addTokens(openCodeTotals.allTimeTokens, keyPath: \.allTimeTokens)
+        }
+        if let fxTotals {
+            usdSources.append((fxTotals.todayCost, fxTotals.weekCost, fxTotals.monthCost, fxTotals.allTimeCost))
+            addTokens(fxTotals.todayTokens, keyPath: \.todayTokens)
+            addTokens(fxTotals.weekTokens, keyPath: \.weekTokens)
+            addTokens(fxTotals.monthTokens, keyPath: \.monthTokens)
+            addTokens(fxTotals.allTimeTokens, keyPath: \.allTimeTokens)
         }
         for source in usdSources {
             add(source.0, currency: "USD", keyPath: \.today)
@@ -511,6 +549,10 @@ struct SpendAnalyticsPanel: View {
             for money in sarvamCodeTotals.weekCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.week) }
             for money in sarvamCodeTotals.monthCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.month) }
             for money in sarvamCodeTotals.allTimeCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.allTime) }
+            addTokens(Double(sarvamCodeTotals.todayTokens), keyPath: \.todayTokens)
+            addTokens(Double(sarvamCodeTotals.weekTokens), keyPath: \.weekTokens)
+            addTokens(Double(sarvamCodeTotals.monthTokens), keyPath: \.monthTokens)
+            addTokens(Double(sarvamCodeTotals.allTimeTokens), keyPath: \.allTimeTokens)
             if sarvamCodeTotals.allTimeCosts.isEmpty, rows["USD"] == nil {
                 rows["USD"] = LocalSpendRow(currencyCode: "USD")
             }

@@ -10,6 +10,10 @@ struct OpenCodeUsageClient {
         var weekCost = 0.0
         var monthCost = 0.0
         var allTimeCost = 0.0
+        var todayTokens = 0.0
+        var weekTokens = 0.0
+        var monthTokens = 0.0
+        var allTimeTokens = 0.0
     }
 
     let account: AccountConfig
@@ -110,7 +114,11 @@ struct OpenCodeUsageClient {
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(dayStart) THEN cost END),0), \
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN cost END),0), \
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN cost END),0), \
-            IFNULL(SUM(cost),0) FROM session;
+            IFNULL(SUM(cost),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(dayStart) THEN tokens_input + tokens_output END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN tokens_input + tokens_output END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN tokens_input + tokens_output END),0), \
+            IFNULL(SUM(tokens_input + tokens_output),0) FROM session;
             """
         )
 
@@ -118,7 +126,11 @@ struct OpenCodeUsageClient {
             todayCost: row.value(0),
             weekCost: row.value(1),
             monthCost: row.value(2),
-            allTimeCost: row.value(3)
+            allTimeCost: row.value(3),
+            todayTokens: row.value(4),
+            weekTokens: row.value(5),
+            monthTokens: row.value(6),
+            allTimeTokens: row.value(7)
         )
     }
 

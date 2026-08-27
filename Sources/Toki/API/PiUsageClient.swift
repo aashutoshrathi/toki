@@ -13,6 +13,10 @@ struct PiUsageClient {
         var weekCost = 0.0
         var monthCost = 0.0
         var allTimeCost = 0.0
+        var todayTokens = 0.0
+        var weekTokens = 0.0
+        var monthTokens = 0.0
+        var allTimeTokens = 0.0
         var sessionCount = 0
     }
 
@@ -152,6 +156,9 @@ struct PiUsageClient {
             for contribution in file.contributions {
                 guard seen.insert(contribution.dedupKey).inserted else { continue }
                 totals.allTimeCost += contribution.cost
+                let contributionTokens = contribution.input + contribution.output
+                    + contribution.cacheRead + contribution.cacheWrite
+                totals.allTimeTokens += contributionTokens
                 guard let date = contribution.date else { continue }
                 if date >= startOfDay, date < nextDay {
                     totals.todayInput += contribution.input
@@ -159,11 +166,18 @@ struct PiUsageClient {
                     totals.todayCacheRead += contribution.cacheRead
                     totals.todayCacheWrite += contribution.cacheWrite
                     totals.todayCost += contribution.cost
+                    totals.todayTokens += contributionTokens
                 }
                 // Half-open ranges, matching the day window above, so an instant on a week or
                 // month boundary lands in exactly one bucket rather than being double-counted.
-                if let week, date >= week.start, date < week.end { totals.weekCost += contribution.cost }
-                if let month, date >= month.start, date < month.end { totals.monthCost += contribution.cost }
+                if let week, date >= week.start, date < week.end {
+                    totals.weekCost += contribution.cost
+                    totals.weekTokens += contributionTokens
+                }
+                if let month, date >= month.start, date < month.end {
+                    totals.monthCost += contribution.cost
+                    totals.monthTokens += contributionTokens
+                }
             }
         }
         return totals
