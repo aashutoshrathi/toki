@@ -117,6 +117,8 @@ extension UsageStore {
             config.accountLabels = labels
         } else if let index = config.accounts.firstIndex(where: { $0.id == snapshot.id }) {
             config.accounts[index].name = trimmed
+        } else if !config.accounts.contains(where: { $0.provider == snapshot.provider }) {
+            config.accounts.append(AccountConfig(id: snapshot.id, name: trimmed, provider: snapshot.provider))
         } else {
             return
         }

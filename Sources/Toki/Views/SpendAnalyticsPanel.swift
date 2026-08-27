@@ -75,7 +75,6 @@ struct SpendAnalyticsPanel: View {
             Text("Spend")
                 .font(.system(size: 11, weight: .semibold))
 
-            // Cost-based provider cards (Pi, OpenCode, fx, Sarvam Code)
             let costProviders = store.snapshots.filter { !$0.isError && $0.remainingRatio == nil && $0.menuBarValue != nil }
             if !costProviders.isEmpty {
                 ForEach(costProviders) { snap in
@@ -115,8 +114,6 @@ struct SpendAnalyticsPanel: View {
                 .redacted(reason: .placeholder)
             } else {
                 ForEach(localSpendRows, id: \.currencyCode) { row in
-                    // Either every block in a row carries a token line or none does, so the
-                    // four surfaces stay the same height when only some periods have usage.
                     let tokens = row.allTimeTokens > 0
                     VStack(alignment: .leading, spacing: 4) {
                         if localSpendRows.count > 1 {
@@ -192,9 +189,6 @@ struct SpendAnalyticsPanel: View {
                 }
             }
         }
-        // The agent list below the chart already serves as a legend (provider logo, title,
-        // cost, token count), so the chart's built-in legend is redundant. With 8+ sessions
-        // it wrapped to multiple lines and overlapped the chart and the list below it.
         .chartLegend(.hidden)
         .frame(height: 110)
         .chartOverlay { _ in
@@ -241,8 +235,6 @@ struct SpendAnalyticsPanel: View {
         .frame(height: 14)
         .padding(.horizontal, 4)
 
-        // Cap the session list so many agents scroll internally instead of pushing the
-        // whole panel down and crowding out the spend blocks and quota chart below it.
         ScrollView(.vertical) {
             VStack(spacing: 0) {
                 ForEach(agents) { agent in
@@ -277,7 +269,6 @@ struct SpendAnalyticsPanel: View {
         let grouped: [String: [ActiveAgent]] = Dictionary(grouping: billed) { agent in
             agent.sessionUsage?.currencyCode ?? "USD"
         }
-        // Costliest first, so the capped session list leads with the sessions worth seeing.
         return grouped
             .map { key, value -> (currencyCode: String, agents: [ActiveAgent]) in
                 (currencyCode: key, agents: value.sorted { cost(of: $0) > cost(of: $1) })
@@ -517,7 +508,6 @@ struct SpendAnalyticsPanel: View {
         store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode || $0.provider == .fx }
     }
 
-    /// Today's token count for a provider, resolved from the locally-aggregated totals.
     private func todayTokens(for provider: Provider) -> Double? {
         switch provider {
         case .pi: return piTotals?.todayTokens
@@ -544,11 +534,6 @@ struct SpendAnalyticsPanel: View {
         Self.spendRows(pi: piTotals, openCode: openCodeTotals, fx: fxTotals, sarvam: sarvamCodeTotals)
     }
 
-    /// Per-currency spend rows, with each provider's token counts attributed to the currency
-    /// that provider actually bills in.
-    ///
-    /// nonisolated + static so the currency attribution can be tested without a rendered view,
-    /// matching `agentID(at:in:agents:)` above.
     nonisolated static func spendRows(
         pi: PiUsageClient.Totals?,
         openCode: OpenCodeUsageClient.Totals?,
@@ -604,8 +589,6 @@ struct SpendAnalyticsPanel: View {
         return rows.values.sorted { $0.currencyCode < $1.currencyCode }
     }
 
-    /// The currency carrying the most spend, or nil when nothing has been billed yet.
-    /// Ties resolve to the alphabetically first code, so the choice is stable across refreshes.
     nonisolated private static func dominantCurrency(_ totals: MoneyTotals) -> String? {
         totals.sortedMoney.max { $0.amount < $1.amount }?.currencyCode
     }
