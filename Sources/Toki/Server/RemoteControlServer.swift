@@ -511,6 +511,8 @@ final class RemoteControlServer: ObservableObject {
             return "fx"
         case .antigravity:
             return "antigravity"
+        case .sarvamCode:
+            return "sarvam"
         default:
             return nil
         }

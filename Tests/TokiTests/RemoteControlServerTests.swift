@@ -108,6 +108,7 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .codex), "codex")
         XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .claudeCode), "claude")
         XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .openCode), "opencode")
+        XCTAssertEqual(RemoteControlServer.remoteProviderName(for: .sarvamCode), "sarvam")
         XCTAssertNil(RemoteControlServer.remoteProviderName(for: .cursor))
     }
 

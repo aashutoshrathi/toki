@@ -262,6 +262,8 @@ def provider_of(command):
         return "codex"
     if exe == "opencode":
         return "opencode"
+    if exe == "sarvam-code":
+        return "sarvam"
     if exe == "fx":
         return "fx"
     if exe == "agy":
@@ -301,6 +303,8 @@ def discover_agents():
             r["session"] = newest_claude_session(r["command"], r["cwd"])
         elif r["provider"] == "codex":
             r["session"] = newest_codex_session(r["command"], r["cwd"])
+        elif r["provider"] == "sarvam":
+            r["session"] = newest_sarvam_session(r["command"], r["cwd"])
         elif r["provider"] == "opencode":
             r["session"] = newest_opencode_session(r["command"], r["cwd"])
         elif r["provider"] == "fx":
@@ -333,6 +337,8 @@ def agents_from_snapshot(processes, snapshot):
             agent["session"] = newest_claude_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "codex":
             agent["session"] = newest_codex_session(agent["command"], agent["cwd"])
+        elif agent["provider"] == "sarvam":
+            agent["session"] = newest_sarvam_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "opencode":
             agent["session"] = newest_opencode_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "fx":
@@ -685,12 +691,15 @@ def quiet_enough(path):
 
 
 CODEX_SESSIONS = os.path.join(HOME, ".codex", "sessions")
+# Sarvam Code is a Codex fork with the same rollout format under its own home.
+SARVAM_SESSIONS = os.path.join(
+    os.path.expanduser(os.environ.get("SARVAM_HOME") or os.path.join(HOME, ".sarvam")), "sessions")
 _codex_cwd_cache = {}  # path -> cwd (immutable per file)
 
 
-def codex_recent_files(limit=80):
+def codex_recent_files(limit=80, sessions_dir=CODEX_SESSIONS):
     files = []
-    for root, _, names in os.walk(CODEX_SESSIONS):
+    for root, _, names in os.walk(sessions_dir):
         for n in names:
             if n.endswith(".jsonl"):
                 p = os.path.join(root, n)
@@ -726,9 +735,9 @@ def codex_session_cwd(path):
     return cwd
 
 
-def newest_codex_session(command, cwd):
+def newest_codex_session(command, cwd, sessions_dir=CODEX_SESSIONS):
     m = re.search(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", command)
-    candidates = codex_recent_files()
+    candidates = codex_recent_files(sessions_dir=sessions_dir)
     if m:
         for p in candidates:
             if m.group(1) in os.path.basename(p):
@@ -738,6 +747,10 @@ def newest_codex_session(command, cwd):
             if codex_session_cwd(p) == cwd:
                 return p
     return candidates[0] if candidates else None
+
+
+def newest_sarvam_session(command, cwd):
+    return newest_codex_session(command, cwd, sessions_dir=SARVAM_SESSIONS)
 
 
 def codex_call_summary(payload):
@@ -758,7 +771,15 @@ def codex_call_summary(payload):
                 return name, " ".join(map(str, cmd))[:160]
             if isinstance(cmd, str):
                 return name, cmd[:160]
+            pairs = " ".join(f"{k}={v}" for k, v in parsed.items()
+                             if isinstance(v, (str, int, float)))
+            if pairs:
+                return name, pairs[:160]
         return name, args[:160]
+    # Unified-exec calls carry the command text in `input`, not `arguments`.
+    text = payload.get("input")
+    if isinstance(text, str) and text.strip():
+        return name, " ".join(text.split())[:160]
     return name, ""
 
 
@@ -940,6 +961,7 @@ def parse_agy_transcript(path, offset=0):
 TRANSCRIPT_PARSERS = {
     "claude": parse_claude_transcript,
     "codex": parse_codex_transcript,
+    "sarvam": parse_codex_transcript,
     "fx": parse_fx_transcript,
     "antigravity": parse_agy_transcript,
 }
@@ -992,6 +1014,10 @@ def codex_attention(path):
         if e["role"] == "meta":
             policy = e.get("mode", policy)
         elif e["role"] == "tool":
+            # `wait` polls a running unified-exec cell for up to its yield_time_ms, so an
+            # unresolved wait means the command is still running, not that it needs approval.
+            if e["tool"] == "wait":
+                continue
             pending[e["id"]] = e
             order.append(e["id"])
         elif e["role"] == "resolved":
@@ -1142,7 +1168,7 @@ def opencode_model(session_id):
     return obj.get("id") or obj.get("model") or raw if isinstance(obj, dict) else raw
 
 
-JSONL_MODEL_EXTRACTORS = {"claude": _claude_model, "codex": _codex_model, "fx": _fx_model}
+JSONL_MODEL_EXTRACTORS = {"claude": _claude_model, "codex": _codex_model, "sarvam": _codex_model, "fx": _fx_model}
 # path -> (offset, model): the model as of the bytes read so far, so each poll parses only what was
 # appended since the last one rather than re-reading a growing session in full.
 _model_stream = {}
@@ -2184,7 +2210,7 @@ class Handler(BaseHTTPRequestHandler):
                 if a["session"]:
                     if a["provider"] == "claude":
                         att = claude_attention(a["session"])
-                    elif a["provider"] == "codex":
+                    elif a["provider"] in ("codex", "sarvam"):
                         att = codex_attention(a["session"])
                     elif a["provider"] == "antigravity":
                         att = agy_attention(a["session"])
