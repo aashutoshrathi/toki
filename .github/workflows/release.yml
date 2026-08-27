@@ -86,10 +86,11 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
           # A tagged release reads its notes from the matching CHANGELOG.md section, so the
-          # release page carries the curated entries rather than a raw commit list. Prerelease
-          # tags have no section of their own and fall back to the generated notes.
+          # release page carries the curated entries rather than a raw commit list. --summary
+          # keeps it to one line per change; the full text stays in CHANGELOG.md and in the
+          # app's What's New. Prerelease tags have no section and fall back to generated notes.
           NOTES_FILE="$RUNNER_TEMP/release-notes.md"
-          if bash scripts/release-notes.sh "${GITHUB_REF_NAME}" > "$NOTES_FILE"; then
+          if bash scripts/release-notes.sh --summary "${GITHUB_REF_NAME}" > "$NOTES_FILE"; then
             NOTES_FLAGS=(--notes-file "$NOTES_FILE")
           else
             NOTES_FLAGS=(--generate-notes)

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Prints CHANGELOG.md's section for a release tag, for `gh release create --notes-file`.
+# With --summary, each entry is cut back to its headline, so the release page reads as one
+# line per change while CHANGELOG.md keeps the full text.
 # Exits 1 when the changelog has no section for that version, which is the normal case for a
 # prerelease tag - the caller falls back to --generate-notes there.
 set -euo pipefail
@@ -7,9 +9,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHANGELOG="$ROOT_DIR/CHANGELOG.md"
 
-TAG="${1:-}"
+SUMMARY=false
+TAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --summary) SUMMARY=true ;;
+    *) TAG="$arg" ;;
+  esac
+done
+
 if [[ -z "$TAG" ]]; then
-  echo "usage: release-notes.sh <tag>" >&2
+  echo "usage: release-notes.sh [--summary] <tag>" >&2
   exit 2
 fi
 
@@ -29,6 +39,10 @@ NOTES=$(printf '%s\n' "$NOTES" | sed -e '/./,$!d' | awk 'BEGIN{blank=0} /^$/{bla
 if [[ -z "$NOTES" ]]; then
   echo "No CHANGELOG.md section for $VERSION" >&2
   exit 1
+fi
+
+if [[ "$SUMMARY" == true ]]; then
+  NOTES=$(printf '%s\n' "$NOTES" | sed -E 's/^- (\*\*[^*]+\*\*).*/- \1/')
 fi
 
 printf '%s\n' "$NOTES"
