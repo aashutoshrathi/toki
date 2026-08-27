@@ -25,6 +25,10 @@ struct AccountSnapshot: Identifiable, Hashable {
     var remainingRatio: Double?
     var progressRatio: Double? = nil
     var resetCreditsAvailable: Int = 0
+    // Soonest expiry of available Codex reset credits. Null when credits don't expire or
+    // when only the count is known. Surfaced in the UI so the user can decide whether to
+    // redeem now or wait (issue #130).
+    var resetCreditExpiry: Date? = nil
     var metrics: [MetricLine]
     var accountInfo: [MetricLine] = []
     var isError: Bool = false

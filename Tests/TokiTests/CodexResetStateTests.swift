@@ -54,4 +54,48 @@ final class CodexResetStateTests: XCTestCase {
         XCTAssertEqual(updated.resetCreditsAvailable, 0)
         XCTAssertFalse(updated.metrics.contains(where: { $0.label == "Resets" }))
     }
+
+    func testResetClearsExpiryWhenNoCreditsRemain() {
+        let expiry = Date().addingTimeInterval(3 * 24 * 3600)
+        let snapshot = AccountSnapshot(
+            id: "codex",
+            name: "Codex",
+            provider: .codex,
+            primary: "11% left",
+            subtitle: "OpenAI Codex",
+            remainingRatio: 0.11,
+            resetCreditsAvailable: 1,
+            resetCreditExpiry: expiry,
+            metrics: [MetricLine(label: "Resets", value: "1 available · expires \(resetDescription(for: expiry))")]
+        )
+
+        let updated = codexSnapshotAfterReset(snapshot, resetsQuota: true)
+
+        XCTAssertEqual(updated.resetCreditsAvailable, 0)
+        XCTAssertNil(updated.resetCreditExpiry)
+        XCTAssertFalse(updated.metrics.contains(where: { $0.label == "Resets" }))
+    }
+
+    func testResetPreservesExpiryWhenCreditsRemain() {
+        let expiry = Date().addingTimeInterval(3 * 24 * 3600)
+        let snapshot = AccountSnapshot(
+            id: "codex",
+            name: "Codex",
+            provider: .codex,
+            primary: "11% left",
+            subtitle: "OpenAI Codex",
+            remainingRatio: 0.11,
+            resetCreditsAvailable: 2,
+            resetCreditExpiry: expiry,
+            metrics: [MetricLine(label: "Resets", value: "2 available · expires \(resetDescription(for: expiry))")]
+        )
+
+        let updated = codexSnapshotAfterReset(snapshot, resetsQuota: true)
+
+        XCTAssertEqual(updated.resetCreditsAvailable, 1)
+        XCTAssertEqual(updated.resetCreditExpiry, expiry)
+        let resetsMetric = updated.metrics.first(where: { $0.label == "Resets" })
+        XCTAssertNotNil(resetsMetric)
+        XCTAssertTrue(resetsMetric?.value.hasPrefix("1 available · expires ") ?? false)
+    }
 }
