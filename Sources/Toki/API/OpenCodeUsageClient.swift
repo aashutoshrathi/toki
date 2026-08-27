@@ -10,6 +10,10 @@ struct OpenCodeUsageClient {
         var weekCost = 0.0
         var monthCost = 0.0
         var allTimeCost = 0.0
+        var todayTokens = 0.0
+        var weekTokens = 0.0
+        var monthTokens = 0.0
+        var allTimeTokens = 0.0
     }
 
     let account: AccountConfig
@@ -103,6 +107,7 @@ struct OpenCodeUsageClient {
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: now).map { Int($0.start.timeIntervalSince1970) } ?? 0
         let monthStart = calendar.dateInterval(of: .month, for: now).map { Int($0.start.timeIntervalSince1970) } ?? 0
 
+        let tokens = tokenSumExpression(db: db)
         let row = try Self.staticQuery(
             db: db,
             sql: """
@@ -110,7 +115,11 @@ struct OpenCodeUsageClient {
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(dayStart) THEN cost END),0), \
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN cost END),0), \
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN cost END),0), \
-            IFNULL(SUM(cost),0) FROM session;
+            IFNULL(SUM(cost),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(dayStart) THEN \(tokens) END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN \(tokens) END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN \(tokens) END),0), \
+            IFNULL(SUM(\(tokens)),0) FROM session;
             """
         )
 
@@ -118,8 +127,23 @@ struct OpenCodeUsageClient {
             todayCost: row.value(0),
             weekCost: row.value(1),
             monthCost: row.value(2),
-            allTimeCost: row.value(3)
+            allTimeCost: row.value(3),
+            todayTokens: row.value(4),
+            weekTokens: row.value(5),
+            monthTokens: row.value(6),
+            allTimeTokens: row.value(7)
         )
+    }
+
+    static func tokenSumExpression(db: String) -> String {
+        let required = ["tokens_input", "tokens_output"]
+        let optional = ["tokens_cache_read", "tokens_cache_write"]
+        let present = Set(
+            ((try? sqliteOutput(db: db, sql: "PRAGMA table_info(session);")) ?? "")
+                .split(separator: "\n")
+                .compactMap { $0.split(separator: "|").dropFirst().first.map(String.init) }
+        )
+        return (required + optional.filter(present.contains)).joined(separator: " + ")
     }
 
     private static func staticQuery(db: String, sql: String) throws -> Row {

@@ -5,10 +5,16 @@
 ### Added
 
 - **Sarvam Code sessions in Remote Control.** A running `sarvam-code` CLI now shows up on your phone like Claude, Codex, and OpenCode do: its transcript streams live, permission prompts surface as attention alerts, the model badge reads the session's current model, and the Model button opens its `/model` picker. Sarvam Code shares Codex's session format, so its sessions resolve from `~/.sarvam/sessions` (honoring `SARVAM_HOME`) through the same reader.
+- **Token counts sit beside the money in the spend view.** Every Today, Week, Month, and All Time block in Analytics now shows the tokens behind the figure, and each cost-tracked card carries today's count next to its spend, so a quiet bill reads as either a quiet day or a cheaper model rather than being ambiguous.
 
 ### Fixed
 
 - **Codex approval prompts show the real command.** A pending Codex approval on your phone now reads the actual command text, including unified-exec calls that carry it in `input` rather than `arguments`, instead of a blank summary. A running `wait` poll is also no longer mistaken for a pending approval, so the prompt only appears when Codex genuinely needs an answer.
+- **Auto-detected providers can be renamed.** Pi, OpenCode, fx, Sarvam Code, Cursor, and Antigravity are detected rather than configured, so there was no saved entry for a new name to land in and the card quietly reverted whatever you typed. The first rename now writes that entry, keeping the account's existing history and usage.
+- **The provider you are using ranks above the ones you are not.** Cost-tracked providers have no quota percentage to sort by, so they fell back to the fixed order Toki detects them in, and a running Sarvam Code sat below an idle Pi no matter what you did. A live session now breaks that tie, without letting it outrank quota headroom or lift an errored card up the list.
+- **OpenCode's token count no longer reads far too low.** It counted only input and output while Pi and fx also include cache reads and writes, and all three add into the same total, so OpenCode came in roughly 28x under: 9.6M tokens against 275.2M actual on a real database. Databases predating the cache columns still aggregate instead of blanking the panel.
+- **Token totals follow the currency each provider bills in.** They were pinned to the USD row, so an install billing in something else (Sarvam Code in INR, say) grew a phantom USD row reading `$0.00` for every period beside the real one. Each provider's tokens now land on its own currency row, and the four blocks in a row keep a matching height when only some periods have usage.
+- **Session Costs stays inside its panel.** The donut's legend wrapped onto several lines once eight or more sessions were running and overlapped both the chart and the list under it. That list already names every session with its logo, cost, and token count, so the legend is gone and the list scrolls within a fixed height rather than pushing the spend blocks and quota chart out of view. Sessions are ordered costliest first.
 
 ## 3.0.0 - 2026-08-23
 

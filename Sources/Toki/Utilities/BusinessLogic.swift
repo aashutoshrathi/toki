@@ -50,6 +50,12 @@ func sortedByAvailability(_ snapshots: [AccountSnapshot], activeProviders: Set<P
                 return leftRemaining > rightRemaining
             }
 
+            let leftActive = activeProviders.contains(left.provider)
+            let rightActive = activeProviders.contains(right.provider)
+            if leftActive != rightActive {
+                return leftActive
+            }
+
             return lhs.offset < rhs.offset
         }
         .map(\.element)

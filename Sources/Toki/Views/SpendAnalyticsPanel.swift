@@ -6,6 +6,7 @@ struct SpendAnalyticsPanel: View {
     @State private var piTotals: PiUsageClient.Totals?
     @State private var openCodeTotals: OpenCodeUsageClient.Totals?
     @State private var sarvamCodeTotals: SarvamCodeUsageClient.Totals?
+    @State private var fxTotals: FxUsageClient.Totals?
     @State private var isLoadingLocalTotals = true
     @State private var selectedRange: TimeRange = .day
     @State private var selectedAgentID: Int32?
@@ -74,7 +75,6 @@ struct SpendAnalyticsPanel: View {
             Text("Spend")
                 .font(.system(size: 11, weight: .semibold))
 
-            // Cost-based provider cards (Pi, OpenCode)
             let costProviders = store.snapshots.filter { !$0.isError && $0.remainingRatio == nil && $0.menuBarValue != nil }
             if !costProviders.isEmpty {
                 ForEach(costProviders) { snap in
@@ -88,6 +88,11 @@ struct SpendAnalyticsPanel: View {
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
+                        if let todayTokens = todayTokens(for: snap.provider), todayTokens > 0 {
+                            Text("\(formatCompact(todayTokens)) tokens")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
                         if let bar = snap.menuBarValue {
                             Text(bar)
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -101,14 +106,15 @@ struct SpendAnalyticsPanel: View {
 
             if isLoadingLocalTotals && hasLocalCostProvider {
                 HStack(spacing: 4) {
-                    spendBlock(label: "Today", money: .usd(0))
-                    spendBlock(label: "Week", money: .usd(0))
-                    spendBlock(label: "Month", money: .usd(0))
-                    spendBlock(label: "All Time", money: .usd(0))
+                    spendBlock(label: "Today", money: .usd(0), tokens: 0)
+                    spendBlock(label: "Week", money: .usd(0), tokens: 0)
+                    spendBlock(label: "Month", money: .usd(0), tokens: 0)
+                    spendBlock(label: "All Time", money: .usd(0), tokens: 0)
                 }
                 .redacted(reason: .placeholder)
             } else {
                 ForEach(localSpendRows, id: \.currencyCode) { row in
+                    let tokens = row.allTimeTokens > 0
                     VStack(alignment: .leading, spacing: 4) {
                         if localSpendRows.count > 1 {
                             Text(row.currencyCode)
@@ -116,10 +122,10 @@ struct SpendAnalyticsPanel: View {
                                 .foregroundStyle(.tertiary)
                         }
                         HStack(spacing: 4) {
-                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode))
-                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode))
-                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode))
-                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode))
+                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode), tokens: tokens ? row.todayTokens : nil)
+                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode), tokens: tokens ? row.weekTokens : nil)
+                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode), tokens: tokens ? row.monthTokens : nil)
+                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode), tokens: tokens ? row.allTimeTokens : nil)
                         }
                     }
                 }
@@ -136,16 +142,23 @@ struct SpendAnalyticsPanel: View {
                 }
             }
 
-            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && sarvamCodeTotals == nil && costAgents.isEmpty {
+            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && sarvamCodeTotals == nil && fxTotals == nil && costAgents.isEmpty {
                 emptyState(icon: "dollarsign.circle", text: "No spend data yet")
             }
         }
     }
 
-    private func spendBlock(label: String, money: Money) -> some View {
+    private func spendBlock(label: String, money: Money, tokens: Double?) -> some View {
         VStack(spacing: 4) {
             Text(formatMoney(money))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            if let tokens {
+                Text("\(formatCompact(tokens)) tokens")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             Text(label)
                 .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
@@ -176,8 +189,8 @@ struct SpendAnalyticsPanel: View {
                 }
             }
         }
-        .chartLegend(position: .bottom, spacing: 8)
-        .frame(height: 160)
+        .chartLegend(.hidden)
+        .frame(height: 110)
         .chartOverlay { _ in
             GeometryReader { geometry in
                 Rectangle()
@@ -222,35 +235,49 @@ struct SpendAnalyticsPanel: View {
         .frame(height: 14)
         .padding(.horizontal, 4)
 
-        ForEach(agents) { agent in
-            HStack(spacing: 8) {
-                ProviderLogo(provider: agent.provider, size: 16)
-                Text(agent.title)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                Spacer()
-                if let usage = agent.sessionUsage, let cost = usage.cost {
-                    Text(formatMoney(Money(amount: cost, currencyCode: usage.currencyCode)))
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    Text("\(formatCompact(Double(usage.tokensInput + usage.tokensOutput))) tokens")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                ForEach(agents) { agent in
+                    HStack(spacing: 8) {
+                        ProviderLogo(provider: agent.provider, size: 16)
+                        Text(agent.title)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                        Spacer()
+                        if let usage = agent.sessionUsage, let cost = usage.cost {
+                            Text(formatMoney(Money(amount: cost, currencyCode: usage.currencyCode)))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            Text("\(formatCompact(Double(usage.tokensInput + usage.tokensOutput))) tokens")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(8)
+                    .contentSurface()
+                    .onHover { isHovered in
+                        selectedAgentID = isHovered ? agent.id : nil
+                    }
                 }
             }
-            .padding(8)
-            .contentSurface()
-            .onHover { isHovered in
-                selectedAgentID = isHovered ? agent.id : nil
-            }
         }
+        .scrollIndicators(.hidden)
+        .frame(maxHeight: 220)
     }
 
     private func sessionCostGroups(_ agents: [ActiveAgent]) -> [(currencyCode: String, agents: [ActiveAgent])] {
-        Dictionary(grouping: agents.filter { $0.sessionUsage?.cost != nil }) {
-            $0.sessionUsage?.currencyCode ?? "USD"
+        let billed = agents.filter { $0.sessionUsage?.cost != nil }
+        let grouped: [String: [ActiveAgent]] = Dictionary(grouping: billed) { agent in
+            agent.sessionUsage?.currencyCode ?? "USD"
         }
-        .map { (currencyCode: $0.key, agents: $0.value) }
-        .sorted { $0.currencyCode < $1.currencyCode }
+        return grouped
+            .map { key, value -> (currencyCode: String, agents: [ActiveAgent]) in
+                (currencyCode: key, agents: value.sorted { cost(of: $0) > cost(of: $1) })
+            }
+            .sorted { $0.currencyCode < $1.currencyCode }
+    }
+
+    private func cost(of agent: ActiveAgent) -> Double {
+        agent.sessionUsage?.cost ?? 0
     }
 
     // MARK: - Quota (%)
@@ -472,50 +499,98 @@ struct SpendAnalyticsPanel: View {
         if store.snapshots.contains(where: { $0.provider == .sarvamCode }) {
             sarvamCodeTotals = try? SarvamCodeUsageClient.aggregate()
         }
+        if store.snapshots.contains(where: { $0.provider == .fx }) {
+            fxTotals = try? FxUsageClient.aggregate()
+        }
     }
 
     private var hasLocalCostProvider: Bool {
-        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode }
+        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode || $0.provider == .fx }
     }
 
-    private struct LocalSpendRow {
+    private func todayTokens(for provider: Provider) -> Double? {
+        switch provider {
+        case .pi: return piTotals?.todayTokens
+        case .openCode: return openCodeTotals?.todayTokens
+        case .fx: return fxTotals?.todayTokens
+        case .sarvamCode: return sarvamCodeTotals.map { Double($0.todayTokens) }
+        default: return nil
+        }
+    }
+
+    struct LocalSpendRow: Equatable {
         let currencyCode: String
         var today = 0.0
         var week = 0.0
         var month = 0.0
         var allTime = 0.0
+        var todayTokens = 0.0
+        var weekTokens = 0.0
+        var monthTokens = 0.0
+        var allTimeTokens = 0.0
     }
 
     private var localSpendRows: [LocalSpendRow] {
+        Self.spendRows(pi: piTotals, openCode: openCodeTotals, fx: fxTotals, sarvam: sarvamCodeTotals)
+    }
+
+    nonisolated static func spendRows(
+        pi: PiUsageClient.Totals?,
+        openCode: OpenCodeUsageClient.Totals?,
+        fx: FxUsageClient.Totals?,
+        sarvam: SarvamCodeUsageClient.Totals?
+    ) -> [LocalSpendRow] {
         var rows: [String: LocalSpendRow] = [:]
         func add(_ amount: Double, currency: String, keyPath: WritableKeyPath<LocalSpendRow, Double>) {
             var row = rows[currency] ?? LocalSpendRow(currencyCode: currency)
             row[keyPath: keyPath] += amount
             rows[currency] = row
         }
-        var usdSources: [(Double, Double, Double, Double)] = []
-        if let piTotals {
-            usdSources.append((piTotals.todayCost, piTotals.weekCost, piTotals.monthCost, piTotals.allTimeCost))
+        func addUSD(costs: (Double, Double, Double, Double), tokens: (Double, Double, Double, Double)) {
+            add(costs.0, currency: "USD", keyPath: \.today)
+            add(costs.1, currency: "USD", keyPath: \.week)
+            add(costs.2, currency: "USD", keyPath: \.month)
+            add(costs.3, currency: "USD", keyPath: \.allTime)
+            add(tokens.0, currency: "USD", keyPath: \.todayTokens)
+            add(tokens.1, currency: "USD", keyPath: \.weekTokens)
+            add(tokens.2, currency: "USD", keyPath: \.monthTokens)
+            add(tokens.3, currency: "USD", keyPath: \.allTimeTokens)
         }
-        if let openCodeTotals {
-            usdSources.append((openCodeTotals.todayCost, openCodeTotals.weekCost, openCodeTotals.monthCost, openCodeTotals.allTimeCost))
+
+        if let pi {
+            addUSD(
+                costs: (pi.todayCost, pi.weekCost, pi.monthCost, pi.allTimeCost),
+                tokens: (pi.todayTokens, pi.weekTokens, pi.monthTokens, pi.allTimeTokens)
+            )
         }
-        for source in usdSources {
-            add(source.0, currency: "USD", keyPath: \.today)
-            add(source.1, currency: "USD", keyPath: \.week)
-            add(source.2, currency: "USD", keyPath: \.month)
-            add(source.3, currency: "USD", keyPath: \.allTime)
+        if let openCode {
+            addUSD(
+                costs: (openCode.todayCost, openCode.weekCost, openCode.monthCost, openCode.allTimeCost),
+                tokens: (openCode.todayTokens, openCode.weekTokens, openCode.monthTokens, openCode.allTimeTokens)
+            )
         }
-        if let sarvamCodeTotals {
-            for money in sarvamCodeTotals.todayCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.today) }
-            for money in sarvamCodeTotals.weekCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.week) }
-            for money in sarvamCodeTotals.monthCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.month) }
-            for money in sarvamCodeTotals.allTimeCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.allTime) }
-            if sarvamCodeTotals.allTimeCosts.isEmpty, rows["USD"] == nil {
-                rows["USD"] = LocalSpendRow(currencyCode: "USD")
-            }
+        if let fx {
+            addUSD(
+                costs: (fx.todayCost, fx.weekCost, fx.monthCost, fx.allTimeCost),
+                tokens: (fx.todayTokens, fx.weekTokens, fx.monthTokens, fx.allTimeTokens)
+            )
+        }
+        if let sarvam {
+            for money in sarvam.todayCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.today) }
+            for money in sarvam.weekCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.week) }
+            for money in sarvam.monthCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.month) }
+            for money in sarvam.allTimeCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.allTime) }
+            let base = dominantCurrency(sarvam.allTimeCosts) ?? "USD"
+            add(Double(sarvam.todayTokens), currency: dominantCurrency(sarvam.todayCosts) ?? base, keyPath: \.todayTokens)
+            add(Double(sarvam.weekTokens), currency: dominantCurrency(sarvam.weekCosts) ?? base, keyPath: \.weekTokens)
+            add(Double(sarvam.monthTokens), currency: dominantCurrency(sarvam.monthCosts) ?? base, keyPath: \.monthTokens)
+            add(Double(sarvam.allTimeTokens), currency: base, keyPath: \.allTimeTokens)
         }
         return rows.values.sorted { $0.currencyCode < $1.currencyCode }
+    }
+
+    nonisolated private static func dominantCurrency(_ totals: MoneyTotals) -> String? {
+        totals.sortedMoney.max { $0.amount < $1.amount }?.currencyCode
     }
 }
 

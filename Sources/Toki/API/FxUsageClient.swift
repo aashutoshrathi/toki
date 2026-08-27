@@ -13,6 +13,10 @@ struct FxUsageClient {
         var weekCost = 0.0
         var monthCost = 0.0
         var allTimeCost = 0.0
+        var todayTokens = 0.0
+        var weekTokens = 0.0
+        var monthTokens = 0.0
+        var allTimeTokens = 0.0
         var requestCount = 0
         var lastActivityMs = 0.0
     }
@@ -103,7 +107,10 @@ struct FxUsageClient {
             if let id = fact.id, !seen.insert(id).inserted { return }
 
             let cost = number(fact.totalCost)
+            let tokens = number(fact.inputTokens) + number(fact.outputTokens)
+                + number(fact.cacheReadTokens) + number(fact.cacheWriteTokens)
             totals.allTimeCost += cost
+            totals.allTimeTokens += tokens
             totals.requestCount += 1
 
             guard let createdAtMs = fact.createdAtMs, createdAtMs > 0 else { return }
@@ -114,9 +121,16 @@ struct FxUsageClient {
                 totals.todayOutput += number(fact.outputTokens)
                 totals.todayCacheRead += number(fact.cacheReadTokens)
                 totals.todayCost += cost
+                totals.todayTokens += tokens
             }
-            if let week, date >= week.start, date < week.end { totals.weekCost += cost }
-            if let month, date >= month.start, date < month.end { totals.monthCost += cost }
+            if let week, date >= week.start, date < week.end {
+                totals.weekCost += cost
+                totals.weekTokens += tokens
+            }
+            if let month, date >= month.start, date < month.end {
+                totals.monthCost += cost
+                totals.monthTokens += tokens
+            }
         }
         return totals
     }
