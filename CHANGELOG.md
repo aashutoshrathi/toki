@@ -6,6 +6,10 @@
 
 - **Sarvam Code sessions in Remote Control.** A running `sarvam-code` CLI now shows up on your phone like Claude, Codex, and OpenCode do: its transcript streams live, permission prompts surface as attention alerts, the model badge reads the session's current model, and the Model button opens its `/model` picker. Sarvam Code shares Codex's session format, so its sessions resolve from `~/.sarvam/sessions` (honoring `SARVAM_HOME`) through the same reader.
 
+### Fixed
+
+- **Codex approval prompts show the real command.** A pending Codex approval on your phone now reads the actual command text, including unified-exec calls that carry it in `input` rather than `arguments`, instead of a blank summary. A running `wait` poll is also no longer mistaken for a pending approval, so the prompt only appears when Codex genuinely needs an answer.
+
 ## 3.0.0 - 2026-08-23
 
 ### Added
