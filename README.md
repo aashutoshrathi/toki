@@ -68,13 +68,13 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 ## What it does
 
-**Quota and spend.** Live rate-limit tracking for Claude Code (multi-account via `claude-swap`, with one-click switching) and Codex, a spend ring for Cursor read from your account, and local token and spend tracking for OpenCode, Pi, Sarvam Code, and Vercel's fx. Reported currencies are preserved; costs without a currency are treated as USD.
+**Quota and spend.** Live rate-limit tracking for Claude Code (multi-account via `claude-swap`, with one-click switching) and Codex, a spend ring for Cursor read from your account, and local token and spend tracking for OpenCode, Pi, Sarvam Code, and Vercel's fx. Every spend figure carries the token count behind it, across today, this week, this month, and all time, and whichever provider you are actively running sorts to the top. Reported currencies are preserved; costs without a currency are treated as USD.
 
 **Active agents.** Discovery across Codex, Claude Code, Cursor, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, Sarvam Code, Vercel's fx, Google's Antigravity, and ChatGPT-hosted Codex, with best-effort navigation to the terminal tab or app hosting each one.
 
 **Agents waiting on you.** A session parked on a permission prompt or a question is called out with a red dot and the question itself — on the card, the tab, and the menu bar — so you don't discover it twenty minutes later.
 
-**Remote Control from your phone, over Tailscale.** Follow a running agent's transcript from another room and answer it: send a message, approve or reject a permission prompt, pick an option, or clear the session. Replies are delivered to the agent's own TTY — `tmux send-keys` where there is a pane, iTerm2 by tty otherwise, Terminal as a fallback — so they land in the session already running rather than starting a new one, and the agent cannot tell the difference. Tailscale is the recommended route and keeps this off the public internet entirely; the host setting decides which networks the server will answer at all. Off by default. See [Remote Control](docs/remote-control.md).
+**Remote Control from your phone, over Tailscale.** Follow a running agent's transcript from another room and answer it: send a message, approve or reject a permission prompt, pick an option, switch the model it is running, mirror its terminal to watch and drive whatever is on screen, or clear the session. Each agent carries a badge naming the model it is on. Replies are delivered to the agent's own TTY — `tmux send-keys` where there is a pane, iTerm2 by tty otherwise, Terminal as a fallback — so they land in the session already running rather than starting a new one, and the agent cannot tell the difference. Tailscale is the recommended route and keeps this off the public internet entirely; the host setting decides which networks the server will answer at all. Off by default. See [Remote Control](docs/remote-control.md).
 
 **Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed.
 

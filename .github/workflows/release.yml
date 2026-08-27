@@ -85,10 +85,19 @@ jobs:
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             PRERELEASE_FLAG="--prerelease"
           fi
+          # A tagged release reads its notes from the matching CHANGELOG.md section, so the
+          # release page carries the curated entries rather than a raw commit list. Prerelease
+          # tags have no section of their own and fall back to the generated notes.
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          if bash scripts/release-notes.sh "${GITHUB_REF_NAME}" > "$NOTES_FILE"; then
+            NOTES_FLAGS=(--notes-file "$NOTES_FILE")
+          else
+            NOTES_FLAGS=(--generate-notes)
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             ".build/Toki_${VERSION}_universal.dmg" \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes $PRERELEASE_FLAG
+            "${NOTES_FLAGS[@]}" $PRERELEASE_FLAG
 
       - name: Update Homebrew tap
         # The cask tracks the stable channel only, so prerelease tags must not rewrite it.
