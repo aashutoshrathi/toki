@@ -75,7 +75,7 @@ struct SpendAnalyticsPanel: View {
             Text("Spend")
                 .font(.system(size: 11, weight: .semibold))
 
-            // Cost-based provider cards (Pi, OpenCode)
+            // Cost-based provider cards (Pi, OpenCode, fx, Sarvam Code)
             let costProviders = store.snapshots.filter { !$0.isError && $0.remainingRatio == nil && $0.menuBarValue != nil }
             if !costProviders.isEmpty {
                 ForEach(costProviders) { snap in
@@ -89,6 +89,11 @@ struct SpendAnalyticsPanel: View {
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
+                        if let todayTokens = todayTokens(for: snap.provider), todayTokens > 0 {
+                            Text("\(formatCompact(todayTokens)) tokens")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
                         if let bar = snap.menuBarValue {
                             Text(bar)
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -186,7 +191,7 @@ struct SpendAnalyticsPanel: View {
         // cost, token count), so the chart's built-in legend is redundant. With 8+ sessions
         // it wrapped to multiple lines and overlapped the chart and the list below it.
         .chartLegend(.hidden)
-        .frame(height: 140)
+        .frame(height: 110)
         .chartOverlay { _ in
             GeometryReader { geometry in
                 Rectangle()
@@ -231,27 +236,35 @@ struct SpendAnalyticsPanel: View {
         .frame(height: 14)
         .padding(.horizontal, 4)
 
-        ForEach(agents) { agent in
-            HStack(spacing: 8) {
-                ProviderLogo(provider: agent.provider, size: 16)
-                Text(agent.title)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                Spacer()
-                if let usage = agent.sessionUsage, let cost = usage.cost {
-                    Text(formatMoney(Money(amount: cost, currencyCode: usage.currencyCode)))
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    Text("\(formatCompact(Double(usage.tokensInput + usage.tokensOutput))) tokens")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+        // Cap the session list so many agents scroll internally instead of pushing the
+        // whole panel down and crowding out the spend blocks and quota chart below it.
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                ForEach(agents) { agent in
+                    HStack(spacing: 8) {
+                        ProviderLogo(provider: agent.provider, size: 16)
+                        Text(agent.title)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                        Spacer()
+                        if let usage = agent.sessionUsage, let cost = usage.cost {
+                            Text(formatMoney(Money(amount: cost, currencyCode: usage.currencyCode)))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            Text("\(formatCompact(Double(usage.tokensInput + usage.tokensOutput))) tokens")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(8)
+                    .contentSurface()
+                    .onHover { isHovered in
+                        selectedAgentID = isHovered ? agent.id : nil
+                    }
                 }
             }
-            .padding(8)
-            .contentSurface()
-            .onHover { isHovered in
-                selectedAgentID = isHovered ? agent.id : nil
-            }
         }
+        .scrollIndicators(.hidden)
+        .frame(maxHeight: 220)
     }
 
     private func sessionCostGroups(_ agents: [ActiveAgent]) -> [(currencyCode: String, agents: [ActiveAgent])] {
@@ -488,6 +501,17 @@ struct SpendAnalyticsPanel: View {
 
     private var hasLocalCostProvider: Bool {
         store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode || $0.provider == .fx }
+    }
+
+    /// Today's token count for a provider, resolved from the locally-aggregated totals.
+    private func todayTokens(for provider: Provider) -> Double? {
+        switch provider {
+        case .pi: return piTotals?.todayTokens
+        case .openCode: return openCodeTotals?.todayTokens
+        case .fx: return fxTotals?.todayTokens
+        case .sarvamCode: return sarvamCodeTotals.map { Double($0.todayTokens) }
+        default: return nil
+        }
     }
 
     private struct LocalSpendRow {
