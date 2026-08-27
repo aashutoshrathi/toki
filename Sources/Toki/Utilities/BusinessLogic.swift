@@ -24,6 +24,10 @@ func nextResetDate(for account: AccountConfig, state: AccountUsageState?) -> Dat
 // (tier 1, since there's at least a live signal), then agent-detection-only providers
 // sitting idle (tier 2). Everything else (error state, remaining ratio) only breaks
 // ties within a tier - it never lets an idle no-API card outrank a real quota card.
+//
+// A live session is the last tiebreak rather than the first: cost-tracked providers
+// (Pi, Sarvam Code, fx, OpenCode) have no quota headroom to rank by, so without it they
+// all tie and fall back to the order UsageFetcher happens to append them in.
 func sortedByAvailability(_ snapshots: [AccountSnapshot], activeProviders: Set<Provider> = []) -> [AccountSnapshot] {
     snapshots.enumerated()
         .sorted { lhs, rhs in
@@ -48,6 +52,12 @@ func sortedByAvailability(_ snapshots: [AccountSnapshot], activeProviders: Set<P
 
             if let leftRemaining, let rightRemaining, leftRemaining != rightRemaining {
                 return leftRemaining > rightRemaining
+            }
+
+            let leftActive = activeProviders.contains(left.provider)
+            let rightActive = activeProviders.contains(right.provider)
+            if leftActive != rightActive {
+                return leftActive
             }
 
             return lhs.offset < rhs.offset
