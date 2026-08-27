@@ -107,14 +107,17 @@ struct SpendAnalyticsPanel: View {
 
             if isLoadingLocalTotals && hasLocalCostProvider {
                 HStack(spacing: 4) {
-                    spendBlock(label: "Today", money: .usd(0))
-                    spendBlock(label: "Week", money: .usd(0))
-                    spendBlock(label: "Month", money: .usd(0))
-                    spendBlock(label: "All Time", money: .usd(0))
+                    spendBlock(label: "Today", money: .usd(0), tokens: 0)
+                    spendBlock(label: "Week", money: .usd(0), tokens: 0)
+                    spendBlock(label: "Month", money: .usd(0), tokens: 0)
+                    spendBlock(label: "All Time", money: .usd(0), tokens: 0)
                 }
                 .redacted(reason: .placeholder)
             } else {
                 ForEach(localSpendRows, id: \.currencyCode) { row in
+                    // Either every block in a row carries a token line or none does, so the
+                    // four surfaces stay the same height when only some periods have usage.
+                    let tokens = row.allTimeTokens > 0
                     VStack(alignment: .leading, spacing: 4) {
                         if localSpendRows.count > 1 {
                             Text(row.currencyCode)
@@ -122,10 +125,10 @@ struct SpendAnalyticsPanel: View {
                                 .foregroundStyle(.tertiary)
                         }
                         HStack(spacing: 4) {
-                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode), tokens: row.todayTokens)
-                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode), tokens: row.weekTokens)
-                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode), tokens: row.monthTokens)
-                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode), tokens: row.allTimeTokens)
+                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode), tokens: tokens ? row.todayTokens : nil)
+                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode), tokens: tokens ? row.weekTokens : nil)
+                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode), tokens: tokens ? row.monthTokens : nil)
+                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode), tokens: tokens ? row.allTimeTokens : nil)
                         }
                     }
                 }
@@ -148,14 +151,16 @@ struct SpendAnalyticsPanel: View {
         }
     }
 
-    private func spendBlock(label: String, money: Money, tokens: Double = 0) -> some View {
+    private func spendBlock(label: String, money: Money, tokens: Double?) -> some View {
         VStack(spacing: 4) {
             Text(formatMoney(money))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            if tokens > 0 {
-                Text(formatCompact(tokens))
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+            if let tokens {
+                Text("\(formatCompact(tokens)) tokens")
+                    .font(.system(size: 9))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             Text(label)
                 .font(.system(size: 9))
@@ -268,11 +273,20 @@ struct SpendAnalyticsPanel: View {
     }
 
     private func sessionCostGroups(_ agents: [ActiveAgent]) -> [(currencyCode: String, agents: [ActiveAgent])] {
-        Dictionary(grouping: agents.filter { $0.sessionUsage?.cost != nil }) {
-            $0.sessionUsage?.currencyCode ?? "USD"
+        let billed = agents.filter { $0.sessionUsage?.cost != nil }
+        let grouped: [String: [ActiveAgent]] = Dictionary(grouping: billed) { agent in
+            agent.sessionUsage?.currencyCode ?? "USD"
         }
-        .map { (currencyCode: $0.key, agents: $0.value) }
-        .sorted { $0.currencyCode < $1.currencyCode }
+        // Costliest first, so the capped session list leads with the sessions worth seeing.
+        return grouped
+            .map { key, value -> (currencyCode: String, agents: [ActiveAgent]) in
+                (currencyCode: key, agents: value.sorted { cost(of: $0) > cost(of: $1) })
+            }
+            .sorted { $0.currencyCode < $1.currencyCode }
+    }
+
+    private func cost(of agent: ActiveAgent) -> Double {
+        agent.sessionUsage?.cost ?? 0
     }
 
     // MARK: - Quota (%)
@@ -514,14 +528,12 @@ struct SpendAnalyticsPanel: View {
         }
     }
 
-    private struct LocalSpendRow {
+    struct LocalSpendRow: Equatable {
         let currencyCode: String
         var today = 0.0
         var week = 0.0
         var month = 0.0
         var allTime = 0.0
-        // Token totals are currency-agnostic, so they are tracked on the USD row only and
-        // displayed alongside the cost in each spend block.
         var todayTokens = 0.0
         var weekTokens = 0.0
         var monthTokens = 0.0
@@ -529,59 +541,73 @@ struct SpendAnalyticsPanel: View {
     }
 
     private var localSpendRows: [LocalSpendRow] {
+        Self.spendRows(pi: piTotals, openCode: openCodeTotals, fx: fxTotals, sarvam: sarvamCodeTotals)
+    }
+
+    /// Per-currency spend rows, with each provider's token counts attributed to the currency
+    /// that provider actually bills in.
+    ///
+    /// nonisolated + static so the currency attribution can be tested without a rendered view,
+    /// matching `agentID(at:in:agents:)` above.
+    nonisolated static func spendRows(
+        pi: PiUsageClient.Totals?,
+        openCode: OpenCodeUsageClient.Totals?,
+        fx: FxUsageClient.Totals?,
+        sarvam: SarvamCodeUsageClient.Totals?
+    ) -> [LocalSpendRow] {
         var rows: [String: LocalSpendRow] = [:]
         func add(_ amount: Double, currency: String, keyPath: WritableKeyPath<LocalSpendRow, Double>) {
             var row = rows[currency] ?? LocalSpendRow(currencyCode: currency)
             row[keyPath: keyPath] += amount
             rows[currency] = row
         }
-        func addTokens(_ tokens: Double, keyPath: WritableKeyPath<LocalSpendRow, Double>) {
-            var row = rows["USD"] ?? LocalSpendRow(currencyCode: "USD")
-            row[keyPath: keyPath] += tokens
-            rows["USD"] = row
+        func addUSD(costs: (Double, Double, Double, Double), tokens: (Double, Double, Double, Double)) {
+            add(costs.0, currency: "USD", keyPath: \.today)
+            add(costs.1, currency: "USD", keyPath: \.week)
+            add(costs.2, currency: "USD", keyPath: \.month)
+            add(costs.3, currency: "USD", keyPath: \.allTime)
+            add(tokens.0, currency: "USD", keyPath: \.todayTokens)
+            add(tokens.1, currency: "USD", keyPath: \.weekTokens)
+            add(tokens.2, currency: "USD", keyPath: \.monthTokens)
+            add(tokens.3, currency: "USD", keyPath: \.allTimeTokens)
         }
-        var usdSources: [(Double, Double, Double, Double)] = []
-        if let piTotals {
-            usdSources.append((piTotals.todayCost, piTotals.weekCost, piTotals.monthCost, piTotals.allTimeCost))
-            addTokens(piTotals.todayTokens, keyPath: \.todayTokens)
-            addTokens(piTotals.weekTokens, keyPath: \.weekTokens)
-            addTokens(piTotals.monthTokens, keyPath: \.monthTokens)
-            addTokens(piTotals.allTimeTokens, keyPath: \.allTimeTokens)
+
+        if let pi {
+            addUSD(
+                costs: (pi.todayCost, pi.weekCost, pi.monthCost, pi.allTimeCost),
+                tokens: (pi.todayTokens, pi.weekTokens, pi.monthTokens, pi.allTimeTokens)
+            )
         }
-        if let openCodeTotals {
-            usdSources.append((openCodeTotals.todayCost, openCodeTotals.weekCost, openCodeTotals.monthCost, openCodeTotals.allTimeCost))
-            addTokens(openCodeTotals.todayTokens, keyPath: \.todayTokens)
-            addTokens(openCodeTotals.weekTokens, keyPath: \.weekTokens)
-            addTokens(openCodeTotals.monthTokens, keyPath: \.monthTokens)
-            addTokens(openCodeTotals.allTimeTokens, keyPath: \.allTimeTokens)
+        if let openCode {
+            addUSD(
+                costs: (openCode.todayCost, openCode.weekCost, openCode.monthCost, openCode.allTimeCost),
+                tokens: (openCode.todayTokens, openCode.weekTokens, openCode.monthTokens, openCode.allTimeTokens)
+            )
         }
-        if let fxTotals {
-            usdSources.append((fxTotals.todayCost, fxTotals.weekCost, fxTotals.monthCost, fxTotals.allTimeCost))
-            addTokens(fxTotals.todayTokens, keyPath: \.todayTokens)
-            addTokens(fxTotals.weekTokens, keyPath: \.weekTokens)
-            addTokens(fxTotals.monthTokens, keyPath: \.monthTokens)
-            addTokens(fxTotals.allTimeTokens, keyPath: \.allTimeTokens)
+        if let fx {
+            addUSD(
+                costs: (fx.todayCost, fx.weekCost, fx.monthCost, fx.allTimeCost),
+                tokens: (fx.todayTokens, fx.weekTokens, fx.monthTokens, fx.allTimeTokens)
+            )
         }
-        for source in usdSources {
-            add(source.0, currency: "USD", keyPath: \.today)
-            add(source.1, currency: "USD", keyPath: \.week)
-            add(source.2, currency: "USD", keyPath: \.month)
-            add(source.3, currency: "USD", keyPath: \.allTime)
-        }
-        if let sarvamCodeTotals {
-            for money in sarvamCodeTotals.todayCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.today) }
-            for money in sarvamCodeTotals.weekCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.week) }
-            for money in sarvamCodeTotals.monthCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.month) }
-            for money in sarvamCodeTotals.allTimeCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.allTime) }
-            addTokens(Double(sarvamCodeTotals.todayTokens), keyPath: \.todayTokens)
-            addTokens(Double(sarvamCodeTotals.weekTokens), keyPath: \.weekTokens)
-            addTokens(Double(sarvamCodeTotals.monthTokens), keyPath: \.monthTokens)
-            addTokens(Double(sarvamCodeTotals.allTimeTokens), keyPath: \.allTimeTokens)
-            if sarvamCodeTotals.allTimeCosts.isEmpty, rows["USD"] == nil {
-                rows["USD"] = LocalSpendRow(currencyCode: "USD")
-            }
+        if let sarvam {
+            for money in sarvam.todayCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.today) }
+            for money in sarvam.weekCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.week) }
+            for money in sarvam.monthCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.month) }
+            for money in sarvam.allTimeCosts.sortedMoney { add(money.amount, currency: money.currencyCode, keyPath: \.allTime) }
+            let base = dominantCurrency(sarvam.allTimeCosts) ?? "USD"
+            add(Double(sarvam.todayTokens), currency: dominantCurrency(sarvam.todayCosts) ?? base, keyPath: \.todayTokens)
+            add(Double(sarvam.weekTokens), currency: dominantCurrency(sarvam.weekCosts) ?? base, keyPath: \.weekTokens)
+            add(Double(sarvam.monthTokens), currency: dominantCurrency(sarvam.monthCosts) ?? base, keyPath: \.monthTokens)
+            add(Double(sarvam.allTimeTokens), currency: base, keyPath: \.allTimeTokens)
         }
         return rows.values.sorted { $0.currencyCode < $1.currencyCode }
+    }
+
+    /// The currency carrying the most spend, or nil when nothing has been billed yet.
+    /// Ties resolve to the alphabetically first code, so the choice is stable across refreshes.
+    nonisolated private static func dominantCurrency(_ totals: MoneyTotals) -> String? {
+        totals.sortedMoney.max { $0.amount < $1.amount }?.currencyCode
     }
 }
 

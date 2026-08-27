@@ -107,6 +107,7 @@ struct OpenCodeUsageClient {
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: now).map { Int($0.start.timeIntervalSince1970) } ?? 0
         let monthStart = calendar.dateInterval(of: .month, for: now).map { Int($0.start.timeIntervalSince1970) } ?? 0
 
+        let tokens = tokenSumExpression(db: db)
         let row = try Self.staticQuery(
             db: db,
             sql: """
@@ -115,10 +116,10 @@ struct OpenCodeUsageClient {
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN cost END),0), \
             IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN cost END),0), \
             IFNULL(SUM(cost),0), \
-            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(dayStart) THEN tokens_input + tokens_output END),0), \
-            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN tokens_input + tokens_output END),0), \
-            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN tokens_input + tokens_output END),0), \
-            IFNULL(SUM(tokens_input + tokens_output),0) FROM session;
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(dayStart) THEN \(tokens) END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(weekStart) THEN \(tokens) END),0), \
+            IFNULL(SUM(CASE WHEN time_updated/1000 >= \(monthStart) THEN \(tokens) END),0), \
+            IFNULL(SUM(\(tokens)),0) FROM session;
             """
         )
 
@@ -132,6 +133,17 @@ struct OpenCodeUsageClient {
             monthTokens: row.value(6),
             allTimeTokens: row.value(7)
         )
+    }
+
+    static func tokenSumExpression(db: String) -> String {
+        let required = ["tokens_input", "tokens_output"]
+        let optional = ["tokens_cache_read", "tokens_cache_write"]
+        let present = Set(
+            ((try? sqliteOutput(db: db, sql: "PRAGMA table_info(session);")) ?? "")
+                .split(separator: "\n")
+                .compactMap { $0.split(separator: "|").dropFirst().first.map(String.init) }
+        )
+        return (required + optional.filter(present.contains)).joined(separator: " + ")
     }
 
     private static func staticQuery(db: String, sql: String) throws -> Row {
