@@ -12,6 +12,7 @@
 
 ### Changed
 
+- **Recent and weekly quotas share one compact account-card view.** Claude Code and Codex now show every applicable rolling window side by side, including reset countdowns when provided, while plans that expose only one window keep the single-window layout and Codex reset credits stay directly beneath it.
 - **The menu bar mode list is current again.** Claude + Codex ran the identical code path to Smart, so it was two menu entries for one behaviour, and Accounts drew an anonymous grey dot and a count that told you less than any other mode. Both are gone. Existing settings carry over: Claude and Codex become pins for those providers, Claude + Codex and Accounts become Smart.
 - **Settings are grouped into sections that say what they are.** Remote Control and Permissions were two unlabelled cards stacked directly on each other, reading as one long card; they now lead the panel with headers of their own. Show AI insight and Show quota rings move into a new Layout section under General. Remote Control is the tallest card in the panel and gets a roomier rhythm to match.
 - **Remote Control wears a joystick.** The antenna glyph is now an arcade stick, in all three places the feature appears: its Settings card, the panel header button that opens it, and the menu bar indicator that shows the server is running.

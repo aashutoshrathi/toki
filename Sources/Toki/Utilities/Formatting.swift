@@ -47,6 +47,26 @@ func resetDescription(for resetDate: Date) -> String {
     return "\(countdown) (\(formatter.string(from: resetDate)))"
 }
 
+// Compact quota cards already establish that the secondary line is a reset time. Keep only the
+// relative countdown there; the full relative and absolute description remains in the tooltip
+// and expanded metric row. This function only shortens strings produced by Toki itself.
+func compactResetDescription(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+        return nil
+    }
+
+    let prefix = "resets in "
+    let hasPrefix = value.hasPrefix(prefix)
+    var countdown = hasPrefix ? String(value.dropFirst(prefix.count)) : value
+    if let dateStart = countdown.range(of: " (") {
+        countdown = String(countdown[..<dateStart.lowerBound])
+    }
+    countdown = countdown.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !countdown.isEmpty else { return nil }
+    if countdown == "now" { return countdown }
+    return hasPrefix ? "in \(countdown)" : countdown
+}
+
 func formatCompact(_ value: Double) -> String {
     let absValue = abs(value)
     let scaled: Double
