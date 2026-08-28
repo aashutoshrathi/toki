@@ -415,6 +415,7 @@ struct MenuContentView: View {
                         }
                     }
                 }
+                .padding(.trailing, 8)
             }
             .frame(maxHeight: .infinity)
         }
