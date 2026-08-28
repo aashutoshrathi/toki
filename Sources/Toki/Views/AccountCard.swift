@@ -465,7 +465,7 @@ struct AccountCard: View {
                     .buttonStyle(.plain)
                     .disabled(isResetting)
                     .pointerOnHover()
-                    .help("Redeem a banked reset to reset this rate-limit window now")
+                    .help(resetButtonHelp)
                     .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
                         Button("Redeem reset", role: .destructive) {
                             store.consumeCodexResetCredit(accountID: snapshot.id)
