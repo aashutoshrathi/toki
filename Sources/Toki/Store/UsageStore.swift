@@ -54,7 +54,9 @@ final class UsageStore: ObservableObject {
     var dailyActivityScannedAt: Date?
     var eventGeneration = 0
     var insightGeneration = 0
-    var notificationAuthorization: Bool?
+    /// Last status read back from macOS, so the checklist can report it without asking again.
+    /// nil until something has looked.
+    var notificationAuthorization: NotificationAuthorization?
     var agentTimer: Timer?
     // The provider scan in flight, so a caller that needs a fresh one can wait for it rather than
     // colliding with it and silently doing nothing.
