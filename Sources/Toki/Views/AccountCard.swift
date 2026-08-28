@@ -460,12 +460,12 @@ struct AccountCard: View {
                     Button {
                         confirmingReset = true
                     } label: {
-                        ResetCreditBadge(count: snapshot.resetCreditsAvailable)
+                        ResetCreditBadge(count: snapshot.resetCreditsAvailable, expiry: snapshot.resetCreditExpiry)
                     }
                     .buttonStyle(.plain)
                     .disabled(isResetting)
                     .pointerOnHover()
-                    .help("Redeem a banked reset to reset this rate-limit window now")
+                    .help(resetButtonHelp)
                     .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
                         Button("Redeem reset", role: .destructive) {
                             store.consumeCodexResetCredit(accountID: snapshot.id)
@@ -566,18 +566,31 @@ struct AccountCard: View {
     }
 
     private var resetButtonHelp: String {
-        "Redeem a banked reset credit to reset this rate limit window now"
+        var help = "Redeem a banked reset credit to reset this rate limit window now"
+        if let expiry = snapshot.resetCreditExpiry {
+            help += ". Expires \(resetDescription(for: expiry))."
+        }
+        return help
     }
 
     // A reset is a limited, banked resource: redeeming while quota remains discards the rest
     // of the current window. State how much is still left so the confirmation is an informed
-    // choice rather than a bare warning.
+    // choice rather than a bare warning. Also surface the credit's expiry when known, so the
+    // user can decide whether to redeem now or wait (issue #130).
     private var resetWasteWarning: String {
         let leftRatio = snapshot.remainingRatio ?? progressRatio.map { 1 - $0 }
-        guard let percentLeft = leftRatio.map({ Int(($0 * 100).rounded()) }) else {
-            return "A reset is a limited banked credit and redeeming it now discards the quota you haven't used yet. Redeem anyway?"
+        if let percentLeft = leftRatio.map({ Int(($0 * 100).rounded()) }) {
+            var warning = "You still have \(percentLeft)% of this window left. A reset is a limited banked credit, and redeeming it now discards that remaining quota."
+            if let expiry = snapshot.resetCreditExpiry {
+                warning += " This reset credit expires \(resetDescription(for: expiry))."
+            }
+            return warning + " Redeem anyway?"
         }
-        return "You still have \(percentLeft)% of this window left. A reset is a limited banked credit, and redeeming it now discards that remaining quota. Redeem anyway?"
+        var warning = "A reset is a limited banked credit and redeeming it now discards the quota you haven't used yet."
+        if let expiry = snapshot.resetCreditExpiry {
+            warning += " This reset credit expires \(resetDescription(for: expiry))."
+        }
+        return warning + " Redeem anyway?"
     }
 
     private var statusColor: Color {

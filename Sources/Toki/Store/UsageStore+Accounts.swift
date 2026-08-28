@@ -146,13 +146,24 @@ func codexSnapshotAfterReset(_ snapshot: AccountSnapshot, resetsQuota: Bool) -> 
     guard snapshot.provider == .codex else { return snapshot }
     var updated = snapshot
     updated.resetCreditsAvailable = max(0, snapshot.resetCreditsAvailable - 1)
+    // The consumed credit's expiry no longer applies. The next refresh will repopulate
+    // resetCreditExpiry from the backend's remaining credits, but we can't fabricate it
+    // locally, so clear it to avoid showing a stale deadline.
+    if updated.resetCreditsAvailable == 0 {
+        updated.resetCreditExpiry = nil
+    }
 
     let windowLabels = Set([snapshot.primaryWindow?.label, snapshot.secondaryWindow?.label].compactMap { $0 })
     updated.metrics = snapshot.metrics.compactMap { metric in
         if metric.label == "Resets" {
-            return updated.resetCreditsAvailable > 0
-                ? MetricLine(label: "Resets", value: "\(updated.resetCreditsAvailable) available")
-                : nil
+            if updated.resetCreditsAvailable > 0 {
+                var value = "\(updated.resetCreditsAvailable) available"
+                if let expiry = updated.resetCreditExpiry {
+                    value += " · expires \(resetDescription(for: expiry))"
+                }
+                return MetricLine(label: "Resets", value: value)
+            }
+            return nil
         }
         if resetsQuota, windowLabels.contains(metric.label) {
             return MetricLine(label: metric.label, value: "0% used")

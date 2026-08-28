@@ -40,6 +40,7 @@ struct CodexUsageClient {
             remainingRatio: rateLimits.remainingRatio,
             progressRatio: rateLimits.progressRatio,
             resetCreditsAvailable: rateLimits.resetCreditsAvailable,
+            resetCreditExpiry: rateLimits.resetCreditExpiry,
             metrics: rateLimits.metrics + usage.metrics,
             accountInfo: CodexAccountInfo.lines(from: payload.account)
                 + Self.binaryInfoLines(payload.binarySource),
