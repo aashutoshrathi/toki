@@ -27,7 +27,7 @@ struct MenuBarStatusView: View {
                 }
             }
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, metrics.horizontalPadding)
         .frame(height: 22)
     }
 
@@ -78,11 +78,12 @@ struct MenuBarStatusView: View {
         }
     }
 
-    // The percent sign is the one character in the readout that carries no information the
-    // glyph beside it doesn't already imply, so the tighter densities spend its width on
-    // something else. Cost readouts ("$12.30") have no percent sign and are left alone.
+    // Compact only. The percent sign is the one character carrying no information the glyph
+    // beside it doesn't already imply, so the density whose whole job is width spends it on
+    // something else. Stacked has already halved the width by going vertical and has the room
+    // to keep it. Cost readouts ("$12.30") have no percent sign and are left alone.
     private func displayValue(for entry: MenuBarStatusEntry) -> String {
-        guard density != .comfortable, entry.value.hasSuffix("%") else { return entry.value }
+        guard density == .compact, entry.value.hasSuffix("%") else { return entry.value }
         return String(entry.value.dropLast())
     }
 
@@ -119,7 +120,7 @@ struct MenuBarStatusView: View {
             switch density {
             case .comfortable: return 4
             case .compact: return 3
-            case .stacked: return 3
+            case .stacked: return 4
             }
         }
 
@@ -127,7 +128,18 @@ struct MenuBarStatusView: View {
             switch density {
             case .comfortable: return 30
             case .compact: return 22
-            case .stacked: return 18
+            // Wide enough for "100%", which is the longest thing a stacked row draws.
+            case .stacked: return 24
+            }
+        }
+
+        /// Breathing room against whatever sits next to Toki on the bar. Stacked gets more of
+        /// it: two short rows read as a single dense block, so the same 2pt that suits a
+        /// single-row readout leaves it looking wedged against its neighbours.
+        var horizontalPadding: CGFloat {
+            switch density {
+            case .comfortable, .compact: return 2
+            case .stacked: return 5
             }
         }
     }
