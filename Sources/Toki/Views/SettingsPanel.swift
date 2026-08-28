@@ -69,6 +69,70 @@ struct SettingsPanel: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader("Remote Control")
+
+                    remoteControlCard
+                        .id(SettingsAnchor.remoteControl)
+
+                    sectionHeader("Permissions")
+
+                    permissionsCard
+
+                    sectionHeader("General")
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "power",
+                            iconColor: .secondary,
+                            title: "Launch at login",
+                            subtitle: "Start Toki automatically after you sign in."
+                        )
+                        Spacer(minLength: 8)
+                        Toggle("", isOn: launchAtLoginBinding)
+                            .accessibilityLabel("Launch at login")
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+
+                    if launchAtLoginNeedsApproval {
+                        HStack(spacing: 4) {
+                            Text("Needs approval in System Settings > General > Login Items.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Button("Open") {
+                                LaunchAtLogin.openSystemSettings()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.blue)
+                            .pointerOnHover()
+                        }
+                        .padding(.leading, 26)
+                    }
+
+                    if let launchAtLoginError {
+                        Text(launchAtLoginError)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.red)
+                            .padding(.leading, 26)
+                    }
+                }
+                .padding(8)
+                .settingsCard()
+
+                menuBarCard
+
+                // Sits directly under the menu bar picker: it decides where the readout lives,
+                // so it belongs with the other placement settings rather than below the
+                // notification thresholds it had nothing to do with.
+                if NotchWindowController.isSupported {
+                    notchModeRow
+                }
+
+                sectionHeader("Layout")
+
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         cardLabel(
@@ -127,64 +191,6 @@ struct SettingsPanel: View {
                 }
                 .padding(8)
                 .settingsCard()
-
-                    remoteControlCard
-                        .id(SettingsAnchor.remoteControl)
-
-                    permissionsCard
-
-                    sectionHeader("General")
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        cardLabel(
-                            icon: "power",
-                            iconColor: .secondary,
-                            title: "Launch at login",
-                            subtitle: "Start Toki automatically after you sign in."
-                        )
-                        Spacer(minLength: 8)
-                        Toggle("", isOn: launchAtLoginBinding)
-                            .accessibilityLabel("Launch at login")
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                    }
-
-                    if launchAtLoginNeedsApproval {
-                        HStack(spacing: 4) {
-                            Text("Needs approval in System Settings > General > Login Items.")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.secondary)
-                            Button("Open") {
-                                LaunchAtLogin.openSystemSettings()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.blue)
-                            .pointerOnHover()
-                        }
-                        .padding(.leading, 26)
-                    }
-
-                    if let launchAtLoginError {
-                        Text(launchAtLoginError)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.red)
-                            .padding(.leading, 26)
-                    }
-                }
-                .padding(8)
-                .settingsCard()
-
-                menuBarCard
-
-                // Sits directly under the menu bar picker: it decides where the readout lives,
-                // so it belongs with the other placement settings rather than below the
-                // notification thresholds it had nothing to do with.
-                if NotchWindowController.isSupported {
-                    notchModeRow
-                }
 
                 sectionHeader("Notifications")
 
@@ -456,19 +462,22 @@ struct SettingsPanel: View {
 
             if store.preferences.menuBarMode == .pinned {
                 Divider()
-                    .padding(.horizontal, 8)
+                    .padding(.leading, 34)
                 pinnedProvidersRow
             }
 
             // Logo-only draws no numbers, so there is no density for it to change.
             if store.preferences.menuBarMode != .logoOnly {
                 Divider()
-                    .padding(.horizontal, 8)
+                    .padding(.leading, 34)
                 HStack(spacing: 8) {
                     Text("Size")
                         .font(.system(size: 11, weight: .semibold))
                         .padding(.leading, 26)
                     Spacer(minLength: 8)
+                    // No fixedSize here, unlike the notch row below: three density names are
+                    // wider than the card can spare, and a segmented picker held at its
+                    // intrinsic width squeezes the label beside it down to nothing.
                     Picker("Size", selection: binding(\.menuBarDensity)) {
                         ForEach(MenuBarDensity.allCases) { density in
                             Text(density.label).tag(density)
@@ -476,7 +485,6 @@ struct SettingsPanel: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .fixedSize()
                     .help("Compact shrinks the text and drops the percent sign; Stacked puts two providers on two rows")
                 }
                 .padding(8)
@@ -591,7 +599,7 @@ struct SettingsPanel: View {
 
             if store.preferences.notchModeEnabled {
                 Divider()
-                    .padding(.horizontal, 8)
+                    .padding(.leading, 34)
                 HStack(spacing: 8) {
                     Text("Rests")
                         .font(.system(size: 11, weight: .semibold))
@@ -616,8 +624,11 @@ struct SettingsPanel: View {
     }
 
     @ViewBuilder
+    // Roomier than the other cards on purpose: it is the tallest one in the panel, stacking a
+    // toggle, two pickers, an explanation, a disclosure, and up to three advisory notes, and
+    // at the shared 8pt rhythm those ran together into a wall.
     private var remoteControlCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 8) {
                 cardLabel(
                     icon: "antenna.radiowaves.left.and.right",
@@ -841,7 +852,8 @@ struct SettingsPanel: View {
                     .padding(.horizontal, 4)
             }
         }
-        .padding(8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 12)
         .settingsCard()
         .sheet(isPresented: $showingConnect) {
             RemoteConnectSheet()

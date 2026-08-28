@@ -31,17 +31,24 @@ struct MenuBarStatusView: View {
         .frame(height: 22)
     }
 
-    // The bare template mark rather than TokiLogoMark, which carries a glass background that
-    // would read as a tile floating in the menu bar. Template rendering also lets AppKit tint
-    // it like every other status icon, so it stays legible against a light bar.
+    // The same mark the panel header draws, minus its glass tile, so the menu bar and the
+    // panel show one logo rather than two versions of it.
+    //
+    // It is an app-icon canvas: the artwork covers a little over half the square, with the
+    // rest transparent padding meant to sit inside a squircle. Drawn at icon size that
+    // padding is most of what you get, and the mark reads as a speck beside the system's own
+    // status icons. So it is drawn oversized and cropped back to the icon box, which throws
+    // away the margin instead of the detail.
     private var tokiMark: some View {
-        SVGLogoMark(asset: "toki-router-mark", size: 15, template: true) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 12, weight: .semibold))
-        }
-        .foregroundStyle(.primary)
-        .accessibilityLabel("Toki")
+        TokiLogoMark(size: Self.markInk / Self.markInkRatio, showsBackground: false)
+            .frame(width: Self.markInk, height: Self.markInk)
+            .clipped()
     }
+
+    /// Matches the 18pt AppKit uses for a template status icon inside the 22pt bar.
+    private static let markInk: CGFloat = 18
+    /// Share of the asset's square that the glyph actually inks.
+    private static let markInkRatio: CGFloat = 0.57
 
     // Two half-height rows instead of one full-height one, so a two-provider readout costs
     // roughly half the width. Beyond two entries the rows would stop being legible at this

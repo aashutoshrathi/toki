@@ -83,6 +83,11 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertEqual(state.history.count, 1, "a retired mode must not cost the user their history")
     }
 
+    func testRetiredAccountsMenuBarModeDecodesAsSmart() throws {
+        let state = try decodeState(#"{"preferences": {"menuBarMode": "accounts"}}"#)
+        XCTAssertEqual(state.preferences.menuBarMode, .smart)
+    }
+
     func testRetiredProviderMenuBarModesBecomePinsForThatProvider() throws {
         // The retired mode matched the whole Claude family, so both survive the migration and
         // the one the user has no account for is skipped at render time.

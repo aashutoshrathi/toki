@@ -85,8 +85,6 @@ func menuBarEntries(
         return lowestMenuBarEntries(for: snapshots)
     case .pinned:
         return pinnedMenuBarEntries(for: snapshots, pinnedProviders: pinnedProviders)
-    case .accounts:
-        return [MenuBarStatusEntry(provider: .manual, value: "\(snapshots.filter { !$0.isError }.count)")]
     case .logoOnly:
         return []
     }

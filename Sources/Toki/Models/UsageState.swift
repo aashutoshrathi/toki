@@ -58,7 +58,6 @@ enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
     case smart
     case lowest
     case pinned
-    case accounts
     case logoOnly
 
     var id: String { rawValue }
@@ -68,7 +67,6 @@ enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
         case .smart: return "Smart"
         case .lowest: return "Lowest"
         case .pinned: return "Pinned"
-        case .accounts: return "Accounts"
         case .logoOnly: return "Logo only"
         }
     }
@@ -78,21 +76,21 @@ enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
         case .smart: return "The account you are on, plus Codex"
         case .lowest: return "Whichever quota is closest to running out"
         case .pinned: return "Only the providers you choose"
-        case .accounts: return "How many accounts are connected"
         case .logoOnly: return "Just the Toki mark, no numbers"
         }
     }
 
     /// Reads a stored raw value, including ones written by versions before 3.1. `combined`
     /// was an exact duplicate of `smart`, and the two hardcoded provider modes are now
-    /// `pinned` with the provider itself carried in `menuBarPinnedProviders`.
+    /// `pinned` with the provider itself carried in `menuBarPinnedProviders`. `accounts` drew
+    /// an anonymous grey dot and a count, which told you less than any other mode.
     ///
     /// The retired Claude mode matched the whole Claude family, not just Claude Code, so it
     /// migrates to a pin on both. Pins that match no connected account are skipped, so a user
     /// on one of the two still sees exactly the single segment they saw before.
     static func stored(rawValue: String) -> (mode: MenuBarDisplayMode, pinned: [Provider])? {
         switch rawValue {
-        case "combined": return (.smart, [])
+        case "combined", "accounts": return (.smart, [])
         case "activeClaude": return (.pinned, [.claudeCode, .claude])
         case "codex": return (.pinned, [.codex])
         default: return MenuBarDisplayMode(rawValue: rawValue).map { ($0, []) }
