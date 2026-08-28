@@ -59,6 +59,7 @@ struct UsageMetric {
 struct ClaudeCodeUsage {
     var primaryMetric: UsageMetric?
     var metrics: [MetricLine] = []
+    var rateLimitWindows: [RateLimitWindow] = []
     var worstUtilization: Double?
 
     var hasUsage: Bool {
@@ -69,7 +70,7 @@ struct ClaudeCodeUsage {
         guard let data = json as? [String: Any] else { return }
 
         if let fiveHour = data["five_hour"] as? [String: Any] {
-            setPrimaryWindow("Daily", fiveHour)
+            appendWindow("5h", fiveHour)
         }
         if let sevenDay = data["seven_day"] as? [String: Any] {
             appendWindow("7d", sevenDay)
@@ -79,27 +80,31 @@ struct ClaudeCodeUsage {
         }
     }
 
-    private mutating func setPrimaryWindow(_ label: String, _ window: [String: Any]) {
-        let utilization = numericValue(window["utilization"] ?? 0)
+    private mutating func appendWindow(_ label: String, _ window: [String: Any]) {
+        // Anthropic keeps a window key in the response even when that quota does not apply,
+        // using null utilization. Treat that as absent rather than inventing 0% usage.
+        guard let utilization = optionalNumber(window["utilization"]) else { return }
+
         worstUtilization = max(worstUtilization ?? utilization, utilization)
-        primaryMetric = UsageMetric(
+        let reset = resetDescription(window["resets_at"])
+        let metric = UsageMetric(
             label: label,
             utilization: utilization,
-            resetDescription: resetDescription(window["resets_at"])
+            resetDescription: reset
         )
-        var value = "\(Int(utilization.rounded()))% used"
-        if let reset = primaryMetric?.resetDescription {
-            value += " - resets in \(reset)"
+        if primaryMetric == nil {
+            primaryMetric = metric
         }
-        metrics.append(MetricLine(label: label, value: value))
-    }
 
-    private mutating func appendWindow(_ label: String, _ window: [String: Any]) {
-        let utilization = numericValue(window["utilization"] ?? 0)
-        worstUtilization = max(worstUtilization ?? utilization, utilization)
+        let clampedUsed = max(0, min(100, utilization))
+        rateLimitWindows.append(RateLimitWindow(
+            label: label,
+            percentLeft: Int((100 - clampedUsed).rounded()),
+            resetHint: reset.map { "resets in \($0)" }
+        ))
 
         var value = "\(Int(utilization.rounded()))% used"
-        if let reset = resetDescription(window["resets_at"]) {
+        if let reset {
             value += " - resets in \(reset)"
         }
         metrics.append(MetricLine(label: label, value: value))

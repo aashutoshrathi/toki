@@ -448,15 +448,22 @@ struct AccountCard: View {
             }
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-        } else if snapshot.provider == .codex, !codexWindows.isEmpty {
-            // Codex carries two independent quota windows (5h + weekly) instead of Claude's
-            // single rolling one, so it gets its own summary instead of the generic fallback
-            // to a raw token count below - shows just one line when only one window is available.
+        } else if !quotaWindows.isEmpty {
+            // Providers expose only the windows that apply to the selected allowance. Keep each
+            // one in its own compact column instead of merging unrelated quota buckets or adding
+            // an empty placeholder when a plan has only a recent or weekly limit.
             VStack(alignment: .trailing, spacing: 3) {
-                ForEach(codexWindows) { window in
-                    QuotaSummaryLine(label: window.label, value: "\(window.percentLeft)% left", resetHint: window.resetHint)
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(quotaWindows) { window in
+                        QuotaSummaryLine(
+                            label: window.label,
+                            value: "\(window.percentLeft)% left",
+                            resetHint: window.resetHint
+                        )
+                        .frame(minWidth: quotaWindows.count > 1 ? 68 : nil, alignment: .trailing)
+                    }
                 }
-                if snapshot.resetCreditsAvailable > 0 {
+                if snapshot.provider == .codex, snapshot.resetCreditsAvailable > 0 {
                     Button {
                         confirmingReset = true
                     } label: {
@@ -481,7 +488,7 @@ struct AccountCard: View {
         }
     }
 
-    private var codexWindows: [RateLimitWindow] {
+    private var quotaWindows: [RateLimitWindow] {
         [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
     }
 
