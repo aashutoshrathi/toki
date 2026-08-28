@@ -321,6 +321,7 @@ struct StatusBadge: View {
 // stays in the expanded view, gated on the window being mostly spent.
 struct ResetCreditBadge: View {
     var count: Int
+    var expiry: Date?
 
     var body: some View {
         HStack(spacing: 3) {
@@ -335,9 +336,17 @@ struct ResetCreditBadge: View {
         .background(Color.blue.opacity(0.10), in: Capsule())
         .overlay(Capsule().stroke(Color.blue.opacity(0.22), lineWidth: 1))
         .fixedSize()
-        .help(count > 1 ? "\(count) rate-limit resets are banked and ready to redeem"
-                        : "A rate-limit reset is banked and ready to redeem")
+        .help(badgeHelp)
         .accessibilityLabel(count > 1 ? "\(count) resets available" : "1 reset available")
+    }
+
+    private var badgeHelp: String {
+        let base = count > 1 ? "\(count) rate-limit resets are banked and ready to redeem"
+                             : "A rate-limit reset is banked and ready to redeem"
+        if let expiry {
+            return "\(base). Expires \(resetDescription(for: expiry))."
+        }
+        return base
     }
 }
 

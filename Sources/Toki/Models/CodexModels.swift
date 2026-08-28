@@ -91,6 +91,10 @@ struct CodexRateLimits {
     var remainingRatio: Double?
     var progressRatio: Double?
     var resetCreditsAvailable: Int = 0
+    // The soonest expiry among available reset credits. Null when credits don't expire or when
+    // only availableCount is known (the credits detail array is absent). Surfaced so the user
+    // can decide whether to redeem now or wait — see issue #130.
+    var resetCreditExpiry: Date?
     var primaryWindow: RateLimitWindow?
     var secondaryWindow: RateLimitWindow?
     // The soonest reset across all windows, tracked as a unix timestamp so the earliest wins
@@ -122,8 +126,13 @@ struct CodexRateLimits {
         if let resetCredits = data["rateLimitResetCredits"] as? [String: Any],
            let count = optionalNumber(firstValue(resetCredits, keys: ["availableCount"])) {
             resetCreditsAvailable = Int(count)
+            resetCreditExpiry = soonestCreditExpiry(in: resetCredits)
             if resetCreditsAvailable > 0 {
-                metrics.append(MetricLine(label: "Resets", value: "\(resetCreditsAvailable) available"))
+                var value = "\(resetCreditsAvailable) available"
+                if let expiry = resetCreditExpiry {
+                    value += " · expires \(resetDescription(for: expiry))"
+                }
+                metrics.append(MetricLine(label: "Resets", value: value))
             }
         }
         if let credits = limits["credits"] as? [String: Any] {
@@ -140,6 +149,25 @@ struct CodexRateLimits {
             return codex
         }
         return (data["rateLimits"] as? [String: Any]) ?? [:]
+    }
+
+    // The credits detail array is optional — the backend may only return availableCount.
+    // When it is present, each credit carries an expiresAt unix timestamp (seconds) or null
+    // for credits that never expire. We surface the soonest non-null expiry so the user knows
+    // the deadline for redeeming before the credit lapses.
+    private func soonestCreditExpiry(in resetCredits: [String: Any]) -> Date? {
+        guard let credits = resetCredits["credits"] as? [[String: Any]] else { return nil }
+        var earliest: Date?
+        for credit in credits {
+            guard let expiresAt = optionalNumber(firstValue(credit, keys: ["expiresAt"])) else {
+                continue
+            }
+            let date = Date(timeIntervalSince1970: expiresAt)
+            if earliest == nil || date < earliest! {
+                earliest = date
+            }
+        }
+        return earliest
     }
 
     private enum WindowSlot {
