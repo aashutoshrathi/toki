@@ -118,6 +118,19 @@ enum MenuBarDensity: String, Codable, CaseIterable, Identifiable, Sendable {
         case .stacked: return "Stacked"
         }
     }
+
+    /// How many provider segments this density can carry.
+    ///
+    /// The status item's width grows with every segment, and macOS silently drops an item
+    /// that grows too wide for a crowded or notched bar - so the cap is what stops a long pin
+    /// list from hiding Toki altogether. Stacked is lower because its two rows are stacked
+    /// vertically inside the same 22pt band, and a third would not be legible.
+    var maxSegments: Int {
+        switch self {
+        case .comfortable, .compact: return 3
+        case .stacked: return 2
+        }
+    }
 }
 
 /// Where the notch panel rests when it is not expanded.

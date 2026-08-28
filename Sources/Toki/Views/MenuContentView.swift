@@ -8,6 +8,8 @@ struct MenuContentView: View {
     @State private var showConfig = false
     @State private var focusRemoteControlSettings = false
     @State private var showChangelog = false
+    @State private var showMoreActions = false
+    @State private var hoveredMoreAction: String?
 
     private enum TokiTab: String, CaseIterable, Identifiable {
         case accounts = "Accounts"
@@ -223,31 +225,35 @@ struct MenuContentView: View {
                 .help("Settings")
                 .pointerOnHover()
 
-                Menu {
-                    Button {
-                        showChangelog = true
-                    } label: {
-                        Label("What's New", systemImage: "doc.text")
-                    }
-
-                    Divider()
-
-                    Button(role: .destructive) {
-                        NSApp.terminate(nil)
-                    } label: {
-                        Label("Quit Toki", systemImage: "power")
-                    }
+                // A popover rather than a Menu: SwiftUI hands a Menu's rows to AppKit as
+                // NSMenuItems, which keep the arrow cursor and the system highlight, so the
+                // rows here could not pick up the pointer and hover treatment every other
+                // control in this panel has.
+                Button {
+                    showMoreActions.toggle()
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .functionalControlStyle()
-                .menuIndicator(.hidden)
-                .fixedSize()
                 .help("More")
                 .accessibilityLabel("More actions")
                 .pointerOnHover()
+                .popover(isPresented: $showMoreActions, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        moreActionRow(title: "What's New", icon: "doc.text") {
+                            showChangelog = true
+                        }
+                        Divider()
+                            .padding(.horizontal, 6)
+                        moreActionRow(title: "Quit Toki", icon: "power", isDestructive: true) {
+                            NSApp.terminate(nil)
+                        }
+                    }
+                    .padding(6)
+                    .frame(width: 170)
+                }
             }
         }
         .font(.system(size: 13, weight: .semibold))
@@ -468,4 +474,39 @@ struct MenuContentView: View {
         .padding(8)
         .contentSurface(stroke: .orange)
     }
+
+    private func moreActionRow(
+        title: String,
+        icon: String,
+        isDestructive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        let isHovered = hoveredMoreAction == title
+        return Button {
+            showMoreActions = false
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .frame(width: 16)
+                Text(title)
+                    .font(.system(size: 12))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isDestructive ? Color.red : Color.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                (isDestructive ? Color.red : Color.accentColor).opacity(isHovered ? 0.16 : 0),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hoveredMoreAction = $0 ? title : (hoveredMoreAction == title ? nil : hoveredMoreAction) }
+        .pointerOnHover()
+    }
+
 }

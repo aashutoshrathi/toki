@@ -54,7 +54,9 @@ private struct ChangelogSection: Identifiable {
 
 // Hand-rolled instead of a general markdown renderer - CHANGELOG.md's shape here is fixed
 // (## version - date, ### section, - item) and AttributedString(markdown:) doesn't turn
-// that structure into visual headings/bullets anyway, only inline emphasis.
+// that structure into visual headings/bullets anyway, only inline emphasis. The inline
+// emphasis is the half worth having, and `inlineMarkdown` below applies it to each item once
+// the structure has been peeled off.
 private func parseChangelog(_ raw: String) -> [ChangelogRelease] {
     var releases: [ChangelogRelease] = []
     var currentVersion: String?
@@ -98,6 +100,19 @@ private func parseChangelog(_ raw: String) -> [ChangelogRelease] {
     }
     flushRelease()
     return releases
+}
+
+// Every entry leads with a bold summary and most carry code spans or contributor links, so
+// without this the panel shows the asterisks and bracket syntax as literal text.
+// inlineOnlyPreservingWhitespace is the right mode here: the block structure is already
+// parsed above, and the full parser would collapse an item into its own paragraph run.
+func inlineMarkdown(_ text: String) -> AttributedString {
+    (try? AttributedString(
+        markdown: text,
+        options: AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace
+        )
+    )) ?? AttributedString(text)
 }
 
 struct ChangelogPage: View {
@@ -166,8 +181,9 @@ struct ChangelogPage: View {
                         HStack(alignment: .top, spacing: 5) {
                             Text("-")
                                 .foregroundStyle(.secondary)
-                            Text(item)
+                            Text(inlineMarkdown(item))
                                 .fixedSize(horizontal: false, vertical: true)
+                                .tint(.blue)
                         }
                         .font(.system(size: 10.5))
                     }

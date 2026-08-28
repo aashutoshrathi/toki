@@ -69,7 +69,8 @@ private func availabilityTier(for snapshot: AccountSnapshot, activeProviders: Se
 func menuBarEntries(
     for snapshots: [AccountSnapshot],
     mode: MenuBarDisplayMode = .smart,
-    pinnedProviders: [Provider] = []
+    pinnedProviders: [Provider] = [],
+    density: MenuBarDensity = .comfortable
 ) -> [MenuBarStatusEntry] {
     // Logo-only asks for no readout at all, so the break suggestion - which is a readout -
     // would defeat the point of picking it.
@@ -84,7 +85,7 @@ func menuBarEntries(
     case .lowest:
         return lowestMenuBarEntries(for: snapshots)
     case .pinned:
-        return pinnedMenuBarEntries(for: snapshots, pinnedProviders: pinnedProviders)
+        return pinnedMenuBarEntries(for: snapshots, pinnedProviders: pinnedProviders, density: density)
     case .logoOnly:
         return []
     }
@@ -96,7 +97,8 @@ func menuBarEntries(
 // bare status item that looks broken.
 private func pinnedMenuBarEntries(
     for snapshots: [AccountSnapshot],
-    pinnedProviders: [Provider]
+    pinnedProviders: [Provider],
+    density: MenuBarDensity
 ) -> [MenuBarStatusEntry] {
     guard !pinnedProviders.isEmpty else { return smartMenuBarEntries(for: snapshots) }
 
@@ -106,9 +108,9 @@ private func pinnedMenuBarEntries(
         return match.map(menuBarEntry)
     }
 
-    // Same width cap as Smart: macOS silently drops a status item that grows too wide for a
-    // crowded or notched bar, so a long pin list must not be able to hide Toki entirely.
-    return Array(entries.prefix(3))
+    // The density owns the cap, so what the settings panel promises and what the bar draws
+    // cannot drift apart.
+    return Array(entries.prefix(density.maxSegments))
 }
 
 private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {

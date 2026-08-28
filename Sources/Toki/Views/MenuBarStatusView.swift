@@ -51,11 +51,12 @@ struct MenuBarStatusView: View {
     private static let markInkRatio: CGFloat = 0.57
 
     // Two half-height rows instead of one full-height one, so a two-provider readout costs
-    // roughly half the width. Beyond two entries the rows would stop being legible at this
-    // point size, so the rest are dropped rather than shrunk further.
+    // roughly half the width. The entries handed in already respect the density's cap; this
+    // prefix is the backstop that keeps a third row from being drawn into a band with no
+    // vertical room for it.
     private var stackedEntries: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(entries.prefix(2)) { entry in
+            ForEach(entries.prefix(density.maxSegments)) { entry in
                 segment(for: entry)
                     .frame(height: 11)
             }

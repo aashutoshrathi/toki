@@ -485,7 +485,7 @@ struct SettingsPanel: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .help("Compact shrinks the text and drops the percent sign; Stacked puts two providers on two rows")
+                    .help("Comfortable and Compact fit 3 providers; Compact drops the percent sign. Stacked fits 2, on two rows")
                 }
                 .padding(8)
             }
@@ -498,6 +498,21 @@ struct SettingsPanel: View {
     private var pinnableProviders: [Provider] {
         var seen: Set<Provider> = []
         return store.snapshots.filter { !$0.isError }.map(\.provider).filter { seen.insert($0).inserted }
+    }
+
+    /// How many pins the current density can actually draw.
+    private var pinCap: Int { store.preferences.menuBarDensity.maxSegments }
+
+    /// Pins in the order they will be drawn, ignoring ones with no connected account since
+    /// those never reach the bar and so never use up a slot.
+    private var effectivePins: [Provider] {
+        store.preferences.menuBarPinnedProviders.filter { pinnableProviders.contains($0) }
+    }
+
+    /// Pins past the cap. Non-empty only after a density change shrank the cap underneath an
+    /// existing selection, since adding past it is blocked.
+    private var overflowPins: [Provider] {
+        Array(effectivePins.dropFirst(pinCap))
     }
 
     @ViewBuilder
@@ -513,17 +528,45 @@ struct SettingsPanel: View {
                         pinToggle(for: provider)
                     }
                 }
-                Text("Shows up to three, in the order you pin them. Pin nothing and Toki falls back to Smart.")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+
+                if !overflowPins.isEmpty {
+                    // Reachable by switching density with pins already set, so it names what
+                    // is being dropped instead of silently shortening the readout.
+                    exposureNote(
+                        "\(store.preferences.menuBarDensity.label) fits \(pinCap). "
+                        + "\(listed(overflowPins)) \(overflowPins.count == 1 ? "is" : "are") pinned but hidden — "
+                        + "unpin, or switch to Comfortable.",
+                        level: .warning
+                    )
+                } else {
+                    Text(effectivePins.count >= pinCap
+                         ? "\(store.preferences.menuBarDensity.label) fits \(pinCap). Unpin one to swap in another."
+                         : "Shows up to \(pinCap), in the order you pin them. Pin nothing and Toki falls back to Smart.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(8)
         .padding(.leading, 18)
     }
 
+    private func listed(_ providers: [Provider]) -> String {
+        let names = providers.map(\.displayName)
+        guard names.count > 1 else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+    }
+
     private func pinToggle(for provider: Provider) -> some View {
-        let isPinned = store.preferences.menuBarPinnedProviders.contains(provider)
+        let pins = store.preferences.menuBarPinnedProviders
+        let isPinned = pins.contains(provider)
+        // Blocked rather than allowed-and-truncated: a pin that silently never appears is the
+        // thing that made the old cap feel broken. Unpinning is always allowed, so the user is
+        // never stuck, and an over-cap selection carried in from a density change stays
+        // editable.
+        let isBlocked = !isPinned && effectivePins.count >= pinCap
+        let isHidden = overflowPins.contains(provider)
+
         return Button {
             var next = store.preferences
             if let index = next.menuBarPinnedProviders.firstIndex(of: provider) {
@@ -538,18 +581,49 @@ struct SettingsPanel: View {
                 Text(provider.displayName)
                     .font(.system(size: 10, weight: isPinned ? .semibold : .regular))
                     .lineLimit(1)
+                Spacer(minLength: 0)
+                if isHidden {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isPinned ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08), in: Capsule())
+            .background(pinFill(isPinned: isPinned, isHidden: isHidden), in: Capsule())
             .overlay(
-                Capsule().strokeBorder(isPinned ? Color.accentColor.opacity(0.55) : .clear, lineWidth: 1)
+                Capsule().strokeBorder(pinStroke(isPinned: isPinned, isHidden: isHidden), lineWidth: 1)
             )
+            .opacity(isBlocked ? 0.4 : 1)
         }
         .buttonStyle(.plain)
+        .disabled(isBlocked)
         .pointerOnHover()
-        .accessibilityLabel("\(provider.displayName)\(isPinned ? ", pinned" : "")")
+        .help(pinHelp(isPinned: isPinned, isBlocked: isBlocked, isHidden: isHidden))
+        .accessibilityLabel(
+            "\(provider.displayName)"
+            + (isPinned ? ", pinned" : "")
+            + (isHidden ? ", hidden past the \(pinCap) this density fits" : "")
+            + (isBlocked ? ", unavailable until you unpin one" : "")
+        )
+    }
+
+    private func pinFill(isPinned: Bool, isHidden: Bool) -> Color {
+        guard isPinned else { return Color.secondary.opacity(0.08) }
+        return (isHidden ? Color.orange : Color.accentColor).opacity(0.18)
+    }
+
+    private func pinStroke(isPinned: Bool, isHidden: Bool) -> Color {
+        guard isPinned else { return .clear }
+        return (isHidden ? Color.orange : Color.accentColor).opacity(0.55)
+    }
+
+    private func pinHelp(isPinned: Bool, isBlocked: Bool, isHidden: Bool) -> String {
+        let density = store.preferences.menuBarDensity.label
+        if isHidden { return "Pinned, but \(density) only fits \(pinCap) — this one is not drawn" }
+        if isBlocked { return "\(density) fits \(pinCap). Unpin one first" }
+        return isPinned ? "Pinned to the menu bar" : "Pin to the menu bar"
     }
 
     @ViewBuilder

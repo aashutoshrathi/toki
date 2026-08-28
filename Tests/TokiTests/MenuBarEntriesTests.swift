@@ -108,19 +108,53 @@ final class MenuBarEntriesTests: XCTestCase {
         XCTAssertEqual(entries.map(\.provider), [.codex])
     }
 
-    func testPinnedModeCapsAtThreeSegments() {
+    private var fourProviders: [AccountSnapshot] {
+        [
+            snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
+            snapshot(id: "codex", provider: .codex, remainingRatio: 0.5),
+            snapshot(id: "cursor", provider: .cursor, remainingRatio: 0.3),
+            snapshot(id: "gemini", provider: .gemini, remainingRatio: 0.2)
+        ]
+    }
+
+    func testPinnedModeCapsAtThreeSegmentsWhenComfortable() {
         let entries = menuBarEntries(
-            for: [
-                snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
-                snapshot(id: "codex", provider: .codex, remainingRatio: 0.5),
-                snapshot(id: "cursor", provider: .cursor, remainingRatio: 0.3),
-                snapshot(id: "gemini", provider: .gemini, remainingRatio: 0.2)
-            ],
+            for: fourProviders,
             mode: .pinned,
-            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini]
+            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini],
+            density: .comfortable
+        )
+        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex, .cursor])
+    }
+
+    func testCompactCarriesTheSameThreeSegments() {
+        let entries = menuBarEntries(
+            for: fourProviders,
+            mode: .pinned,
+            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini],
+            density: .compact
         )
         XCTAssertEqual(entries.count, 3)
-        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex, .cursor])
+    }
+
+    // Two half-height rows have no room for a third, so the cap has to be lower here than it
+    // is for the single-row densities.
+    func testStackedCapsAtTwoSegments() {
+        let entries = menuBarEntries(
+            for: fourProviders,
+            mode: .pinned,
+            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini],
+            density: .stacked
+        )
+        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex])
+    }
+
+    // The settings panel promises a count off this same property, so a drift here would make
+    // it lie about what the bar draws.
+    func testDensityCapsMatchWhatTheBarCanDraw() {
+        XCTAssertEqual(MenuBarDensity.comfortable.maxSegments, 3)
+        XCTAssertEqual(MenuBarDensity.compact.maxSegments, 3)
+        XCTAssertEqual(MenuBarDensity.stacked.maxSegments, 2)
     }
 
     // Pinning nothing would otherwise leave a status item with no content at all, which reads
