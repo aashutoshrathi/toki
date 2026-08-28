@@ -145,6 +145,27 @@ struct MenuContentView: View {
                     store.toggleDebug()
                 }
 
+            if let prerelease = prereleaseBadge(for: UpdateChecker.installedVersion) {
+                Text(prerelease)
+                    .font(.system(size: 8, weight: .heavy))
+                    .tracking(0.4)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                     Color(red: 0.85, green: 0.35, blue: 0.65)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule()
+                    )
+                    .fixedSize()
+                    .help("You are on a prerelease build")
+                    .accessibilityLabel("Prerelease build, \(prerelease)")
+            }
+
             Spacer(minLength: 0)
             headerControls
         }

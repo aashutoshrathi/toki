@@ -1195,7 +1195,7 @@ struct SettingsPanel: View {
     // The same checklist onboarding shows, kept permanently: a permission can be revoked in
     // System Settings long after setup, and this is where you find out that it was.
     private var permissionsCard: some View {
-        SetupChecklistView(store: store, showsHeader: false, collapsible: true)
+        SetupChecklistView(store: store, showsHeader: false, collapsible: true, showsCollapsedTitle: false)
             .padding(8)
             .settingsCard()
     }
