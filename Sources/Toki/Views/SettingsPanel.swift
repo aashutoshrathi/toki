@@ -631,7 +631,7 @@ struct SettingsPanel: View {
         VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 8) {
                 cardLabel(
-                    icon: "antenna.radiowaves.left.and.right",
+                    icon: "arcade.stick",
                     iconColor: .teal,
                     title: "Remote Control Server",
                     subtitle: "Run a local server to check on and reply to your agents from your phone."

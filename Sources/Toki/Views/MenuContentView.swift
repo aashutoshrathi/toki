@@ -156,7 +156,7 @@ struct MenuContentView: View {
                     focusRemoteControlSettings = true
                     showConfig = true
                 } label: {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
+                    Image(systemName: "arcade.stick")
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }

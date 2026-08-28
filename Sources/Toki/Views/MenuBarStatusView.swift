@@ -12,7 +12,7 @@ struct MenuBarStatusView: View {
                 attentionBadge
             }
             if remoteControlOn {
-                Image(systemName: "antenna.radiowaves.left.and.right")
+                Image(systemName: "arcade.stick")
                     .font(.system(size: metrics.glyphSize, weight: .bold))
                     .foregroundStyle(.primary)
                     .accessibilityLabel("Remote Control is on")
