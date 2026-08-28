@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Recent and weekly quotas share one compact account-card view.** Claude Code and Codex now show every applicable rolling window side by side, including reset countdowns when provided, while plans that expose only one window keep the single-window layout and Codex reset credits stay directly beneath it.
+
 ## 3.0.0 - 2026-08-27
 
 ### Added

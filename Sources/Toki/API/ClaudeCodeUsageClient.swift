@@ -120,13 +120,6 @@ struct ClaudeCodeUsageClient {
         let primary = "\(percentLeft)% left"
         let email = record.email ?? record.credentials.flatMap(ClaudeCodeCredentialReader.emailIdentifier)
 
-        // Surface Claude Code's single rolling window the same way Codex exposes its windows,
-        // so consumers like the quota-rings panel can show "resets in <time>" beside it. The
-        // main account card reads its reset line from `metrics`, so this doesn't duplicate there.
-        let primaryWindow = primaryMetric.resetDescription.map {
-            RateLimitWindow(label: primaryMetric.label, percentLeft: percentLeft, resetHint: "resets in \($0)")
-        }
-
         return AccountSnapshot(
             id: record.id,
             name: record.displayName,
@@ -141,7 +134,8 @@ struct ClaudeCodeUsageClient {
             switchCommand: account.claudeSwapCommand,
             emoji: record.label?.emoji,
             colorHex: record.label?.color,
-            primaryWindow: primaryWindow
+            primaryWindow: usage.rateLimitWindows.first,
+            secondaryWindow: usage.rateLimitWindows.dropFirst().first
         )
     }
 

@@ -402,7 +402,7 @@ struct QuotaSummaryLine: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Text(label)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -410,13 +410,13 @@ struct QuotaSummaryLine: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            if let resetHint {
-                Text(resetHint)
+            if let compactReset = compactResetDescription(resetHint) {
+                Text(compactReset)
                     .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 120, alignment: .trailing)
+                    .lineLimit(1)
+                    .help(resetHint ?? compactReset)
             }
         }
     }
