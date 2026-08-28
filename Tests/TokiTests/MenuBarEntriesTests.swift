@@ -65,4 +65,75 @@ final class MenuBarEntriesTests: XCTestCase {
         let entry = menuBarEntry(for: snapshot(id: "codex", provider: .codex, remainingRatio: 0.42))
         XCTAssertEqual(entry.value, "42%")
     }
+
+    func testLogoOnlyProducesNoEntries() {
+        let entries = menuBarEntries(
+            for: [snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8)],
+            mode: .logoOnly
+        )
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    // The break suggestion is itself a readout, so it must not reintroduce one in the mode
+    // whose entire purpose is showing nothing.
+    func testLogoOnlyStaysEmptyWhenEveryQuotaIsExhausted() {
+        let entries = menuBarEntries(
+            for: [
+                snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0),
+                snapshot(id: "codex", provider: .codex, remainingRatio: 0)
+            ],
+            mode: .logoOnly
+        )
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testPinnedModeFollowsPinOrderNotSnapshotOrder() {
+        let entries = menuBarEntries(
+            for: [
+                snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
+                snapshot(id: "cursor", provider: .cursor, remainingRatio: 0.3)
+            ],
+            mode: .pinned,
+            pinnedProviders: [.cursor, .claudeCode]
+        )
+        XCTAssertEqual(entries.map(\.provider), [.cursor, .claudeCode])
+    }
+
+    func testPinnedModeSkipsProvidersWithNoConnectedAccount() {
+        let entries = menuBarEntries(
+            for: [snapshot(id: "codex", provider: .codex, remainingRatio: 0.5)],
+            mode: .pinned,
+            pinnedProviders: [.gemini, .codex]
+        )
+        XCTAssertEqual(entries.map(\.provider), [.codex])
+    }
+
+    func testPinnedModeCapsAtThreeSegments() {
+        let entries = menuBarEntries(
+            for: [
+                snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
+                snapshot(id: "codex", provider: .codex, remainingRatio: 0.5),
+                snapshot(id: "cursor", provider: .cursor, remainingRatio: 0.3),
+                snapshot(id: "gemini", provider: .gemini, remainingRatio: 0.2)
+            ],
+            mode: .pinned,
+            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini]
+        )
+        XCTAssertEqual(entries.count, 3)
+        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex, .cursor])
+    }
+
+    // Pinning nothing would otherwise leave a status item with no content at all, which reads
+    // as a broken app rather than as a choice.
+    func testPinnedModeWithNoPinsFallsBackToSmart() {
+        let entries = menuBarEntries(
+            for: [
+                snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
+                snapshot(id: "codex", provider: .codex, remainingRatio: 0.5)
+            ],
+            mode: .pinned,
+            pinnedProviders: []
+        )
+        XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex])
+    }
 }

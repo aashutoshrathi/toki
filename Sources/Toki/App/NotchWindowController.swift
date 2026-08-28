@@ -15,14 +15,17 @@ final class NotchWindowController {
     private var awaitingInput: Int
     private var isExpanded = false
     private var placement: NotchPlacement
+    private var density: MenuBarDensity
     /// Measured, not guessed: a fixed width truncated once a third provider appeared.
     private var contentWidth: CGFloat
 
-    init(entries: [MenuBarStatusEntry], awaitingInput: Int, contentWidth: CGFloat, placement: NotchPlacement, onClick: @escaping () -> Void) {
+    init(entries: [MenuBarStatusEntry], awaitingInput: Int, contentWidth: CGFloat, placement: NotchPlacement,
+         density: MenuBarDensity, onClick: @escaping () -> Void) {
         self.entries = entries
         self.awaitingInput = awaitingInput
         self.contentWidth = contentWidth
         self.placement = placement
+        self.density = density
         self.onClick = onClick
     }
 
@@ -143,6 +146,14 @@ final class NotchWindowController {
         show()
     }
 
+    /// Density only changes what is drawn inside the pill; the caller re-measures the content
+    /// width separately, so this needs no frame recompute of its own.
+    func update(density: MenuBarDensity) {
+        guard density != self.density else { return }
+        self.density = density
+        render()
+    }
+
     // The frame never changes on hover; only the pill inside animates. Resizing the window
     // re-laid the tracking area, which emitted spurious enter/exit events and made it shake.
     @discardableResult
@@ -174,6 +185,7 @@ final class NotchWindowController {
             awaitingInput: awaitingInput,
             isExpanded: isExpanded,
             placement: placement,
+            density: density,
             bandHeight: Self.bandHeight,
             notchWidth: geometry.notch.width,
             pillRect: geometry.pillInView(expanded: isExpanded),
@@ -238,6 +250,7 @@ private struct NotchPanel: View {
     let awaitingInput: Int
     let isExpanded: Bool
     let placement: NotchPlacement
+    let density: MenuBarDensity
     /// Content inside the housing's x range and the band's y range is behind hardware.
     let bandHeight: CGFloat
     /// Width of the camera housing, used to leave a matching gap when straddling it.
@@ -262,8 +275,10 @@ private struct NotchPanel: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isExpanded)
     }
 
-    /// Around splits the readout across both bands; the badge goes right.
-    private var straddles: Bool { placement == .around && !isExpanded }
+    /// Around splits the readout across both bands; the badge goes right. With nothing to
+    /// split - Logo-only - there is no point wrapping the housing, and each half would draw
+    /// its own copy of the mark.
+    private var straddles: Bool { placement == .around && !isExpanded && !entries.isEmpty }
 
     private var splitPoint: Int { (entries.count + 1) / 2 }
 
@@ -271,15 +286,16 @@ private struct NotchPanel: View {
     private var readout: some View {
         if straddles {
             HStack(spacing: 0) {
-                MenuBarStatusView(entries: Array(entries.prefix(splitPoint)))
+                MenuBarStatusView(entries: Array(entries.prefix(splitPoint)), density: density)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 // Matches the housing width; nothing renders here.
                 Color.clear.frame(width: notchWidth)
-                MenuBarStatusView(entries: Array(entries.dropFirst(splitPoint)), awaitingInput: awaitingInput)
+                MenuBarStatusView(entries: Array(entries.dropFirst(splitPoint)), awaitingInput: awaitingInput,
+                                  density: density)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            MenuBarStatusView(entries: entries, awaitingInput: awaitingInput)
+            MenuBarStatusView(entries: entries, awaitingInput: awaitingInput, density: density)
         }
     }
 

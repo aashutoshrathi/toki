@@ -64,8 +64,14 @@ extension UsageStore {
 
     func updateDerivedState(for snapshots: [AccountSnapshot]) {
         recommendation = smartRecommendation(for: snapshots)
-        statusEntries = menuBarEntries(for: snapshots, mode: preferences.menuBarMode)
-        if statusEntries.isEmpty {
+        statusEntries = menuBarEntries(
+            for: snapshots,
+            mode: preferences.menuBarMode,
+            pinnedProviders: preferences.menuBarPinnedProviders
+        )
+        // Logo-only is empty on purpose; every other mode falling empty means there is nothing
+        // to report yet, and the placeholder keeps the status item from collapsing.
+        if statusEntries.isEmpty, preferences.menuBarMode != .logoOnly {
             statusEntries = menuBarPlaceholderEntries()
         }
         syncPublishedState()

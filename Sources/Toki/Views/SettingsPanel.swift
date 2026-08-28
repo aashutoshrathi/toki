@@ -177,27 +177,7 @@ struct SettingsPanel: View {
                 .padding(8)
                 .settingsCard()
 
-                HStack(spacing: 8) {
-                    cardLabel(
-                        icon: "menubar.rectangle",
-                        iconColor: .secondary,
-                        title: "Menu bar",
-                        subtitle: "What the menu bar item shows at a glance."
-                    )
-                    Spacer(minLength: 8)
-                    Picker("Menu bar", selection: binding(\.menuBarMode)) {
-                        ForEach(MenuBarDisplayMode.allCases) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .fixedSize()
-                    .pointerOnHover()
-                }
-                .padding(8)
-                .settingsCard()
+                menuBarCard
 
                 // Sits directly under the menu bar picker: it decides where the readout lives,
                 // so it belongs with the other placement settings rather than below the
@@ -446,6 +426,122 @@ struct SettingsPanel: View {
                 store.updatePreferences(next)
             }
         )
+    }
+
+    // Mode (what is shown) and density (how much room it takes) are separate axes, so every
+    // mode can be run at every density. Pinning only appears when it has something to do.
+    @ViewBuilder
+    private var menuBarCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                cardLabel(
+                    icon: "menubar.rectangle",
+                    iconColor: .secondary,
+                    title: "Menu bar",
+                    subtitle: store.preferences.menuBarMode.detail
+                )
+                Spacer(minLength: 8)
+                Picker("Menu bar", selection: binding(\.menuBarMode)) {
+                    ForEach(MenuBarDisplayMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .pointerOnHover()
+            }
+            .padding(8)
+
+            if store.preferences.menuBarMode == .pinned {
+                Divider()
+                    .padding(.horizontal, 8)
+                pinnedProvidersRow
+            }
+
+            // Logo-only draws no numbers, so there is no density for it to change.
+            if store.preferences.menuBarMode != .logoOnly {
+                Divider()
+                    .padding(.horizontal, 8)
+                HStack(spacing: 8) {
+                    Text("Size")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.leading, 26)
+                    Spacer(minLength: 8)
+                    Picker("Size", selection: binding(\.menuBarDensity)) {
+                        ForEach(MenuBarDensity.allCases) { density in
+                            Text(density.label).tag(density)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Compact shrinks the text and drops the percent sign; Stacked puts two providers on two rows")
+                }
+                .padding(8)
+            }
+        }
+        .settingsCard()
+    }
+
+    // Driven off connected accounts rather than the full Provider list, so the choices are
+    // ones that can actually show a number.
+    private var pinnableProviders: [Provider] {
+        var seen: Set<Provider> = []
+        return store.snapshots.filter { !$0.isError }.map(\.provider).filter { seen.insert($0).inserted }
+    }
+
+    @ViewBuilder
+    private var pinnedProvidersRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if pinnableProviders.isEmpty {
+                Text("Connect an account to pick what the menu bar pins.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(pinnableProviders, id: \.self) { provider in
+                        pinToggle(for: provider)
+                    }
+                }
+                Text("Shows up to three, in the order you pin them. Pin nothing and Toki falls back to Smart.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(8)
+        .padding(.leading, 18)
+    }
+
+    private func pinToggle(for provider: Provider) -> some View {
+        let isPinned = store.preferences.menuBarPinnedProviders.contains(provider)
+        return Button {
+            var next = store.preferences
+            if let index = next.menuBarPinnedProviders.firstIndex(of: provider) {
+                next.menuBarPinnedProviders.remove(at: index)
+            } else {
+                next.menuBarPinnedProviders.append(provider)
+            }
+            store.updatePreferences(next)
+        } label: {
+            HStack(spacing: 5) {
+                ProviderLogo(provider: provider, size: 11)
+                Text(provider.displayName)
+                    .font(.system(size: 10, weight: isPinned ? .semibold : .regular))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isPinned ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(isPinned ? Color.accentColor.opacity(0.55) : .clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .pointerOnHover()
+        .accessibilityLabel("\(provider.displayName)\(isPinned ? ", pinned" : "")")
     }
 
     @ViewBuilder
