@@ -165,11 +165,15 @@ cp -R "$APP_DIR" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 rm -f "$DMG_PATH"
+# No -fs: it used to pin HFS+, and on GitHub's macos-26 image that produces a file hdiutil
+# cannot read back at all - imageinfo rejects the header, not just the checksum. Apple has been
+# withdrawing HFS+ write support, so the filesystem is left to hdiutil, which picks one the
+# running OS can actually create. Toki requires macOS 14, well past the 10.13 that APFS images
+# need, so whichever it chooses is mountable by every supported install.
 hdiutil create \
   -volname "$APP_NAME $VERSION" \
   -srcfolder "$STAGING_DIR" \
   -ov -format UDZO \
-  -fs HFS+ \
   "$DMG_PATH"
 
 rm -rf "$STAGING_DIR"
@@ -185,7 +189,7 @@ rm -rf "$STAGING_DIR"
 # does, so a pass here means more than a checksum ever did.
 echo "==> Verifying DMG"
 hdiutil imageinfo "$DMG_PATH" > /dev/null
-ATTACH_DEV=$(hdiutil attach -nomount -readonly "$DMG_PATH" | awk 'NR==1 {print $1}')
+ATTACH_DEV=$(hdiutil attach -nomount -readonly "$DMG_PATH" | grep -o '^/dev/[^[:space:]]*' | head -1)
 if [[ -z "$ATTACH_DEV" ]]; then
   echo "    hdiutil attach produced no device for $DMG_PATH" >&2
   exit 1
