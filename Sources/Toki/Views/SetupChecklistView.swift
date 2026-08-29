@@ -18,6 +18,9 @@ struct SetupChecklistView: View {
     var showsDismiss = false
     /// The Settings card folds the whole list behind a one-line summary until it is opened.
     var collapsible = false
+    /// False where a section header already names this list, so the collapsed row leads with
+    /// the count instead of repeating the word "Permissions" directly under it.
+    var showsCollapsedTitle = true
 
     @State private var steps: [SetupStep] = []
     @State private var expanded = false
@@ -25,6 +28,9 @@ struct SetupChecklistView: View {
     @State private var requestingAll = false
     @State private var currentRequest: String?
     @State private var notificationTestSent = false
+    /// Sticky for the life of this view: once Toki has sent someone to the Accessibility pane,
+    /// the row keeps offering the restart that makes a grant made over there take effect.
+    @State private var accessibilityRequested = false
     @State private var launchAtLoginError: String?
 
     private var outstanding: [SetupStep] { SetupChecklist.outstanding(steps) }
@@ -63,6 +69,10 @@ struct SetupChecklistView: View {
         }
         .onChange(of: store.snapshots.count) { refresh() }
         .onChange(of: remoteServer.isRunning) { refresh() }
+        // The "test sent" note answers one press. Leaving it up across a collapse or a
+        // notifications toggle left the row describing something that happened minutes ago.
+        .onChange(of: expanded) { notificationTestSent = false }
+        .onChange(of: store.preferences.notificationsEnabled) { notificationTestSent = false }
     }
 
     private var header: some View {
@@ -86,9 +96,9 @@ struct SetupChecklistView: View {
                     .foregroundStyle(.green)
                     .frame(width: 18, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Permissions")
+                    Text(showsCollapsedTitle ? "Permissions" : collapsedCount)
                         .font(.system(size: 12, weight: .semibold))
-                    Text(collapsedSummary)
+                    Text(showsCollapsedTitle ? collapsedSummary : "What Toki asks macOS for, and why.")
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
@@ -114,7 +124,11 @@ struct SetupChecklistView: View {
 
     private var collapsedSummary: String {
         guard !steps.isEmpty else { return "Checking what Toki has been granted…" }
-        return "\(grantedCount) of \(steps.count) granted — what Toki asks macOS for, and why."
+        return "\(grantedCount) of \(steps.count) granted. What Toki asks macOS for, and why."
+    }
+
+    private var collapsedCount: String {
+        steps.isEmpty ? "Checking…" : "\(grantedCount) of \(steps.count) granted"
     }
 
     private var headerDetail: LocalizedStringKey {
@@ -254,17 +268,18 @@ struct SetupChecklistView: View {
     }
 
     private func refresh() {
-        Task {
-            let facts = await SetupChecklist.currentFacts(store: store, remoteControlRunning: remoteServer.isRunning)
-            steps = SetupChecklist.steps(from: facts, mode: mode)
-        }
+        Task { await refreshAndWait() }
     }
 
     // Awaiting the refresh matters inside the "allow all" pass: each request has to see the list
     // as it stands after the previous answer, or a permission granted along the way gets asked
     // for twice.
     private func refreshAndWait() async {
-        let facts = await SetupChecklist.currentFacts(store: store, remoteControlRunning: remoteServer.isRunning)
+        let facts = await SetupChecklist.currentFacts(
+            store: store,
+            remoteControlRunning: remoteServer.isRunning,
+            accessibilityRequested: accessibilityRequested
+        )
         steps = SetupChecklist.steps(from: facts, mode: mode)
     }
 
@@ -294,6 +309,12 @@ struct SetupChecklistView: View {
             case .account: store.rescanProviders()
             case .automation: SystemPermissions.openPrivacySettings(anchor: "Privacy_Automation")
             case .localNetwork: SystemPermissions.openPrivacySettings(anchor: "Privacy_LocalNetwork")
+            // Reachable once macOS has been told no: it will not ask again, so the row's only
+            // remaining action is to open the pane where that can be undone.
+            case .notifications: SystemPermissions.openNotificationSettings()
+            // The row only offers this once it has already sent the user to System Settings,
+            // so the remaining step is the restart that makes a grant there take effect.
+            case .accessibility: SystemPermissions.relaunch()
             default: break
             }
             recheck()
@@ -327,10 +348,9 @@ struct SetupChecklistView: View {
             // the user has asked for the read here.
             await store.approveKeychainReads()
         case .notifications:
-            // Delivery returns immediately and macOS decides for itself when to put its own
-            // notification prompt on screen, so unlike the others this one cannot be sequenced -
-            // it may land alongside the next dialog. Bringing it forward at all is the point.
-            store.sendTestNotification()
+            // Now sequenced like the rest: asking macOS for permission is a real dialog that
+            // can be awaited, so it no longer risks landing on top of the next one.
+            await store.sendTestNotification()
             notificationTestSent = true
         case .automation:
             guard let bundleID = step.subject else { return }
@@ -344,6 +364,7 @@ struct SetupChecklistView: View {
             }
         case .accessibility:
             SystemPermissions.requestAccessibility()
+            accessibilityRequested = true
         case .account, .localNetwork:
             break
         }

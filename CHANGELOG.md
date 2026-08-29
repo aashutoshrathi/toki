@@ -2,9 +2,27 @@
 
 ## Unreleased
 
+### Added
+
+- **Pin exactly which providers the menu bar shows.** The old Claude and Codex modes were hardcoded to two providers out of the fifteen Toki tracks, so a Cursor-only or Gemini-only setup had nothing to choose. Pinned works for any connected provider, draws them in the order you pin them, and skips a pin whose account is not connected. If you pin nothing it falls back to Smart rather than leaving an empty status item.
+- **A Logo only mode, for a menu bar that is already full.** Toki drops to its mark and nothing else, about a quarter of the width of the full readout, with every number still one click away in the panel. It is the same mark the panel header draws, so the two finally match.
+- **A size setting for the menu bar readout.** Comfortable is what Toki has always drawn. Compact shrinks the glyphs and numbers and drops the percent sign. Stacked puts two providers on two half-height rows, roughly halving the width, in the style of apps like Stats; going vertical saves enough on its own that it keeps the percent sign. Size is independent of what the menu bar shows, so every mode can run at every size.
+- **A beta build says which beta it is.** The version pill read the same on a prerelease as on the stable it came from, because the marketing version has to stay dotted-numeric and the suffix lives elsewhere. A prerelease now carries a badge beside the version naming it, so a bug report can say which build it came from.
+- **The menu bar tells you when a pin will not fit.** Comfortable and Compact draw three providers, Stacked draws two, and the status item competes with every other icon on the bar. Once you reach the limit the remaining providers dim and say which size you are on and what it fits, instead of accepting a pin that then quietly never appears. Changing size with more pinned than the new one fits marks the extras rather than silently shortening the readout.
+
 ### Changed
 
 - **Recent and weekly quotas share one compact account-card view.** Claude Code and Codex now show every applicable rolling window side by side, including reset countdowns when provided, while plans that expose only one window keep the single-window layout and Codex reset credits stay directly beneath it.
+- **The menu bar mode list is current again.** Claude + Codex ran the identical code path to Smart, so it was two menu entries for one behaviour, and Accounts drew an anonymous grey dot and a count that told you less than any other mode. Both are gone. Existing settings carry over: Claude and Codex become pins for those providers, Claude + Codex and Accounts become Smart.
+- **Settings are grouped into sections that say what they are.** Remote Control and Permissions were two unlabelled cards stacked directly on each other, reading as one long card; they now lead the panel with headers of their own. Show AI insight and Show quota rings move into a new Layout section under General. Remote Control is the tallest card in the panel and gets a roomier rhythm to match.
+- **Remote Control wears a joystick.** The antenna glyph is now an arcade stick, in all three places the feature appears: its Settings card, the panel header button that opens it, and the menu bar indicator that shows the server is running.
+
+### Fixed
+
+- **What's New reads as prose instead of markup.** The changelog is authored as markdown and every entry leads with a bold summary, so the panel was showing the asterisks, backticks, and link brackets as literal text. Inline formatting now renders, contributor links included.
+- **What's New and Quit Toki respond to the pointer.** They were system menu items, which keep the arrow cursor and the system highlight, so they were the only controls in the panel without the pointer and hover treatment everything else has.
+- **The permissions card stops repeating its own name.** Its collapsed row leads with how many permissions are granted, and the note about a test notification clears once it stops describing something that just happened.
+- **Separators inside a settings card line up with the ones between cards.** The dividers within the notch card were inset differently from the card separators above and below them, so they visibly overhung on the left and fell short on the right.
 
 ## 3.0.0 - 2026-08-27
 

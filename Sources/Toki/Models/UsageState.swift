@@ -57,10 +57,8 @@ struct AccountUsageState: Codable {
 enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
     case smart
     case lowest
-    case activeClaude
-    case codex
-    case combined
-    case accounts
+    case pinned
+    case logoOnly
 
     var id: String { rawValue }
 
@@ -68,10 +66,69 @@ enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .smart: return "Smart"
         case .lowest: return "Lowest"
-        case .activeClaude: return "Claude"
-        case .codex: return "Codex"
-        case .combined: return "Claude + Codex"
-        case .accounts: return "Accounts"
+        case .pinned: return "Pinned"
+        case .logoOnly: return "Logo only"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .smart: return "The account you are on, plus Codex"
+        case .lowest: return "Whichever quota is closest to running out"
+        case .pinned: return "Only the providers you choose"
+        case .logoOnly: return "Just the Toki mark, no numbers"
+        }
+    }
+
+    /// Reads a stored raw value, including ones written by versions before 3.1. `combined`
+    /// was an exact duplicate of `smart`, and the two hardcoded provider modes are now
+    /// `pinned` with the provider itself carried in `menuBarPinnedProviders`. `accounts` drew
+    /// an anonymous grey dot and a count, which told you less than any other mode.
+    ///
+    /// The retired Claude mode matched the whole Claude family, not just Claude Code, so it
+    /// migrates to a pin on both. Pins that match no connected account are skipped, so a user
+    /// on one of the two still sees exactly the single segment they saw before.
+    static func stored(rawValue: String) -> (mode: MenuBarDisplayMode, pinned: [Provider])? {
+        switch rawValue {
+        case "combined", "accounts": return (.smart, [])
+        case "activeClaude": return (.pinned, [.claudeCode, .claude])
+        case "codex": return (.pinned, [.codex])
+        default: return MenuBarDisplayMode(rawValue: rawValue).map { ($0, []) }
+        }
+    }
+}
+
+/// How tightly the menu bar readout is packed. Independent of `MenuBarDisplayMode`, which
+/// decides *what* is shown - this only decides how much horizontal room it takes, because the
+/// status item competes with every other icon on the bar.
+enum MenuBarDensity: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// Full-size glyphs and numbers on a single row.
+    case comfortable
+    /// Smaller glyphs and numbers on a single row, with the percent sign dropped.
+    case compact
+    /// Two half-height rows, so a two-provider readout is about half as wide.
+    case stacked
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .comfortable: return "Comfortable"
+        case .compact: return "Compact"
+        case .stacked: return "Stacked"
+        }
+    }
+
+    /// How many provider segments this density can carry.
+    ///
+    /// The status item's width grows with every segment, and macOS silently drops an item
+    /// that grows too wide for a crowded or notched bar - so the cap is what stops a long pin
+    /// list from hiding Toki altogether. Stacked is lower because its two rows are stacked
+    /// vertically inside the same 22pt band, and a third would not be legible.
+    var maxSegments: Int {
+        switch self {
+        case .comfortable, .compact: return 3
+        case .stacked: return 2
         }
     }
 }
@@ -102,6 +159,11 @@ struct AppPreferences: Codable, Equatable {
     var lowQuotaThreshold = 0.20
     var notificationCooldownMinutes = 90
     var menuBarMode = MenuBarDisplayMode.smart
+    var menuBarDensity = MenuBarDensity.comfortable
+    /// Which providers `MenuBarDisplayMode.pinned` shows, in the order they are shown. Empty
+    /// means the mode has nothing to draw, so the readout falls back to Smart rather than
+    /// leaving an empty status item behind.
+    var menuBarPinnedProviders: [Provider] = [.claudeCode, .codex]
     // 30 days by default so the usage heatmap can fill its full window; it renders
     // min(30, retention), so a shorter retention silently shortens the chart.
     var historyRetentionDays = 30
@@ -132,6 +194,8 @@ struct AppPreferences: Codable, Equatable {
         case lowQuotaThreshold
         case notificationCooldownMinutes
         case menuBarMode
+        case menuBarDensity
+        case menuBarPinnedProviders
         case historyRetentionDays
         case sessionWarningThreshold
         case aiInsightEnabled
@@ -162,7 +226,19 @@ struct AppPreferences: Codable, Equatable {
         dndEnabled = try container.decodeIfPresent(Bool.self, forKey: .dndEnabled) ?? defaults.dndEnabled
         lowQuotaThreshold = try container.decodeIfPresent(Double.self, forKey: .lowQuotaThreshold) ?? defaults.lowQuotaThreshold
         notificationCooldownMinutes = try container.decodeIfPresent(Int.self, forKey: .notificationCooldownMinutes) ?? defaults.notificationCooldownMinutes
-        menuBarMode = try container.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarMode) ?? defaults.menuBarMode
+        // Decoded as a raw string rather than as MenuBarDisplayMode so that a retired mode
+        // written by an older build maps onto its replacement instead of throwing, which
+        // would take the whole state file down with it.
+        let storedMode = try container.decodeIfPresent(String.self, forKey: .menuBarMode)
+            .flatMap(MenuBarDisplayMode.stored(rawValue:))
+        menuBarMode = storedMode?.mode ?? defaults.menuBarMode
+        menuBarDensity = try container.decodeIfPresent(MenuBarDensity.self, forKey: .menuBarDensity) ?? defaults.menuBarDensity
+        // Unrecognised provider names are dropped rather than thrown on, so a state file
+        // written by a newer build that knows more providers still loads here.
+        let migratedPins = storedMode?.pinned ?? []
+        menuBarPinnedProviders = try container.decodeIfPresent([String].self, forKey: .menuBarPinnedProviders)
+            .map { $0.compactMap(Provider.init(rawValue:)) }
+            ?? (migratedPins.isEmpty ? defaults.menuBarPinnedProviders : migratedPins)
         historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
         aiInsightEnabled = try container.decodeIfPresent(Bool.self, forKey: .aiInsightEnabled) ?? defaults.aiInsightEnabled

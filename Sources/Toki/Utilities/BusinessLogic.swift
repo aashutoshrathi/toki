@@ -66,8 +66,15 @@ private func availabilityTier(for snapshot: AccountSnapshot, activeProviders: Se
     return activeProviders.contains(snapshot.provider) ? 1 : 2
 }
 
-func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode = .smart) -> [MenuBarStatusEntry] {
-    if allTrackedQuotaExhausted(snapshots) {
+func menuBarEntries(
+    for snapshots: [AccountSnapshot],
+    mode: MenuBarDisplayMode = .smart,
+    pinnedProviders: [Provider] = [],
+    density: MenuBarDensity = .comfortable
+) -> [MenuBarStatusEntry] {
+    // Logo-only asks for no readout at all, so the break suggestion - which is a readout -
+    // would defeat the point of picking it.
+    if mode != .logoOnly, allTrackedQuotaExhausted(snapshots) {
         let suggestion = currentBreakSuggestion()
         return [MenuBarStatusEntry(provider: .manual, value: suggestion.menuBarText, leadingText: suggestion.emoji)]
     }
@@ -77,17 +84,33 @@ func menuBarEntries(for snapshots: [AccountSnapshot], mode: MenuBarDisplayMode =
         return smartMenuBarEntries(for: snapshots)
     case .lowest:
         return lowestMenuBarEntries(for: snapshots)
-    case .activeClaude:
-        return snapshots.first { $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError && ($0.remainingRatio ?? 1) > 0 }
-            .map { [menuBarEntry(for: $0)] } ?? []
-    case .codex:
-        return snapshots.first { $0.provider == .codex && !$0.isError && ($0.remainingRatio ?? 1) > 0 }
-            .map { [menuBarEntry(for: $0)] } ?? []
-    case .combined:
-        return smartMenuBarEntries(for: snapshots)
-    case .accounts:
-        return [MenuBarStatusEntry(provider: .manual, value: "\(snapshots.filter { !$0.isError }.count)")]
+    case .pinned:
+        return pinnedMenuBarEntries(for: snapshots, pinnedProviders: pinnedProviders, density: density)
+    case .logoOnly:
+        return []
     }
+}
+
+// Pinned providers are shown in the order they were pinned rather than in snapshot order, so
+// the readout keeps a stable left-to-right layout as quotas move around. A pin that matches no
+// connected account is skipped, and pinning nothing falls back to Smart rather than leaving a
+// bare status item that looks broken.
+private func pinnedMenuBarEntries(
+    for snapshots: [AccountSnapshot],
+    pinnedProviders: [Provider],
+    density: MenuBarDensity
+) -> [MenuBarStatusEntry] {
+    guard !pinnedProviders.isEmpty else { return smartMenuBarEntries(for: snapshots) }
+
+    let entries = pinnedProviders.compactMap { provider -> MenuBarStatusEntry? in
+        let match = snapshots.first { $0.provider == provider && $0.switchTarget == nil && !$0.isError }
+            ?? snapshots.first { $0.provider == provider && !$0.isError }
+        return match.map(menuBarEntry)
+    }
+
+    // The density owns the cap, so what the settings panel promises and what the bar draws
+    // cannot drift apart.
+    return Array(entries.prefix(density.maxSegments))
 }
 
 private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {

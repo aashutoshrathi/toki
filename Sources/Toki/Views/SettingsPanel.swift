@@ -69,6 +69,70 @@ struct SettingsPanel: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader("Remote Control")
+
+                    remoteControlCard
+                        .id(SettingsAnchor.remoteControl)
+
+                    sectionHeader("Permissions")
+
+                    permissionsCard
+
+                    sectionHeader("General")
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "power",
+                            iconColor: .secondary,
+                            title: "Launch at login",
+                            subtitle: "Start Toki automatically after you sign in."
+                        )
+                        Spacer(minLength: 8)
+                        Toggle("", isOn: launchAtLoginBinding)
+                            .accessibilityLabel("Launch at login")
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+
+                    if launchAtLoginNeedsApproval {
+                        HStack(spacing: 4) {
+                            Text("Needs approval in System Settings > General > Login Items.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Button("Open") {
+                                LaunchAtLogin.openSystemSettings()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.blue)
+                            .pointerOnHover()
+                        }
+                        .padding(.leading, 26)
+                    }
+
+                    if let launchAtLoginError {
+                        Text(launchAtLoginError)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.red)
+                            .padding(.leading, 26)
+                    }
+                }
+                .padding(8)
+                .settingsCard()
+
+                menuBarCard
+
+                // Sits directly under the menu bar picker: it decides where the readout lives,
+                // so it belongs with the other placement settings rather than below the
+                // notification thresholds it had nothing to do with.
+                if NotchWindowController.isSupported {
+                    notchModeRow
+                }
+
+                sectionHeader("Layout")
+
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         cardLabel(
@@ -127,84 +191,6 @@ struct SettingsPanel: View {
                 }
                 .padding(8)
                 .settingsCard()
-
-                    remoteControlCard
-                        .id(SettingsAnchor.remoteControl)
-
-                    permissionsCard
-
-                    sectionHeader("General")
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        cardLabel(
-                            icon: "power",
-                            iconColor: .secondary,
-                            title: "Launch at login",
-                            subtitle: "Start Toki automatically after you sign in."
-                        )
-                        Spacer(minLength: 8)
-                        Toggle("", isOn: launchAtLoginBinding)
-                            .accessibilityLabel("Launch at login")
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                    }
-
-                    if launchAtLoginNeedsApproval {
-                        HStack(spacing: 4) {
-                            Text("Needs approval in System Settings > General > Login Items.")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.secondary)
-                            Button("Open") {
-                                LaunchAtLogin.openSystemSettings()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.blue)
-                            .pointerOnHover()
-                        }
-                        .padding(.leading, 26)
-                    }
-
-                    if let launchAtLoginError {
-                        Text(launchAtLoginError)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.red)
-                            .padding(.leading, 26)
-                    }
-                }
-                .padding(8)
-                .settingsCard()
-
-                HStack(spacing: 8) {
-                    cardLabel(
-                        icon: "menubar.rectangle",
-                        iconColor: .secondary,
-                        title: "Menu bar",
-                        subtitle: "What the menu bar item shows at a glance."
-                    )
-                    Spacer(minLength: 8)
-                    Picker("Menu bar", selection: binding(\.menuBarMode)) {
-                        ForEach(MenuBarDisplayMode.allCases) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .fixedSize()
-                    .pointerOnHover()
-                }
-                .padding(8)
-                .settingsCard()
-
-                // Sits directly under the menu bar picker: it decides where the readout lives,
-                // so it belongs with the other placement settings rather than below the
-                // notification thresholds it had nothing to do with.
-                if NotchWindowController.isSupported {
-                    notchModeRow
-                }
 
                 sectionHeader("Notifications")
 
@@ -448,6 +434,198 @@ struct SettingsPanel: View {
         )
     }
 
+    // Mode (what is shown) and density (how much room it takes) are separate axes, so every
+    // mode can be run at every density. Pinning only appears when it has something to do.
+    @ViewBuilder
+    private var menuBarCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                cardLabel(
+                    icon: "menubar.rectangle",
+                    iconColor: .secondary,
+                    title: "Menu bar",
+                    subtitle: store.preferences.menuBarMode.detail
+                )
+                Spacer(minLength: 8)
+                Picker("Menu bar", selection: binding(\.menuBarMode)) {
+                    ForEach(MenuBarDisplayMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .pointerOnHover()
+            }
+            .padding(8)
+
+            if store.preferences.menuBarMode == .pinned {
+                Divider()
+                    .padding(.leading, 34)
+                pinnedProvidersRow
+            }
+
+            // Logo-only draws no numbers, so there is no density for it to change.
+            if store.preferences.menuBarMode != .logoOnly {
+                Divider()
+                    .padding(.leading, 34)
+                HStack(spacing: 8) {
+                    Text("Size")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.leading, 26)
+                    Spacer(minLength: 8)
+                    // No fixedSize here, unlike the notch row below: three density names are
+                    // wider than the card can spare, and a segmented picker held at its
+                    // intrinsic width squeezes the label beside it down to nothing.
+                    Picker("Size", selection: binding(\.menuBarDensity)) {
+                        ForEach(MenuBarDensity.allCases) { density in
+                            Text(density.label).tag(density)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .help("Comfortable and Compact fit 3 providers; Compact drops the percent sign. Stacked fits 2, on two rows")
+                }
+                .padding(8)
+            }
+        }
+        .settingsCard()
+    }
+
+    // Driven off connected accounts rather than the full Provider list, so the choices are
+    // ones that can actually show a number.
+    private var pinnableProviders: [Provider] {
+        var seen: Set<Provider> = []
+        return store.snapshots.filter { !$0.isError }.map(\.provider).filter { seen.insert($0).inserted }
+    }
+
+    /// How many pins the current density can actually draw.
+    private var pinCap: Int { store.preferences.menuBarDensity.maxSegments }
+
+    /// Pins in the order they will be drawn, ignoring ones with no connected account since
+    /// those never reach the bar and so never use up a slot.
+    private var effectivePins: [Provider] {
+        store.preferences.menuBarPinnedProviders.filter { pinnableProviders.contains($0) }
+    }
+
+    /// Pins past the cap. Non-empty only after a density change shrank the cap underneath an
+    /// existing selection, since adding past it is blocked.
+    private var overflowPins: [Provider] {
+        Array(effectivePins.dropFirst(pinCap))
+    }
+
+    @ViewBuilder
+    private var pinnedProvidersRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if pinnableProviders.isEmpty {
+                Text("Connect an account to pick what the menu bar pins.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(pinnableProviders, id: \.self) { provider in
+                        pinToggle(for: provider)
+                    }
+                }
+
+                if !overflowPins.isEmpty {
+                    // Reachable by switching density with pins already set, so it names what
+                    // is being dropped instead of silently shortening the readout.
+                    exposureNote(
+                        "\(store.preferences.menuBarDensity.label) fits \(pinCap). "
+                        + "\(listed(overflowPins)) \(overflowPins.count == 1 ? "is" : "are") pinned but hidden — "
+                        + "unpin, or switch to Comfortable.",
+                        level: .warning
+                    )
+                } else {
+                    Text(effectivePins.count >= pinCap
+                         ? "\(store.preferences.menuBarDensity.label) fits \(pinCap). Unpin one to swap in another."
+                         : "Shows up to \(pinCap), in the order you pin them. Pin nothing and Toki falls back to Smart.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(8)
+        .padding(.leading, 18)
+    }
+
+    private func listed(_ providers: [Provider]) -> String {
+        let names = providers.map(\.displayName)
+        guard names.count > 1 else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+    }
+
+    private func pinToggle(for provider: Provider) -> some View {
+        let pins = store.preferences.menuBarPinnedProviders
+        let isPinned = pins.contains(provider)
+        // Blocked rather than allowed-and-truncated: a pin that silently never appears is the
+        // thing that made the old cap feel broken. Unpinning is always allowed, so the user is
+        // never stuck, and an over-cap selection carried in from a density change stays
+        // editable.
+        let isBlocked = !isPinned && effectivePins.count >= pinCap
+        let isHidden = overflowPins.contains(provider)
+
+        return Button {
+            var next = store.preferences
+            if let index = next.menuBarPinnedProviders.firstIndex(of: provider) {
+                next.menuBarPinnedProviders.remove(at: index)
+            } else {
+                next.menuBarPinnedProviders.append(provider)
+            }
+            store.updatePreferences(next)
+        } label: {
+            HStack(spacing: 5) {
+                ProviderLogo(provider: provider, size: 11)
+                Text(provider.displayName)
+                    .font(.system(size: 10, weight: isPinned ? .semibold : .regular))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if isHidden {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(pinFill(isPinned: isPinned, isHidden: isHidden), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(pinStroke(isPinned: isPinned, isHidden: isHidden), lineWidth: 1)
+            )
+            .opacity(isBlocked ? 0.4 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(isBlocked)
+        .pointerOnHover()
+        .help(pinHelp(isPinned: isPinned, isBlocked: isBlocked, isHidden: isHidden))
+        .accessibilityLabel(
+            "\(provider.displayName)"
+            + (isPinned ? ", pinned" : "")
+            + (isHidden ? ", hidden past the \(pinCap) this density fits" : "")
+            + (isBlocked ? ", unavailable until you unpin one" : "")
+        )
+    }
+
+    private func pinFill(isPinned: Bool, isHidden: Bool) -> Color {
+        guard isPinned else { return Color.secondary.opacity(0.08) }
+        return (isHidden ? Color.orange : Color.accentColor).opacity(0.18)
+    }
+
+    private func pinStroke(isPinned: Bool, isHidden: Bool) -> Color {
+        guard isPinned else { return .clear }
+        return (isHidden ? Color.orange : Color.accentColor).opacity(0.55)
+    }
+
+    private func pinHelp(isPinned: Bool, isBlocked: Bool, isHidden: Bool) -> String {
+        let density = store.preferences.menuBarDensity.label
+        if isHidden { return "Pinned, but \(density) only fits \(pinCap) — this one is not drawn" }
+        if isBlocked { return "\(density) fits \(pinCap). Unpin one first" }
+        return isPinned ? "Pinned to the menu bar" : "Pin to the menu bar"
+    }
+
     @ViewBuilder
     private var notchModeRow: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -495,7 +673,7 @@ struct SettingsPanel: View {
 
             if store.preferences.notchModeEnabled {
                 Divider()
-                    .padding(.horizontal, 8)
+                    .padding(.leading, 34)
                 HStack(spacing: 8) {
                     Text("Rests")
                         .font(.system(size: 11, weight: .semibold))
@@ -520,11 +698,14 @@ struct SettingsPanel: View {
     }
 
     @ViewBuilder
+    // Roomier than the other cards on purpose: it is the tallest one in the panel, stacking a
+    // toggle, two pickers, an explanation, a disclosure, and up to three advisory notes, and
+    // at the shared 8pt rhythm those ran together into a wall.
     private var remoteControlCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 8) {
                 cardLabel(
-                    icon: "antenna.radiowaves.left.and.right",
+                    icon: "arcade.stick",
                     iconColor: .teal,
                     title: "Remote Control Server",
                     subtitle: "Run a local server to check on and reply to your agents from your phone."
@@ -745,7 +926,8 @@ struct SettingsPanel: View {
                     .padding(.horizontal, 4)
             }
         }
-        .padding(8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 12)
         .settingsCard()
         .sheet(isPresented: $showingConnect) {
             RemoteConnectSheet()
@@ -1013,7 +1195,7 @@ struct SettingsPanel: View {
     // The same checklist onboarding shows, kept permanently: a permission can be revoked in
     // System Settings long after setup, and this is where you find out that it was.
     private var permissionsCard: some View {
-        SetupChecklistView(store: store, showsHeader: false, collapsible: true)
+        SetupChecklistView(store: store, showsHeader: false, collapsible: true, showsCollapsedTitle: false)
             .padding(8)
             .settingsCard()
     }
