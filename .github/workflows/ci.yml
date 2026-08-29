@@ -35,3 +35,23 @@ jobs:
         # Explicit exit rather than relying on the step's bash -e, so a failure early in the loop
         # can never be reported as the last test's success.
         run: for test in Tests/test_*.js; do node "$test" || exit 1; done
+
+  # The release workflow only runs on a tag, so until now nothing built a DMG before one was
+  # pushed. 3.1.0 tagged green and then failed to publish, because the packaging step is the
+  # one thing CI never exercised. This runs the same script the release does, so packaging
+  # breaks on the branch that caused it instead of on the tag.
+  #
+  # Only on main and release branches: it is a universal build, so it costs far more than the
+  # test job and earns that cost only where a tag is actually going to come from.
+  package:
+    name: Package
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Build and package
+        # No signing secrets here, so this packages ad-hoc. That is the same path an unsigned
+        # release takes, and it is the DMG creation and verification being checked either way.
+        run: bash scripts/package-release.sh

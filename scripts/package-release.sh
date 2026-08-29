@@ -177,8 +177,21 @@ rm -rf "$STAGING_DIR"
 # A DMG that hdiutil cannot attach is worthless to the updater, which mounts it to swap the
 # app in. Failing here keeps a bad image from being uploaded to a release, where the only
 # symptom is "hdiutil: attach failed - corrupt image" on every machine that tries to update.
+#
+# This checks attachability rather than the checksum. `hdiutil verify` reads the internal
+# CRC, and on GitHub's macos-26 runner it rejects images hdiutil itself has just written
+# ("unable to recognize as a disk image"), while passing locally on 26.6.2 for a byte-identical
+# invocation. Attaching is both the stricter test and the one that matches what the updater
+# does, so a pass here means more than a checksum ever did.
 echo "==> Verifying DMG"
-hdiutil verify "$DMG_PATH"
+hdiutil imageinfo "$DMG_PATH" > /dev/null
+ATTACH_DEV=$(hdiutil attach -nomount -readonly "$DMG_PATH" | awk 'NR==1 {print $1}')
+if [[ -z "$ATTACH_DEV" ]]; then
+  echo "    hdiutil attach produced no device for $DMG_PATH" >&2
+  exit 1
+fi
+hdiutil detach "$ATTACH_DEV" -quiet
+echo "    attached and detached cleanly as $ATTACH_DEV"
 
 echo ""
 echo "==> Done: $DMG_PATH"
