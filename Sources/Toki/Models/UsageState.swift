@@ -179,6 +179,10 @@ struct AppPreferences: Codable, Equatable {
     /// Off by default - it relocates the whole app, so it is opt-in.
     var notchModeEnabled = false
     var notchPlacement = NotchPlacement.hanging
+    /// Vertical quota rail down the right screen edge. Independent of notch mode: it anchors to
+    /// the screen rather than the camera housing, so it runs on any display. Off by default,
+    /// like every other surface that puts something permanent on screen.
+    var railModeEnabled = false
     /// Whether Toki may read the Claude Code sign-in out of the Keychain, which puts up the
     /// system's Keychain dialog. Off until the setup checklist asks for it, so a fresh install
     /// doesn't raise that dialog just because someone opened the menu.
@@ -204,6 +208,7 @@ struct AppPreferences: Codable, Equatable {
         case quotaRingsEnabled
         case notchModeEnabled
         case notchPlacement
+        case railModeEnabled
         case keychainReadsApproved
         case setupChecklistStarted
         case setupChecklistCompleted
@@ -247,6 +252,7 @@ struct AppPreferences: Codable, Equatable {
         quotaRingsEnabled = try container.decodeIfPresent(Bool.self, forKey: .quotaRingsEnabled) ?? defaults.quotaRingsEnabled
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled
         notchPlacement = try container.decodeIfPresent(NotchPlacement.self, forKey: .notchPlacement) ?? defaults.notchPlacement
+        railModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .railModeEnabled) ?? defaults.railModeEnabled
         keychainReadsApproved = try container.decodeIfPresent(Bool.self, forKey: .keychainReadsApproved) ?? defaults.keychainReadsApproved
         setupChecklistStarted = try container.decodeIfPresent(Bool.self, forKey: .setupChecklistStarted) ?? defaults.setupChecklistStarted
         setupChecklistCompleted = try container.decodeIfPresent(Bool.self, forKey: .setupChecklistCompleted) ?? defaults.setupChecklistCompleted
