@@ -485,6 +485,7 @@ struct SettingsPanel: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    .controlSize(.small)
                     .help("Comfortable and Compact fit 3 providers; Compact drops the percent sign. Stacked fits 2, on two rows")
                 }
                 .padding(8)
@@ -678,6 +679,7 @@ struct SettingsPanel: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    .controlSize(.small)
                     .fixedSize()
                     .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
                 }

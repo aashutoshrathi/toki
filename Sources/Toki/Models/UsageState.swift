@@ -159,7 +159,9 @@ struct AppPreferences: Codable, Equatable {
     var lowQuotaThreshold = 0.20
     var notificationCooldownMinutes = 90
     var menuBarMode = MenuBarDisplayMode.smart
-    var menuBarDensity = MenuBarDensity.comfortable
+    /// Stacked by default: the menu bar is the most contested space on the screen, and two
+    /// half-height rows show the same two providers in roughly half the width.
+    var menuBarDensity = MenuBarDensity.stacked
     /// Which providers `MenuBarDisplayMode.pinned` shows, in the order they are shown. Empty
     /// means the mode has nothing to draw, so the readout falls back to Smart rather than
     /// leaving an empty status item behind.

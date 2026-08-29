@@ -88,7 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         installEditMenu()
         installCLISymlink()
 
+        seedPreferredStatusItemPosition()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // A stable name is what makes a position stick. Without one AppKit invents a key per
+        // launch order, so dragging Toki somewhere lasted only until the next launch.
+        statusItem.autosaveName = Self.statusItemAutosaveName
         updateStatusItem()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
@@ -195,6 +199,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if FileManager.default.fileExists(atPath: symlinkPath) {
             DiagnosticLogger.shared.record(.info, component: "cli", code: "symlink_installed", detail: symlinkPath)
         }
+    }
+
+    private static let statusItemAutosaveName = "toki-status-item"
+
+    // macOS keeps third-party status items in their own region, to the left of the system ones
+    // (Control Center, clock, battery). Nothing an app can call puts it among those, so the
+    // furthest right Toki can sit is the right-hand end of the third-party region, immediately
+    // before them - which is what a preferred position of 0 asks for.
+    //
+    // AppKit reads this default when the item is created, so it has to be written first. Only
+    // seeded when absent: once the item exists AppKit owns the key, and overwriting it on every
+    // launch would drag Toki back rightwards every time someone moved it.
+    private func seedPreferredStatusItemPosition() {
+        let key = "NSStatusItem Preferred Position \(Self.statusItemAutosaveName)"
+        guard UserDefaults.standard.object(forKey: key) == nil else { return }
+        UserDefaults.standard.set(0, forKey: key)
     }
 
     private func updateStatusItem() {

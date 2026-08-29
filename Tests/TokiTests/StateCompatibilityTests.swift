@@ -107,9 +107,12 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertEqual(state.preferences.menuBarPinnedProviders, [.codex])
     }
 
-    func testStateFromBeforeMenuBarDensityKeepsTheComfortableDefault() throws {
+    // A state file written before the key existed adopts the current default, which is Stacked:
+    // the menu bar is contested space and two half-height rows cost about half the width.
+    func testStateFromBeforeMenuBarDensityAdoptsTheCurrentDefault() throws {
         let state = try decodeState(#"{"preferences": {"menuBarMode": "smart"}}"#)
-        XCTAssertEqual(state.preferences.menuBarDensity, .comfortable)
+        XCTAssertEqual(state.preferences.menuBarDensity, .stacked)
+        XCTAssertEqual(state.preferences.menuBarMode, .smart, "a stored mode still wins over the default")
     }
 }
 

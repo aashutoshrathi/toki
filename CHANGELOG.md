@@ -6,7 +6,7 @@
 
 - **Pin exactly which providers the menu bar shows.** Any connected provider, in the order you pin them, replacing the modes hardcoded to Claude and Codex.
 - **Logo only mode, for a menu bar that is already full.** Just the Toki mark, roughly a quarter the width, with every number still one click away.
-- **A size setting for the menu bar readout.** Comfortable, Compact, or Stacked (two providers on two half-height rows), independent of what the menu bar shows.
+- **A size setting for the menu bar readout.** Stacked is the new default: two providers on two half-height rows, roughly half the width. Comfortable is the old layout, Compact sits between them.
 - **The menu bar says when a pin will not fit.** Comfortable and Compact draw three providers, Stacked draws two, and anything past the limit is named rather than quietly dropped.
 - **Banked Codex resets show when they expire.** The expiry sits beside the count, so you can tell whether to redeem one now or wait for the quota to reset on its own.
 - **A beta build says which beta it is.** A badge beside the version names the prerelease, so a bug report can say which build it came from.
@@ -17,6 +17,7 @@
 - **The menu bar mode list is current again.** Claude + Codex only duplicated Smart and Accounts drew an anonymous dot and a count; both are gone, and existing settings carry over.
 - **Settings are grouped into named sections.** Remote Control and Permissions lead with headers of their own, and the panel's display toggles move into a new Layout section.
 - **Remote Control wears a joystick.** The antenna glyph is now an arcade stick, everywhere the feature appears.
+- **Toki sits further right in the menu bar.** It now takes the right-hand end of the third-party area, next to the system icons, and stays wherever you drag it instead of moving between launches.
 - **Release notes are one line per change.** The release page carries each entry's headline; the full text stays here and in What's New.
 
 ### Fixed
