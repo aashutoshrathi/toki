@@ -485,6 +485,7 @@ struct SettingsPanel: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    .controlSize(.small)
                     .help("Comfortable and Compact fit 3 providers; Compact drops the percent sign. Stacked fits 2, on two rows")
                 }
                 .padding(8)
@@ -500,20 +501,18 @@ struct SettingsPanel: View {
         return store.snapshots.filter { !$0.isError }.map(\.provider).filter { seen.insert($0).inserted }
     }
 
-    /// How many pins the current density can actually draw.
-    private var pinCap: Int { store.preferences.menuBarDensity.maxSegments }
-
-    /// Pins in the order they will be drawn, ignoring ones with no connected account since
-    /// those never reach the bar and so never use up a slot.
-    private var effectivePins: [Provider] {
-        store.preferences.menuBarPinnedProviders.filter { pinnableProviders.contains($0) }
+    /// The arithmetic behind the chips lives in `menuBarPinState` so the counts this panel
+    /// promises can be checked against what the menu bar actually draws.
+    private var pinState: MenuBarPinState {
+        menuBarPinState(
+            pinned: store.preferences.menuBarPinnedProviders,
+            connected: pinnableProviders,
+            density: store.preferences.menuBarDensity
+        )
     }
 
-    /// Pins past the cap. Non-empty only after a density change shrank the cap underneath an
-    /// existing selection, since adding past it is blocked.
-    private var overflowPins: [Provider] {
-        Array(effectivePins.dropFirst(pinCap))
-    }
+    private var pinCap: Int { pinState.cap }
+    private var overflowPins: [Provider] { pinState.overflow }
 
     @ViewBuilder
     private var pinnedProvidersRow: some View {
@@ -534,12 +533,12 @@ struct SettingsPanel: View {
                     // is being dropped instead of silently shortening the readout.
                     exposureNote(
                         "\(store.preferences.menuBarDensity.label) fits \(pinCap). "
-                        + "\(listed(overflowPins)) \(overflowPins.count == 1 ? "is" : "are") pinned but hidden — "
+                        + "\(listedNames(overflowPins)) \(overflowPins.count == 1 ? "is" : "are") pinned but hidden. "
                         + "unpin, or switch to Comfortable.",
                         level: .warning
                     )
                 } else {
-                    Text(effectivePins.count >= pinCap
+                    Text(!pinState.canPinMore
                          ? "\(store.preferences.menuBarDensity.label) fits \(pinCap). Unpin one to swap in another."
                          : "Shows up to \(pinCap), in the order you pin them. Pin nothing and Toki falls back to Smart.")
                         .font(.system(size: 9))
@@ -551,12 +550,6 @@ struct SettingsPanel: View {
         .padding(.leading, 18)
     }
 
-    private func listed(_ providers: [Provider]) -> String {
-        let names = providers.map(\.displayName)
-        guard names.count > 1 else { return names.first ?? "" }
-        return names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
-    }
-
     private func pinToggle(for provider: Provider) -> some View {
         let pins = store.preferences.menuBarPinnedProviders
         let isPinned = pins.contains(provider)
@@ -564,7 +557,7 @@ struct SettingsPanel: View {
         // thing that made the old cap feel broken. Unpinning is always allowed, so the user is
         // never stuck, and an over-cap selection carried in from a density change stays
         // editable.
-        let isBlocked = !isPinned && effectivePins.count >= pinCap
+        let isBlocked = !isPinned && !pinState.canPinMore
         let isHidden = overflowPins.contains(provider)
 
         return Button {
@@ -686,6 +679,7 @@ struct SettingsPanel: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    .controlSize(.small)
                     .fixedSize()
                     .help("Hanging drops below the notch; Sideways sits in the menu bar beside it")
                 }

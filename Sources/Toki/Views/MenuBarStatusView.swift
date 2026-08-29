@@ -71,20 +71,11 @@ struct MenuBarStatusView: View {
             } else {
                 ProviderLogo(provider: entry.provider, size: metrics.glyphSize)
             }
-            Text(displayValue(for: entry))
+            Text(menuBarDisplayValue(entry.value, density: density))
                 .font(.system(size: metrics.valueSize, weight: .regular, design: .monospaced))
                 .foregroundStyle(.primary)
                 .frame(minWidth: metrics.valueMinWidth, alignment: .trailing)
         }
-    }
-
-    // Compact only. The percent sign is the one character carrying no information the glyph
-    // beside it doesn't already imply, so the density whose whole job is width spends it on
-    // something else. Stacked has already halved the width by going vertical and has the room
-    // to keep it. Cost readouts ("$12.30") have no percent sign and are left alone.
-    private func displayValue(for entry: MenuBarStatusEntry) -> String {
-        guard density == .compact, entry.value.hasSuffix("%") else { return entry.value }
-        return String(entry.value.dropLast())
     }
 
     private var metrics: Metrics { Metrics(density: density) }

@@ -5,11 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>A tiny macOS menu bar companion for AI coding agents and usage.</strong>
+  <strong>One menu bar app for every AI coding agent you run.</strong><br>
+  Track usage across all of them, see where the money goes, watch live sessions, and answer a waiting agent from your phone.
 </p>
 
 <p align="center">
-  <img alt="Version 2.7.0" src="https://img.shields.io/badge/version-2.7.0-2f80ed">
+  <img alt="Version 3.1.0" src="https://img.shields.io/badge/version-3.1.0-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -17,24 +18,33 @@
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
 </p>
 
-<p align="center">
-  <code>/toki</code> keeps your active AI coding accounts, current-session quota, and weekly quota one click away, and lets you answer a waiting agent from your phone.
-</p>
-
 | Menu bar | Widget |
 |:---:|:---:|
 | ![Toki menu bar popover preview](https://files.aashutosh.dev/toki-preview.png) | ![Toki macOS widgets preview](https://files.aashutosh.dev/toki-widgets.png) |
 
+## What Toki does
 
-## Why Toki
+If you move between Claude Code, Codex, Cursor, and half a dozen others during the day, each one keeps its own quota, its own bill, and its own idea of what is running. Toki puts all of it in one place.
 
-Toki is built for people who jump between Claude Code, Codex, Cursor, Copilot, Gemini, Grok, OpenCode, Pi, Sarvam Code, Vercel's fx, and Google's Antigravity during the day and want a fast, local view of usage and active agents.
+**Usage across every harness.** Live quota for Claude Code and Codex, a spend ring for Cursor, and local token and spend tracking for OpenCode, Pi, Sarvam Code, and Vercel's fx. Whichever provider you are actively running sorts to the top. Multiple Claude Code accounts are discovered and switchable in one click.
 
-It works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): Toki discovers the same Claude Code account registry, shows active and inactive accounts, and lets you switch accounts without reimplementing credential-management logic.
+**Analytics that go back further than the install.** Spend and token counts across today, this week, this month, and all time, plus a thirty-day heatmap filterable by provider. Both are read from each tool's own session history, so they cover work you did before Toki existed. Reported currencies are preserved.
 
-Toki stays local. Credentials are read from your Mac, your configured commands, or provider auth files. The app does not run a cloud service.
+**Live sessions, and the ones stuck waiting.** Agent discovery across every supported tool, with navigation to the terminal tab or app hosting each one. A session parked on a permission prompt or a question gets a red dot and the question itself, on the card, the tab, and the menu bar, so you find out now rather than twenty minutes later.
 
-When an agent is waiting on you and you are not at your desk, Remote Control lets your phone answer it over your own tailnet, typing into the terminal the agent is already running in.
+**Remote Control, with no middleman.** Follow a running agent's transcript from another room and answer it: send a message, approve or reject a prompt, pick an option, switch its model, or mirror its terminal and drive whatever is on screen. There is a server, but it is **your Mac** — no relay, no account, no service of ours in the path. Replies land in the session already running, delivered to the agent's own TTY, so the agent cannot tell the difference. Off by default. See [Remote Control](docs/remote-control.md).
+
+Also: on-device Apple Intelligence summaries on macOS 26+, low-quota and session notifications with cooldowns and DND, desktop widgets, provider-colored quota rings, and an experimental notch mode.
+
+## Supported tools
+
+| | |
+|---|---|
+| **Quota tracked** | Claude Code (multi-account), Codex |
+| **Spend tracked** | Cursor, OpenCode, Pi, Sarvam Code, Vercel's fx |
+| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Grok CLI, Google's Antigravity, and ChatGPT-hosted Codex |
+
+Toki works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): it reads the same Claude Code account registry, so accounts switch without either tool reimplementing the other's credential handling.
 
 ## Install
 
@@ -46,18 +56,17 @@ brew trust --cask aashutoshrathi/tap/toki
 brew install --cask toki
 ```
 
-The cask installs the latest release DMG. Toki is ad-hoc signed and not notarized, so macOS quarantines it. Clear the quarantine with:
+Toki is ad-hoc signed and not notarized, so macOS quarantines it. Clear that with:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Toki.app
 ```
 
-The `-r` (recursive) is important: it also clears the bundled widget extension. Right-clicking Toki and choosing **Open** unblocks the app itself but leaves the nested extension quarantined, so macOS refuses to load it and the widgets stay blank — the recursive `xattr` is what makes the widgets work.
+The `-r` matters. It also clears the bundled widget extension: right-clicking Toki and choosing **Open** unblocks the app but leaves the nested extension quarantined, so macOS refuses to load it and the widgets stay blank.
 
 ### Direct download
 
 Grab the latest `Toki_<version>_universal.dmg` from the [releases page](https://github.com/aashutoshrathi/toki/releases/latest), open it, and drag Toki to Applications. Updates install in-app once running.
-
 
 ### From source
 
@@ -65,26 +74,6 @@ Grab the latest `Toki_<version>_universal.dmg` from the [releases page](https://
 swift run Toki                # run in place
 scripts/install-app.sh        # build a bundle and install to ~/Applications
 ```
-
-## What it does
-
-**Quota and spend.** Live rate-limit tracking for Claude Code (multi-account via `claude-swap`, with one-click switching) and Codex, a spend ring for Cursor read from your account, and local token and spend tracking for OpenCode, Pi, Sarvam Code, and Vercel's fx. Every spend figure carries the token count behind it, across today, this week, this month, and all time, and whichever provider you are actively running sorts to the top. Reported currencies are preserved; costs without a currency are treated as USD.
-
-**Active agents.** Discovery across Codex, Claude Code, Cursor, Copilot CLI, Gemini CLI, Grok CLI, OpenCode, Pi, Sarvam Code, Vercel's fx, Google's Antigravity, and ChatGPT-hosted Codex, with best-effort navigation to the terminal tab or app hosting each one.
-
-**Agents waiting on you.** A session parked on a permission prompt or a question is called out with a red dot and the question itself — on the card, the tab, and the menu bar — so you don't discover it twenty minutes later.
-
-**Remote Control from your phone, over Tailscale.** Follow a running agent's transcript from another room and answer it: send a message, approve or reject a permission prompt, pick an option, switch the model it is running, mirror its terminal to watch and drive whatever is on screen, or clear the session. Each agent carries a badge naming the model it is on. Replies are delivered to the agent's own TTY — `tmux send-keys` where there is a pane, iTerm2 by tty otherwise, Terminal as a fallback — so they land in the session already running rather than starting a new one, and the agent cannot tell the difference. Tailscale is the recommended route and keeps this off the public internet entirely; the host setting decides which networks the server will answer at all. Off by default. See [Remote Control](docs/remote-control.md).
-
-**Daily usage heatmap.** Thirty days, filterable by provider, read from each tool's own session history — so it covers work done before Toki was installed.
-
-**Insights and notifications.** An on-device Apple Intelligence summary on macOS 26+ (deterministic recommendation elsewhere), low-quota and session warnings with cooldowns and DND, and a session mode for tracking burn during a focused run. The insight card can be hidden from Settings.
-
-**Desktop widgets.** Small and medium macOS WidgetKit widgets put account quota, agents awaiting input, and break suggestions on your desktop or in Notification Center — plus a separate quota-rings widget for percentage-based accounts. They refresh from Toki's live data while it runs.
-
-**Quota rings.** Provider-colored rings that show remaining percentage at a glance, in the Accounts panel and as the standalone macOS widget, with provider details on hover. On by default; hide them from the panel or Settings.
-
-**Experimental notch mode.** Off by default, notched Macs only — moves the readout into the display notch, expanding on hover.
 
 ## Documentation
 
@@ -99,9 +88,9 @@ scripts/install-app.sh        # build a bundle and install to ~/Applications
 
 ## Privacy
 
-Toki stays local. Credentials are read from your Mac's Keychain or the provider auth files already on it; there is no cloud service and no telemetry. Session history is read for token counts, costs, timestamps, and titles — never message content. Diagnostics contain error categories and status codes only.
+Toki stays on your Mac. Credentials are read from your Keychain or the provider auth files already there. There is no cloud service and no telemetry. Session history is read for token counts, costs, timestamps, and titles, never message content. Diagnostics carry error categories and status codes only.
 
-Remote Control is the one feature that reads message content, because showing you a transcript is the point of it. It is off by default. When it is on, the transcript travels from your Mac straight to your phone and nowhere else: there is no relay and no account. If you use the hosted companion interface, that host serves the page only and never receives your agent data — and serving the page from your own Mac instead removes it from the picture entirely, which is why that is the recommended setting.
+Remote Control is the one feature that reads message content, because showing you a transcript is the point of it. It is off by default. When on, the transcript goes from your Mac straight to your phone and nowhere else. Tailscale is the recommended route and keeps it off the public internet entirely; the host setting decides which networks the server answers at all. If you use the hosted companion interface, that host serves the page only and never receives agent data, and serving the page from your own Mac instead removes it from the picture completely, which is why that is the default.
 
 Backwards-compatible fallbacks for the old TokenBar config paths are still honoured.
 
