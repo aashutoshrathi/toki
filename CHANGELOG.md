@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.1.0 - 2026-08-29
 
 ### Added
 
@@ -21,8 +21,14 @@
 
 - **What's New reads as prose instead of markup.** The changelog is authored as markdown and every entry leads with a bold summary, so the panel was showing the asterisks, backticks, and link brackets as literal text. Inline formatting now renders, contributor links included.
 - **What's New and Quit Toki respond to the pointer.** They were system menu items, which keep the arrow cursor and the system highlight, so they were the only controls in the panel without the pointer and hover treatment everything else has.
+- **Toki actually asks macOS about notifications now.** It never did: the authorization check reported granted unconditionally, with no path that returned anything else, and delivery went through an API deprecated since macOS 10.14. So "Send a test" claimed success whether or not anything reached you, and the permissions row sat at "can't tell" forever. The row now reports what macOS really says, offers Allow when it has not been asked, and sends you to System Settings once it has been refused, because macOS will not ask twice.
+- **The permissions list notices a granted Accessibility tick.** macOS only hands new Accessibility trust to an app when it starts, so ticking the box left the row still reading "Allow" as though the grant had failed. It now offers a restart and explains that the tick is tied to the app's signature, which changes on every update until Toki has a Developer ID.
 - **The permissions card stops repeating its own name.** Its collapsed row leads with how many permissions are granted, and the note about a test notification clears once it stops describing something that just happened.
 - **Separators inside a settings card line up with the ones between cards.** The dividers within the notch card were inset differently from the card separators above and below them, so they visibly overhung on the left and fell short on the right.
+
+### Thanks
+
+[@thepushkarp](https://github.com/thepushkarp) contributed the compact recent-and-weekly quota windows on the account cards.
 
 ## 3.0.0 - 2026-08-27
 
