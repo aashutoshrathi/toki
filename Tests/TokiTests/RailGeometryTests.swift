@@ -16,7 +16,24 @@ final class RailGeometryTests: XCTestCase {
         let g = RailGeometry.make(screen: screen(), providerCount: 2)!
         // Top of the window sits exactly where the menu bar band ends.
         XCTAssertEqual(g.window.maxY, 982 - 38, accuracy: 0.001)
-        XCTAssertLessThan(g.window.maxX, 1512, "it must not run off the right edge")
+        // Flush to the border rather than inset from it, so the rail reads as part of the
+        // display's edge the way the concept draws it - and never past it.
+        XCTAssertEqual(g.window.maxX, 1512, accuracy: 0.001)
+    }
+
+    // The tail has to travel with the row, or a card pushed away from centre to stay on screen
+    // would point at the wrong ring.
+    func testTheTailFollowsTheRowNotTheCard() {
+        let g = RailGeometry.make(screen: screen(), providerCount: 4)!
+        let first = g.rowCentreY(0)
+        let second = g.rowCentreY(1)
+        XCTAssertEqual(second - first, RailGeometry.rowPitch(), accuracy: 0.001)
+        for row in 0..<4 {
+            let card = g.card(forRow: row, height: 90)
+            let tail = g.rowCentreY(row) - card.minY
+            XCTAssertGreaterThanOrEqual(tail, 0, "row \(row) tail sat above the card")
+            XCTAssertLessThanOrEqual(tail, card.height, "row \(row) tail sat below the card")
+        }
     }
 
     func testTheRailGrowsWithEachProvider() {

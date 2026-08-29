@@ -29,7 +29,10 @@ struct RailPanel: View {
 
             if let hovered {
                 let frame = geometry.card(forRow: hovered.index, height: cardHeight(for: hovered.snapshot))
-                DetailCard(snapshot: hovered.snapshot)
+                DetailCard(
+                    snapshot: hovered.snapshot,
+                    tailCentre: geometry.rowCentreY(hovered.index) - frame.minY
+                )
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)
                     .transition(.opacity)
@@ -56,8 +59,8 @@ struct RailPanel: View {
         }
         .padding(RailGeometry.railPadding)
         .frame(width: geometry.rail.width, height: geometry.rail.height, alignment: .top)
-        .background(Color.black, in: BottomRoundedShape(cornerRadius: 12))
-        .contentShape(BottomRoundedShape(cornerRadius: 12))
+        .background(Color.black, in: RailShape())
+        .contentShape(RailShape())
         .onTapGesture(perform: onClick)
         .pointerOnHover()
     }
@@ -69,11 +72,12 @@ struct RailPanel: View {
                 remainingRatio: snapshot.remainingRatio,
                 color: ringColor(snapshot),
                 diameter: RailGeometry.ringDiameter,
-                isHighlighted: hoveredID == snapshot.id
+                isHighlighted: hoveredID == snapshot.id,
+                seatsGlyph: true
             )
             Text(snapshot.remainingRatio.map { percentText($0) } ?? "--")
-                .font(.system(size: 8, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.85))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
         }
         .frame(height: RailGeometry.rowHeight)
         .contentShape(Rectangle())
@@ -94,6 +98,8 @@ struct RailPanel: View {
 /// when it resets.
 private struct DetailCard: View {
     let snapshot: AccountSnapshot
+    /// Where the tail meets the card, measured from its top.
+    let tailCentre: CGFloat
 
     private var windows: [RateLimitWindow] {
         let reported = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
@@ -122,15 +128,15 @@ private struct DetailCard: View {
             }
         }
         .padding(10)
+        .padding(.trailing, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Near-solid: at 0.92 whatever sits behind the card reads through it, and the card is
         // mostly small text over an arbitrary desktop.
-        .background(Color.black.opacity(0.97), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+        .background(
+            Color.black.opacity(0.97),
+            in: CardWithTailShape(tailCentre: tailCentre)
         )
+        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
     }
 
     private func windowRow(_ window: RateLimitWindow) -> some View {
@@ -160,5 +166,66 @@ private struct DetailCard: View {
                     .lineLimit(1)
             }
         }
+    }
+}
+
+/// The rail's silhouette, as the concept draws it: flush to the display's right edge, flaring
+/// out of the menu bar with an inverted corner rather than meeting it at a right angle, and
+/// rounded where it hangs free.
+///
+/// The top-left corner is concave - a quarter disc taken out at the corner - which is the same
+/// join macOS uses where the notch meets the band. A square corner there reads as a panel
+/// sitting under the menu bar; this reads as the menu bar itself growing downward.
+struct RailShape: Shape {
+    var flare: CGFloat = 10
+    var bottomRadius: CGFloat = 14
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + flare, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.minX, y: rect.minY),
+            radius: flare,
+            startAngle: .degrees(0),
+            endAngle: .degrees(90),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - bottomRadius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + bottomRadius, y: rect.maxY),
+            control: CGPoint(x: rect.minX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - bottomRadius, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.maxY - bottomRadius),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The hover card's outline, with a tail on its right edge aimed at the ring being hovered.
+/// `tailCentre` is measured from the card's own top, so a card pushed away from centre to stay
+/// on screen still points at the right row.
+struct CardWithTailShape: Shape {
+    var cornerRadius: CGFloat = 12
+    var tailCentre: CGFloat
+    var tailHeight: CGFloat = 16
+    var tailDepth: CGFloat = 8
+
+    func path(in rect: CGRect) -> Path {
+        let body = rect.insetBy(dx: 0, dy: 0).divided(atDistance: rect.width - tailDepth, from: .minXEdge).slice
+        var path = Path(roundedRect: body, cornerRadius: cornerRadius, style: .continuous)
+
+        let top = min(max(tailCentre - tailHeight / 2, cornerRadius), rect.maxY - cornerRadius - tailHeight)
+        var tail = Path()
+        tail.move(to: CGPoint(x: body.maxX - 1, y: top))
+        tail.addLine(to: CGPoint(x: rect.maxX, y: top + tailHeight / 2))
+        tail.addLine(to: CGPoint(x: body.maxX - 1, y: top + tailHeight))
+        tail.closeSubpath()
+        path.addPath(tail)
+        return path
     }
 }

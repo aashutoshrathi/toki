@@ -11,11 +11,19 @@ struct RingGauge: View {
     let color: Color
     var diameter: CGFloat = 26
     var isHighlighted: Bool = false
+    var seatsGlyph: Bool = false
 
     private var lineWidth: CGFloat { max(diameter * 0.13, 3) }
 
     var body: some View {
         ZStack {
+            // The concept seats each glyph on a disc a shade lighter than the rail, so the mark
+            // reads against the ring rather than against whatever the desktop is doing.
+            if seatsGlyph {
+                Circle()
+                    .fill(Color.white.opacity(0.10))
+                    .padding(lineWidth * 0.9)
+            }
             Circle()
                 .stroke(color.opacity(0.18), lineWidth: lineWidth)
             if let remainingRatio {

@@ -17,9 +17,9 @@ struct RailGeometry: Equatable {
     /// Providers beyond `drawnCount`, shown as "+N".
     let overflowCount: Int
 
-    static let ringDiameter: CGFloat = 26
-    static let rowSpacing: CGFloat = 4
-    static let railPadding: CGFloat = 7
+    static let ringDiameter: CGFloat = 30
+    static let rowSpacing: CGFloat = 8
+    static let railPadding: CGFloat = 9
     static let cardWidth: CGFloat = 236
     static let cardGap: CGFloat = 8
     /// Rows past this are collapsed. The rail hangs into the screen, so an unbounded one would
@@ -27,7 +27,7 @@ struct RailGeometry: Equatable {
     static let maxRows = 4
 
     /// Height of one row: the ring plus the percentage printed under it.
-    static let rowHeight: CGFloat = ringDiameter + 12
+    static let rowHeight: CGFloat = ringDiameter + 15
 
     static func rowPitch() -> CGFloat { rowHeight + rowSpacing }
 
@@ -47,10 +47,9 @@ struct RailGeometry: Equatable {
         let railWidth = ringDiameter + railPadding * 2
         let railHeight = CGFloat(rows) * rowHeight + CGFloat(max(rows - 1, 0)) * rowSpacing + railPadding * 2
 
-        // Tucked under the menu bar band at the right edge, inset so it does not sit flush
-        // against the screen border.
-        let edgeInset: CGFloat = 8
-        let railX = screen.frame.maxX - edgeInset - railWidth
+        // Flush to the screen border, as the concept has it: the rail reads as part of the
+        // display's edge rather than as a panel floating near it.
+        let railX = screen.frame.maxX - railWidth
         let railTop = screen.frame.maxY - screen.bandHeight
 
         // The window also spans the card's footprint to the left, so the card can be drawn
@@ -72,11 +71,15 @@ struct RailGeometry: Equatable {
         )
     }
 
+    /// Centre of a row, in the same top-left space as `rail`. The card's tail points here.
+    func rowCentreY(_ index: Int) -> CGFloat {
+        Self.railPadding + CGFloat(index) * Self.rowPitch() + Self.rowHeight / 2
+    }
+
     /// The card's frame for a hovered row, in the same top-left space as `rail`. Kept inside the
     /// window vertically, so hovering the bottom row does not push it off the edge.
     func card(forRow index: Int, height: CGFloat) -> CGRect {
-        let rowTop = Self.railPadding + CGFloat(index) * Self.rowPitch()
-        let centred = rowTop + Self.rowHeight / 2 - height / 2
+        let centred = rowCentreY(index) - height / 2
         let clamped = min(max(centred, 0), max(window.height - height, 0))
         return CGRect(x: 0, y: clamped, width: Self.cardWidth, height: height)
     }
