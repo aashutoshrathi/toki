@@ -25,19 +25,14 @@ enum NotificationAuthorization: Equatable, Sendable {
 
 /// The one place that talks to UserNotifications.
 ///
-/// `UNUserNotificationCenter.current()` traps when the running executable has no bundle
-/// identifier, which is what `swift run Toki` - the documented dev workflow - produces. That
-/// trap is the reason this file exists. The previous code dodged it by asserting authorization
-/// unconditionally and delivering through the long-deprecated `NSUserNotificationCenter`, so a
-/// build that could not notify at all still reported that it had, and macOS was never actually
-/// asked for permission. Guarding on the bundle first makes the real API safe to call from any
-/// build, and lets an unbundled one say so instead of pretending.
+/// `UNUserNotificationCenter.current()` traps unless the executable is a real .app. Guarding on
+/// that first is what makes the API safe to call from any build, and lets one that cannot
+/// deliver say so instead of reporting success it never had.
 enum NotificationDelivery {
     static var unavailableReason: String? {
-        // Both conditions are needed, because either one alone lets through a case that traps.
-        // `swift run Toki` has no bundle identifier at all; the test runner has one but is not
-        // an .app, and UNUserNotificationCenter raises "bundleProxyForCurrentProcess is nil"
-        // for it just the same. What the API actually wants is a real application bundle.
+        // Both conditions: `swift run Toki` has no bundle identifier, and the test runner has
+        // one but is not an .app. Either alone lets through a case that traps with
+        // "bundleProxyForCurrentProcess is nil".
         guard Bundle.main.bundleIdentifier != nil,
               Bundle.main.bundleURL.pathExtension == "app" else {
             return "This build has no app bundle, so macOS has nothing to attribute a notification to. Run Toki from Toki.app."
