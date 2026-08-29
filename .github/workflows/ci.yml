@@ -45,7 +45,11 @@ jobs:
   # test job and earns that cost only where a tag is actually going to come from.
   package:
     name: Package
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    # On pull requests too, not just the push after merge. The trigger above already limits
+    # pull requests to ones aimed at main or a release branch, so every PR that reaches here is
+    # headed somewhere a tag can be cut from - and github.ref is refs/pull/N/merge on those,
+    # which matches neither branch name.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
