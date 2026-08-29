@@ -22,11 +22,16 @@ APP_DIR="$BUILD_DIR/$APP_NAME.app"
 
 echo "==> Building arm64 binary"
 rm -rf "$BUILD_DIR/release"
-swift build -c release
+# -Osize rather than the default -O. It takes about 12% off the binary, which is 700KB off the
+# installed app - but only 70KB off the DMG, because UDZO already compresses away most of what
+# it removes. So this is for the space Toki occupies on disk, not for the download. Toki spends
+# its time waiting on timers, subprocesses and the network, so the speed traded away for it is
+# not what is scarce here.
+swift build -c release -Xswiftc -Osize
 
 echo "==> Building x86_64 binary"
 rm -rf "$BUILD_DIR/release-x86_64"
-swift build -c release \
+swift build -c release -Xswiftc -Osize \
   -Xswiftc -target -Xswiftc x86_64-apple-macosx14.0 \
   --build-path "$BUILD_DIR/x86_64"
 

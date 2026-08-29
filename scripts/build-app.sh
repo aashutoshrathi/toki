@@ -19,7 +19,8 @@ BUILD_NUMBER="${TOKI_BUILD_NUMBER:-$(date +%s)}"
 # the two scripts produce differently shaped bundles, and anything reading this key - the
 # updater, the header's prerelease badge - is untestable outside a tagged CI run.
 RELEASE_VERSION="${TOKI_RELEASE_VERSION:-$VERSION}"
-swift build -c release
+# Matches package-release.sh, so a locally installed build is the same shape as a shipped one.
+swift build -c release -Xswiftc -Osize
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR"
