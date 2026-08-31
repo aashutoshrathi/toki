@@ -99,11 +99,20 @@ struct ClaudeCodeUsage {
 
             let clampedUsed = max(0, min(100, percentUsed))
             let reset = resetDescription(entry["resets_at"])
+            let label = "\(name) 7d"
             modelWindows.append(RateLimitWindow(
-                label: "\(name) 7d",
+                label: label,
                 percentLeft: Int((100 - clampedUsed).rounded()),
                 resetHint: reset.map { "resets in \($0)" }
             ))
+
+            // Written the same way the 5h and 7d lines are, so the detail list reads as one set
+            // rather than as a stray row in its own format.
+            var value = "\(Int(clampedUsed.rounded()))% used"
+            if let reset {
+                value += " - resets in \(reset)"
+            }
+            metrics.append(MetricLine(label: label, value: value))
         }
     }
 

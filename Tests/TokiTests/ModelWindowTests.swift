@@ -22,6 +22,25 @@ final class ModelWindowTests: XCTestCase {
          "scope": ["model": ["display_name": displayName]]]
     }
 
+    // The compact header row fits two columns; a third wraps its label and truncates its value,
+    // so a model limit belongs in the detail list beside 5h, 7d and Extra.
+    func testAModelLimitBecomesADetailLine() {
+        let u = usage(limits: [scoped("Fable 5", percent: 30)])
+        let line = u.metrics.first { $0.label == "Fable 5 7d" }
+        XCTAssertNotNil(line, "the model limit has to reach the detail list")
+        XCTAssertEqual(line?.value, "30% used", "written like the 5h and 7d lines, which report used")
+    }
+
+    func testTheDetailLineCarriesTheResetWhenThereIsOne() {
+        let u = ClaudeCodeUsage(json: ["limits": [[
+            "kind": "weekly_scoped", "group": "weekly", "percent": 30,
+            "resets_at": "2099-01-01T00:00:00+00:00",
+            "scope": ["model": ["display_name": "Fable 5"]]
+        ]]])
+        let value = u.metrics.first { $0.label == "Fable 5 7d" }?.value ?? ""
+        XCTAssertTrue(value.hasPrefix("30% used - resets in "), "got \(value)")
+    }
+
     func testAScopedWeeklyLimitReadsItsModelsDisplayName() {
         let u = usage(limits: [
             ["kind": "weekly_all", "group": "weekly", "scope": NSNull(), "percent": 46],
