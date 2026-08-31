@@ -87,37 +87,45 @@ struct ClaudeCodeUsage {
 
     // The top-level keys are codenames (seven_day_omelette, seven_day_tangelo) that say nothing
     // about which model they belong to, and a release can add another at any time. `limits`
-    // describes itself instead: each entry carries a `kind`, a `group`, and a `scope` naming the
-    // model, so a weekly limit for a model Toki has never heard of still renders correctly.
+    // describes itself instead: a scoped weekly entry carries the model's own display name, so a
+    // limit for a model Toki has never heard of renders correctly and reads the way Anthropic
+    // writes it.
     private mutating func appendModelWindows(_ raw: Any?) {
         guard let entries = raw as? [[String: Any]] else { return }
         for entry in entries {
-            // Model-scoped means weekly with a scope. The unscoped weekly is the shared
-            // allowance, already covered by seven_day.
-            guard (entry["group"] as? String) == "weekly",
-                  let scope = entry["scope"] as? String, !scope.isEmpty,
+            guard Self.isScopedWeekly(entry),
+                  let name = Self.scopeName(entry["scope"]),
                   let percentUsed = optionalNumber(entry["percent"]) else { continue }
 
             let clampedUsed = max(0, min(100, percentUsed))
             let reset = resetDescription(entry["resets_at"])
             modelWindows.append(RateLimitWindow(
-                label: Self.modelWindowLabel(scope),
+                label: "\(name) 7d",
                 percentLeft: Int((100 - clampedUsed).rounded()),
                 resetHint: reset.map { "resets in \($0)" }
             ))
         }
     }
 
-    /// "claude-fable-5" reads as "Fable 5 7d". The provider prefix and separators go, since the
-    /// card is already inside a Claude account and the column is only so wide.
-    static func modelWindowLabel(_ scope: String) -> String {
-        var parts = scope.split(whereSeparator: { $0 == "-" || $0 == "_" }).map(String.init)
-        if parts.first?.lowercased() == "claude" { parts.removeFirst() }
-        guard !parts.isEmpty else { return "\(scope) 7d" }
-        let name = parts
-            .map { $0.count <= 1 || Int($0) != nil ? $0 : $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
-        return "\(name) 7d"
+    /// `weekly_scoped` is what the API calls a limit that applies to one model. `weekly_all` is
+    /// the shared allowance, already covered by seven_day, and counting it here would show the
+    /// same quota twice. The group check is a fallback for a kind spelled differently later.
+    static func isScopedWeekly(_ entry: [String: Any]) -> Bool {
+        let kind = (entry["kind"] as? String) ?? ""
+        if kind == "weekly_all" { return false }
+        return kind == "weekly_scoped" || kind.hasPrefix("weekly") || (entry["group"] as? String) == "weekly"
+    }
+
+    /// The scope is an object - `scope.model.display_name` - not a string, so a model reads as
+    /// "Fable 5" rather than as whatever codename the top-level keys use. A bare string is
+    /// accepted too, in case the shape is ever flattened.
+    static func scopeName(_ scope: Any?) -> String? {
+        if let text = scope as? String, !text.isEmpty { return text }
+        guard let dict = scope as? [String: Any] else { return nil }
+        if let model = dict["model"] as? [String: Any],
+           let name = model["display_name"] as? String, !name.isEmpty { return name }
+        if let name = dict["display_name"] as? String, !name.isEmpty { return name }
+        return nil
     }
 
     private mutating func appendWindow(_ label: String, _ window: [String: Any]) {
