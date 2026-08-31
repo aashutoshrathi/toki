@@ -60,6 +60,20 @@ struct SettingsPanel: View {
     @State private var showingConnect = false
     @State private var advancedExpanded = false
     @State private var showingTailscaleGuide = false
+
+    // A brew install is moved onto the other cask when the channel changes, which takes
+    // long enough that the card has to say so rather than look inert.
+    private var channelSubtitle: String {
+        if updateChecker.isSwitchingCask {
+            return "Moving your Homebrew install to the other cask…"
+        }
+        if let error = updateChecker.caskSwitchError {
+            return error
+        }
+        return updateChecker.channel == .beta
+            ? "Includes pre-releases for early testing."
+            : "Stable releases only."
+    }
     private let reachabilityTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -320,9 +334,7 @@ struct SettingsPanel: View {
                         icon: "hammer",
                         iconColor: .orange,
                         title: "Channel",
-                        subtitle: updateChecker.channel == .beta
-                            ? "Includes pre-releases for early testing."
-                            : "Stable releases only."
+                        subtitle: channelSubtitle
                     )
                     Spacer(minLength: 8)
                     Picker("Update channel", selection: Binding(
@@ -337,6 +349,7 @@ struct SettingsPanel: View {
                     .labelsHidden()
                     .controlSize(.small)
                     .fixedSize()
+                    .disabled(updateChecker.isSwitchingCask)
                     .pointerOnHover()
                 }
                 .padding(8)

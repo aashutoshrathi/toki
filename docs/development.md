@@ -63,6 +63,8 @@ Two casks live in the tap (`aashutoshrathi/homebrew-tap`): `toki` (stable) and `
 
 When Toki was installed by a cask, the in-app updater detects it (`BrewCask.installedCask` — the Caskroom entry is a symlink to the installed bundle) and routes "Install update" through `brew upgrade --cask <toki|toki-beta>` instead of swapping the DMG underneath brew. This keeps brew's receipt in sync with the app on disk; the DMG path would desync it, and the next `brew upgrade` would then clobber the newer build with the cask's older one. Dev builds and manual installs keep the direct DMG path.
 
+The channel picker and the installed cask are kept in agreement in both directions. Picking a channel moves a brew install onto the matching cask (`fetch`, then `uninstall`, then `install` — `conflicts_with` rules out installing over the top, and fetching first means a network failure cannot strand the uninstall with nothing to reinstall). Swapping casks with brew directly moves the channel instead: the cask decides what brew will install, so the preference follows it on the next check. A failed switch reinstalls the cask that was there and puts the preference back.
+
 ## Concurrency checking
 
 CI builds with stricter concurrency than a plain `swift build`, and the difference has broken this project's CI more than once — a pure static helper on a `@MainActor` type needs `nonisolated`, which only the stricter mode catches. Reproduce it locally before pushing:
@@ -87,4 +89,4 @@ Comments should explain what the code cannot: why a timeout is the value it is, 
 - **Switch fails** — run `claude-swap --switch-to <slot>` in Terminal to see the underlying error.
 - **No notifications** — check the Events tab for DND or cooldown suppression, then confirm macOS notification permission.
 - **`brew finished but Toki wasn't updated`** — the tap may be stale; run `brew update && brew upgrade --cask toki` (or `toki-beta`) manually and check the tap has the version the app offered.
-- **`Beta builds ship in the toki-beta cask`** — the Beta channel is on but brew installed the stable `toki` cask, which never carries a prerelease; `brew install --cask toki-beta` switches (it replaces `toki`).
+- **`Beta builds ship in the toki-beta cask`** — the Beta channel is on but brew installed the stable `toki` cask, which never carries a prerelease. Re-pick the channel in Settings to move the install; by hand it is `brew uninstall --cask toki && brew install --cask toki-beta`, since `conflicts_with` makes a bare install refuse.

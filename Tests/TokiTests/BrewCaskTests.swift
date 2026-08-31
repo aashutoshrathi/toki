@@ -64,6 +64,21 @@ final class BrewCaskTests: XCTestCase {
         XCTAssertTrue(BrewCask.handoffSucceeded(appURL: app, expectedVersion: "2.5.0-beta.2"))
     }
 
+    func testSwitchingCasksUninstallsOnlyAfterTheDownloadIsCached() {
+        // The uninstall deletes the running bundle, so a fetch that fails must fail before
+        // anything is removed.
+        XCTAssertEqual(
+            BrewCask.switchCommands(from: BrewCask.stableCask, to: BrewCask.betaCask),
+            [
+                ["fetch", "--cask", "toki-beta"],
+                ["uninstall", "--cask", "toki"],
+                ["install", "--cask", "toki-beta"],
+            ]
+        )
+        XCTAssertEqual(BrewCask.cask(for: .beta), "toki-beta")
+        XCTAssertEqual(BrewCask.cask(for: .stable), "toki")
+    }
+
     func testHandoffPostconditionDistinguishesBetaIterations() {
         XCTAssertTrue(BrewCask.handoffSucceeded(
             bundleVersion: "2.5.0-beta.2", marketingVersion: "2.5.0", expectedVersion: "2.5.0-beta.2"

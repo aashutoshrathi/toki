@@ -47,6 +47,10 @@ enum BrewCask {
         }
     }
 
+    static func cask(for channel: UpdateChannel) -> String {
+        channel == .beta ? betaCask : stableCask
+    }
+
     /// Only the beta cask tracks prereleases. Handing a prerelease to the stable cask
     /// would upgrade to whatever stable version the tap holds, or no-op — either way the
     /// offered build never arrives, so the mismatch is reported instead of attempted.
@@ -54,18 +58,34 @@ enum BrewCask {
         !isPrerelease || cask == betaCask
     }
 
-    /// Exit status of `brew upgrade`, or nil when brew could not be launched at all —
+    /// Moving a brew install from one cask to the other, in order.
+    ///
+    /// It has to be uninstall-then-install: `conflicts_with` makes brew refuse to install
+    /// either cask while the other is present, and installing over the top with `--force`
+    /// would leave two receipts owning one bundle - the exact desync this whole path
+    /// exists to prevent. The download is fetched first because the uninstall deletes the
+    /// bundle this process is running from, and a network failure after that point would
+    /// leave no app on disk at all.
+    static func switchCommands(from installed: String, to target: String) -> [[String]] {
+        [
+            ["fetch", "--cask", target],
+            ["uninstall", "--cask", installed],
+            ["install", "--cask", target],
+        ]
+    }
+
+    /// Exit status of the brew invocation, or nil when brew could not be launched at all —
     /// the two cases need different advice, and a missing brew is not a failed upgrade.
     ///
-    /// Off the main actor: an upgrade can run for minutes and the menu bar must stay
-    /// responsive. Termination is observed via waitpid exit, not a pipe read, so there is
-    /// no stdout/stderr drain to deadlock on.
-    static func runUpgrade(_ install: BrewCaskInstall) async -> Int32? {
+    /// Off the main actor: brew can run for minutes and the menu bar must stay responsive.
+    /// Termination is observed via waitpid exit, not a pipe read, so there is no
+    /// stdout/stderr drain to deadlock on.
+    static func run(_ arguments: [String], brewBinary: String) async -> Int32? {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 let process = Process()
-                process.executableURL = URL(fileURLWithPath: install.brewBinary)
-                process.arguments = ["upgrade", "--cask", install.cask]
+                process.executableURL = URL(fileURLWithPath: brewBinary)
+                process.arguments = arguments
                 do {
                     try process.run()
                     process.waitUntilExit()
