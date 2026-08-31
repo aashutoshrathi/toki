@@ -16,6 +16,10 @@ cask "toki" do
 
   app "Toki.app"
 
+  # Homebrew checks the incoming cask's declarations, so both sides must declare the
+  # conflict for the mutual exclusion to hold in both install directions.
+  conflicts_with cask: "toki-beta"
+
   # The release DMG is ad-hoc signed and not notarized, so Gatekeeper quarantines it.
   # Strip the quarantine flag on install so the app opens without a right-click-Open.
   postflight do

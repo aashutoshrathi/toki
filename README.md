@@ -56,6 +56,14 @@ brew trust --cask aashutoshrathi/tap/toki
 brew install --cask toki
 ```
 
+Beta builds are available as a separate cask that tracks prereleases:
+
+```sh
+brew install --cask toki-beta
+```
+
+The two casks conflict — install one. A stable release bumps both, so `brew upgrade` carries beta installs onto the graduated stable build. When Toki was installed by a cask, its in-app updater routes updates through `brew upgrade` so brew's bookkeeping stays in sync.
+
 Toki is ad-hoc signed and not notarized, so macOS quarantines it. Clear that with:
 
 ```sh

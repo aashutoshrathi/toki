@@ -43,17 +43,25 @@ When a widget looks wrong:
 
 Every release starts from a tag push; `.github/workflows/release.yml` builds the DMG and publishes the GitHub release. The tag decides the channel:
 
-- **Stable** — tag `vX.Y.Z` (e.g. `v2.5.0`). Published as a full GitHub release, offered to everyone, and the Homebrew cask is updated.
-- **Beta** — tag with a prerelease suffix (e.g. `v2.5.0-beta.1`). Published as a GitHub prerelease, offered only to users who picked the Beta channel in Settings > Updates. The Homebrew cask is not touched.
+- **Stable** — tag `vX.Y.Z` (e.g. `v2.5.0`). Published as a full GitHub release, offered to everyone, and both Homebrew casks are updated (`toki` and `toki-beta`).
+- **Beta** — tag with a prerelease suffix (e.g. `v2.5.0-beta.1`). Published as a GitHub prerelease, offered only to users who picked the Beta channel in Settings > Updates, and the `toki-beta` cask is updated. The stable cask is not touched.
 
-Set `appVersion` in `Sources/Toki/Config/Constants.swift` to match the tag (without the `v`) before tagging — the packaging script, the in-app updater's version check, and the DMG verification all read it.
+Set `appVersion` in `Sources/Toki/Config/Constants.swift` to match the tag's base version (without the `v` and without any prerelease suffix) before tagging — the packaging script, the in-app updater's version check, and the DMG verification all read it. `CFBundleShortVersionString` must stay dotted-numeric; the prerelease identity travels in the tag, which the release workflow stamps into `TokiReleaseVersion` in Info.plist. The DMG filename is built from the base version (`Toki_2.5.0_universal.dmg`) even for a beta tag.
 
 To graduate a beta to production:
 
-1. Tag `v2.5.0-beta.1` (with `appVersion = "2.5.0-beta.1"`) and test on the Beta channel. Iterate with `-beta.2`, `-beta.3`, … as needed.
-2. When it's ready, set `appVersion = "2.5.0"` and tag `v2.5.0`. That build ships to everyone: stable users see it as a normal update, and beta users are offered it too, because `2.5.0` outranks `2.5.0-beta.N` — so testers land back on the production build without touching their channel setting.
+1. Tag `v2.5.0-beta.1` (with `appVersion = "2.5.0"`) and test on the Beta channel. Iterate with `-beta.2`, `-beta.3`, … as needed.
+2. When it's ready, set `appVersion = "2.5.0"` and tag `v2.5.0`. That build ships to everyone: stable users see it as a normal update, and beta users are offered it too, because `2.5.0` outranks `2.5.0-beta.N` — so testers land back on the production build without touching their channel setting. The same graduation happens for brew: the stable tag bumps both casks, so `brew upgrade` carries `toki-beta` users onto the stable build.
 
-Version ordering is semver-aware (`2.4.3` < `2.5.0-beta.1` < `2.5.0-beta.2` < `2.5.0`); the logic and its tests live in `UpdateChecker.compareVersions` and `Tests/TokiTests/UpdateChannelTests.swift`.
+Version ordering is semver-aware (`2.4.3` < `2.5.0-beta.1` < `2.5.0-beta.2` < `2.5.0`); the logic and its tests live in `UpdateChecker.compareVersions` and `Tests/TokiTests/UpdateChannelTests.swift`. Homebrew's own ordering agrees, which is what makes the single `toki-beta` cask work across iterations and graduation.
+
+## Homebrew
+
+Two casks live in the tap (`aashutoshrathi/homebrew-tap`): `toki` (stable) and `toki-beta` (prereleases). They conflict with each other — install one.
+
+`scripts/update-cask.sh <cask.rb> [version]` rewrites a cask's version and DMG sha256. The version argument defaults to `appVersion`; prerelease tags must pass the full version (e.g. `3.2.0-beta.1`) because it exists only in the tag. The DMG filename always carries the base version (`Toki_3.2.0_universal.dmg`), which the script and the cask's URL handle.
+
+When Toki was installed by a cask, the in-app updater detects it (`BrewCask.installedCask` — the Caskroom entry is a symlink to the installed bundle) and routes "Install update" through `brew upgrade --cask <toki|toki-beta>` instead of swapping the DMG underneath brew. This keeps brew's receipt in sync with the app on disk; the DMG path would desync it, and the next `brew upgrade` would then clobber the newer build with the cask's older one. Dev builds and manual installs keep the direct DMG path.
 
 ## Concurrency checking
 
@@ -78,3 +86,5 @@ Comments should explain what the code cannot: why a timeout is the value it is, 
 - **Pi missing** — confirm its session directory has JSONL history and any override path is absolute, exactly `~`, or starts with `~/`.
 - **Switch fails** — run `claude-swap --switch-to <slot>` in Terminal to see the underlying error.
 - **No notifications** — check the Events tab for DND or cooldown suppression, then confirm macOS notification permission.
+- **`brew finished but Toki wasn't updated`** — the tap may be stale; run `brew update && brew upgrade --cask toki` (or `toki-beta`) manually and check the tap has the version the app offered.
+- **`Beta builds ship in the toki-beta cask`** — the Beta channel is on but brew installed the stable `toki` cask, which never carries a prerelease; `brew install --cask toki-beta` switches (it replaces `toki`).

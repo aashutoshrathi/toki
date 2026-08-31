@@ -171,6 +171,7 @@ final class UpdateChecker: ObservableObject {
         guard let availableUpdate, !isInstalling else { return }
         isInstalling = true
         installError = nil
+        guard !startBrewHandoff(for: availableUpdate) else { return }
 
         Task {
             do {
@@ -186,6 +187,105 @@ final class UpdateChecker: ObservableObject {
                 isInstalling = false
             }
         }
+    }
+
+    /// A cask-installed copy must be upgraded by brew, not swapped underneath it: the DMG
+    /// path would desync brew's receipt and the next `brew upgrade` would clobber this
+    /// newer build with the cask's older one. The installed cask wins over the channel
+    /// preference - upgrading a different cask than the one that owns this bundle would
+    /// either fail on the conflict or leave the receipt stale.
+    ///
+    /// Returns true once the install belongs to brew - handed over or refused - so the
+    /// DMG path does not also run.
+    private func startBrewHandoff(for update: AvailableUpdate) -> Bool {
+        guard let install = BrewCask.installedCask(
+            bundleURL: Bundle.main.bundleURL,
+            caskroomBases: [
+                URL(fileURLWithPath: "/opt/homebrew/Caskroom"),
+                URL(fileURLWithPath: "/usr/local/Caskroom"),
+            ]
+        ) else { return false }
+
+        guard BrewCask.canDeliver(cask: install.cask, isPrerelease: update.isPrerelease) else {
+            failBrewHandoff(
+                code: "brew_channel_mismatch",
+                message: "Beta builds ship in the \(BrewCask.betaCask) cask. Run `brew install --cask \(BrewCask.betaCask)` to switch."
+            )
+            return true
+        }
+        Task { await installViaBrew(install: install, update: update) }
+        return true
+    }
+
+    private func installViaBrew(install: BrewCaskInstall, update: AvailableUpdate) async {
+        let cask = install.cask
+        let manually = "Update with `brew upgrade --cask \(cask)`."
+        guard let status = await BrewCask.runUpgrade(install) else {
+            failBrewHandoff(code: "brew_missing", message: "Couldn't run \(install.brewBinary). \(manually)")
+            return
+        }
+
+        guard status == 0, BrewCask.handoffSucceeded(
+            appURL: UpdateInstaller.installedAppURL(),
+            expectedVersion: update.version
+        ) else {
+            failBrewHandoff(code: "brew_handoff_failed", message: "brew finished but Toki wasn't updated. \(manually)", detail: "exit=\(status)")
+            return
+        }
+
+        guard relaunchAfterBrewUpgrade() else {
+            // The upgrade landed but relaunching failed; keep the app up rather than
+            // close it, and tell the user how to get the new build running.
+            installError = "Toki was updated but couldn't relaunch. Reopen Toki to finish."
+            isInstalling = false
+            return
+        }
+        NSApp.terminate(nil)
+    }
+
+    private func failBrewHandoff(code: String, message: String, detail: String? = nil) {
+        DiagnosticLogger.shared.record(.error, component: "updater", code: code, detail: detail ?? message)
+        installError = message
+        isInstalling = false
+    }
+
+    /// Reopens the app after a successful handoff. Brew replaced the bundle but has no
+    /// quit/reopen artifact for these casks, so without this the upgrade closes Toki.
+    ///
+    /// The open runs from a detached child that waits for this process to die first:
+    /// `open` fired immediately would target the still-running instance via
+    /// LaunchServices, and after termination no replacement would be left.
+    private func relaunchAfterBrewUpgrade() -> Bool {
+        guard let executable = Bundle.main.executableURL else { return false }
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["--brew-relaunch", UpdateInstaller.installedAppURL().path, String(ProcessInfo.processInfo.processIdentifier)]
+        do {
+            try process.run()
+            return true
+        } catch {
+            DiagnosticLogger.shared.record(.error, component: "updater", code: "brew_relaunch_failed", detail: diagnosticErrorDetail(error))
+            return false
+        }
+    }
+
+    static func runRelaunchHelperIfRequested(arguments: [String]) -> Bool {
+        guard arguments.count == 4, arguments[1] == "--brew-relaunch" else { return false }
+        let appPath = arguments[2]
+        // Fail safe: a malformed PID means continue normal startup, not exit the app.
+        guard let parentPID = Int32(arguments[3]) else { return false }
+        while kill(parentPID, 0) == 0 {
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = [appPath]
+        do {
+            try open.run()
+        } catch {
+            DiagnosticLogger.shared.record(.error, component: "updater", code: "brew_relaunch_failed", detail: diagnosticErrorDetail(error))
+        }
+        return true
     }
 
     private func runCheck(isManual: Bool = false) {
