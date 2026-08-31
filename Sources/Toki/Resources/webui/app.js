@@ -403,6 +403,17 @@ function providerLogo(p) {
   return '<svg class="plogo" viewBox="0 0 24 24" fill="#888"><circle cx="12" cy="12" r="8"/></svg>';
 }
 
+// Same aliases providerLogo folds together, so the composer names whoever its avatar is showing.
+function providerLabel(p) {
+  if (p == "claude" || p == "claudeCode" || p == "anthropic") return "Claude";
+  if (p == "codex" || p == "openai" || p == "chatgpt") return "Codex";
+  if (p == "opencode" || p == "openCode") return "OpenCode";
+  if (p == "antigravity") return "Antigravity";
+  if (p == "fx") return "fx";
+  if (p == "sarvam" || p == "sarvamCode") return "Sarvam Code";
+  return p ? p.charAt(0).toUpperCase() + p.slice(1) : "";
+}
+
 // Trim a model id to the part worth glancing at on a phone: drop a provider path prefix
 // (anthropic/\u2026, zai/\u2026) and the redundant "claude-" vendor tag.
 function shortModel(m) {
@@ -479,7 +490,24 @@ function updateComposer(agent) {
   $("#screen").hidden = !canMirror;
   if (!writable || (modelMirror && (!agent || modelMirror.pid != agent.pid))) closeModelMirror();
   document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
-  $("#msg").placeholder = writable ? "Reply to the agent\u2026" : (agent ? "Read-only session" : "No active session");
+  // The avatar names who the reply is going to, which the placeholder alone never did once
+  // more than one agent was running.
+  $("#composeravatar").innerHTML = agent ? providerLogo(agent.provider) : "";
+  const who = agent ? providerLabel(agent.provider) : "";
+  $("#msg").placeholder = writable
+    ? (who ? "Reply to " + who + "\u2026" : "Reply to the agent\u2026")
+    : (agent ? "Read-only session" : "No active session");
+}
+
+// A tall field is worth having for a long reply and in the way the rest of the time, so it is a
+// toggle rather than the default.
+function toggleComposerExpanded() {
+  const composer = document.querySelector(".composer");
+  const expanded = composer.classList.toggle("expanded");
+  $("#expand").setAttribute("aria-pressed", expanded ? "true" : "false");
+  $("#expand").title = expanded ? "Collapse the composer" : "Expand the composer";
+  if (!expanded) resizeComposer();
+  $("#msg").focus();
 }
 
 // Clearing is irreversible, so require a second tap within five seconds.
@@ -1310,11 +1338,17 @@ $("#log").addEventListener("click", e => {
 
 function resizeComposer() {
   const input = $("#msg");
+  if (document.querySelector(".composer").classList.contains("expanded")) {
+    input.style.height = "";
+    input.style.overflowY = "auto";
+    return;
+  }
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 200) + "px";
   input.style.overflowY = input.scrollHeight > 200 ? "auto" : "hidden";
 }
 
+$("#expand").addEventListener("click", toggleComposerExpanded);
 $("#msg").addEventListener("input", resizeComposer);
 $("#msg").addEventListener("keydown", e => {
   if (e.key == "Enter" && !e.isComposing && (e.metaKey || e.ctrlKey)) {
