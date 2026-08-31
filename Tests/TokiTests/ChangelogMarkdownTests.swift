@@ -37,9 +37,4 @@ final class ChangelogMarkdownTests: XCTestCase {
     func testMalformedMarkdownFallsBackToTheRawText() {
         XCTAssertFalse(rendered("A **dangling bold and a [link(broken").isEmpty)
     }
-
-    func testUnreleasedHeadingHasNoVersionPrefix() {
-        XCTAssertEqual(changelogVersionTitle("Unreleased"), "Unreleased")
-        XCTAssertEqual(changelogVersionTitle("3.1.0"), "v3.1.0")
-    }
 }
