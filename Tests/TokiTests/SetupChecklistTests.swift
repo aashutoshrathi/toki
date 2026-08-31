@@ -130,6 +130,9 @@ final class SetupChecklistTests: XCTestCase {
         facts.hasConnectedAccount = true
         facts.keychainApproved = true
         facts.remoteControlRunning = true
+        // Granted, so it drops out. Left unasked it is outstanding work in its own right, which
+        // is covered in NotificationChecklistStepTests.
+        facts.notificationAuthorization = .authorized
         facts.automation = [
             AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .done),
             AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .blocked)

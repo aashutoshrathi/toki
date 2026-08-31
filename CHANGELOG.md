@@ -4,8 +4,45 @@
 
 ### Changed
 
-- **Recent and weekly quotas share one compact account-card view.** Claude Code and Codex now show every applicable rolling window side by side, including reset countdowns when provided, while plans that expose only one window keep the single-window layout and Codex reset credits stay directly beneath it.
 - **Interactive controls now use native adaptive Liquid Glass.** Header and Settings utility actions use equal-sized interactive glass surfaces, while banked Codex resets use compact regular glass with a system accent tint and adaptive contrast instead of a fixed translucent blue badge. Reset credits keep their full count label below the quota, and quota-based cards reserve the same compact action row so their heights stay consistent while providers without quotas remain compact. The controls follow macOS' Liquid Glass appearance preference and accessibility display settings automatically.
+
+### Fixed
+
+- **Universal release packages build a real Intel slice.** The packaging script now asks SwiftPM to plan the x86_64 build at the architecture level, instead of compiling arm64 objects and handing them to an Intel linker.
+- **Local app bundles carry a real changelog resource.** The build script now follows the source symlink, so What's New survives moving the app away from the working tree and strict signature verification no longer encounters a dangling file.
+
+## 3.1.0 - 2026-08-29
+
+### Added
+
+- **Pin exactly which providers the menu bar shows.** Any connected provider, in the order you pin them, replacing the modes hardcoded to Claude and Codex.
+- **Logo only mode, for a menu bar that is already full.** Just the Toki mark, roughly a quarter the width, with every number still one click away.
+- **A size setting for the menu bar readout.** Stacked is the new default: two providers on two half-height rows, roughly half the width. Comfortable is the old layout, Compact sits between them.
+- **The menu bar says when a pin will not fit.** Comfortable and Compact draw three providers, Stacked draws two, and anything past the limit is named rather than quietly dropped.
+- **Banked Codex resets show when they expire.** The expiry sits beside the count, so you can tell whether to redeem one now or wait for the quota to reset on its own.
+- **A beta build says which beta it is.** A badge beside the version names the prerelease, so a bug report can say which build it came from.
+
+### Changed
+
+- **Recent and weekly quotas share one compact account-card view.** Claude Code and Codex show every applicable window side by side, with reset countdowns where provided.
+- **The menu bar mode list is current again.** Claude + Codex only duplicated Smart and Accounts drew an anonymous dot and a count; both are gone, and existing settings carry over.
+- **Settings are grouped into named sections.** Remote Control and Permissions lead with headers of their own, and the panel's display toggles move into a new Layout section.
+- **Remote Control wears a joystick.** The antenna glyph is now an arcade stick, everywhere the feature appears.
+- **Toki sits further right in the menu bar.** It now takes the right-hand end of the third-party area, next to the system icons, and stays wherever you drag it instead of moving between launches.
+- **Release notes are one line per change.** The release page carries each entry's headline; the full text stays here and in What's New.
+
+### Fixed
+
+- **Toki actually asks macOS about notifications now.** The check reported granted unconditionally, so "Send a test" claimed success whether or not anything ever arrived.
+- **The permissions list notices a granted Accessibility tick.** macOS only hands new trust to an app when it starts, so the row offers a restart instead of reading "Allow" forever.
+- **What's New renders its markdown.** Asterisks, backticks, and link brackets were showing as literal text.
+- **What's New and Quit Toki respond to the pointer.** They were system menu items, the only controls in the panel without hover treatment.
+- **Separators inside a settings card line up with the ones between cards.** They were inset differently and visibly overhung.
+- **The permissions card stops repeating its own name.** Its collapsed row leads with how many permissions are granted.
+
+### Thanks
+
+[@thepushkarp](https://github.com/thepushkarp) contributed the compact recent-and-weekly quota windows on the account cards.
 
 ## 3.0.0 - 2026-08-27
 

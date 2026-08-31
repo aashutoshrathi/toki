@@ -88,7 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         installEditMenu()
         installCLISymlink()
 
+        seedPreferredStatusItemPosition()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // A stable name is what makes a position stick. Without one AppKit invents a key per
+        // launch order, so dragging Toki somewhere lasted only until the next launch.
+        statusItem.autosaveName = Self.statusItemAutosaveName
         updateStatusItem()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
@@ -110,7 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // Two independent publishers, so each is cached and the item rebuilt from both.
         Task { @MainActor in
             for await entries in store.$statusEntries.values {
-                latestEntries = entries.isEmpty ? menuBarPlaceholderEntries() : entries
+                // An empty readout is what Logo-only asks for, so it must survive the
+                // placeholder that covers a genuinely empty one.
+                latestEntries = entries.isEmpty && store.preferences.menuBarMode != .logoOnly
+                    ? menuBarPlaceholderEntries()
+                    : entries
                 updateStatusItem()
             }
         }
@@ -133,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task { @MainActor in
             for await preferences in store.$preferences.values {
                 notchController?.update(placement: preferences.notchPlacement)
+                notchController?.update(density: preferences.menuBarDensity)
                 applyNotchMode(enabled: preferences.notchModeEnabled)
             }
         }
@@ -160,6 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     awaitingInput: agentsAwaitingInput,
                     contentWidth: latestContentWidth,
                     placement: store.preferences.notchPlacement,
+                    density: store.preferences.menuBarDensity,
                     onClick: { [weak self] in self?.togglePopover() }
                 )
             }
@@ -191,9 +201,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
+    private static let statusItemAutosaveName = "toki-status-item"
+
+    // macOS keeps third-party status items in their own region, to the left of the system ones
+    // (Control Center, clock, battery). Nothing an app can call puts it among those, so the
+    // furthest right Toki can sit is the right-hand end of the third-party region, immediately
+    // before them - which is what a preferred position of 0 asks for.
+    //
+    // AppKit reads this default when the item is created, so it has to be written first. Only
+    // seeded when absent: once the item exists AppKit owns the key, and overwriting it on every
+    // launch would drag Toki back rightwards every time someone moved it.
+    private func seedPreferredStatusItemPosition() {
+        let key = "NSStatusItem Preferred Position \(Self.statusItemAutosaveName)"
+        guard UserDefaults.standard.object(forKey: key) == nil else { return }
+        UserDefaults.standard.set(0, forKey: key)
+    }
+
     private func updateStatusItem() {
         let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput,
-                                        remoteControlOn: RemoteControlServer.shared.isRunning)
+                                        remoteControlOn: RemoteControlServer.shared.isRunning,
+                                        density: store.preferences.menuBarDensity)
         guard let button = statusItem.button else { return }
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {
@@ -210,7 +237,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         hostingView.layoutSubtreeIfNeeded()
         let fittingSize = hostingView.fittingSize
-        let width = max(54, ceil(fittingSize.width) + 6)
+        // The floor exists to stop a mid-refresh empty readout from collapsing the item to a
+        // dead zero-width click target. It has to sit below the width of the smallest thing we
+        // ever draw, or Logo-only and Compact pay for room they never use - which is the whole
+        // point of picking them.
+        let width = max(26, ceil(fittingSize.width) + 6)
 
         // The notch panel shows the same readout, so it reuses this measurement.
         latestContentWidth = ceil(fittingSize.width)

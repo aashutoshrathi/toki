@@ -177,8 +177,24 @@ struct OpenAILogoMark: View {
 
 struct TokiLogoMark: View {
     var size: CGFloat
+    /// The glass tile the mark sits on. Wanted wherever the logo reads as an app icon, but
+    /// not in the menu bar, where a tile behind a status item reads as a floating card.
+    var showsBackground = true
 
     var body: some View {
+        if showsBackground {
+            mark.functionalGlass(
+                in: RoundedRectangle(cornerRadius: size * 0.286, style: .continuous)
+            )
+            .accessibilityLabel("/toki")
+        } else {
+            mark.accessibilityLabel("/toki")
+        }
+    }
+
+    // The router glyph and its two status dots. The SVG carries the glyph alone, so anything
+    // drawing it bare gets a mark that is missing half the logo.
+    private var mark: some View {
         ZStack {
             SVGLogoMark(asset: "toki-router-mark", size: size, template: true) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
@@ -197,9 +213,5 @@ struct TokiLogoMark: View {
                 .offset(x: size * 0.227, y: size * 0.197)
         }
         .frame(width: size, height: size)
-        .functionalGlass(
-            in: RoundedRectangle(cornerRadius: size * 0.286, style: .continuous)
-        )
-        .accessibilityLabel("/toki")
     }
 }

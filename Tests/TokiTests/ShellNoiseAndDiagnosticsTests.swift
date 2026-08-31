@@ -32,7 +32,14 @@ final class ShellNoiseAndDiagnosticsTests: XCTestCase {
     func testRunShellReturnsExactlyTheCommandsOutput() throws {
         // End to end through /bin/zsh -l: whatever the login profile on this machine prints
         // must not reach the caller.
-        XCTAssertEqual(try SecretResolver.runShell("printf 'hi'"), "hi")
+        //
+        // The timeout is raised well above the 15s production default because the two are
+        // measuring different things. That default is tuned for a user waiting on a key fetch,
+        // where giving up matters. Here the only claim under test is that profile noise is
+        // stripped, and a cold CI runner's first `zsh -l` pays for path_helper and the rest of
+        // /etc/zprofile all at once - which is what made this fail on a merge commit whose
+        // code had already passed on the branch.
+        XCTAssertEqual(try SecretResolver.runShell("printf 'hi'", timeout: 120), "hi")
     }
     #endif
 

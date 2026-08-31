@@ -25,9 +25,11 @@ rm -rf "$BUILD_DIR/release"
 swift build -c release
 
 echo "==> Building x86_64 binary"
-rm -rf "$BUILD_DIR/release-x86_64"
+rm -rf "$BUILD_DIR/x86_64"
+# SwiftPM must plan the whole build for Intel. Passing -target through -Xswiftc leaves the
+# Xcode build plan on the host architecture, producing arm64 objects for an x86_64 link.
 swift build -c release \
-  -Xswiftc -target -Xswiftc x86_64-apple-macosx14.0 \
+  --triple x86_64-apple-macosx14.0 \
   --build-path "$BUILD_DIR/x86_64"
 
 echo "==> Creating universal binary"
@@ -165,11 +167,15 @@ cp -R "$APP_DIR" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 rm -f "$DMG_PATH"
+# No -fs: it used to pin HFS+, and on GitHub's macos-26 image that produces a file hdiutil
+# cannot read back at all - imageinfo rejects the header, not just the checksum. Apple has been
+# withdrawing HFS+ write support, so the filesystem is left to hdiutil, which picks one the
+# running OS can actually create. Toki requires macOS 14, well past the 10.13 that APFS images
+# need, so whichever it chooses is mountable by every supported install.
 hdiutil create \
   -volname "$APP_NAME $VERSION" \
   -srcfolder "$STAGING_DIR" \
   -ov -format UDZO \
-  -fs HFS+ \
   "$DMG_PATH"
 
 rm -rf "$STAGING_DIR"
@@ -177,8 +183,21 @@ rm -rf "$STAGING_DIR"
 # A DMG that hdiutil cannot attach is worthless to the updater, which mounts it to swap the
 # app in. Failing here keeps a bad image from being uploaded to a release, where the only
 # symptom is "hdiutil: attach failed - corrupt image" on every machine that tries to update.
+#
+# This checks attachability rather than the checksum. `hdiutil verify` reads the internal
+# CRC, and on GitHub's macos-26 runner it rejects images hdiutil itself has just written
+# ("unable to recognize as a disk image"), while passing locally on 26.6.2 for a byte-identical
+# invocation. Attaching is both the stricter test and the one that matches what the updater
+# does, so a pass here means more than a checksum ever did.
 echo "==> Verifying DMG"
-hdiutil verify "$DMG_PATH"
+hdiutil imageinfo "$DMG_PATH" > /dev/null
+ATTACH_DEV=$(hdiutil attach -nomount -readonly "$DMG_PATH" | grep -o '^/dev/[^[:space:]]*' | head -1)
+if [[ -z "$ATTACH_DEV" ]]; then
+  echo "    hdiutil attach produced no device for $DMG_PATH" >&2
+  exit 1
+fi
+hdiutil detach "$ATTACH_DEV" -quiet
+echo "    attached and detached cleanly as $ATTACH_DEV"
 
 echo ""
 echo "==> Done: $DMG_PATH"

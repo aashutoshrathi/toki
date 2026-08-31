@@ -76,22 +76,37 @@ extension UsageStore {
         }
     }
 
-    // The setup checklist's notification step. macOS asks about notifications the first time one
-    // is delivered, so this is how that prompt is brought forward to a moment the user chose,
-    // rather than arriving with the first low-quota warning.
-    func sendTestNotification() {
-        let detail = "Toki will tell you here when quota runs low or an agent is waiting on you."
-        deliverNotification(title: "Toki notifications are on", detail: detail) { handedOver, failureDetail in
-            // "Handed to macOS", not "delivered": nothing here can see whether it was actually shown.
-            self.appendEvent(
+    // The setup checklist's notification step. It asks macOS for permission first, which is the
+    // whole point of the row: bringing that prompt forward to a moment the user chose, rather
+    // than letting it arrive with the first low-quota warning. Then it sends one, so a granted
+    // permission is confirmed by something actually appearing.
+    // Awaitable so the checklist's "allow all" pass can put this dialog up and wait for the
+    // answer before moving to the next one, the way every other request in that pass does.
+    func sendTestNotification() async {
+        let authorization = await NotificationDelivery.requestAuthorization()
+        notificationAuthorization = authorization
+
+        guard authorization.allowsDelivery else {
+            appendEvent(
                 kind: .notification,
                 title: "Test notification",
-                detail: handedOver
-                    ? "Sent to macOS. If nothing appeared, allow Toki under System Settings › Notifications."
-                    : "Not sent: \(failureDetail ?? detail)",
-                deliveredNotification: handedOver
+                detail: "Not sent. \(authorization.deliveryBlocker ?? "")",
+                deliveredNotification: false
             )
+            return
         }
+
+        let detail = "Toki will tell you here when quota runs low or an agent is waiting on you."
+        let failure = await NotificationDelivery.deliver(title: "Toki notifications are on", body: detail)
+        appendEvent(
+            kind: .notification,
+            title: "Test notification",
+            // "Handed to macOS", not "shown": whether it draws is macOS's call and is not
+            // observable from here.
+            detail: failure.map { "Not sent. \($0)" }
+                ?? "Sent to macOS. If nothing appeared, check Toki under System Settings › Notifications.",
+            deliveredNotification: failure == nil
+        )
     }
 
     private func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
@@ -132,34 +147,13 @@ extension UsageStore {
         detail: String,
         completion: @escaping @MainActor (Bool, String?) -> Void
     ) {
-        resolveNotificationAuthorization { granted, error in
-            if let error {
-                Task { @MainActor in completion(false, error) }
-                return
-            }
-            guard granted else {
-                Task { @MainActor in completion(false, "notification permission denied") }
-                return
-            }
-
-            let notification = NSUserNotification()
-            notification.title = title
-            notification.informativeText = detail
-            notification.soundName = NSUserNotificationDefaultSoundName
-            NSUserNotificationCenter.default.deliver(notification)
-            Task { @MainActor in completion(true, nil) }
+        Task { @MainActor in
+            let failure = await NotificationDelivery.deliver(title: title, body: detail)
+            // Cached so the checklist and the next delivery can read where things stand
+            // without another round trip to macOS.
+            notificationAuthorization = await NotificationDelivery.authorizationStatus()
+            completion(failure == nil, failure)
         }
-    }
-
-    private func resolveNotificationAuthorization(completion: @escaping @Sendable (Bool, String?) -> Void) {
-        if notificationAuthorization == true {
-            completion(true, nil)
-            return
-        }
-        // macOS 26.6 has a crash in UNUserNotificationCenter.current() — use NSUserNotificationCenter
-        // (deprecated since 10.14 but still works on all supported OS versions).
-        notificationAuthorization = true
-        completion(true, nil)
     }
 
     func appendEvent(

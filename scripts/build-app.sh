@@ -15,6 +15,10 @@ WIDGET_RESOURCES_DIR="$WIDGET_CONTENTS_DIR/Resources"
 cd "$ROOT_DIR"
 VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
 BUILD_NUMBER="${TOKI_BUILD_NUMBER:-$(date +%s)}"
+# Matches package-release.sh so a local build can carry a prerelease identity too. Without it
+# the two scripts produce differently shaped bundles, and anything reading this key - the
+# updater, the header's prerelease badge - is untestable outside a tagged CI run.
+RELEASE_VERSION="${TOKI_RELEASE_VERSION:-$VERSION}"
 swift build -c release
 
 rm -rf "$APP_DIR"
@@ -28,7 +32,9 @@ cp "$ROOT_DIR/.build/release/TokiWidgets" "$WIDGET_MACOS_DIR/TokiWidgets"
 # release binary carries ~3MB of symbol tables it never needs at runtime.
 strip "$MACOS_DIR/Toki"
 strip "$WIDGET_MACOS_DIR/TokiWidgets"
-cp -R "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
+# Follow the repo-root CHANGELOG.md symlink so the bundle contains a real resource and remains
+# valid when moved away from the working tree.
+cp -RL "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.svg "$WIDGET_RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"toki-router-glyph-*.svg "$WIDGET_RESOURCES_DIR/"
 
@@ -52,6 +58,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <string>$VERSION</string>
   <key>CFBundleVersion</key>
   <string>$BUILD_NUMBER</string>
+  <key>TokiReleaseVersion</key>
+  <string>$RELEASE_VERSION</string>
   <key>TokiWidgetDataMode</key>
   <string>local</string>
   <key>LSMinimumSystemVersion</key>
@@ -86,6 +94,8 @@ cat > "$WIDGET_CONTENTS_DIR/Info.plist" <<PLIST
   <string>$VERSION</string>
   <key>CFBundleVersion</key>
   <string>$BUILD_NUMBER</string>
+  <key>TokiReleaseVersion</key>
+  <string>$RELEASE_VERSION</string>
   <key>TokiWidgetDataMode</key>
   <string>local</string>
   <key>LSMinimumSystemVersion</key>

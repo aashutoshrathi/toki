@@ -65,6 +65,55 @@ final class StateCompatibilityTests: XCTestCase {
         let data = try JSONEncoder.toki.encode(preferences)
         XCTAssertEqual(try JSONDecoder.toki.decode(AppPreferences.self, from: data), preferences)
     }
+
+    // Retired menu bar modes must map onto their replacements rather than throw. Decoding
+    // MenuBarDisplayMode directly would have failed here and taken the whole state file -
+    // history included - down with it.
+    func testRetiredCombinedMenuBarModeDecodesAsSmart() throws {
+        let json = """
+        {
+          "preferences": {"menuBarMode": "combined"},
+          "history": [
+            {"id":"6C7E4C8E-0000-0000-0000-000000000001","timestamp":"2026-07-01T10:00:00Z","accountID":"a","accountName":"A","provider":"claudeCode","remainingRatio":0.5,"primary":"x"}
+          ]
+        }
+        """
+        let state = try decodeState(json)
+        XCTAssertEqual(state.preferences.menuBarMode, .smart, "combined was always identical to smart")
+        XCTAssertEqual(state.history.count, 1, "a retired mode must not cost the user their history")
+    }
+
+    func testRetiredAccountsMenuBarModeDecodesAsSmart() throws {
+        let state = try decodeState(#"{"preferences": {"menuBarMode": "accounts"}}"#)
+        XCTAssertEqual(state.preferences.menuBarMode, .smart)
+    }
+
+    func testRetiredProviderMenuBarModesBecomePinsForThatProvider() throws {
+        // The retired mode matched the whole Claude family, so both survive the migration and
+        // the one the user has no account for is skipped at render time.
+        let claude = try decodeState(#"{"preferences": {"menuBarMode": "activeClaude"}}"#)
+        XCTAssertEqual(claude.preferences.menuBarMode, .pinned)
+        XCTAssertEqual(claude.preferences.menuBarPinnedProviders, [.claudeCode, .claude])
+
+        let codex = try decodeState(#"{"preferences": {"menuBarMode": "codex"}}"#)
+        XCTAssertEqual(codex.preferences.menuBarMode, .pinned)
+        XCTAssertEqual(codex.preferences.menuBarPinnedProviders, [.codex])
+    }
+
+    // A state file written by a newer build that knows a provider this one doesn't must lose
+    // only that pin, not the whole decode.
+    func testUnknownPinnedProviderIsDroppedRatherThanThrown() throws {
+        let state = try decodeState(#"{"preferences": {"menuBarMode": "pinned", "menuBarPinnedProviders": ["codex", "sentientOverlord"]}}"#)
+        XCTAssertEqual(state.preferences.menuBarPinnedProviders, [.codex])
+    }
+
+    // A state file written before the key existed adopts the current default, which is Stacked:
+    // the menu bar is contested space and two half-height rows cost about half the width.
+    func testStateFromBeforeMenuBarDensityAdoptsTheCurrentDefault() throws {
+        let state = try decodeState(#"{"preferences": {"menuBarMode": "smart"}}"#)
+        XCTAssertEqual(state.preferences.menuBarDensity, .stacked)
+        XCTAssertEqual(state.preferences.menuBarMode, .smart, "a stored mode still wins over the default")
+    }
 }
 
 // The update banner can be snoozed instead of only skipped-for-good. The window is version
