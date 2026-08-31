@@ -316,8 +316,6 @@ struct StatusBadge: View {
 
 // MARK: - ResetCreditBadge
 
-// Keep this as a standard Label so the surrounding system button style owns its typography,
-// symbol spacing, and optical centering at every control size and appearance.
 struct ResetCreditBadge: View {
     var count: Int
     var expiry: Date?
