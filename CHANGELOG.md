@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A quota rail down the screen edge.** Opt-in from Settings: a ring per provider tucked under the menu bar, showing what is left at a glance, with a card on hover carrying every quota window the provider reports and when each one resets. It anchors to the screen rather than the notch, so it runs on external displays and Macs without one, and it steps aside in full screen.
+
 ## 3.1.0 - 2026-08-29
 
 ### Added

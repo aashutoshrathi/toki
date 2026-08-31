@@ -131,6 +131,8 @@ struct SettingsPanel: View {
                     notchModeRow
                 }
 
+                railModeRow
+
                 sectionHeader("Layout")
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -617,6 +619,54 @@ struct SettingsPanel: View {
         if isHidden { return "Pinned, but \(density) only fits \(pinCap) — this one is not drawn" }
         if isBlocked { return "\(density) fits \(pinCap). Unpin one first" }
         return isPinned ? "Pinned to the menu bar" : "Pin to the menu bar"
+    }
+
+    // No isSupported gate, unlike the notch row: the rail anchors to the screen edge, so it
+    // works on any display.
+    @ViewBuilder
+    private var railModeRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.doc.horizontal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text("Quota rail")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("BETA")
+                            .font(.system(size: 8, weight: .heavy))
+                            .tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                             Color(red: 0.85, green: 0.35, blue: 0.65)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                in: Capsule()
+                            )
+                    }
+                    Text("Quota rings down the right screen edge. Hover one for its windows.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: binding(\.railModeEnabled))
+                .accessibilityLabel("Quota rail")
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+        .padding(8)
+        .settingsCard()
+        .help("Shows a ring per provider beside the menu bar, on any display")
+        .pointerOnHover()
     }
 
     @ViewBuilder

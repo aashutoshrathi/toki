@@ -127,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task { @MainActor in
             for await snapshots in store.$snapshots.values {
                 RemoteControlServer.shared.updateUsage(snapshots)
+                railController?.update(snapshots: snapshots)
             }
         }
 
@@ -143,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 notchController?.update(placement: preferences.notchPlacement)
                 notchController?.update(density: preferences.menuBarDensity)
                 applyNotchMode(enabled: preferences.notchModeEnabled)
+                applyRailMode(enabled: preferences.railModeEnabled)
             }
         }
 
@@ -157,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var agentsAwaitingInput = 0
     private var latestContentWidth: CGFloat = 0
     private var notchController: NotchWindowController?
+    private var railController: RailWindowController?
 
     // Replaces the status item rather than duplicating it. With no notch the toggle is a
     // no-op, so the app can never end up with no visible surface.
@@ -187,6 +190,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             statusItem.isVisible = true
         }
         updateStatusItem()
+    }
+
+    // Independent of notch mode: the rail anchors to the screen edge, so the two can be on at
+    // once and neither replaces the status item the way notch mode does.
+    private func applyRailMode(enabled: Bool) {
+        guard enabled else {
+            railController?.invalidate()
+            railController = nil
+            return
+        }
+        if railController == nil {
+            railController = RailWindowController(
+                snapshots: store.snapshots,
+                onClick: { [weak self] in self?.togglePopover() }
+            )
+        }
+        railController?.update(snapshots: store.snapshots)
     }
 
     private func installCLISymlink() {
