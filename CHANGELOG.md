@@ -4,6 +4,7 @@
 
 ### Added
 
+- **A roomier reply box in the companion app.** The field now spans the full width with the tools under it, rather than being squeezed between them, and Send is a labelled button instead of an unlabelled arrow. An avatar and placeholder name the agent you are replying to, and the box expands for a longer message.
 - **A quota rail down the screen edge.** Opt-in from Settings: a ring per provider tucked under the menu bar, showing what is left at a glance, with a card on hover carrying every quota window the provider reports and when each one resets. It anchors to the screen rather than the notch, so it runs on external displays and Macs without one, and it steps aside in full screen.
 
 ## 3.1.0 - 2026-08-29
