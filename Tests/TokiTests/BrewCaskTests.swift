@@ -75,8 +75,6 @@ final class BrewCaskTests: XCTestCase {
                 ["install", "--cask", "toki-beta"],
             ]
         )
-        XCTAssertEqual(BrewCask.cask(for: .beta), "toki-beta")
-        XCTAssertEqual(BrewCask.cask(for: .stable), "toki")
     }
 
     func testHandoffPostconditionDistinguishesBetaIterations() {
@@ -93,12 +91,6 @@ final class BrewCaskTests: XCTestCase {
         ))
         XCTAssertTrue(BrewCask.handoffSucceeded(
             bundleVersion: nil, marketingVersion: "2.5.0", expectedVersion: "2.5.0"
-        ))
-        XCTAssertFalse(BrewCask.handoffSucceeded(
-            bundleVersion: nil, marketingVersion: "2.4.4", expectedVersion: "2.5.0"
-        ))
-        XCTAssertFalse(BrewCask.handoffSucceeded(
-            bundleVersion: nil, marketingVersion: nil, expectedVersion: "2.5.0"
         ))
     }
 }

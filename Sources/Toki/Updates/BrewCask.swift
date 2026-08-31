@@ -3,8 +3,7 @@ import Foundation
 /// Routes in-app updates through Homebrew when a cask installed this copy of Toki.
 ///
 /// The updater's DMG swap replaces the bundle in place, which desyncs brew's receipt from
-/// the app on disk; a later `brew upgrade` then clobbers the newer build. Handing the
-/// install to `brew upgrade` keeps receipt, Caskroom, and bundle in agreement.
+/// the app on disk; a later `brew upgrade` then clobbers the newer build.
 struct BrewCaskInstall: Equatable, Sendable {
     let cask: String
     let brewPrefix: String
@@ -16,12 +15,11 @@ enum BrewCask {
     static let stableCask = "toki"
     static let betaCask = "toki-beta"
 
-    /// The cask (and the brew prefix owning it) whose Caskroom entry resolves to the
-    /// running bundle. The `app` stanza moves the bundle out of the Caskroom and leaves a
-    /// symlink pointing at it, so the cask side is the one that must be enumerated and
-    /// resolved; resolving the bundle path alone can never see an inbound symlink. That
-    /// also makes detection independent of `--appdir`. Both prefixes are probed because
-    /// Intel Homebrew lives under /usr/local, not /opt/homebrew.
+    /// The cask whose Caskroom entry resolves to the running bundle, and the prefix owning
+    /// it. The `app` stanza moves the bundle out of the Caskroom and leaves a symlink
+    /// pointing at it, so only the cask side can see the relationship - which also keeps
+    /// detection independent of `--appdir`. Intel Homebrew lives under /usr/local, so more
+    /// than one base has to be probed.
     static func installedCask(
         bundleURL: URL,
         caskroomBases: [URL],
@@ -51,21 +49,19 @@ enum BrewCask {
         channel == .beta ? betaCask : stableCask
     }
 
-    /// Only the beta cask tracks prereleases. Handing a prerelease to the stable cask
-    /// would upgrade to whatever stable version the tap holds, or no-op — either way the
-    /// offered build never arrives, so the mismatch is reported instead of attempted.
+    static func channel(for cask: String) -> UpdateChannel {
+        cask == betaCask ? .beta : .stable
+    }
+
+    /// Only the beta cask carries prereleases, so the stable cask can never deliver one.
     static func canDeliver(cask: String, isPrerelease: Bool) -> Bool {
         !isPrerelease || cask == betaCask
     }
 
-    /// Moving a brew install from one cask to the other, in order.
-    ///
-    /// It has to be uninstall-then-install: `conflicts_with` makes brew refuse to install
-    /// either cask while the other is present, and installing over the top with `--force`
-    /// would leave two receipts owning one bundle - the exact desync this whole path
-    /// exists to prevent. The download is fetched first because the uninstall deletes the
-    /// bundle this process is running from, and a network failure after that point would
-    /// leave no app on disk at all.
+    /// `conflicts_with` makes brew refuse to install either cask while the other is
+    /// present, so a switch is uninstall-then-install. Fetching first matters because the
+    /// uninstall deletes the bundle this process runs from: a download that fails after
+    /// that point would leave no app on disk.
     static func switchCommands(from installed: String, to target: String) -> [[String]] {
         [
             ["fetch", "--cask", target],
@@ -74,12 +70,9 @@ enum BrewCask {
         ]
     }
 
-    /// Exit status of the brew invocation, or nil when brew could not be launched at all —
-    /// the two cases need different advice, and a missing brew is not a failed upgrade.
-    ///
-    /// Off the main actor: brew can run for minutes and the menu bar must stay responsive.
-    /// Termination is observed via waitpid exit, not a pipe read, so there is no
-    /// stdout/stderr drain to deadlock on.
+    /// Exit status, or nil when brew could not be launched at all - a missing brew needs
+    /// different advice than a failed upgrade. Runs off the main actor because brew takes
+    /// minutes; nothing reads its pipes, so there is no drain to deadlock on.
     static func run(_ arguments: [String], brewBinary: String) async -> Int32? {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
@@ -97,12 +90,9 @@ enum BrewCask {
         }
     }
 
-    /// Postcondition after the handoff, read from the replaced bundle's Info.plist.
-    ///
-    /// The plist is parsed off disk rather than through `Bundle(url:)`, which returns the
-    /// already-loaded Bundle for a path Foundation has seen - always true of the running
-    /// app - along with the Info dictionary it cached before brew swapped the bundle. That
-    /// stale read reports the old version and fails every successful upgrade.
+    /// Parsed off disk rather than through `Bundle(url:)`, which hands back the running
+    /// app's already-loaded bundle and the Info dictionary it cached before brew swapped
+    /// the file - a stale read that fails every successful upgrade.
     static func handoffSucceeded(appURL: URL, expectedVersion: String) -> Bool {
         let plistURL = appURL.appendingPathComponent("Contents/Info.plist")
         guard let data = try? Data(contentsOf: plistURL),
@@ -115,10 +105,9 @@ enum BrewCask {
         )
     }
 
-    /// The stamped `TokiReleaseVersion` distinguishes beta iterations that share one
-    /// marketing version (`2.5.0-beta.1` vs `-beta.2` both report `2.5.0`); without the
-    /// stamp only an exact stable match can pass, because a beta iteration is then
-    /// indistinguishable from its siblings.
+    /// `TokiReleaseVersion` distinguishes beta iterations that share one marketing version
+    /// (`-beta.1` and `-beta.2` both report `2.5.0`); without the stamp a beta is
+    /// indistinguishable from its siblings, so only an exact stable match can pass.
     static func handoffSucceeded(bundleVersion: String?, marketingVersion: String?, expectedVersion: String) -> Bool {
         if let bundleVersion, !bundleVersion.isEmpty {
             return bundleVersion == expectedVersion
