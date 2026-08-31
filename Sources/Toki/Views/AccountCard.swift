@@ -489,7 +489,7 @@ struct AccountCard: View {
     }
 
     private var quotaWindows: [RateLimitWindow] {
-        [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
+        [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 } + snapshot.modelWindows
     }
 
     private var currentSessionAvailability: String {

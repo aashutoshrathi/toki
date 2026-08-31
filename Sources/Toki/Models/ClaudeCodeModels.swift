@@ -60,6 +60,10 @@ struct ClaudeCodeUsage {
     var primaryMetric: UsageMetric?
     var metrics: [MetricLine] = []
     var rateLimitWindows: [RateLimitWindow] = []
+    /// Weekly limits that apply to one model rather than to everything. Kept apart from
+    /// `rateLimitWindows` because they are a separate allowance: burning the Fable week does not
+    /// touch the shared one, so folding them together would misreport both.
+    var modelWindows: [RateLimitWindow] = []
     var worstUtilization: Double?
 
     var hasUsage: Bool {
@@ -78,6 +82,42 @@ struct ClaudeCodeUsage {
         if let extraUsage = data["extra_usage"] as? [String: Any] {
             appendExtraUsage(extraUsage)
         }
+        appendModelWindows(data["limits"])
+    }
+
+    // The top-level keys are codenames (seven_day_omelette, seven_day_tangelo) that say nothing
+    // about which model they belong to, and a release can add another at any time. `limits`
+    // describes itself instead: each entry carries a `kind`, a `group`, and a `scope` naming the
+    // model, so a weekly limit for a model Toki has never heard of still renders correctly.
+    private mutating func appendModelWindows(_ raw: Any?) {
+        guard let entries = raw as? [[String: Any]] else { return }
+        for entry in entries {
+            // Model-scoped means weekly with a scope. The unscoped weekly is the shared
+            // allowance, already covered by seven_day.
+            guard (entry["group"] as? String) == "weekly",
+                  let scope = entry["scope"] as? String, !scope.isEmpty,
+                  let percentUsed = optionalNumber(entry["percent"]) else { continue }
+
+            let clampedUsed = max(0, min(100, percentUsed))
+            let reset = resetDescription(entry["resets_at"])
+            modelWindows.append(RateLimitWindow(
+                label: Self.modelWindowLabel(scope),
+                percentLeft: Int((100 - clampedUsed).rounded()),
+                resetHint: reset.map { "resets in \($0)" }
+            ))
+        }
+    }
+
+    /// "claude-fable-5" reads as "Fable 5 7d". The provider prefix and separators go, since the
+    /// card is already inside a Claude account and the column is only so wide.
+    static func modelWindowLabel(_ scope: String) -> String {
+        var parts = scope.split(whereSeparator: { $0 == "-" || $0 == "_" }).map(String.init)
+        if parts.first?.lowercased() == "claude" { parts.removeFirst() }
+        guard !parts.isEmpty else { return "\(scope) 7d" }
+        let name = parts
+            .map { $0.count <= 1 || Int($0) != nil ? $0 : $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+        return "\(name) 7d"
     }
 
     private mutating func appendWindow(_ label: String, _ window: [String: Any]) {

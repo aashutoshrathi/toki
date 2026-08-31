@@ -135,7 +135,8 @@ struct ClaudeCodeUsageClient {
             emoji: record.label?.emoji,
             colorHex: record.label?.color,
             primaryWindow: usage.rateLimitWindows.first,
-            secondaryWindow: usage.rateLimitWindows.dropFirst().first
+            secondaryWindow: usage.rateLimitWindows.dropFirst().first,
+            modelWindows: usage.modelWindows
         )
     }
 

@@ -44,7 +44,7 @@ struct RailPanel: View {
 
     // Two rows plus the title, or one row for a provider with a single window.
     private func cardHeight(for snapshot: AccountSnapshot) -> CGFloat {
-        let rows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }.count
+        let rows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }.count + snapshot.modelWindows.count
         return 34 + CGFloat(max(rows, 1)) * 32
     }
 
@@ -102,7 +102,7 @@ private struct DetailCard: View {
     let tailCentre: CGFloat
 
     private var windows: [RateLimitWindow] {
-        let reported = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
+        let reported = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 } + snapshot.modelWindows
         guard reported.isEmpty else { return reported }
         // Providers with a single overall percentage and no named windows still deserve a card.
         return [RateLimitWindow(

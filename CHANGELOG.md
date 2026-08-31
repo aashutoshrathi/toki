@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Per-model weekly limits show as their own quota.** A model with its own weekly allowance, like Fable 5, is metered separately from the shared week, so spending one leaves the other untouched. Toki now reports each of them beside the 5h and 7d windows instead of showing only the shared pair.
 - **A roomier reply box in the companion app.** The field now spans the full width with the tools under it, rather than being squeezed between them, and Send is a labelled button instead of an unlabelled arrow. An avatar and placeholder name the agent you are replying to, and the box expands for a longer message.
 - **A quota rail down the screen edge.** Opt-in from Settings: a ring per provider tucked under the menu bar, showing what is left at a glance, with a card on hover carrying every quota window the provider reports and when each one resets. It anchors to the screen rather than the notch, so it runs on external displays and Macs without one, and it steps aside in full screen.
 

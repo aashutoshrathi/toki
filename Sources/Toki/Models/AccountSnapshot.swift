@@ -39,6 +39,9 @@ struct AccountSnapshot: Identifiable, Hashable {
     var colorHex: String?
     var primaryWindow: RateLimitWindow? = nil
     var secondaryWindow: RateLimitWindow? = nil
+    /// Weekly limits scoped to a single model, which are a separate allowance from the shared
+    /// windows above rather than a subdivision of them.
+    var modelWindows: [RateLimitWindow] = []
     // A compact value (e.g. Pi's "$1.20" today-spend) for cost-based providers that have no
     // percentage to show. When set, the menu bar renders this instead of a "--" placeholder.
     var menuBarValue: String? = nil
