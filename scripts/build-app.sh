@@ -33,7 +33,9 @@ cp "$ROOT_DIR/.build/release/TokiWidgets" "$WIDGET_MACOS_DIR/TokiWidgets"
 # release binary carries ~3MB of symbol tables it never needs at runtime.
 strip "$MACOS_DIR/Toki"
 strip "$WIDGET_MACOS_DIR/TokiWidgets"
-cp -R "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
+# Follow the repo-root CHANGELOG.md symlink so the bundle contains a real resource and remains
+# valid when moved away from the working tree.
+cp -RL "$ROOT_DIR/Sources/Toki/Resources/"* "$RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"*-logo.svg "$WIDGET_RESOURCES_DIR/"
 cp "$ROOT_DIR/Sources/Toki/Resources/"toki-router-glyph-*.svg "$WIDGET_RESOURCES_DIR/"
 

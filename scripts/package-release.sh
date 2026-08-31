@@ -30,9 +30,11 @@ rm -rf "$BUILD_DIR/release"
 swift build -c release -Xswiftc -Osize
 
 echo "==> Building x86_64 binary"
-rm -rf "$BUILD_DIR/release-x86_64"
+rm -rf "$BUILD_DIR/x86_64"
+# SwiftPM must plan the whole build for Intel. Passing -target through -Xswiftc leaves the
+# Xcode build plan on the host architecture, producing arm64 objects for an x86_64 link.
 swift build -c release -Xswiftc -Osize \
-  -Xswiftc -target -Xswiftc x86_64-apple-macosx14.0 \
+  --triple x86_64-apple-macosx14.0 \
   --build-path "$BUILD_DIR/x86_64"
 
 echo "==> Creating universal binary"

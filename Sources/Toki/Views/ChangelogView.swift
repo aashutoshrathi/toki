@@ -115,6 +115,10 @@ func inlineMarkdown(_ text: String) -> AttributedString {
     )) ?? AttributedString(text)
 }
 
+func changelogVersionTitle(_ version: String) -> String {
+    version.caseInsensitiveCompare("Unreleased") == .orderedSame ? "Unreleased" : "v\(version)"
+}
+
 struct ChangelogPage: View {
     var onClose: () -> Void
 
@@ -163,7 +167,7 @@ struct ChangelogPage: View {
     private func releaseCard(_ release: ChangelogRelease) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("v\(release.version)")
+                Text(changelogVersionTitle(release.version))
                     .font(.system(size: 12, weight: .bold))
                 if !release.date.isEmpty {
                     Text(release.date)
