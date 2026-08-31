@@ -24,13 +24,10 @@ struct ConfigPage: View {
                 Button(action: onClose) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
-                        // Fill the whole 25x25 so the entire button surface is the hit
-                        // target, not just the glyph. contentShape makes the padded area tappable.
-                        .frame(width: 25, height: 25)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .frame(width: 13, height: 13)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .functionalControlStyle()
                 .help("Back")
                 .accessibilityLabel("Back")
                 .pointerOnHover()
@@ -85,11 +82,7 @@ struct SettingsPanel: View {
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(isEditingPrompt ? Color.purple : Color.secondary)
                                 .frame(width: 24, height: 24)
-                                .background(
-                                    (isEditingPrompt ? Color.purple : Color.primary).opacity(isEditingPrompt ? 0.16 : 0.06),
-                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .help("Edit the AI prompt")
@@ -1186,8 +1179,10 @@ private struct TailscaleSetupGuide: View {
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .frame(width: 13, height: 13)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .functionalControlStyle()
             .help("Copy command")
             .accessibilityLabel("Copy the tailscale serve command")
             .pointerOnHover()

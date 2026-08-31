@@ -5,6 +5,7 @@
 ### Changed
 
 - **Recent and weekly quotas share one compact account-card view.** Claude Code and Codex now show every applicable rolling window side by side, including reset countdowns when provided, while plans that expose only one window keep the single-window layout and Codex reset credits stay directly beneath it.
+- **Interactive controls now use native adaptive Liquid Glass.** Header and Settings utility actions use equal-sized interactive glass surfaces, while banked Codex resets use compact regular glass with a system accent tint and adaptive contrast instead of a fixed translucent blue badge. Reset credits keep their full count label below the quota, and quota-based cards reserve the same compact action row so their heights stay consistent while providers without quotas remain compact. The controls follow macOS' Liquid Glass appearance preference and accessibility display settings automatically.
 
 ## 3.0.0 - 2026-08-27
 

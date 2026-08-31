@@ -24,9 +24,25 @@ extension View {
     @ViewBuilder
     func functionalControlStyle() -> some View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-        buttonStyle(.plain)
-            .frame(width: 28, height: 28)
-            .contentShape(shape)
-            .functionalGlass(in: shape, interactive: true)
+        if #available(macOS 26, *) {
+            buttonStyle(.plain)
+                .frame(width: 28, height: 28)
+                .contentShape(shape)
+                .glassEffect(.regular.interactive(), in: shape)
+        } else {
+            buttonStyle(.plain)
+                .frame(width: 28, height: 28)
+                .contentShape(shape)
+                .functionalGlass(in: shape, interactive: true)
+        }
+    }
+
+    @ViewBuilder
+    func accentGlassControlStyle() -> some View {
+        if #available(macOS 26, *) {
+            buttonStyle(.glass(.regular.tint(.accentColor)))
+        } else {
+            buttonStyle(.borderedProminent)
+        }
     }
 }
