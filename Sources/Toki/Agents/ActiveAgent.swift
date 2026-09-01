@@ -377,11 +377,21 @@ enum ActiveAgentNavigator {
             device = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
         }
         let resolvedDevice = device
+        let resolvedHostBundleID = agent.hostApp?.bundleID
 
         Task.detached(priority: .userInitiated) {
-            if let device = resolvedDevice,
-               runAppleScript(iTermScript(tty: device)) || runAppleScript(terminalScript(tty: device)) {
-                return
+            if let device = resolvedDevice {
+                let scripts: [String]
+                if resolvedHostBundleID == HostApp.ghostty.bundleID {
+                    scripts = [ghosttyScript(tty: device)]
+                } else if resolvedHostBundleID == HostApp.iTerm.bundleID {
+                    scripts = [iTermScript(tty: device)]
+                } else if resolvedHostBundleID == HostApp.terminal.bundleID {
+                    scripts = [terminalScript(tty: device)]
+                } else {
+                    scripts = [iTermScript(tty: device), ghosttyScript(tty: device), terminalScript(tty: device)]
+                }
+                if scripts.contains(where: runAppleScript) { return }
             }
             await MainActor.run { activateHostApp(for: agent) }
         }
@@ -409,7 +419,7 @@ enum ActiveAgentNavigator {
             return
         }
         // Only when the ancestry walk named no host: raise any known terminal that's running.
-        for bundleID in ["com.googlecode.iterm2", "com.apple.Terminal", "com.microsoft.VSCode"]
+        for bundleID in [HostApp.iTerm.bundleID, HostApp.terminal.bundleID, "com.microsoft.VSCode"]
         where activate(bundleID: bundleID, directory: agent.directory) {
             return
         }
@@ -509,8 +519,8 @@ enum ActiveAgentNavigator {
     // installed, and can raise a blocking "Where is...?" chooser.
     nonisolated private static func iTermScript(tty: String) -> String {
         """
-        if application id "com.googlecode.iterm2" is running then
-          tell application id "com.googlecode.iterm2"
+        if application id "\(HostApp.iTerm.bundleID)" is running then
+          tell application id "\(HostApp.iTerm.bundleID)"
             repeat with w in windows
               repeat with t in tabs of w
                 repeat with s in sessions of t
@@ -529,10 +539,26 @@ enum ActiveAgentNavigator {
         """
     }
 
+    nonisolated private static func ghosttyScript(tty: String) -> String {
+        """
+        if application id "\(HostApp.ghostty.bundleID)" is running then
+          tell application id "\(HostApp.ghostty.bundleID)"
+            repeat with t in terminals
+              if tty of t is "\(tty)" then
+                focus t
+                return
+              end if
+            end repeat
+          end tell
+        end if
+        error "TTY not found"
+        """
+    }
+
     nonisolated private static func terminalScript(tty: String) -> String {
         """
-        if application id "com.apple.Terminal" is running then
-          tell application id "com.apple.Terminal"
+        if application id "\(HostApp.terminal.bundleID)" is running then
+          tell application id "\(HostApp.terminal.bundleID)"
             repeat with w in windows
               repeat with t in tabs of w
                 if tty of t is "\(tty)" then

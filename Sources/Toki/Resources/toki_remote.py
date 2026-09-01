@@ -328,6 +328,7 @@ def agents_from_snapshot(processes, snapshot):
         agent["provider"] = item.get("provider") or agent["provider"]
         agent["cwd"] = item.get("cwd")
         agent["tty"] = item.get("tty")
+        agent["host"] = item.get("host")
         agent["title"] = item.get("title")
         # Toki's start-time match distinguishes co-located agents; cwd fallback cannot.
         provided = item.get("session")
@@ -1430,11 +1431,17 @@ def applescript_str(s):
     ) + '"'
 
 
+ITERM_BUNDLE_ID = "com.googlecode.iterm2"
+GHOSTTY_BUNDLE_ID = "com.mitchellh.ghostty"
+GHOSTTY_PROCESS_NAME = "Ghostty"
+TERMINAL_BUNDLE_ID = "com.apple.Terminal"
+
+
 def iterm_write(tty, payload_expr):
     dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
     return osascript(f'''
-        if application id "com.googlecode.iterm2" is running then
-          tell application id "com.googlecode.iterm2"
+        if application id "{ITERM_BUNDLE_ID}" is running then
+          tell application id "{ITERM_BUNDLE_ID}"
             repeat with w in windows
               repeat with t in tabs of w
                 repeat with s in sessions of t
@@ -1450,11 +1457,41 @@ def iterm_write(tty, payload_expr):
         error "tty not found"''')
 
 
+def ghostty_write(tty, text=None, key=None):
+    """Send paste-style text or one named key to the exact Ghostty surface for `tty`.
+
+    Ghostty 1.3 introduced AppleScript input, but exact tty targeting arrived later. Older builds
+    fail this script and naturally fall through to the remaining routes instead of guessing by cwd
+    or title, which can target the wrong one of several agents in the same project.
+    """
+    dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
+    if key:
+        ghostty_key = {
+            "enter": "enter", "esc": "escape", "up": "arrowUp",
+            "down": "arrowDown", "tab": "tab",
+        }[key]
+        operation = f'send key "{ghostty_key}" to t'
+    else:
+        operation = f"input text {applescript_str(text)} to t"
+    return osascript(f'''
+        if application id "{GHOSTTY_BUNDLE_ID}" is running then
+          tell application id "{GHOSTTY_BUNDLE_ID}"
+            repeat with t in terminals
+              if tty of t is "{dev}" then
+                {operation}
+                return
+              end if
+            end repeat
+          end tell
+        end if
+        error "tty not found"''')
+
+
 def focus_terminal_tab(tty):
     dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
     return osascript(f'''
-        if application id "com.apple.Terminal" is running then
-          tell application id "com.apple.Terminal"
+        if application id "{TERMINAL_BUNDLE_ID}" is running then
+          tell application id "{TERMINAL_BUNDLE_ID}"
             repeat with w in windows
               repeat with t in tabs of w
                 if tty of t is "{dev}" then
@@ -1477,8 +1514,8 @@ def osascript_out(source):
 def iterm_read(tty):
     dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
     return osascript_out(f'''
-        if application id "com.googlecode.iterm2" is running then
-          tell application id "com.googlecode.iterm2"
+        if application id "{ITERM_BUNDLE_ID}" is running then
+          tell application id "{ITERM_BUNDLE_ID}"
             repeat with w in windows
               repeat with t in tabs of w
                 repeat with s in sessions of t
@@ -1496,8 +1533,8 @@ def iterm_read(tty):
 def terminal_read(tty):
     dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
     return osascript_out(f'''
-        if application id "com.apple.Terminal" is running then
-          tell application id "com.apple.Terminal"
+        if application id "{TERMINAL_BUNDLE_ID}" is running then
+          tell application id "{TERMINAL_BUNDLE_ID}"
             repeat with w in windows
               repeat with t in tabs of w
                 if tty of t is "{dev}" then
@@ -1508,6 +1545,38 @@ def terminal_read(tty):
           end tell
         end if
         error "tty not found"''')
+
+
+def ghostty_read(tty):
+    """Read a Ghostty surface through macOS Accessibility after selecting it by exact tty.
+
+    Ghostty exposes input and tty through AppleScript but intentionally has no screen-content
+    property. Its terminal NSView is an AXTextArea whose AXValue contains the terminal buffer. The
+    focus is unavoidable: Accessibility does not expose the surface UUID or tty, so focusing the
+    AppleScript object is the only reliable bridge between the two object models.
+    """
+    dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
+    return osascript_out(f'''
+        if application id "{GHOSTTY_BUNDLE_ID}" is not running then error "Ghostty not running"
+        tell application id "{GHOSTTY_BUNDLE_ID}"
+          set matched to false
+          repeat with t in terminals
+            if tty of t is "{dev}" then
+              focus t
+              set matched to true
+              exit repeat
+            end if
+          end repeat
+          if matched is false then error "tty not found"
+        end tell
+        delay 0.05
+        tell application "System Events"
+          tell process "{GHOSTTY_PROCESS_NAME}"
+            set focusedElement to value of attribute "AXFocusedUIElement"
+            if role of focusedElement is not "AXTextArea" then error "focused surface unavailable"
+            return value of attribute "AXValue" of focusedElement
+          end tell
+        end tell''')
 
 
 ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -1532,10 +1601,11 @@ def trim_screen(text):
     return out
 
 
-def capture_screen(tty, route=None):
+def capture_screen(tty, route=None, host=None):
     """The visible terminal text for an agent's tty, or None when no route can read it. Mirrors an
-    interactive picker (e.g. /model) on the phone through the same three routes send_input writes to:
-    tmux, iTerm, then Terminal. tmux and both apps report only the visible region, not scrollback.
+    interactive picker (e.g. /model) on the phone through the same routes send_input writes to:
+    tmux, iTerm, Ghostty, then Terminal. tmux, iTerm, and Terminal report the visible region;
+    Ghostty's accessibility value is the terminal buffer and is bounded to its recent tail here.
 
     The tmux route keeps color escape codes (`-e`) so a picker whose selection is shown only by a
     highlight color -- OpenCode's, for one -- is legible on the phone; the app-scripted routes can
@@ -1546,14 +1616,19 @@ def capture_screen(tty, route=None):
     if pane:
         out = shell([tmux, "capture-pane", "-e", "-p", "-t", pane])
         return trim_screen(out) if out is not None else None
-    for reader in (iterm_read, terminal_read):
+    readers = {
+        ITERM_BUNDLE_ID: (iterm_read,),
+        GHOSTTY_BUNDLE_ID: (ghostty_read,),
+        TERMINAL_BUNDLE_ID: (terminal_read,),
+    }.get(host, (iterm_read, ghostty_read, terminal_read) if host is None else ())
+    for reader in readers:
         out = reader(tty)
         if out is not None:
             return trim_screen(out)
     return None
 
 
-def send_input(tty, text=None, key=None, raw=False, route=None):
+def send_input(tty, text=None, key=None, raw=False, route=None, host=None):
     """Deliver input to the agent's terminal. Returns (ok, how).
 
     `route` is an already-resolved (tmux, pane) pair; pass it to skip tmux discovery, which a
@@ -1575,14 +1650,23 @@ def send_input(tty, text=None, key=None, raw=False, route=None):
         seq = {"enter": '(character id 13)', "esc": '(character id 27)',
                "up": '((character id 27) & "[A")', "down": '((character id 27) & "[B")',
                "tab": '(character id 9)'}[key]
-        if iterm_write(tty, seq):
+        if host in (None, ITERM_BUNDLE_ID) and iterm_write(tty, seq):
             return True, "iterm"
     else:
-        if iterm_write(tty, applescript_str(text)):
+        if host in (None, ITERM_BUNDLE_ID) and iterm_write(tty, applescript_str(text)):
             if not raw:
                 time.sleep(SUBMIT_DELAY)
                 iterm_write(tty, "(character id 13)")
             return True, "iterm"
+    if host in (None, GHOSTTY_BUNDLE_ID):
+        if ghostty_write(tty, text=text, key=key):
+            if not key and not raw:
+                time.sleep(SUBMIT_DELAY)
+                if not ghostty_write(tty, key="enter"):
+                    return False, "ghostty"
+            return True, "ghostty"
+    if host not in (None, TERMINAL_BUNDLE_ID):
+        return False, "no route to tty (host does not expose a supported route)"
     if focus_terminal_tab(tty):
         time.sleep(0.3)
         if key:
@@ -1593,10 +1677,10 @@ def send_input(tty, text=None, key=None, raw=False, route=None):
                 time.sleep(SUBMIT_DELAY)
                 ok = ok and osascript('tell application "System Events" to key code 36')
         return ok, "terminal+system-events"
-    return False, "no route to tty (not tmux/iTerm/Terminal?)"
+    return False, "no route to tty (not tmux/iTerm/Ghostty/Terminal?)"
 
 
-def send_sequence(tty, items):
+def send_sequence(tty, items, host=None):
     """Deliver an ordered run of keystrokes -- named keys (Enter/Tab/arrows/Esc) and single
     characters typed as-is -- to answer a picker. Stops at the first failure so a half-delivered
     answer does not keep going. Returns (ok, how).
@@ -1613,9 +1697,9 @@ def send_sequence(tty, items):
         if i:
             time.sleep(SEQ_KEY_DELAY)
         if item in NAMED_KEYS:
-            ok, how = send_input(tty, key=item, route=route)
+            ok, how = send_input(tty, key=item, route=route, host=host)
         else:
-            ok, how = send_input(tty, text=item, raw=True, route=route)
+            ok, how = send_input(tty, text=item, raw=True, route=route, host=host)
         if not ok:
             return False, how
     return True, how
@@ -2240,9 +2324,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "agent gone"}, 410)
             if not agent_is_writable(agent):
                 return self._json({"error": "This non-terminal session has no screen to read."}, 422)
-            text = capture_screen(agent["tty"])
+            text = capture_screen(agent["tty"], host=agent.get("host"))
             if text is None:
-                return self._json({"ok": False, "error": "no route to tty (not tmux/iTerm/Terminal?)"})
+                return self._json({"ok": False, "error": "no route to tty (not tmux/iTerm/Ghostty/Terminal?)"})
             self._json({"ok": True, "text": text})
         elif url.path == "/api/usage":
             self._json(current_usage())
@@ -2348,10 +2432,10 @@ class Handler(BaseHTTPRequestHandler):
         if not agent_is_writable(agent):
             return self._json({"error": "This non-terminal session is read-only."}, 422)
         if keys is not None:
-            ok, how = send_sequence(agent["tty"], keys)
+            ok, how = send_sequence(agent["tty"], keys, host=agent.get("host"))
         else:
             raw = bool(body.get("raw")) and text is not None and len(text) == 1
-            ok, how = send_input(agent["tty"], text=text, key=key, raw=raw)
+            ok, how = send_input(agent["tty"], text=text, key=key, raw=raw, host=agent.get("host"))
         self._json({"ok": ok, "how": how}, 200 if ok else 502)
 
 

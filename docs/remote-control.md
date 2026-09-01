@@ -156,6 +156,14 @@ show up but cannot be replied to. There is no keyboard to type into. They are gr
 **Read-only** at the bottom of the picker, so the agent that is actually waiting on you is the one
 selected by default.
 
+### Ghostty needs a recent scripting build
+
+Bare Ghostty sessions use the terminal `tty`, `input text`, and `send key` properties from
+Ghostty's [AppleScript API](https://ghostty.org/docs/features/applescript). The `tty` property is
+newer than the original 1.3 releases; older builds cannot safely distinguish two Ghostty terminals.
+Toki never guesses from a title or working directory, so run the agent inside tmux when using an
+older Ghostty build.
+
 ### Changing an agent's model
 
 The **Model** button in the composer opens the running CLI's own model picker (`/model` for
@@ -164,8 +172,10 @@ phone so you can see the options and the highlighted row. You drive the selectio
 **↑ ↓ Tab Enter** controls used to answer any other picker, and **Done** closes the mirror.
 
 The mirror reads the visible terminal through the same routes replies are typed into: tmux, iTerm,
-and Terminal. An agent in a terminal Toki cannot read that way still opens its picker on the Mac,
-but the phone shows nothing to steer by, so the mirror reports it has no route.
+Ghostty, and Terminal. Reading a bare Ghostty surface uses macOS Accessibility and focuses the
+selected terminal, so it can bring Ghostty to the front. An agent in a terminal Toki cannot read
+that way still opens its picker on the Mac, but the phone shows nothing to steer by, so the mirror
+reports it has no route.
 
 Each agent also shows the model it is currently running as a small badge next to its name, read
 from the provider's own session (Antigravity's is best-effort, and a few session kinds such as a

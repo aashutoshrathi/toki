@@ -4,7 +4,7 @@
 
 The Agents tab inspects the local process table without persisting command lines, prompts, workspace names, or session titles. Each agent shows its conversation title when available, otherwise the project folder name. OpenCode, Pi, and Claude Code agents also show the session's running cost and token counts.
 
-Clicking an agent with a terminal TTY selects its tab in iTerm2 or Terminal; other hosts (VS Code, Cursor, ChatGPT) are activated by bundle ID.
+Clicking an agent with a terminal TTY selects its exact surface in iTerm2, Ghostty, or Terminal; other hosts (VS Code, Cursor, ChatGPT) are activated by bundle ID.
 
 **Agents waiting on you** are marked with a red dot and the question they asked — on the card, on the Agents tab, and in the menu bar. Supported for Claude Code and OpenCode. The signal is a tool call that has gone unanswered for at least ten seconds: a tool that is genuinely running writes its result promptly, so quiet time is what separates "working" from "blocked on you".
 
@@ -16,7 +16,8 @@ Follow a running agent from your phone and answer it: send a message, approve or
 
 1. `tmux send-keys` against the pane whose `pane_tty` matches, where the agent runs under tmux.
 2. iTerm2, addressed by tty through AppleScript, which does not steal focus or disturb the window you are looking at.
-3. Terminal.app, by selecting the tab with that tty and sending keystrokes through System Events.
+3. Ghostty, addressed by tty through AppleScript. This focuses the selected surface.
+4. Terminal.app, by selecting the tab with that tty and sending keystrokes through System Events.
 
 The text and the submitting Return are sent as two events with a short gap. Sent together, a TUI like Claude Code reads the trailing carriage return as part of the paste and inserts a newline instead of submitting.
 

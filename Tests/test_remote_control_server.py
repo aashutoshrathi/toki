@@ -304,6 +304,7 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
                 "cwd": None,
                 "title": "The actual session",
                 "tty": None,
+                "host": "com.mitchellh.ghostty",
             }
         ]
         with mock.patch.object(
@@ -314,6 +315,7 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
             result = toki_remote.agents_from_snapshot(processes, snapshot)
         self.assertEqual([agent["pid"] for agent in result], [11])
         self.assertEqual(result[0]["title"], "The actual session")
+        self.assertEqual(result[0]["host"], "com.mitchellh.ghostty")
 
     def test_non_terminal_agent_is_read_only(self):
         self.assertFalse(toki_remote.agent_is_writable({"tty": None}))
@@ -627,11 +629,76 @@ class QuestionExtractionTests(unittest.TestCase):
         self.assertFalse(qs[0]["multi"])
 
 
+class GhosttyRemoteControlTests(unittest.TestCase):
+    def test_text_targets_the_exact_normalized_tty(self):
+        scripts = []
+        with mock.patch.object(toki_remote, "osascript", lambda source: scripts.append(source) or True):
+            self.assertTrue(toki_remote.ghostty_write("ttys007", text='hello "Ghostty"'))
+        self.assertIn('if tty of t is "/dev/ttys007"', scripts[0])
+        self.assertIn('input text "hello \\"Ghostty\\"" to t', scripts[0])
+
+    def test_named_keys_use_ghostty_key_identifiers(self):
+        expected = {
+            "enter": "enter", "esc": "escape", "up": "arrowUp",
+            "down": "arrowDown", "tab": "tab",
+        }
+        for toki_key, ghostty_key in expected.items():
+            scripts = []
+            with mock.patch.object(toki_remote, "osascript", lambda source: scripts.append(source) or True):
+                self.assertTrue(toki_remote.ghostty_write("/dev/ttys007", key=toki_key))
+            self.assertIn(f'send key "{ghostty_key}" to t', scripts[0])
+
+    def test_ghostty_text_is_submitted_without_probing_iterm(self):
+        calls = []
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "iterm_write") as iterm, \
+                mock.patch.object(toki_remote, "ghostty_write", side_effect=lambda tty, text=None, key=None: calls.append((text, key)) or True), \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, how = toki_remote.send_input(
+                "ttys007", text="hello", host=toki_remote.GHOSTTY_BUNDLE_ID,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(how, "ghostty")
+        self.assertEqual(calls, [("hello", None), (None, "enter")])
+        iterm.assert_not_called()
+
+    def test_screen_capture_uses_accessibility_without_clipboard_actions(self):
+        scripts = []
+        with mock.patch.object(toki_remote, "osascript_out", lambda source: scripts.append(source) or "one\ntwo\n"):
+            self.assertEqual(toki_remote.ghostty_read("ttys007"), "one\ntwo\n")
+        self.assertIn('focus t', scripts[0])
+        self.assertIn('attribute "AXValue"', scripts[0])
+        self.assertNotIn("clipboard", scripts[0].lower())
+        self.assertNotIn("write_screen_file", scripts[0])
+
+    def test_host_directs_screen_capture_to_ghostty_only(self):
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "ghostty_read", return_value="screen\n"), \
+                mock.patch.object(toki_remote, "iterm_read") as iterm, \
+                mock.patch.object(toki_remote, "terminal_read") as terminal:
+            self.assertEqual(
+                toki_remote.capture_screen("ttys007", host=toki_remote.GHOSTTY_BUNDLE_ID),
+                "screen",
+            )
+        iterm.assert_not_called()
+        terminal.assert_not_called()
+
+    def test_unknown_host_does_not_probe_other_terminal_apps(self):
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "iterm_read") as iterm, \
+                mock.patch.object(toki_remote, "ghostty_read") as ghostty, \
+                mock.patch.object(toki_remote, "terminal_read") as terminal:
+            self.assertIsNone(toki_remote.capture_screen("ttys007", host="com.microsoft.VSCode"))
+        iterm.assert_not_called()
+        ghostty.assert_not_called()
+        terminal.assert_not_called()
+
+
 class SendSequenceTests(unittest.TestCase):
     def test_sequence_delivers_named_keys_and_characters_in_order(self):
         calls = []
 
-        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None, host=None):
             calls.append((text, key, raw))
             return True, "iterm"
 
@@ -646,7 +713,7 @@ class SendSequenceTests(unittest.TestCase):
     def test_sequence_stops_at_first_failure(self):
         calls = []
 
-        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None, host=None):
             calls.append(key or text)
             return (False, "iterm") if (key or text) == "enter" else (True, "iterm")
 
@@ -668,7 +735,7 @@ class SendSequenceTests(unittest.TestCase):
 
         routes = []
 
-        def fake_send_input(tty, text=None, key=None, raw=False, route=None):
+        def fake_send_input(tty, text=None, key=None, raw=False, route=None, host=None):
             routes.append(route)
             return True, "tmux"
 
