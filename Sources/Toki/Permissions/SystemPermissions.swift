@@ -97,8 +97,10 @@ struct SetupFacts: Equatable {
     var notificationAuthorization = NotificationAuthorization.notDetermined
     /// Terminals installed on this Mac that Toki types replies into, with where each one stands.
     var automation: [AutomationTarget] = []
-    /// Only relevant while an editor whose windows Toki raises is running.
+    /// Relevant while Toki must inspect another app's UI: a workspace editor for navigation, or
+    /// Ghostty while Remote Control is mirroring a bare terminal through its AX text area.
     var workspaceAppRunning = false
+    var ghosttyScreenCaptureNeeded = false
     var accessibilityGranted = false
     /// True once Toki has sent the user to the Accessibility pane in this run. A grant made
     /// over there does not reach a process that is already running, so this is what separates
@@ -191,7 +193,8 @@ enum SetupChecklist {
 
         // On a first run this is listed whether or not an editor is open right now: the point is
         // to show the whole cost up front, not to wait until the click that needs it.
-        if !facts.accessibilityGranted, isFirstRun || facts.workspaceAppRunning {
+        if !facts.accessibilityGranted,
+           isFirstRun || facts.workspaceAppRunning || facts.ghosttyScreenCaptureNeeded {
             steps.append(accessibilityStep(facts))
         }
 
@@ -238,9 +241,7 @@ enum SetupChecklist {
             return SetupStep(
                 kind: .accessibility,
                 title: "Accessibility",
-                detail: facts.workspaceAppRunning
-                    ? "Only used to raise the right VS Code window when you click an agent running in it."
-                    : "Only used to raise the right VS Code window when you click an agent running in one. Skip it if you work in a terminal.",
+                detail: accessibilityDetail(facts),
                 status: .pending,
                 actionLabel: "Allow",
                 isOptional: true,
@@ -256,6 +257,19 @@ enum SetupChecklist {
             actionLabel: "Restart Toki",
             isOptional: true
         )
+    }
+
+    private static func accessibilityDetail(_ facts: SetupFacts) -> String {
+        if facts.workspaceAppRunning && facts.ghosttyScreenCaptureNeeded {
+            return "Used to raise the right VS Code window and to mirror a bare Ghostty terminal in Remote Control."
+        }
+        if facts.ghosttyScreenCaptureNeeded {
+            return "Used to mirror a bare Ghostty terminal in Remote Control. Sending replies only needs Ghostty Automation permission."
+        }
+        if facts.workspaceAppRunning {
+            return "Only used to raise the right VS Code window when you click an agent running in it."
+        }
+        return "Used for exact VS Code window navigation and bare Ghostty screen mirroring. Skip it if you need neither."
     }
 
     // Two independent switches: Toki's own preference, and what macOS has been told. The row
@@ -355,11 +369,11 @@ enum SetupChecklist {
             .map(\.element)
     }
 
-    // Terminals Toki scripts to focus a tab and deliver a reply. Only these two are scripted, so
-    // only these two are worth an Automation row.
+    // Terminals Toki scripts to focus a tab and deliver a reply.
     private static let scriptedTerminals = [
-        (name: "iTerm", bundleID: "com.googlecode.iterm2"),
-        (name: "Terminal", bundleID: "com.apple.Terminal")
+        (name: HostApp.iTerm.displayName, bundleID: HostApp.iTerm.bundleID),
+        (name: HostApp.ghostty.displayName, bundleID: HostApp.ghostty.bundleID),
+        (name: HostApp.terminal.displayName, bundleID: HostApp.terminal.bundleID)
     ]
 
     /// Editors whose windows Toki raises through the accessibility API.
@@ -395,6 +409,8 @@ enum SetupChecklist {
         facts.accessibilityGranted = SystemPermissions.accessibilityGranted
         facts.accessibilityRequested = accessibilityRequested
         facts.workspaceAppRunning = SystemPermissions.isRunning(anyOf: workspaceApps)
+        facts.ghosttyScreenCaptureNeeded = remoteControlRunning
+            && SystemPermissions.isRunning(anyOf: [HostApp.ghostty.bundleID])
         facts.remoteControlRunning = remoteControlRunning
         facts.launchAtLoginEnabled = LaunchAtLogin.isEnabled
         return facts
