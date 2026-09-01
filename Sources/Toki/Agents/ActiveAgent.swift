@@ -380,20 +380,24 @@ enum ActiveAgentNavigator {
         let resolvedHostBundleID = agent.hostApp?.bundleID
 
         Task.detached(priority: .userInitiated) {
-            if let device = resolvedDevice {
-                let scripts: [String]
-                if resolvedHostBundleID == HostApp.ghostty.bundleID {
-                    scripts = [ghosttyScript(tty: device)]
-                } else if resolvedHostBundleID == HostApp.iTerm.bundleID {
-                    scripts = [iTermScript(tty: device)]
-                } else if resolvedHostBundleID == HostApp.terminal.bundleID {
-                    scripts = [terminalScript(tty: device)]
-                } else {
-                    scripts = [iTermScript(tty: device), ghosttyScript(tty: device), terminalScript(tty: device)]
-                }
-                if scripts.contains(where: runAppleScript) { return }
+            if let device = resolvedDevice,
+               terminalScripts(tty: device, hostBundleID: resolvedHostBundleID).contains(where: runAppleScript) {
+                return
             }
             await MainActor.run { activateHostApp(for: agent) }
+        }
+    }
+
+    nonisolated private static func terminalScripts(tty: String, hostBundleID: String?) -> [String] {
+        switch hostBundleID {
+        case HostApp.iTerm.bundleID:
+            [iTermScript(tty: tty)]
+        case HostApp.ghostty.bundleID:
+            [ghosttyScript(tty: tty)]
+        case HostApp.terminal.bundleID:
+            [terminalScript(tty: tty)]
+        default:
+            [iTermScript(tty: tty), ghosttyScript(tty: tty), terminalScript(tty: tty)]
         }
     }
 

@@ -4,10 +4,6 @@ import XCTest
 // The checklist's job is to ask for a permission only when it is both needed and useful on this
 // machine, and to say where each one stands without having asked for it.
 final class SetupChecklistTests: XCTestCase {
-    private func automationTarget(_ host: HostApp, status: SetupStepStatus) -> AutomationTarget {
-        AutomationTarget(name: host.displayName, bundleID: host.bundleID, status: status)
-    }
-
     private func steps(_ facts: SetupFacts) -> [SetupStep] {
         SetupChecklist.steps(from: facts)
     }
@@ -69,10 +65,14 @@ final class SetupChecklistTests: XCTestCase {
         var facts = SetupFacts()
         XCTAssertNil(step(.automation, in: facts))
 
-        facts.automation = [automationTarget(.iTerm, status: .pending)]
+        facts.automation = [AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .pending)]
         XCTAssertEqual(step(.automation, in: facts)?.title, "Control iTerm")
 
-        facts.automation = [automationTarget(.ghostty, status: .pending)]
+        facts.automation = [AutomationTarget(
+            name: HostApp.ghostty.displayName,
+            bundleID: HostApp.ghostty.bundleID,
+            status: .pending
+        )]
         XCTAssertEqual(step(.automation, in: facts)?.title, "Control Ghostty")
     }
 
@@ -80,8 +80,8 @@ final class SetupChecklistTests: XCTestCase {
     func testEachTerminalIsItsOwnRow() {
         var facts = SetupFacts()
         facts.automation = [
-            automationTarget(.iTerm, status: .pending),
-            automationTarget(.terminal, status: .done)
+            AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .pending),
+            AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .done)
         ]
         let ids = steps(facts).map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count)
@@ -90,7 +90,7 @@ final class SetupChecklistTests: XCTestCase {
     // macOS never re-asks after a refusal, so offering "Allow" again would do nothing.
     func testARefusedPermissionSendsYouToSystemSettingsInsteadOfAskingAgain() {
         var facts = SetupFacts()
-        facts.automation = [automationTarget(.terminal, status: .blocked)]
+        facts.automation = [AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .blocked)]
         XCTAssertEqual(step(.automation, in: facts)?.actionLabel, "Open Settings")
     }
 
@@ -98,7 +98,7 @@ final class SetupChecklistTests: XCTestCase {
     // "Not granted yet" marked already-allowed terminals outstanding forever; it is unknown.
     func testAClosedTerminalIsUnknownRatherThanNotGranted() {
         var facts = SetupFacts()
-        facts.automation = [automationTarget(.iTerm, status: .unknown)]
+        facts.automation = [AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .unknown)]
         let row = step(.automation, in: facts)
         XCTAssertEqual(row?.status, .unknown)
         XCTAssertEqual(row?.actionLabel, "Allow")
@@ -151,8 +151,8 @@ final class SetupChecklistTests: XCTestCase {
         // is covered in NotificationChecklistStepTests.
         facts.notificationAuthorization = .authorized
         facts.automation = [
-            automationTarget(.iTerm, status: .done),
-            automationTarget(.terminal, status: .blocked)
+            AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .done),
+            AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .blocked)
         ]
         let outstanding = SetupChecklist.outstanding(steps(facts))
         XCTAssertEqual(outstanding.map(\.kind), [.automation])
@@ -162,7 +162,7 @@ final class SetupChecklistTests: XCTestCase {
     // only matter once you use the feature behind them.
     func testAFirstRunListsEveryPermissionEvenTheOnesThatDoNotApplyYet() {
         var facts = SetupFacts()
-        facts.automation = [automationTarget(.terminal, status: .pending)]
+        facts.automation = [AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .pending)]
         let kinds = SetupChecklist.steps(from: facts, mode: .firstRun).map(\.kind)
         XCTAssertEqual(
             Set(kinds),
@@ -192,8 +192,8 @@ final class SetupChecklistTests: XCTestCase {
     func testAskingForEverythingLeavesAccessibilityUntilLast() {
         var facts = SetupFacts()
         facts.automation = [
-            automationTarget(.iTerm, status: .pending),
-            automationTarget(.terminal, status: .pending)
+            AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .pending),
+            AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .pending)
         ]
         let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts, mode: .firstRun))
         XCTAssertEqual(
@@ -202,7 +202,7 @@ final class SetupChecklistTests: XCTestCase {
         )
         // Two terminals keep the order the list showed them in.
         XCTAssertEqual(order.filter { $0.kind == .automation }.map(\.subject),
-                       [HostApp.iTerm.bundleID, HostApp.terminal.bundleID])
+                       ["com.googlecode.iterm2", "com.apple.Terminal"])
     }
 
     func testAlreadyGrantedAndUnaskableStepsAreNotRequestedAgain() {
@@ -211,7 +211,7 @@ final class SetupChecklistTests: XCTestCase {
         facts.accessibilityGranted = true
         facts.launchAtLoginEnabled = true
         facts.claudeSignInFound = true
-        facts.automation = [automationTarget(.terminal, status: .blocked)]
+        facts.automation = [AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .blocked)]
         let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts, mode: .firstRun))
         // Notifications can't be read back, so it stays askable; everything else here is settled,
         // refused (macOS won't ask twice), or not Toki's to ask for.
@@ -222,7 +222,7 @@ final class SetupChecklistTests: XCTestCase {
         var facts = SetupFacts()
         facts.workspaceAppRunning = true
         facts.remoteControlRunning = true
-        facts.automation = [automationTarget(.iTerm, status: .pending)]
+        facts.automation = [AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .pending)]
         let optional = steps(facts).filter(\.isOptional).map(\.kind)
         XCTAssertEqual(Set(optional), [.automation, .accessibility, .localNetwork])
     }

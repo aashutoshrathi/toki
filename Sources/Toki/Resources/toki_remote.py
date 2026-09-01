@@ -1350,6 +1350,20 @@ def chat_title(provider, path, cwd):
 
 SYS_EVENTS_KEYCODES = {"enter": 36, "esc": 53, "up": 126, "down": 125, "tab": 48}
 TMUX_KEYS = {"enter": "Enter", "esc": "Escape", "up": "Up", "down": "Down", "tab": "Tab"}
+ITERM_KEYS = {
+    "enter": '(character id 13)', "esc": '(character id 27)',
+    "up": '((character id 27) & "[A")', "down": '((character id 27) & "[B")',
+    "tab": '(character id 9)',
+}
+GHOSTTY_KEYS = {
+    "enter": "enter", "esc": "escape", "up": "arrowUp", "down": "arrowDown", "tab": "tab",
+}
+ITERM_BUNDLE_ID = "com.googlecode.iterm2"
+GHOSTTY_BUNDLE_ID = "com.mitchellh.ghostty"
+GHOSTTY_PROCESS_NAME = "Ghostty"
+TERMINAL_BUNDLE_ID = "com.apple.Terminal"
+SCRIPTED_TERMINAL_HOSTS = {ITERM_BUNDLE_ID, GHOSTTY_BUNDLE_ID, TERMINAL_BUNDLE_ID}
+NO_TERMINAL_ROUTE = "no route to tty (not tmux/iTerm/Ghostty/Terminal?)"
 
 
 def tmux_pane_for_tty(tty):
@@ -1376,7 +1390,13 @@ def safe_tty(tty):
 
 
 def agent_is_writable(agent):
-    return safe_tty(agent.get("tty"))
+    tty = agent.get("tty")
+    if not safe_tty(tty):
+        return False
+    host = agent.get("host")
+    if host is None or host in SCRIPTED_TERMINAL_HOSTS:
+        return True
+    return tmux_pane_for_tty(tty)[1] is not None
 
 
 def initial_transcript_window(entries, limit=60):
@@ -1417,7 +1437,8 @@ def agent_order(agent):
     would otherwise sit at the top of the picker -- and be selected by default -- while the agent
     actually waiting on you is further down.
     """
-    return (agent_is_writable(agent), agent_recency(agent))
+    writable = agent.get("_writable")
+    return (agent_is_writable(agent) if writable is None else writable, agent_recency(agent))
 
 
 def applescript_str(s):
@@ -1429,12 +1450,6 @@ def applescript_str(s):
         .replace("\n", "\\n")
         .replace("\r", "\\n")
     ) + '"'
-
-
-ITERM_BUNDLE_ID = "com.googlecode.iterm2"
-GHOSTTY_BUNDLE_ID = "com.mitchellh.ghostty"
-GHOSTTY_PROCESS_NAME = "Ghostty"
-TERMINAL_BUNDLE_ID = "com.apple.Terminal"
 
 
 def iterm_write(tty, payload_expr):
@@ -1458,19 +1473,10 @@ def iterm_write(tty, payload_expr):
 
 
 def ghostty_write(tty, text=None, key=None):
-    """Send paste-style text or one named key to the exact Ghostty surface for `tty`.
-
-    Ghostty 1.3 introduced AppleScript input, but exact tty targeting arrived later. Older builds
-    fail this script and naturally fall through to the remaining routes instead of guessing by cwd
-    or title, which can target the wrong one of several agents in the same project.
-    """
+    """Send text or one named key to the exact Ghostty surface for `tty`."""
     dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
     if key:
-        ghostty_key = {
-            "enter": "enter", "esc": "escape", "up": "arrowUp",
-            "down": "arrowDown", "tab": "tab",
-        }[key]
-        operation = f'send key "{ghostty_key}" to t'
+        operation = f'send key "{GHOSTTY_KEYS[key]}" to t'
     else:
         operation = f"input text {applescript_str(text)} to t"
     return osascript(f'''
@@ -1548,13 +1554,7 @@ def terminal_read(tty):
 
 
 def ghostty_read(tty):
-    """Read a Ghostty surface through macOS Accessibility after selecting it by exact tty.
-
-    Ghostty exposes input and tty through AppleScript but intentionally has no screen-content
-    property. Its terminal NSView is an AXTextArea whose AXValue contains the terminal buffer. The
-    focus is unavoidable: Accessibility does not expose the surface UUID or tty, so focusing the
-    AppleScript object is the only reliable bridge between the two object models.
-    """
+    """Read Ghostty's AXTextArea after AppleScript selects the exact tty."""
     dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
     return osascript_out(f'''
         if application id "{GHOSTTY_BUNDLE_ID}" is not running then error "Ghostty not running"
@@ -1601,6 +1601,16 @@ def trim_screen(text):
     return out
 
 
+def screen_readers(host):
+    if host == ITERM_BUNDLE_ID:
+        return (iterm_read,)
+    if host == GHOSTTY_BUNDLE_ID:
+        return (ghostty_read,)
+    if host == TERMINAL_BUNDLE_ID:
+        return (terminal_read,)
+    return (iterm_read, ghostty_read, terminal_read) if host is None else ()
+
+
 def capture_screen(tty, route=None, host=None):
     """The visible terminal text for an agent's tty, or None when no route can read it. Mirrors an
     interactive picker (e.g. /model) on the phone through the same routes send_input writes to:
@@ -1616,68 +1626,83 @@ def capture_screen(tty, route=None, host=None):
     if pane:
         out = shell([tmux, "capture-pane", "-e", "-p", "-t", pane])
         return trim_screen(out) if out is not None else None
-    readers = {
-        ITERM_BUNDLE_ID: (iterm_read,),
-        GHOSTTY_BUNDLE_ID: (ghostty_read,),
-        TERMINAL_BUNDLE_ID: (terminal_read,),
-    }.get(host, (iterm_read, ghostty_read, terminal_read) if host is None else ())
-    for reader in readers:
+    for reader in screen_readers(host):
         out = reader(tty)
         if out is not None:
             return trim_screen(out)
     return None
 
 
-def send_input(tty, text=None, key=None, raw=False, route=None, host=None):
-    """Deliver input to the agent's terminal. Returns (ok, how).
+def send_tmux_input(tmux, pane, text, key, raw):
+    if key:
+        return shell([tmux, "send-keys", "-t", pane, TMUX_KEYS[key]]) is not None
+    ok = shell([tmux, "send-keys", "-t", pane, "-l", text]) is not None
+    if raw:
+        return ok
+    time.sleep(SUBMIT_DELAY)
+    return ok and shell([tmux, "send-keys", "-t", pane, "Enter"]) is not None
 
-    `route` is an already-resolved (tmux, pane) pair; pass it to skip tmux discovery, which a
-    caller delivering many keystrokes resolves once rather than paying for on every one.
-    """
+
+def send_iterm_input(tty, text, key, raw):
+    payload = ITERM_KEYS[key] if key else applescript_str(text)
+    if not iterm_write(tty, payload):
+        return None
+    if not key and not raw:
+        time.sleep(SUBMIT_DELAY)
+        iterm_write(tty, ITERM_KEYS["enter"])
+    return True
+
+
+def send_ghostty_input(tty, text, key, raw):
+    if not ghostty_write(tty, text=text, key=key):
+        return None
+    if key or raw:
+        return True
+    time.sleep(SUBMIT_DELAY)
+    return ghostty_write(tty, key="enter")
+
+
+def send_terminal_input(tty, text, key, raw):
+    if not focus_terminal_tab(tty):
+        return None
+    time.sleep(0.3)
+    if key:
+        return osascript(f'tell application "System Events" to key code {SYS_EVENTS_KEYCODES[key]}')
+    ok = osascript(f'tell application "System Events" to keystroke {applescript_str(text)}')
+    if raw:
+        return ok
+    time.sleep(SUBMIT_DELAY)
+    return ok and osascript(f'tell application "System Events" to key code {SYS_EVENTS_KEYCODES["enter"]}')
+
+
+def scripted_input_routes(host):
+    if host == ITERM_BUNDLE_ID:
+        return ((send_iterm_input, "iterm"),)
+    if host == GHOSTTY_BUNDLE_ID:
+        return ((send_ghostty_input, "ghostty"),)
+    if host == TERMINAL_BUNDLE_ID:
+        return ((send_terminal_input, "terminal+system-events"),)
+    if host is None:
+        return (
+            (send_iterm_input, "iterm"),
+            (send_ghostty_input, "ghostty"),
+            (send_terminal_input, "terminal+system-events"),
+        )
+    return ()
+
+
+def send_input(tty, text=None, key=None, raw=False, route=None, host=None):
+    """Deliver input to the agent's terminal. Returns (ok, how)."""
     if not safe_tty(tty):
         return False, "unsafe tty"
     tmux, pane = route if route is not None else tmux_pane_for_tty(tty)
     if pane:
-        if key:
-            ok = shell([tmux, "send-keys", "-t", pane, TMUX_KEYS[key]]) is not None
-        else:
-            ok = shell([tmux, "send-keys", "-t", pane, "-l", text]) is not None
-            if not raw:
-                time.sleep(SUBMIT_DELAY)
-                ok = ok and shell([tmux, "send-keys", "-t", pane, "Enter"]) is not None
-        return ok, "tmux"
-    if key:
-        seq = {"enter": '(character id 13)', "esc": '(character id 27)',
-               "up": '((character id 27) & "[A")', "down": '((character id 27) & "[B")',
-               "tab": '(character id 9)'}[key]
-        if host in (None, ITERM_BUNDLE_ID) and iterm_write(tty, seq):
-            return True, "iterm"
-    else:
-        if host in (None, ITERM_BUNDLE_ID) and iterm_write(tty, applescript_str(text)):
-            if not raw:
-                time.sleep(SUBMIT_DELAY)
-                iterm_write(tty, "(character id 13)")
-            return True, "iterm"
-    if host in (None, GHOSTTY_BUNDLE_ID):
-        if ghostty_write(tty, text=text, key=key):
-            if not key and not raw:
-                time.sleep(SUBMIT_DELAY)
-                if not ghostty_write(tty, key="enter"):
-                    return False, "ghostty"
-            return True, "ghostty"
-    if host not in (None, TERMINAL_BUNDLE_ID):
-        return False, "no route to tty (host does not expose a supported route)"
-    if focus_terminal_tab(tty):
-        time.sleep(0.3)
-        if key:
-            ok = osascript(f'tell application "System Events" to key code {SYS_EVENTS_KEYCODES[key]}')
-        else:
-            ok = osascript(f'tell application "System Events" to keystroke {applescript_str(text)}')
-            if not raw:
-                time.sleep(SUBMIT_DELAY)
-                ok = ok and osascript('tell application "System Events" to key code 36')
-        return ok, "terminal+system-events"
-    return False, "no route to tty (not tmux/iTerm/Ghostty/Terminal?)"
+        return send_tmux_input(tmux, pane, text, key, raw), "tmux"
+    for writer, name in scripted_input_routes(host):
+        result = writer(tty, text, key, raw)
+        if result is not None:
+            return result, name
+    return False, NO_TERMINAL_ROUTE
 
 
 def send_sequence(tty, items, host=None):
@@ -2288,6 +2313,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/agents":
             result = []
             agents = discover_agents()
+            for agent in agents:
+                agent["_writable"] = agent_is_writable(agent)
             agents.sort(key=agent_order, reverse=True)
             for a in agents:
                 att = None
@@ -2309,7 +2336,7 @@ class Handler(BaseHTTPRequestHandler):
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,
                     "model": model_of(a),
-                    "writable": agent_is_writable(a),
+                    "writable": a["_writable"],
                     "machine": machine_name(),
                     # Lets newer hosted UIs hide uploads when connected to an older server.
                     "uploads": True,
@@ -2323,10 +2350,10 @@ class Handler(BaseHTTPRequestHandler):
             if not agent:
                 return self._json({"error": "agent gone"}, 410)
             if not agent_is_writable(agent):
-                return self._json({"error": "This non-terminal session has no screen to read."}, 422)
+                return self._json({"error": "This session has no readable terminal route."}, 422)
             text = capture_screen(agent["tty"], host=agent.get("host"))
             if text is None:
-                return self._json({"ok": False, "error": "no route to tty (not tmux/iTerm/Ghostty/Terminal?)"})
+                return self._json({"ok": False, "error": NO_TERMINAL_ROUTE})
             self._json({"ok": True, "text": text})
         elif url.path == "/api/usage":
             self._json(current_usage())
@@ -2430,7 +2457,7 @@ class Handler(BaseHTTPRequestHandler):
         if not agent:
             return self._json({"error": "agent gone"}, 410)
         if not agent_is_writable(agent):
-            return self._json({"error": "This non-terminal session is read-only."}, 422)
+            return self._json({"error": "This session has no writable terminal route."}, 422)
         if keys is not None:
             ok, how = send_sequence(agent["tty"], keys, host=agent.get("host"))
         else:

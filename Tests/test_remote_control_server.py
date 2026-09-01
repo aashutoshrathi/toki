@@ -321,6 +321,13 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         self.assertFalse(toki_remote.agent_is_writable({"tty": None}))
         self.assertTrue(toki_remote.agent_is_writable({"tty": "ttys001"}))
 
+    def test_editor_terminal_is_writable_only_through_tmux(self):
+        agent = {"tty": "ttys001", "host": "com.todesktop.230313mzl4w4u92"}
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)):
+            self.assertFalse(toki_remote.agent_is_writable(agent))
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=("tmux", "%1")):
+            self.assertTrue(toki_remote.agent_is_writable(agent))
+
     def test_sarvam_cli_is_classified_narrowly(self):
         self.assertEqual(toki_remote.provider_of("/Users/me/.local/bin/sarvam-code"), "sarvam")
         self.assertIsNone(toki_remote.provider_of("node /tmp/sarvam-helper.js"))

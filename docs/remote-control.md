@@ -156,6 +156,10 @@ show up but cannot be replied to. There is no keyboard to type into. They are gr
 **Read-only** at the bottom of the picker, so the agent that is actually waiting on you is the one
 selected by default.
 
+Cursor and VS Code integrated terminals are writable when the agent runs inside tmux. Their bare
+terminal surfaces expose no tty-addressable scripting API, so Toki does not guess which terminal
+should receive input.
+
 ### Ghostty needs a recent scripting build
 
 Bare Ghostty sessions use the terminal `tty`, `input text`, and `send key` properties from
