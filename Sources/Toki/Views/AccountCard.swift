@@ -56,7 +56,7 @@ struct AccountCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 Button {
                     toggleExpanded()
                 } label: {
@@ -69,7 +69,6 @@ struct AccountCard: View {
                 .buttonStyle(.plain)
                 .help(isExpanded ? "Collapse account" : "Show account details")
                 .pointerOnHover()
-                .padding(.top, 8)
 
                 AccountBadge(snapshot: snapshot, size: 26)
                     .overlay(alignment: .topTrailing) {
@@ -83,7 +82,6 @@ struct AccountCard: View {
                                 .offset(x: 4, y: -1)
                         }
                     }
-                    .padding(.top, 3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     aliasEditor
@@ -134,6 +132,9 @@ struct AccountCard: View {
                 ProgressView(value: ratio)
                     .tint(progressTint(ratio))
                     .scaleEffect(y: 0.65, anchor: .center)
+                    // scaleEffect changes only the pixels, not SwiftUI's layout proposal.
+                    // Constrain the layout height too, or the thin bar leaves a large dead zone.
+                    .frame(height: 4)
             }
 
             if isExpanded {
@@ -227,7 +228,8 @@ struct AccountCard: View {
                                 }
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .accentGlassControlStyle()
+                        .buttonBorderShape(.capsule)
                         .controlSize(.small)
                         .disabled(isResetting)
                         .help(resetButtonHelp)
@@ -368,10 +370,19 @@ struct AccountCard: View {
         return snapshot.name
     }
 
-    // Default Claude records name the account "Claude - <email>", so the primary title leaks
-    // the email too. Mask it for display while leaving the real name for the alias editor.
+    // Default Claude records repeat the email in both the generated name and the subtitle.
+    // Keep custom nicknames intact, but let the secondary line carry the identity once when the
+    // generated name exactly matches that default form.
     private var displayedAccountIdentifier: String {
-        store.hidesSensitiveInfo ? SensitiveText.redactingEmails(accountIdentifier) : accountIdentifier
+        let displayName: String
+        if snapshot.provider == .claudeCode,
+           let email = emailAddress(in: snapshot),
+           accountIdentifier == "Claude - \(email)" {
+            displayName = snapshot.provider.displayName
+        } else {
+            displayName = accountIdentifier
+        }
+        return store.hidesSensitiveInfo ? SensitiveText.redactingEmails(displayName) : displayName
     }
 
     private var secondaryIdentifier: String? {
@@ -463,23 +474,30 @@ struct AccountCard: View {
                         .frame(minWidth: quotaWindows.count > 1 ? 68 : nil, alignment: .trailing)
                     }
                 }
-                if snapshot.provider == .codex, snapshot.resetCreditsAvailable > 0 {
-                    Button {
-                        confirmingReset = true
-                    } label: {
-                        ResetCreditBadge(count: snapshot.resetCreditsAvailable, expiry: snapshot.resetCreditExpiry)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isResetting)
-                    .pointerOnHover()
-                    .help(resetButtonHelp)
-                    .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
-                        Button("Redeem reset", role: .destructive) {
-                            store.consumeCodexResetCredit(accountID: snapshot.id)
+                ZStack(alignment: .trailing) {
+                    // Reserve this compact action row only for quota-based cards. That keeps
+                    // their collapsed heights aligned without padding providers that have no bar.
+                    Color.clear.frame(height: 16)
+                    if snapshot.provider == .codex, snapshot.resetCreditsAvailable > 0 {
+                        Button {
+                            confirmingReset = true
+                        } label: {
+                            ResetCreditBadge(count: snapshot.resetCreditsAvailable, expiry: snapshot.resetCreditExpiry)
                         }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text(resetWasteWarning)
+                        .accentGlassControlStyle()
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.mini)
+                        .disabled(isResetting)
+                        .pointerOnHover()
+                        .help(resetButtonHelp)
+                        .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
+                            Button("Redeem reset", role: .destructive) {
+                                store.consumeCodexResetCredit(accountID: snapshot.id)
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text(resetWasteWarning)
+                        }
                     }
                 }
             }

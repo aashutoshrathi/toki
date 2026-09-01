@@ -1,6 +1,6 @@
 import Foundation
 
-let appVersion = "3.1.0"
+let appVersion = "3.2.0"
 let appUserAgent = "Toki/\(appVersion)"
 
 /// Display label for the prerelease part of a release identity, or nil for a stable build.

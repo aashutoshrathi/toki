@@ -13,7 +13,19 @@ assert.match(html, /<textarea id="msg"/);
 assert.match(html, /Return adds a line/);
 assert.match(html, /Ctrl \+ Return sends/);
 assert.match(html, /aria-keyshortcuts="Meta\+Enter Control\+Enter"/);
-assert.match(html, /<button id="send"[^>]+><svg/);
+// The send button is a labelled pill rather than an icon: it is the one control in the
+// composer that should pull the eye, and an unlabelled arrow made it a guess.
+assert.match(html, /<button id="send"[^>]+>Send<\/button>/);
+// The composer is two rows now, so the field gets the full width and the tools sit under it.
+assert.match(html, /<div class="composer-top">/);
+assert.match(html, /<div class="composer-actions">/);
+assert.match(html, /<span class="composer-avatar" id="composeravatar"/);
+assert.match(html, /<button id="expand"/);
+// Every control that carried wiring has to survive the restructure.
+for (const id of ["msg", "attach", "model", "screen", "clear", "send"]) {
+  assert.match(html, new RegExp('id="' + id + '"'), id + " went missing from the composer");
+}
+assert.match(css, /\.composer\.expanded textarea/);
 assert.match(html, /<small>Reject<\/small>/);
 assert.match(app, /Approve<\/button>/);
 assert.match(app, /Reject<\/button>/);

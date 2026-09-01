@@ -24,13 +24,10 @@ struct ConfigPage: View {
                 Button(action: onClose) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
-                        // Fill the whole 25x25 so the entire button surface is the hit
-                        // target, not just the glyph. contentShape makes the padded area tappable.
-                        .frame(width: 25, height: 25)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .frame(width: 13, height: 13)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .functionalControlStyle()
                 .help("Back")
                 .accessibilityLabel("Back")
                 .pointerOnHover()
@@ -63,6 +60,20 @@ struct SettingsPanel: View {
     @State private var showingConnect = false
     @State private var advancedExpanded = false
     @State private var showingTailscaleGuide = false
+
+    // A brew install is moved onto the other cask when the channel changes, which takes
+    // long enough that the card has to say so rather than look inert.
+    private var channelSubtitle: String {
+        if updateChecker.isSwitchingCask {
+            return "Moving your Homebrew install to the other cask…"
+        }
+        if let error = updateChecker.caskSwitchError {
+            return error
+        }
+        return updateChecker.channel == .beta
+            ? "Includes pre-releases for early testing."
+            : "Stable releases only."
+    }
     private let reachabilityTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -131,6 +142,8 @@ struct SettingsPanel: View {
                     notchModeRow
                 }
 
+                railModeRow
+
                 sectionHeader("Layout")
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -149,11 +162,7 @@ struct SettingsPanel: View {
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(isEditingPrompt ? Color.purple : Color.secondary)
                                 .frame(width: 24, height: 24)
-                                .background(
-                                    (isEditingPrompt ? Color.purple : Color.primary).opacity(isEditingPrompt ? 0.16 : 0.06),
-                                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .help("Edit the AI prompt")
@@ -325,9 +334,7 @@ struct SettingsPanel: View {
                         icon: "hammer",
                         iconColor: .orange,
                         title: "Channel",
-                        subtitle: updateChecker.channel == .beta
-                            ? "Includes pre-releases for early testing."
-                            : "Stable releases only."
+                        subtitle: channelSubtitle
                     )
                     Spacer(minLength: 8)
                     Picker("Update channel", selection: Binding(
@@ -342,6 +349,7 @@ struct SettingsPanel: View {
                     .labelsHidden()
                     .controlSize(.small)
                     .fixedSize()
+                    .disabled(updateChecker.isSwitchingCask)
                     .pointerOnHover()
                 }
                 .padding(8)
@@ -617,6 +625,54 @@ struct SettingsPanel: View {
         if isHidden { return "Pinned, but \(density) only fits \(pinCap) — this one is not drawn" }
         if isBlocked { return "\(density) fits \(pinCap). Unpin one first" }
         return isPinned ? "Pinned to the menu bar" : "Pin to the menu bar"
+    }
+
+    // No isSupported gate, unlike the notch row: the rail anchors to the screen edge, so it
+    // works on any display.
+    @ViewBuilder
+    private var railModeRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.doc.horizontal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text("Quota rail")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("BETA")
+                            .font(.system(size: 8, weight: .heavy))
+                            .tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                             Color(red: 0.85, green: 0.35, blue: 0.65)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                in: Capsule()
+                            )
+                    }
+                    Text("Quota rings down the right screen edge. Hover one for its windows.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: binding(\.railModeEnabled))
+                .accessibilityLabel("Quota rail")
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+        .padding(8)
+        .settingsCard()
+        .help("Shows a ring per provider beside the menu bar, on any display")
+        .pointerOnHover()
     }
 
     @ViewBuilder
@@ -1362,8 +1418,10 @@ private struct TailscaleSetupGuide: View {
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .frame(width: 13, height: 13)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .functionalControlStyle()
             .help("Copy command")
             .accessibilityLabel("Copy the tailscale serve command")
             .pointerOnHover()

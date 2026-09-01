@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Per-model weekly limits show as their own quota.** A model with its own weekly allowance, like Fable 5, is metered separately from the shared week, so spending one leaves the other untouched. Toki now reports each of them beside the 5h and 7d windows instead of showing only the shared pair.
+- **A roomier reply box in the companion app.** The field now spans the full width with the tools under it, rather than being squeezed between them, and Send is a labelled button instead of an unlabelled arrow. An avatar and placeholder name the agent you are replying to, and the box expands for a longer message.
+- **A beta channel you can install from Homebrew.** `brew install --cask toki-beta` tracks pre-release builds, and a stable release bumps it too, so `brew upgrade` carries testers onto the graduated build. Switching channels in Settings moves a Homebrew install onto the matching cask for you, and swapping the cask with brew yourself moves the channel to match — either way the two stay in agreement.
+- **A quota rail down the screen edge.** Opt-in from Settings: a ring per provider tucked under the menu bar, showing what is left at a glance, with a card on hover carrying every quota window the provider reports and when each one resets. It anchors to the screen rather than the notch, so it runs on external displays and Macs without one, and it steps aside in full screen.
+
+### Changed
+
+- **Interactive controls now use native adaptive Liquid Glass.** Header and Settings utility actions use equal-sized interactive glass surfaces, while banked Codex resets use compact regular glass with a system accent tint and adaptive contrast instead of a fixed translucent blue badge. Reset credits keep their full count label below the quota, and quota-based cards reserve the same compact action row so their heights stay consistent while providers without quotas remain compact. The controls follow macOS' Liquid Glass appearance preference and accessibility display settings automatically.
+
+### Fixed
+
+- **A Homebrew install no longer gets downgraded by its own updater.** Installing an update replaced the app underneath brew, leaving brew's records pointing at a version that was no longer there — so the next `brew upgrade` quietly put the older build back. Toki now hands the install to `brew upgrade` when a cask owns the app, so both sides agree on what is installed.
+- **Universal release packages build a real Intel slice.** The packaging script now asks SwiftPM to plan the x86_64 build at the architecture level, instead of compiling arm64 objects and handing them to an Intel linker.
+- **Local app bundles carry a real changelog resource.** The build script now follows the source symlink, so What's New survives moving the app away from the working tree and strict signature verification no longer encounters a dangling file.
+
 ## 3.1.0 - 2026-08-29
 
 ### Added

@@ -42,7 +42,10 @@ if [[ -z "$NOTES" ]]; then
 fi
 
 if [[ "$SUMMARY" == true ]]; then
-  NOTES=$(printf '%s\n' "$NOTES" | sed -E 's/^- (\*\*[^*]+\*\*).*/- \1/')
+  # The headline becomes the whole bullet, so its bold markers come off with the sentence that
+  # followed it. Keeping them made every line on the release page bold, which is no emphasis at
+  # all - the emphasis only meant something while there was ordinary prose beside it.
+  NOTES=$(printf '%s\n' "$NOTES" | sed -E 's/^- \*\*([^*]+)\*\*.*/- \1/')
 fi
 
 printf '%s\n' "$NOTES"

@@ -163,7 +163,7 @@ struct ChangelogPage: View {
     private func releaseCard(_ release: ChangelogRelease) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("v\(release.version)")
+                Text(release.version == "Unreleased" ? release.version : "v\(release.version)")
                     .font(.system(size: 12, weight: .bold))
                 if !release.date.isEmpty {
                     Text(release.date)

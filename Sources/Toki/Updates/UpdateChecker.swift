@@ -58,6 +58,8 @@ final class UpdateChecker: ObservableObject {
     @Published private(set) var availableUpdate: AvailableUpdate?
     @Published private(set) var isInstalling = false
     @Published private(set) var installError: String?
+    @Published private(set) var isSwitchingCask = false
+    @Published private(set) var caskSwitchError: String?
     @Published private(set) var isChecking = false
     @Published private(set) var lastCheckedAt: Date?
     @Published private(set) var checkMessage: String?
@@ -102,6 +104,7 @@ final class UpdateChecker: ObservableObject {
     }
 
     func startAutomaticChecks() {
+        adoptChannelOfInstalledCask()
         if mockVersion != nil {
             runCheck()
             return
@@ -122,12 +125,78 @@ final class UpdateChecker: ObservableObject {
     /// prerelease now, not at the next five-minute tick. The stale offer is cleared first so a
     /// beta banner can't linger after switching back to stable.
     func setChannel(_ newChannel: UpdateChannel) {
-        guard newChannel != channel else { return }
+        guard newChannel != channel, !isSwitchingCask else { return }
+        storeChannel(newChannel)
+        availableUpdate = nil
+        caskSwitchError = nil
+
+        // A brew install follows its cask, not this preference, so the picker has to move
+        // the install too or the two silently disagree.
+        let target = BrewCask.cask(for: newChannel)
+        guard let install = brewInstall(), install.cask != target else {
+            checkNow()
+            return
+        }
+        isSwitchingCask = true
+        Task { await performCaskSwitch(install: install, target: target) }
+    }
+
+    /// The reverse of `setChannel`: a cask swapped with brew directly moves the preference
+    /// with it. The cask is the authority, since it decides what brew will install.
+    private func adoptChannelOfInstalledCask() {
+        guard !isSwitchingCask, let install = brewInstall() else { return }
+        let owned = BrewCask.channel(for: install.cask)
+        guard owned != channel else { return }
+        storeChannel(owned)
+        availableUpdate = nil
+    }
+
+    private func storeChannel(_ newChannel: UpdateChannel) {
         channel = newChannel
         defaults.set(newChannel.rawValue, forKey: updateChannelKey)
-        availableUpdate = nil
-        checkNow()
     }
+
+    private func brewInstall() -> BrewCaskInstall? {
+        BrewCask.installedCask(
+            bundleURL: Bundle.main.bundleURL,
+            caskroomBases: [
+                URL(fileURLWithPath: "/opt/homebrew/Caskroom"),
+                URL(fileURLWithPath: "/usr/local/Caskroom"),
+            ]
+        )
+    }
+
+    private func performCaskSwitch(install: BrewCaskInstall, target: String) async {
+        for command in BrewCask.switchCommands(from: install.cask, to: target) {
+            guard await BrewCask.run(command, brewBinary: install.brewBinary) == 0 else {
+                await recoverFromFailedCaskSwitch(install: install, target: target)
+                return
+            }
+        }
+        isSwitchingCask = false
+        // The bundle on disk is a different build now, so the running process is stale.
+        if !relaunchAfterBrewChange() {
+            caskSwitchError = "Switched to the \(target) cask. Reopen Toki to finish."
+            return
+        }
+        NSApp.terminate(nil)
+    }
+
+    /// The uninstall runs before the install, so a failure can leave no app on disk at all.
+    /// Reinstalling what was there is the only way back, and the preference follows it so
+    /// the picker keeps describing what is installed.
+    private func recoverFromFailedCaskSwitch(install: BrewCaskInstall, target: String) async {
+        let restored = await BrewCask.run(["install", "--cask", install.cask], brewBinary: install.brewBinary) == 0
+        DiagnosticLogger.shared.record(
+            .error, component: "updater", code: "cask_switch_failed", detail: "to=\(target) restored=\(restored)"
+        )
+        storeChannel(BrewCask.channel(for: install.cask))
+        isSwitchingCask = false
+        caskSwitchError = restored
+            ? "Couldn't switch to the \(target) cask, so nothing changed."
+            : "Switching to the \(target) cask failed and Toki may be gone from Applications. Run `brew install --cask \(target)`."
+    }
+
 
     func dismiss() {
         guard let availableUpdate else { return }
@@ -171,6 +240,7 @@ final class UpdateChecker: ObservableObject {
         guard let availableUpdate, !isInstalling else { return }
         isInstalling = true
         installError = nil
+        guard !startBrewHandoff(for: availableUpdate) else { return }
 
         Task {
             do {
@@ -188,7 +258,82 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
+    /// A cask-installed copy must be upgraded by brew, not swapped underneath it: the DMG
+    /// path would desync brew's receipt and the next `brew upgrade` would clobber this
+    /// newer build with the cask's older one. Returns true once the install belongs to brew
+    /// - handed over or refused - so the DMG path does not also run.
+    private func startBrewHandoff(for update: AvailableUpdate) -> Bool {
+        guard let install = brewInstall() else { return false }
+
+        guard BrewCask.canDeliver(cask: install.cask, isPrerelease: update.isPrerelease) else {
+            failBrewHandoff(
+                code: "brew_channel_mismatch",
+                message: "Beta builds ship in the \(BrewCask.betaCask) cask. Pick Beta in Settings > Updates to move this install onto it."
+            )
+            return true
+        }
+        Task { await installViaBrew(install: install, update: update) }
+        return true
+    }
+
+    private func installViaBrew(install: BrewCaskInstall, update: AvailableUpdate) async {
+        let cask = install.cask
+        let manually = "Update with `brew upgrade --cask \(cask)`."
+        guard let status = await BrewCask.run(["upgrade", "--cask", cask], brewBinary: install.brewBinary) else {
+            failBrewHandoff(code: "brew_missing", message: "Couldn't run \(install.brewBinary). \(manually)")
+            return
+        }
+
+        guard status == 0, BrewCask.handoffSucceeded(
+            appURL: UpdateInstaller.installedAppURL(),
+            expectedVersion: update.version
+        ) else {
+            failBrewHandoff(code: "brew_handoff_failed", message: "brew finished but Toki wasn't updated. \(manually)", detail: "exit=\(status)")
+            return
+        }
+
+        guard relaunchAfterBrewChange() else {
+            // The upgrade landed but relaunching failed; keep the app up rather than
+            // close it, and tell the user how to get the new build running.
+            installError = "Toki was updated but couldn't relaunch. Reopen Toki to finish."
+            isInstalling = false
+            return
+        }
+        NSApp.terminate(nil)
+    }
+
+    private func failBrewHandoff(code: String, message: String, detail: String? = nil) {
+        DiagnosticLogger.shared.record(.error, component: "updater", code: code, detail: detail ?? message)
+        installError = message
+        isInstalling = false
+    }
+
+    /// Reopens the app after brew replaced the bundle; these casks have no quit/reopen
+    /// stanza, so an upgrade or switch would otherwise just close Toki. The waiter is
+    /// `/bin/sh`, not Toki's own binary, because a channel switch can install an older
+    /// build that need not understand a private flag. It has to outlive this process:
+    /// `open` fired any earlier is routed back to the running instance.
+    private func relaunchAfterBrewChange() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            "-c",
+            #"while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open "$2""#,
+            "sh",
+            String(ProcessInfo.processInfo.processIdentifier),
+            UpdateInstaller.installedAppURL().path,
+        ]
+        do {
+            try process.run()
+            return true
+        } catch {
+            DiagnosticLogger.shared.record(.error, component: "updater", code: "brew_relaunch_failed", detail: diagnosticErrorDetail(error))
+            return false
+        }
+    }
+
     private func runCheck(isManual: Bool = false) {
+        adoptChannelOfInstalledCask()
         guard !isChecking else { return }
         isChecking = true
         if isManual { checkMessage = nil }
