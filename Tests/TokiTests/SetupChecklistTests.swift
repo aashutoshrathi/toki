@@ -67,6 +67,13 @@ final class SetupChecklistTests: XCTestCase {
 
         facts.automation = [AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .pending)]
         XCTAssertEqual(step(.automation, in: facts)?.title, "Control iTerm")
+
+        facts.automation = [AutomationTarget(
+            name: HostApp.ghostty.displayName,
+            bundleID: HostApp.ghostty.bundleID,
+            status: .pending
+        )]
+        XCTAssertEqual(step(.automation, in: facts)?.title, "Control Ghostty")
     }
 
     // Two rows of one kind still have to be two rows to SwiftUI.
@@ -113,6 +120,16 @@ final class SetupChecklistTests: XCTestCase {
 
         facts.accessibilityGranted = true
         XCTAssertNil(step(.accessibility, in: facts))
+    }
+
+    func testBareGhosttyScreenCaptureExplainsItsAccessibilityRequirement() {
+        var facts = SetupFacts()
+        facts.ghosttyScreenCaptureNeeded = true
+
+        let row = step(.accessibility, in: facts)
+        XCTAssertEqual(row?.status, .pending)
+        XCTAssertTrue(row?.detail.contains("bare Ghostty terminal") ?? false)
+        XCTAssertTrue(row?.detail.contains("replies only needs Ghostty Automation") ?? false)
     }
 
     func testLocalNetworkIsOnlyRaisedWhileRemoteControlIsRunning() {

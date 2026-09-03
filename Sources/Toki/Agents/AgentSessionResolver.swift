@@ -774,22 +774,32 @@ enum AgentSessionResolver {
 
 // A host application Toki can name and activate. Single source of truth so the display
 // name and bundle id can't drift apart (they were two switches keyed on a magic string).
-struct HostApp: Hashable {
+struct HostApp: Hashable, Sendable {
     let displayName: String
     let bundleID: String
     let matchers: [String]
+
+    static let iTerm = HostApp(
+        displayName: "iTerm", bundleID: "com.googlecode.iterm2", matchers: ["iterm"]
+    )
+    static let ghostty = HostApp(
+        displayName: "Ghostty", bundleID: "com.mitchellh.ghostty", matchers: ["ghostty"]
+    )
+    static let terminal = HostApp(
+        displayName: "Terminal", bundleID: "com.apple.Terminal", matchers: ["terminal"]
+    )
 
     private static let all: [HostApp] = [
         HostApp(displayName: "VS Code Insiders", bundleID: "com.microsoft.VSCodeInsiders", matchers: ["code - insiders"]),
         HostApp(displayName: "VS Code", bundleID: "com.microsoft.VSCode", matchers: ["code helper", "visual studio code"]),
         HostApp(displayName: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92", matchers: ["cursor"]),
         HostApp(displayName: "ChatGPT", bundleID: codexAppBundleIdentifier, matchers: ["chatgpt"]),
-        HostApp(displayName: "iTerm", bundleID: "com.googlecode.iterm2", matchers: ["iterm"]),
+        iTerm,
         HostApp(displayName: "WezTerm", bundleID: "com.github.wez.wezterm", matchers: ["wezterm"]),
         HostApp(displayName: "Alacritty", bundleID: "org.alacritty", matchers: ["alacritty"]),
         HostApp(displayName: "kitty", bundleID: "net.kovidgoyal.kitty", matchers: ["kitty"]),
-        HostApp(displayName: "Ghostty", bundleID: "com.mitchellh.ghostty", matchers: ["ghostty"]),
-        HostApp(displayName: "Terminal", bundleID: "com.apple.Terminal", matchers: ["terminal"]),
+        ghostty,
+        terminal,
     ]
 
     static func match(comm: String) -> HostApp? {

@@ -246,27 +246,43 @@ footer{position:absolute;left:0;right:0;bottom:0;z-index:4;background:var(--surf
 .keys button small{font-size:9px;color:var(--text-3);font-weight:500}
 input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);color:var(--text);
       border:1px solid var(--line);font-size:16px}
-.composer{display:flex;gap:4px;align-items:flex-end;
-          background:var(--surface-2);border:1px solid var(--line);
-          border-radius:24px;padding:5px 6px}
-.composer textarea{flex:1;min-width:0;min-height:34px;max-height:200px;padding:7px 6px;
-                   resize:none;overflow-y:hidden;border:none;background:transparent;color:var(--text);
-                   font:16px/1.4 -apple-system,system-ui,sans-serif}
-.composer textarea:focus-visible{outline:none}
-.composer button{width:38px;min-width:38px;height:38px;padding:0;border-radius:50%;
-                 background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;border:1px solid var(--accent-line);
-                 box-shadow:0 1px 0 #ffffff40 inset,0 2px 8px #0d2a4d55;flex:none;
+/* Two rows rather than one: the text gets the full width on top, and the tools sit under it
+   instead of squeezing the field between five circles on a phone. */
+.composer{display:flex;flex-direction:column;gap:6px;
+          background:var(--surface-2);border:1px solid var(--line-strong);
+          border-radius:22px;padding:10px 12px}
+.composer-top{display:flex;gap:9px;align-items:flex-start}
+.composer-avatar{flex:none;width:30px;height:30px;border-radius:50%;overflow:hidden;
+                 background:var(--surface-3);border:1px solid var(--line);
                  display:flex;align-items:center;justify-content:center}
+.composer-avatar svg{width:19px;height:19px}
+.composer-avatar:empty{display:none}
+.composer textarea{flex:1;min-width:0;min-height:30px;max-height:200px;padding:4px 0;
+                   resize:none;overflow-y:hidden;border:none;background:transparent;color:var(--text);
+                   font:16px/1.45 -apple-system,system-ui,sans-serif}
+.composer textarea:focus-visible{outline:none}
+.composer.expanded textarea{min-height:132px}
+.composer-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.composer-tools{display:flex;align-items:center;gap:2px;min-width:0}
+/* Ghost by default. The send button is the only thing in here that should pull the eye. */
+.composer button{width:36px;min-width:36px;height:36px;padding:0;border-radius:50%;
+                 background:transparent;color:var(--text-2);border:1px solid transparent;
+                 box-shadow:none;flex:none;
+                 display:flex;align-items:center;justify-content:center}
+.composer button:active{background:var(--surface-3)}
 .composer button svg{width:20px;height:20px;fill:currentColor}
-#clear{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
-       box-shadow:0 1px 0 #ffffff0d inset}
+#expand{width:30px;min-width:30px;height:30px}
+#expand svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;
+            stroke-linecap:round;stroke-linejoin:round}
+#send{width:auto;min-width:0;height:36px;padding:0 20px;border-radius:18px;
+      background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;
+      border:1px solid var(--accent-line);
+      box-shadow:0 1px 0 #ffffff40 inset,0 2px 8px #0d2a4d55;
+      font:700 15px/1 -apple-system,system-ui,sans-serif}
+#send:disabled{opacity:.45}
 #clear svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #clear.armed{background:var(--danger-surface);border-color:var(--danger-line);color:#eda0a0}
-#attach{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
-        box-shadow:0 1px 0 #ffffff0d inset}
 #attach svg{fill:none;stroke:currentColor}
-#model,#screen{background:var(--surface-2);border-color:var(--line-strong);color:var(--text-2);
-       box-shadow:0 1px 0 #ffffff0d inset}
 #model[hidden],#screen[hidden]{display:none}
 #model svg,#screen svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #modelmirror{margin-bottom:8px;border:1px solid var(--line-strong);border-radius:var(--r);

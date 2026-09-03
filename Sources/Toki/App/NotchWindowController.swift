@@ -325,7 +325,8 @@ private struct NotchPanel: View {
     }
 }
 
-private struct BottomRoundedShape: Shape {
+// Shared with the rail, which hangs off the band the same way.
+struct BottomRoundedShape: Shape {
     let cornerRadius: CGFloat
 
     func path(in rect: CGRect) -> Path {

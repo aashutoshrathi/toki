@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 3.1.0" src="https://img.shields.io/badge/version-3.1.0-2f80ed">
+  <img alt="Version 3.2.0" src="https://img.shields.io/badge/version-3.2.0-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -55,6 +55,14 @@ brew tap aashutoshrathi/tap
 brew trust --cask aashutoshrathi/tap/toki
 brew install --cask toki
 ```
+
+Beta builds are available as a separate cask that tracks prereleases:
+
+```sh
+brew install --cask toki-beta
+```
+
+The two casks conflict — install one. A stable release bumps both, so `brew upgrade` carries beta installs onto the graduated stable build. When Toki was installed by a cask, its in-app updater routes updates through `brew upgrade` so brew's bookkeeping stays in sync, and switching channels in Settings > Updates moves the install onto the other cask for you. Switching casks with brew yourself works too — the app picks up the change and follows it.
 
 Toki is ad-hoc signed and not notarized, so macOS quarantines it. Clear that with:
 

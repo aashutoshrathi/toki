@@ -224,7 +224,8 @@ private struct QuotaRingsView: View {
     }
 }
 
-private func ringColor(_ snapshot: AccountSnapshot) -> Color {
+// Shared with the rail, so both surfaces colour a provider the same way.
+func ringColor(_ snapshot: AccountSnapshot) -> Color {
     switch snapshot.provider {
     case .claude, .claudeCode, .anthropic:
         return Color(red: 0.85, green: 0.47, blue: 0.34)

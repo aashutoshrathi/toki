@@ -117,7 +117,7 @@ enum UpdateInstaller {
         return true
     }
 
-    private static func installedAppURL() -> URL {
+    static func installedAppURL() -> URL {
         let bundleURL = Bundle.main.bundleURL
         if bundleURL.pathExtension == "app" {
             return bundleURL
