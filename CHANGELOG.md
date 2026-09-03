@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.2.0 - 2026-09-03
 
 ### Added
 
@@ -19,6 +19,10 @@
 - **A Homebrew install no longer gets downgraded by its own updater.** Installing an update replaced the app underneath brew, leaving brew's records pointing at a version that was no longer there — so the next `brew upgrade` quietly put the older build back. Toki now hands the install to `brew upgrade` when a cask owns the app, so both sides agree on what is installed.
 - **Universal release packages build a real Intel slice.** The packaging script now asks SwiftPM to plan the x86_64 build at the architecture level, instead of compiling arm64 objects and handing them to an Intel linker.
 - **Local app bundles carry a real changelog resource.** The build script now follows the source symlink, so What's New survives moving the app away from the working tree and strict signature verification no longer encounters a dangling file.
+
+### Thanks
+
+[@thepushkarp](https://github.com/thepushkarp) contributed the Liquid Glass controls and account card alignment, Ghostty remote sessions, the Homebrew beta channel, and the fixes for the universal Intel slice and the updater fighting brew.
 
 ## 3.1.0 - 2026-08-29
 
