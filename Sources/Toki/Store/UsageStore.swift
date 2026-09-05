@@ -31,6 +31,7 @@ final class UsageStore: ObservableObject {
         severity: .neutral
     )
     @Published var statusEntries: [MenuBarStatusEntry] = menuBarPlaceholderEntries()
+    @Published var serviceStatuses: [Provider: ServiceStatus] = [:]
     @Published var detectedProviders: [DetectedProvider] = []
     @Published var isScanningProviders = false
     @Published private(set) var needsOnboarding = false
@@ -64,6 +65,8 @@ final class UsageStore: ObservableObject {
     let connectivityMonitor = ConnectivityMonitor()
     var connectivityGeneration = 0
     var refreshAfterReconnect = false
+    var serviceStatusCheckedAt: Date?
+    var isCheckingServiceStatus = false
 
     init() {
         reloadConfig()

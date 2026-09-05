@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **An outage indicator on the provider cards.** A coloured dot on the account logo when a provider's own status page reports an outage or degraded service, and a line in the opened card naming what is down, with a link to the page. Claude, Codex, Copilot, and Cursor are covered, checked at most every five minutes and only for the providers you actually use, and each change is recorded in Events.
+
 ## 3.2.0 - 2026-09-03
 
 ### Added

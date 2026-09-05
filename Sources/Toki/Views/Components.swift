@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - UpdateAvailableBanner
@@ -469,6 +470,72 @@ struct AccountBadge: View {
             }
         }
         .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Service status
+
+extension ServiceStatusLevel {
+    var tint: Color {
+        switch self {
+        case .operational: return .green
+        case .maintenance: return .blue
+        case .degraded: return .yellow
+        case .partialOutage: return .orange
+        case .majorOutage: return .red
+        }
+    }
+}
+
+/// The dot that rides on an account's logo while its provider reports trouble.
+///
+/// Drawn with a ring in the card's own background colour so it stays legible against the logo
+/// it overlaps, the way a badge does.
+struct ServiceStatusDot: View {
+    var level: ServiceStatusLevel
+    var size: CGFloat = 8
+
+    var body: some View {
+        Circle()
+            .fill(level.tint)
+            .frame(width: size, height: size)
+            .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+    }
+}
+
+/// The expanded card's line about the provider being down, with a way to go read the detail.
+struct ServiceStatusRow: View {
+    var status: ServiceStatus
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            ServiceStatusDot(level: status.level, size: 7)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(status.provider.displayName) \(status.level.eventPhrase)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(status.level.tint)
+                Text(status.detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            Button {
+                NSWorkspace.shared.open(status.pageURL)
+            } label: {
+                Image(systemName: "arrow.up.forward.square")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Open \(status.pageURL.host ?? "the provider status page")")
+            .accessibilityLabel("Open the provider status page")
+            .pointerOnHover()
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 7)
+        .background(status.level.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
