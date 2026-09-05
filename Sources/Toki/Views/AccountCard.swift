@@ -82,6 +82,16 @@ struct AccountCard: View {
                                 .offset(x: 4, y: -1)
                         }
                     }
+                    // Opposite corner to the session count, so an account that is both busy
+                    // and on a struggling provider still shows each signal in full.
+                    .overlay(alignment: .bottomTrailing) {
+                        if let serviceStatus {
+                            ServiceStatusDot(level: serviceStatus.level)
+                                .offset(x: 2, y: 1)
+                                .help("\(serviceStatus.provider.displayName) \(serviceStatus.level.eventPhrase): \(serviceStatus.detail)")
+                                .accessibilityLabel("\(serviceStatus.provider.displayName) \(serviceStatus.level.eventPhrase)")
+                        }
+                    }
 
                 VStack(alignment: .leading, spacing: 2) {
                     aliasEditor
@@ -168,6 +178,12 @@ struct AccountCard: View {
                         // provider a custom alias maps to.
                         ProviderPill(provider: snapshot.provider)
                     }
+                }
+
+                // The provider being down explains a stalled agent or a failing refresh, so it
+                // sits above the metrics rather than under them.
+                if let serviceStatus {
+                    ServiceStatusRow(status: serviceStatus)
                 }
 
                 // Sessions only make sense for a connected account; when the account is
@@ -364,6 +380,12 @@ struct AccountCard: View {
                 .pointerOnHover()
             }
         }
+    }
+
+    /// Set only while this account's provider reports trouble - an operational provider has
+    /// nothing to add to a card that is already showing its quota.
+    private var serviceStatus: ServiceStatus? {
+        store.disruptedServiceStatus(for: snapshot.provider)
     }
 
     private var accountIdentifier: String {

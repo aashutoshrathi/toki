@@ -58,6 +58,12 @@ Toki writes a compact, privacy-safe snapshot (provider labels and percentages on
 
 On by default. The same provider-colored rings render inside the Accounts panel, showing remaining percentage at a glance and revealing the provider and live percentage on hover. Hide them with the button on the panel or the toggle in Settings. The standalone macOS widget above is enabled independently through the system widget gallery.
 
+## Provider outages
+
+When a provider reports trouble on its own status page, the account card says so: a coloured dot on the account logo, and, once the card is open, a line naming what is down with a link to the page. A provider that is operational shows nothing.
+
+Toki reads the public Statuspage summaries that Claude, OpenAI, GitHub, and Cursor publish, unauthenticated and at most once every five minutes, and only for providers you actually have, so a Claude-only install never calls OpenAI's page. Each provider is matched to its own components (Codex covers Codex API, Codex Web, and Codex in ChatGPT Desktop), so an unrelated outage elsewhere on the same page, Sora for instance, is never reported as yours. A provider the page does not break out falls back to that page's overall state. Every change lands in the Events tab.
+
 ## Live in the notch (experimental)
 
 Off by default, notched Macs only. Puts the readout at the display notch instead of the menu bar, in one of three resting positions — hanging below, sideways beside it, or spread around both sides — expanding on hover. Clicking opens the popover anchored to the pill, so it appears on the side you actually clicked.
