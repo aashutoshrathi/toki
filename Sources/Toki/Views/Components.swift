@@ -512,7 +512,7 @@ struct ServiceStatusRow: View {
             ServiceStatusDot(level: status.level, size: 7)
                 .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(status.provider.displayName) \(status.level.eventPhrase)")
+                Text(status.headline)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(status.level.tint)
                 Text(status.detail)

@@ -6,6 +6,13 @@ extension UsageStore {
     /// once per usage refresh.
     static let serviceStatusRefreshInterval: TimeInterval = 5 * 60
 
+    /// How long a status is worth repeating after the last time Toki could confirm it.
+    ///
+    /// Six checks' worth. A page that has been unreachable that long, or a Mac that has been off
+    /// the network that long, means Toki no longer knows - and an outage dot that outlives the
+    /// outage is worse than no dot, because nothing on the card says it is a memory.
+    static let serviceStatusStaleAfter: TimeInterval = 30 * 60
+
     /// Checks the status pages of the providers this install actually uses.
     ///
     /// Providers are taken from the accounts on screen plus whatever agents are running, so a
@@ -27,20 +34,35 @@ extension UsageStore {
         Task {
             defer { isCheckingServiceStatus = false }
             let fetched = await ServiceStatusClient.fetch(sources: sources, checkedAt: now)
-            // Every page failed: keep the last answer rather than reporting a provider as
-            // healthy just because Toki could not ask.
-            guard !fetched.isEmpty else { return }
-            let previous = serviceStatuses
-            serviceStatuses = fetched
-            logDebug("Service status: \(disruptionSummary(for: fetched, tracked: tracked))")
-            recordServiceStatusEvents(previous: previous, current: fetched, tracked: tracked, at: now)
+            applyServiceStatuses(fetched, tracked: tracked, at: now)
         }
     }
 
-    /// Service health for an account's provider, and only when it is worth showing - an
-    /// operational provider says nothing the card does not already say.
-    func disruptedServiceStatus(for provider: Provider) -> ServiceStatus? {
+    /// Folds a round of checks into what is already known, and records what changed.
+    ///
+    /// Pages are fetched independently and any one of them can fail, so a provider missing from
+    /// this round means "not asked" rather than "healthy": its last answer stands until it goes
+    /// stale. Dropping it instead would clear the dot on a provider that is still down, which
+    /// reads exactly like a recovery that never happened.
+    func applyServiceStatuses(_ fetched: [Provider: ServiceStatus], tracked: Set<Provider>, at date: Date) {
+        var merged = fetched
+        for (provider, previous) in serviceStatuses where merged[provider] == nil {
+            guard date.timeIntervalSince(previous.checkedAt) < Self.serviceStatusStaleAfter else { continue }
+            merged[provider] = previous
+        }
+
+        let previous = serviceStatuses
+        serviceStatuses = merged
+        logDebug("Service status: \(disruptionSummary(for: merged, tracked: tracked))")
+        recordServiceStatusEvents(previous: previous, current: merged, tracked: tracked, at: date)
+    }
+
+    /// Service health for an account's provider, and only when it is worth showing: an
+    /// operational provider says nothing the card does not already say, and an answer Toki has
+    /// not been able to confirm for half an hour is no longer worth repeating.
+    func disruptedServiceStatus(for provider: Provider, now: Date = Date()) -> ServiceStatus? {
         guard let status = serviceStatuses[provider], status.level.isDisrupted else { return nil }
+        guard now.timeIntervalSince(status.checkedAt) < Self.serviceStatusStaleAfter else { return nil }
         return status
     }
 
@@ -58,7 +80,7 @@ extension UsageStore {
             if status.level.isDisrupted, previousLevel != status.level {
                 appendEvent(
                     kind: .serviceStatus,
-                    title: "\(provider.displayName) \(status.level.eventPhrase)",
+                    title: status.headline,
                     detail: "\(status.detail) (\(host))",
                     deliveredNotification: false,
                     at: date

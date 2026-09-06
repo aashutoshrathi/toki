@@ -91,6 +91,11 @@ struct ServiceStatus: Hashable, Sendable, Identifiable {
 
     var id: String { provider.rawValue }
 
+    /// What the card, the tooltip and the event all lead with, e.g. "Claude Code is down".
+    var headline: String {
+        "\(provider.displayName) \(level.eventPhrase)"
+    }
+
     /// One line for a tooltip or a card row: the affected components when the page names them,
     /// falling back to the page's own wording.
     var detail: String {
@@ -113,8 +118,6 @@ struct ServiceStatusSource: Sendable {
     var summaryURL: URL {
         pageURL.appendingPathComponent("api/v2/summary.json")
     }
-
-    var providers: [Provider] { Array(componentPrefixes.keys) }
 
     static let all: [ServiceStatusSource] = [claude, openai, github, cursor]
 

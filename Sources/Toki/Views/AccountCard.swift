@@ -88,8 +88,8 @@ struct AccountCard: View {
                         if let serviceStatus {
                             ServiceStatusDot(level: serviceStatus.level)
                                 .offset(x: 2, y: 1)
-                                .help("\(serviceStatus.provider.displayName) \(serviceStatus.level.eventPhrase): \(serviceStatus.detail)")
-                                .accessibilityLabel("\(serviceStatus.provider.displayName) \(serviceStatus.level.eventPhrase)")
+                                .help("\(serviceStatus.headline): \(serviceStatus.detail)")
+                                .accessibilityLabel(serviceStatus.headline)
                         }
                     }
 
