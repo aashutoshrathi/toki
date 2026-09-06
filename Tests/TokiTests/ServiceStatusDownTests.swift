@@ -49,7 +49,7 @@ final class ServiceStatusDownTests: XCTestCase {
         // What the card draws its dot from, and the words it puts beside it.
         let shown = try XCTUnwrap(store.disruptedServiceStatus(for: .claudeCode, now: now))
         XCTAssertEqual(shown.headline, "Claude Code is down")
-        XCTAssertEqual(shown.detail, "Claude Code")
+        XCTAssertEqual(shown.detail, "Partial System Outage", "not the provider name repeated back")
         XCTAssertEqual(shown.level, .majorOutage)
         XCTAssertEqual(shown.pageURL.absoluteString, "https://status.claude.com")
 
@@ -75,7 +75,7 @@ final class ServiceStatusDownTests: XCTestCase {
 
         let outage = try XCTUnwrap(store.events.first { $0.title == "Claude Code is down" })
         XCTAssertEqual(outage.kind, .serviceStatus)
-        XCTAssertEqual(outage.detail, "Claude Code (status.claude.com)")
+        XCTAssertEqual(outage.detail, "Partial System Outage (status.claude.com)")
         XCTAssertFalse(outage.deliveredNotification, "an outage is recorded, never pushed as a notification")
 
         let healthy = """

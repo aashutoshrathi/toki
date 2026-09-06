@@ -96,11 +96,17 @@ struct ServiceStatus: Hashable, Sendable, Identifiable {
         "\(provider.displayName) \(level.eventPhrase)"
     }
 
-    /// One line for a tooltip or a card row: the affected components when the page names them,
-    /// falling back to the page's own wording.
+    /// The second line under the headline: which of the provider's components are in trouble.
+    ///
+    /// A component named after the provider itself is dropped, because "Claude Code is down"
+    /// followed by "Claude Code" says one thing twice and reads like a rendering bug. When that
+    /// leaves nothing, the page's own wording stands in.
     var detail: String {
-        guard !affectedComponents.isEmpty else { return pageDescription }
-        return affectedComponents.joined(separator: ", ")
+        let informative = affectedComponents.filter {
+            $0.compare(provider.displayName, options: .caseInsensitive) != .orderedSame
+        }
+        guard !informative.isEmpty else { return pageDescription }
+        return informative.joined(separator: ", ")
     }
 }
 

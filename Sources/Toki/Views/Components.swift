@@ -480,8 +480,10 @@ extension ServiceStatusLevel {
         switch self {
         case .operational: return .green
         case .maintenance: return .blue
-        case .degraded: return .yellow
-        case .partialOutage: return .orange
+        // The app's severity palette is green/orange/red, with no yellow anywhere else: orange
+        // reads as slow, red as down, and the wording carries the rest.
+        case .degraded: return .orange
+        case .partialOutage: return .red
         case .majorOutage: return .red
         }
     }

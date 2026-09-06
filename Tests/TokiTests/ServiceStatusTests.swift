@@ -50,7 +50,8 @@ final class ServiceStatusTests: XCTestCase {
         let status = try XCTUnwrap(statuses[.claudeCode])
         XCTAssertEqual(status.level, .degraded)
         XCTAssertTrue(status.level.isDisrupted)
-        XCTAssertEqual(status.detail, "Claude Code")
+        // The component is named after the provider, so the page wording carries the detail.
+        XCTAssertEqual(status.detail, "Degraded Performance")
         XCTAssertEqual(status.pageURL.absoluteString, "https://status.claude.com")
         XCTAssertEqual(status.checkedAt, checkedAt)
     }
@@ -88,6 +89,7 @@ final class ServiceStatusTests: XCTestCase {
 
         let codex = try XCTUnwrap(statuses[.codex])
         XCTAssertEqual(codex.level, .majorOutage)
+        XCTAssertEqual(codex.detail, "Codex Web, Codex API", "components that add something are kept")
         // Most severe first, and only the components that are actually disrupted.
         XCTAssertEqual(codex.affectedComponents, ["Codex Web", "Codex API"])
         // Sora being down belongs to neither Codex nor the API surface Toki reads.
