@@ -59,6 +59,7 @@ extension UsageStore {
             snapshots = sorted
             lastUpdated = Date()
             updateDerivedState(for: sorted)
+            refreshServiceStatus(for: sorted)
         }
     }
 

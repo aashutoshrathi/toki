@@ -267,6 +267,7 @@ enum TokiEventKind: String, Codable {
     case notification
     case refresh
     case reset
+    case serviceStatus
 }
 
 struct TokiEvent: Codable, Identifiable, Hashable {
