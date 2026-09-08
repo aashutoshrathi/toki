@@ -42,7 +42,7 @@ Also: on-device Apple Intelligence summaries on macOS 26+, low-quota and session
 |---|---|
 | **Quota tracked** | Claude Code (multi-account), Codex |
 | **Spend tracked** | Cursor, OpenCode, Pi, Sarvam Code, Vercel's fx |
-| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Grok CLI, Google's Antigravity, and ChatGPT-hosted Codex |
+| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Grok CLI, Google's Antigravity, Zed's agent panel, and ChatGPT-hosted Codex |
 
 Toki works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): it reads the same Claude Code account registry, so accounts switch without either tool reimplementing the other's credential handling.
 

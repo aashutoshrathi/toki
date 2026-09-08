@@ -5,6 +5,7 @@
 ### Added
 
 - **An outage indicator on the provider cards.** A coloured dot on the account logo when a provider's own status page reports an outage or degraded service, and a line in the opened card naming what is down, with a link to the page. Claude, Codex, Copilot, and Cursor are covered, checked at most every five minutes and only for the providers you actually use, and each change is recorded in Events.
+- **Zed's agent panel is a tracked provider.** Toki finds both kinds of session Zed runs: the external ACP agent servers it launches as real processes, and its built-in agent, which runs inside the editor and leaves no process at all. Titles, project folder and last activity come from Zed's own thread store, the same list its sidebar draws, read across every installed release channel. Clicking a row raises Zed, and an agent started in Zed's integrated terminal now names Zed as its host instead of showing no host at all. Zed sessions are watch-only in Remote Control: they talk to the editor over a pipe rather than a terminal, so there is no TTY a reply or an interrupt could be delivered to.
 
 ### Fixed
 

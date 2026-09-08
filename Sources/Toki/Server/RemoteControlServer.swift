@@ -513,6 +513,8 @@ final class RemoteControlServer: ObservableObject {
             return "antigravity"
         case .sarvamCode:
             return "sarvam"
+        case .zed:
+            return "zed"
         default:
             return nil
         }
@@ -529,7 +531,10 @@ final class RemoteControlServer: ObservableObject {
                 "title": agent.title,
                 "tty": agent.terminalTTY.map { $0 as Any } ?? NSNull(),
                 "host": agent.hostApp.map { $0.bundleID as Any } ?? NSNull(),
-                "session": agent.sessionPath.map { $0 as Any } ?? NSNull()
+                "session": agent.sessionPath.map { $0 as Any } ?? NSNull(),
+                // A thread-store row has no process for the companion server to find in `ps`, so
+                // it says so rather than being dropped as a PID that has gone away.
+                "process": agent.origin == .process
             ]
         }
         guard

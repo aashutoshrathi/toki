@@ -83,3 +83,19 @@ The ring's denominator is the spend cap the API reports, which for a team member
 ## Copilot, Gemini, Grok, Antigravity
 
 Agent-detection only. Toki shows a local active-session count, and sign-in state for Gemini and Grok, but invents no quota, because none of GitHub, Google, or xAI expose a usage API Toki reads for these. Antigravity (Google's `agy`) is detected by its CLI; its agent rows read the conversation title and last activity from `~/.gemini/antigravity-cli` (its live history log and conversation summaries).
+
+## Zed
+
+Agent-detection only, and detected by the editor rather than by a CLI: the card appears once Zed is installed.
+
+Zed runs its agents two different ways, and Toki finds both.
+
+An **external agent** speaks the Agent Client Protocol and runs as a real process, which Zed downloads under `~/Library/Application Support/Zed/external_agents/`. Any process launched from there is a Zed session, whatever CLI is inside it — a `claude-code-acp`, a `codex-acp` or a registry agent all belong to the Zed thread that started them, because Zed is where that thread can be answered.
+
+Zed's **built-in agent** runs inside the Zed process itself, so no process exists to find. Those sessions are read from Zed's own thread store instead: `sidebar_threads` in `~/Library/Application Support/Zed/db/0-<channel>/db.sqlite`, the same list its threads sidebar draws. Every installed release channel is read. A thread appears as a live session while it has been written to in the last 30 minutes and Zed is running — with no process there is no "still running" to read, so recency stands in for it. These rows carry no PID, so they have no **Quit** button; closing the thread is Zed's job.
+
+Both kinds take their title and last activity from that same store — Zed hands an agent server the worktree as its working directory and tells it nothing else, so the project folder is what links a running server back to the thread you are looking at. Clicking a row raises Zed.
+
+Toki reads only thread metadata: the agent name, title, timestamps and project folder. It does not read message content, which Zed stores compressed, and it opens the database read-only.
+
+Zed sessions are watch-only in Remote Control. See [Remote Control](remote-control.md#read-only-sessions).

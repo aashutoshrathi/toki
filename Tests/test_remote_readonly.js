@@ -27,4 +27,9 @@ assert.match(css, /\.ddgroup\{/);
 // disables it too -- there is no route to /clear on a session you cannot type into.
 assert.match(html, /<footer>[\s\S]*id="clear"[\s\S]*<\/footer>/);
 
+// Zed's agents talk to the editor over a pipe rather than a terminal, so they always arrive
+// read-only -- but they still have to be recognisable in the picker rather than a grey circle.
+assert.match(app, /zed: '<svg class="plogo"/);
+assert.match(app, /if \(p == "zed"\) return LOGOS\.zed;/);
+
 console.log("remote read-only session tests passed");

@@ -303,7 +303,11 @@ final class PiUsageClientTests: XCTestCase {
             ("node /x/bin/gemini", .gemini),
             ("/opt/homebrew/bin/pi", .pi),
             ("node /x/@earendil-works/pi-coding-agent/dist/cli.js", .pi),
-            ("bun /x/@mariozechner/pi-coding-agent/dist/cli.js", .pi)
+            ("bun /x/@mariozechner/pi-coding-agent/dist/cli.js", .pi),
+            ("/opt/homebrew/bin/node /Users/x/Library/Application Support/Zed/external_agents/claude-code-acp/0.12.6/node_modules/@zed-industries/claude-code-acp/dist/index.js", .zed),
+            // The CLI Zed bundled inside its own agent server is still Zed's session: Zed owns
+            // the thread and is the only place it can be answered.
+            ("/usr/bin/node /Users/x/Library/Application Support/Zed/external_agents/registry/codex-acp/v_1/node_modules/@openai/codex/dist/cli.js", .zed)
         ]
         for (command, expected) in matches {
             XCTAssertEqual(ActiveAgentScanner.providerForCommand(command), expected, command)
@@ -320,7 +324,10 @@ final class PiUsageClientTests: XCTestCase {
             "node /tmp/cursor-helper.js",
             "/usr/local/bin/cursor",
             "node /tmp/agy-helper.js",
-            "node /tmp/fx-helper.js"
+            "node /tmp/fx-helper.js",
+            "node /tmp/zed-helper.js",
+            // The editor itself is a host, never an agent.
+            "/Applications/Zed.app/Contents/MacOS/zed"
         ]
         for command in nonMatches {
             XCTAssertNil(ActiveAgentScanner.providerForCommand(command), command)

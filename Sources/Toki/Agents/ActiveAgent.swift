@@ -49,6 +49,14 @@ struct AgentAttention: Hashable, Sendable {
     }
 }
 
+// Where a row came from. Almost every agent is a process the `ps` scan found; Zed's built-in
+// agent runs inside the Zed app and only exists as a row in Zed's own thread store, so it has no
+// process to signal, no memory reading, and no terminal to open.
+enum AgentOrigin: Hashable, Sendable {
+    case process
+    case threadStore
+}
+
 struct ActiveAgent: Identifiable, Hashable, Sendable {
     let id: Int32
     let provider: Provider
@@ -72,12 +80,16 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     // The resolved session/transcript file, disambiguated by process start time. Passed to Remote
     // Control so it shows each co-located agent's own transcript instead of re-guessing by cwd.
     var sessionPath: String? = nil
+    var origin: AgentOrigin = .process
     // A short marker (the terminal tty) appended to the title only when another agent would
     // otherwise show the same one - several agents in one project can resolve to the same
     // session, and identical rows can't be told apart. Set by a post-scan pass.
     var disambiguator: String? = nil
 
     var needsInput: Bool { attention != nil }
+
+    // A thread-store row names a conversation, not a process, so there is nothing to signal.
+    var canTerminate: Bool { origin == .process }
 
     // Primary label: the conversation title, else the project folder, else the provider.
     var title: String {
@@ -160,7 +172,8 @@ enum ActiveAgentScanner {
                     )
                 }
             )
-            let agents = disambiguate(contexts.map { buildAgent($0, session: sessions[$0.candidate.pid]) })
+            let processAgents = contexts.map { buildAgent($0, session: sessions[$0.candidate.pid]) }
+            let agents = disambiguate(processAgents + zedThreadAgents(alongside: processAgents, psOutput: output))
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
             cache = cache.filter { alive.contains($0.key) }
@@ -191,7 +204,7 @@ enum ActiveAgentScanner {
         let entrypoint = commandParts.dropFirst().first.map { String($0).lowercased() }
 
         // Classify by executable first.
-        guard let provider = providerForProcess(executable: executable, entrypoint: entrypoint) else {
+        guard let provider = providerForProcess(executable: executable, entrypoint: entrypoint, command: command) else {
             return nil
         }
 
@@ -210,10 +223,19 @@ enum ActiveAgentScanner {
         let parts = command.split(whereSeparator: { $0.isWhitespace })
         guard let first = parts.first else { return nil }
         let executable = URL(fileURLWithPath: String(first)).lastPathComponent.lowercased()
-        return providerForProcess(executable: executable, entrypoint: parts.dropFirst().first.map { String($0).lowercased() })
+        return providerForProcess(
+            executable: executable,
+            entrypoint: parts.dropFirst().first.map { String($0).lowercased() },
+            command: command
+        )
     }
 
-    private static func providerForProcess(executable: String, entrypoint: String?) -> Provider? {
+    private static func providerForProcess(executable: String, entrypoint: String?, command: String) -> Provider? {
+        // Ahead of every other match: an agent server Zed downloaded is Zed's session, whatever
+        // CLI is inside it, and Zed is the only place it can be answered. The whole command is
+        // matched rather than the entrypoint argument because the install path runs through
+        // "Application Support", whose space splits that argument in two.
+        if isZedAgentServer(command: command) { return .zed }
         if executable == "pi" { return .pi }
         if (executable == "node" || executable == "bun"), let entrypoint,
            entrypoint.contains("/@earendil-works/pi-coding-agent/")
@@ -231,6 +253,97 @@ enum ActiveAgentScanner {
         if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
         if executable == "sarvam-code" { return .sarvamCode }
         return nil
+    }
+
+    // Zed downloads every agent server it runs - registry, bundled and custom alike - under its
+    // own application-support folder, so one path fragment covers all of them and keeps a CLI the
+    // user launched themselves out of it.
+    static func isZedAgentServer(command: String) -> Bool {
+        command.lowercased().contains("/zed/external_agents/")
+    }
+
+    // The Zed app itself, so a thread-store row can be opened even though it owns no process.
+    // Matched on the bundle's executable rather than a split argument list, since a channel like
+    // "Zed Preview.app" puts a space in the path.
+    static func isZedApplication(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let range = lowered.range(of: ".app/contents/macos/zed") else { return false }
+        let remainder = lowered[range.upperBound...]
+        return remainder.isEmpty || remainder.first == " "
+    }
+
+    static func zedApplicationPID(psOutput: String) -> Int32? {
+        for line in psOutput.split(separator: "\n") {
+            let parts = line.split(maxSplits: 5, whereSeparator: { $0.isWhitespace })
+            guard parts.count == 6, let pid = Int32(parts[0]), isZedApplication(command: String(parts[5])) else {
+                continue
+            }
+            return pid
+        }
+        return nil
+    }
+
+    // How recently a Zed thread must have been written to count as a live session. Zed's own
+    // agent leaves no process behind, so there is no "still running" to read - the sidebar row
+    // would otherwise sit in the Agents tab forever.
+    static let zedThreadActivityWindow: TimeInterval = 30 * 60
+
+    // Zed's built-in agent runs inside the app, so nothing in `ps` represents it. Its threads are
+    // read straight from Zed's store instead, minus any project an ACP server is already covering
+    // (that one has a real process and belongs to it).
+    static func zedThreadAgents(
+        alongside processAgents: [ActiveAgent],
+        psOutput: String,
+        threads: [ZedThreadStore.Thread]? = nil,
+        zedPID: Int32? = nil,
+        now: Date = Date()
+    ) -> [ActiveAgent] {
+        guard let hostPID = zedPID ?? zedApplicationPID(psOutput: psOutput) else { return [] }
+        let covered = Set(
+            processAgents
+                .filter { $0.provider == .zed }
+                .compactMap { $0.directory.map { ($0 as NSString).resolvingSymlinksInPath } }
+        )
+        var seen: Set<String> = []
+        // Newest first, so a folder with several threads keeps the one being worked in.
+        let ordered = (threads ?? ZedThreadStore.threads())
+            .sorted { ($0.updated ?? .distantPast) > ($1.updated ?? .distantPast) }
+        return ordered.compactMap { thread in
+            guard thread.isNative,
+                  let updated = thread.updated, updated > now.addingTimeInterval(-zedThreadActivityWindow),
+                  let directory = thread.directory else { return nil }
+            let key = (directory as NSString).resolvingSymlinksInPath
+            guard !covered.contains(key), seen.insert(key).inserted else { return nil }
+            let identifier = syntheticID(for: key)
+            return ActiveAgent(
+                id: identifier,
+                provider: .zed,
+                directory: directory,
+                chatTitle: thread.title ?? thread.displayAgentName,
+                hostApp: HostApp.zed,
+                hostProcessID: hostPID,
+                lastActivity: updated,
+                processID: identifier,
+                runtime: "",
+                terminalTTY: nil,
+                memoryKB: 0,
+                command: "",
+                sessionUsage: nil,
+                attention: nil,
+                sessionPath: nil,
+                origin: .threadStore
+            )
+        }
+    }
+
+    // Negative and stable, so a processless row keeps its identity across scans and can never be
+    // confused with a real PID by anything that signals or navigates by one.
+    static func syntheticID(for key: String) -> Int32 {
+        var hash: UInt32 = 2_166_136_261
+        for byte in key.utf8 {
+            hash = (hash ^ UInt32(byte)) &* 16_777_619
+        }
+        return -Int32(max(1, hash & 0x7FFF_FFFF))
     }
 
     // Appends the terminal tty to any title shared by two or more agents, so several sessions
@@ -357,6 +470,12 @@ enum ActiveAgentTerminator {
     // SIGTERM, not SIGKILL, so the agent can exit cleanly. The PID is re-checked first:
     // macOS reuses PIDs and the confirmation dialog can sit open for a while.
     static func terminate(_ agent: ActiveAgent) {
+        // A thread-store row is a conversation inside a running editor, not a process of its own;
+        // the only PID behind it is the editor's, and that must never be the one we signal.
+        guard agent.canTerminate else {
+            DiagnosticLogger.shared.record(.warning, component: "agents", code: "terminate_not_a_process")
+            return
+        }
         let currentCommand = Shell.output("/bin/ps", ["-p", String(agent.processID), "-o", "command="])?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard currentCommand == agent.command else {
