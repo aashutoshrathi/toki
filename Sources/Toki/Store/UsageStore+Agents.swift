@@ -43,6 +43,7 @@ extension UsageStore {
     // Drops the row immediately for a responsive feel, then reconciles with a real scan
     // shortly after in case the signal didn't actually take effect (e.g. no permission).
     func terminateAgent(_ agent: ActiveAgent) {
+        guard agent.canTerminate else { return }
         ActiveAgentTerminator.terminate(agent)
         activeAgents.removeAll { $0.id == agent.id }
         Task {

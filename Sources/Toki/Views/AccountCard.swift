@@ -82,6 +82,16 @@ struct AccountCard: View {
                                 .offset(x: 4, y: -1)
                         }
                     }
+                    // Opposite corner to the session count, so an account that is both busy
+                    // and on a struggling provider still shows each signal in full.
+                    .overlay(alignment: .bottomTrailing) {
+                        if let serviceStatus {
+                            ServiceStatusDot(level: serviceStatus.level)
+                                .offset(x: 2, y: 1)
+                                .help("\(serviceStatus.headline): \(serviceStatus.detail)")
+                                .accessibilityLabel(serviceStatus.headline)
+                        }
+                    }
 
                 VStack(alignment: .leading, spacing: 2) {
                     aliasEditor
@@ -106,7 +116,7 @@ struct AccountCard: View {
                     }
                 }
 
-                Spacer(minLength: 12)
+                Spacer(minLength: 8)
 
                 collapsedSummary
 
@@ -118,13 +128,16 @@ struct AccountCard: View {
                         Button {
                             store.switchClaudeAccount(target: switchTarget, command: snapshot.switchCommand)
                         } label: {
-                            Label("Switch", systemImage: "arrow.triangle.2.circlepath")
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11, weight: .semibold))
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .help("Switch Claude Code to this account")
+                        .accessibilityLabel("Switch Claude Code to this account")
                         .pointerOnHover()
                     }
+                    .layoutPriority(1)
                 }
             }
 
@@ -168,6 +181,12 @@ struct AccountCard: View {
                         // provider a custom alias maps to.
                         ProviderPill(provider: snapshot.provider)
                     }
+                }
+
+                // The provider being down explains a stalled agent or a failing refresh, so it
+                // sits above the metrics rather than under them.
+                if let serviceStatus {
+                    ServiceStatusRow(status: serviceStatus)
                 }
 
                 // Sessions only make sense for a connected account; when the account is
@@ -366,6 +385,12 @@ struct AccountCard: View {
         }
     }
 
+    /// Set only while this account's provider reports trouble - an operational provider has
+    /// nothing to add to a card that is already showing its quota.
+    private var serviceStatus: ServiceStatus? {
+        store.disruptedServiceStatus(for: snapshot.provider)
+    }
+
     private var accountIdentifier: String {
         return snapshot.name
     }
@@ -464,14 +489,14 @@ struct AccountCard: View {
             // one in its own compact column instead of merging unrelated quota buckets or adding
             // an empty placeholder when a plan has only a recent or weekly limit.
             VStack(alignment: .trailing, spacing: 3) {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
                     ForEach(quotaWindows) { window in
                         QuotaSummaryLine(
                             label: window.label,
                             value: "\(window.percentLeft)% left",
                             resetHint: window.resetHint
                         )
-                        .frame(minWidth: quotaWindows.count > 1 ? 68 : nil, alignment: .trailing)
+                        .frame(minWidth: quotaWindows.count > 1 ? 62 : nil, alignment: .trailing)
                     }
                 }
                 ZStack(alignment: .trailing) {

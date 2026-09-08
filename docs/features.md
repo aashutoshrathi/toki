@@ -6,7 +6,7 @@ The Agents tab inspects the local process table without persisting command lines
 
 Clicking an agent with a terminal TTY selects its exact surface in iTerm2, Ghostty, or Terminal; other hosts (VS Code, Cursor, ChatGPT) are activated by bundle ID.
 
-**Agents waiting on you** are marked with a red dot and the question they asked — on the card, on the Agents tab, and in the menu bar. Supported for Claude Code and OpenCode. The signal is a tool call that has gone unanswered for at least ten seconds: a tool that is genuinely running writes its result promptly, so quiet time is what separates "working" from "blocked on you".
+**Agents waiting on you** are marked with a red dot and the question they asked — on the card, on the Agents tab, and in the menu bar. Supported for Claude Code and OpenCode, and for the questions Sarvam Code asks with `request_user_input`. The signal is a tool call that has gone unanswered for at least ten seconds: a tool that is genuinely running writes its result promptly, so quiet time is what separates "working" from "blocked on you".
 
 ## Remote Control
 
@@ -57,6 +57,12 @@ Toki writes a compact, privacy-safe snapshot (provider labels and percentages on
 ## Quota rings
 
 On by default. The same provider-colored rings render inside the Accounts panel, showing remaining percentage at a glance and revealing the provider and live percentage on hover. Hide them with the button on the panel or the toggle in Settings. The standalone macOS widget above is enabled independently through the system widget gallery.
+
+## Provider outages
+
+When a provider reports trouble on its own status page, the account card says so: a coloured dot on the account logo, and, once the card is open, a line naming what is down with a link to the page. A provider that is operational shows nothing.
+
+Toki reads the public Statuspage summaries that Claude, OpenAI, GitHub, and Cursor publish, unauthenticated and at most once every five minutes, and only for providers you actually have, so a Claude-only install never calls OpenAI's page. Each provider is matched to its own components (Codex covers Codex API, Codex Web, and Codex in ChatGPT Desktop), so an unrelated outage elsewhere on the same page, Sora for instance, is never reported as yours. A provider the page does not break out falls back to that page's overall state. Every change lands in the Events tab.
 
 ## Live in the notch (experimental)
 

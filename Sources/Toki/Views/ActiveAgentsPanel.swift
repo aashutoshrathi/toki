@@ -107,19 +107,22 @@ struct ActiveAgentsPanel: View {
 
                                 // Quit button, folded inside the card next to the open affordance
                                 // (a sibling of the navigate button, not nested in it, so clicking
-                                // it never also triggers navigation).
-                                Button {
-                                    pendingTermination = agent
-                                } label: {
-                                    Image(systemName: "xmark.circle")
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.red)
-                                        .frame(width: 22, height: 22)
+                                // it never also triggers navigation). A row read out of an
+                                // editor's own thread store has no process of its own to quit.
+                                if agent.canTerminate {
+                                    Button {
+                                        pendingTermination = agent
+                                    } label: {
+                                        Image(systemName: "xmark.circle")
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(.red)
+                                            .frame(width: 22, height: 22)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Quit this agent")
+                                    .accessibilityLabel("Quit this agent")
+                                    .pointerOnHover()
                                 }
-                                .buttonStyle(.plain)
-                                .help("Quit this agent")
-                                .accessibilityLabel("Quit this agent")
-                                .pointerOnHover()
                             }
                             .padding(8)
                             .contentSurface()
@@ -154,6 +157,9 @@ struct ActiveAgentsPanel: View {
 
     private func agentDetail(_ agent: ActiveAgent) -> String {
         let host = agent.hostApp?.displayName ?? (agent.hasTerminalTarget ? "Terminal" : "Editor or background")
+        // A thread-store row is a conversation inside a running editor, so there is no process to
+        // report a resident size for.
+        guard agent.canTerminate else { return "\(host) • In-app thread • Click to open" }
         return "\(host) • \(agent.memoryDisplay) • Click to open"
     }
 }

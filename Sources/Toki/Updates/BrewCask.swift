@@ -11,9 +11,20 @@ struct BrewCaskInstall: Equatable, Sendable {
     var brewBinary: String { brewPrefix + "/bin/brew" }
 }
 
+/// A finished `brew` invocation. `status` is nil when brew could not be launched at all.
+struct BrewCaskResult: Equatable, Sendable {
+    let status: Int32?
+    let output: String
+
+    var succeeded: Bool { status == 0 }
+}
+
 enum BrewCask {
     static let stableCask = "toki"
     static let betaCask = "toki-beta"
+    static let tap = "aashutoshrathi/tap"
+
+    static func qualified(_ cask: String) -> String { "\(tap)/\(cask)" }
 
     /// The cask whose Caskroom entry resolves to the running bundle, and the prefix owning
     /// it. The `app` stanza moves the bundle out of the Caskroom and leaves a symlink
@@ -70,24 +81,49 @@ enum BrewCask {
         ]
     }
 
-    /// Exit status, or nil when brew could not be launched at all - a missing brew needs
-    /// different advice than a failed upgrade. Runs off the main actor because brew takes
-    /// minutes; nothing reads its pipes, so there is no drain to deadlock on.
-    static func run(_ arguments: [String], brewBinary: String) async -> Int32? {
+    /// Homebrew records cask trust per cask, not per tap, so installing `toki` never trusts
+    /// `toki-beta` and every switch command against the target is refused until this runs.
+    static func trustCommand(for cask: String) -> [String] {
+        ["trust", "--cask", qualified(cask)]
+    }
+
+    static func isUninstall(_ command: [String]) -> Bool {
+        command.first == "uninstall"
+    }
+
+    /// Runs off the main actor because brew takes minutes.
+    static func run(_ arguments: [String], brewBinary: String) async -> BrewCaskResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: brewBinary)
                 process.arguments = arguments
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = pipe
                 do {
                     try process.run()
+                    // Drain before waiting, or a step that fills the pipe buffer blocks forever.
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
-                    continuation.resume(returning: process.terminationStatus)
+                    continuation.resume(returning: BrewCaskResult(
+                        status: process.terminationStatus,
+                        output: String(data: data, encoding: .utf8) ?? ""
+                    ))
                 } catch {
-                    continuation.resume(returning: nil)
+                    continuation.resume(returning: BrewCaskResult(status: nil, output: error.localizedDescription))
                 }
             }
         }
+    }
+
+    static func failureReason(_ output: String) -> String? {
+        let lines = output
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard let reason = lines.last(where: { $0.hasPrefix("Error:") }) ?? lines.last else { return nil }
+        return String(reason.prefix(200))
     }
 
     /// Parsed off disk rather than through `Bundle(url:)`, which hands back the running

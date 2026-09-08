@@ -190,3 +190,44 @@ final class AgentOrderingTests: XCTestCase {
         }.map(\.processID)
     }
 }
+
+/// Sarvam Code pauses a turn with `request_user_input`; the app read attention for Claude and
+/// OpenCode only, so a Sarvam agent waiting on an answer showed as busy.
+final class SarvamAttentionTests: XCTestCase {
+    private let ask = """
+    {"type":"response_item","payload":{"type":"function_call","name":"request_user_input","call_id":"c1","arguments":"{\\"questions\\":[{\\"header\\":\\"Next step\\",\\"question\\":\\"What would you like to focus on next in toki?\\",\\"options\\":[{\\"label\\":\\"Usage tracking\\"},{\\"label\\":\\"Remote Control\\"}]}]}"}}
+    """
+
+    private func attention(_ jsonl: String) -> AgentAttention? {
+        AgentSessionResolver.sarvamAttention(fromJSONLData: Data(jsonl.utf8))
+    }
+
+    func testPendingQuestionSurfacesItsText() {
+        let result = attention(ask)
+        XCTAssertEqual(result?.kind, .question)
+        XCTAssertEqual(result?.prompt, "What would you like to focus on next in toki?")
+    }
+
+    func testAnsweredQuestionIsNotBlocking() {
+        let answered = ask + "\n" + """
+        {"type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"{\\"answers\\":{}}"}}
+        """
+        XCTAssertNil(attention(answered))
+    }
+
+    func testACommandStillRunningIsNotAQuestion() {
+        let jsonl = """
+        {"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c9","input":"swift build"}}
+        """
+        XCTAssertNil(attention(jsonl))
+    }
+
+    /// A question answered before a later command started must not resurface behind it.
+    func testAnOlderAnsweredQuestionStaysAnswered() {
+        let jsonl = ask + "\n" + """
+        {"type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"{}"}}
+        {"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c2","input":"swift test"}}
+        """
+        XCTAssertNil(attention(jsonl))
+    }
+}

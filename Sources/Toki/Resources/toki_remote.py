@@ -256,6 +256,11 @@ def provider_of(command):
         return None
     exe = os.path.basename(parts[0]).lower()
     entry = parts[1].lower() if len(parts) > 1 else ""
+    # Ahead of the rest: an agent server Zed downloaded is Zed's session whatever CLI is inside
+    # it. The whole command is matched because the install path runs through "Application
+    # Support", whose space splits the entrypoint argument in two.
+    if "/zed/external_agents/" in command.lower():
+        return "zed"
     if exe == "claude":
         return "claude"
     if exe == "codex" or exe.startswith("codex-") or (exe in ("node", "bun") and "/@openai/codex/" in entry):
@@ -322,6 +327,11 @@ def agents_from_snapshot(processes, snapshot):
     result = []
     for item in snapshot:
         process = by_pid.get(item.get("pid"))
+        # An editor's built-in agent runs inside the editor and owns no process, so Toki marks it
+        # and it is carried through rather than dropped as a PID that has gone away.
+        if not process and item.get("process") is False:
+            process = {"pid": item.get("pid"), "ppid": 0, "provider": item.get("provider"),
+                       "tty": None, "etime": "", "command": ""}
         if not process:
             continue
         agent = dict(process)
@@ -784,6 +794,22 @@ def codex_call_summary(payload):
     return name, ""
 
 
+def sarvam_questions(payload):
+    """Sarvam Code's `request_user_input` carries Claude-shaped questions in the call arguments.
+    Sarvam has no multi-select -- a question is answered by pressing one option's number, which
+    also submits it -- so the multi key asked of normalize_questions is one that never appears."""
+    args = payload.get("arguments")
+    if not isinstance(args, str):
+        return None
+    try:
+        parsed = json.loads(args)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return normalize_questions(parsed.get("questions"), "multiSelect")
+
+
 def parse_codex_transcript(path, offset=0):
     entries = []
     try:
@@ -823,9 +849,13 @@ def parse_codex_transcript(path, offset=0):
                         entries.append({"role": "assistant", "text": text})
             elif ptype in ("function_call", "local_shell_call", "custom_tool_call"):
                 name, summary = codex_call_summary(payload)
+                questions = sarvam_questions(payload) if name == "request_user_input" else None
+                if questions:
+                    # The raw arguments are one JSON blob; the question is the readable part.
+                    summary = questions[0].get("question", "")[:160]
                 entries.append({"role": "tool", "tool": name,
                                 "id": payload.get("call_id") or payload.get("id"),
-                                "text": summary, "questions": None})
+                                "text": summary, "questions": questions})
             elif ptype in ("function_call_output", "custom_tool_call_output"):
                 entries.append({"role": "resolved", "id": payload.get("call_id")})
     return entries, offset + consumed
@@ -1024,7 +1054,13 @@ def codex_attention(path):
         elif e["role"] == "resolved":
             pending.pop(e.get("id"), None)
     last = next((pending[i] for i in reversed(order) if i in pending), None)
-    if not last or policy == "never":
+    if not last:
+        return None
+    # A question is not an approval: the policy only auto-answers approvals, so Sarvam's
+    # request_user_input blocks the turn under `never` just the same.
+    if last.get("questions"):
+        return question_attention(last["questions"])
+    if policy == "never":
         return None
     label = last["text"] or last["tool"]
     return {"kind": "permission", "prompt": f"Approve: {label}?", "options": []}
@@ -1037,6 +1073,92 @@ OPENCODE_DB = os.path.join(
     os.environ.get("OPENCODE_DATA_DIR") or os.path.join(HOME, ".local", "share", "opencode"),
     "opencode.db",
 )
+
+
+ZED_DB_ROOTS = (
+    os.path.join(HOME, "Library", "Application Support", "Zed", "db"),
+    os.path.join(HOME, ".local", "share", "zed", "db"),
+)
+
+# Zed's threads sidebar, newest first. `main_worktree_paths` and `folder_paths` are newline-joined
+# path lists and sqlite3 separates rows by newline too, so the first path is cut out in SQL rather
+# than splitting a row that would already have been mangled.
+ZED_THREAD_QUERY = """
+SELECT agent_id, title, updated_at,
+       CASE WHEN instr(paths, char(10)) > 0 THEN substr(paths, 1, instr(paths, char(10)) - 1) ELSE paths END
+FROM (SELECT ifnull(agent_id, '') AS agent_id,
+             replace(replace(ifnull(nullif(title_override, ''), ifnull(title, '')), char(10), ' '), char(13), ' ') AS title,
+             ifnull(updated_at, '') AS updated_at,
+             ifnull(nullif(main_worktree_paths, ''), ifnull(folder_paths, '')) AS paths
+      FROM sidebar_threads
+      WHERE ifnull(archived, 0) = 0
+      ORDER BY updated_at DESC
+      LIMIT 40);
+"""
+
+# title_override and main_worktree_paths arrived in later Zed migrations; an install that has not
+# run them answers the query above with an error rather than rows.
+ZED_THREAD_QUERY_LEGACY = """
+SELECT agent_id, title, updated_at,
+       CASE WHEN instr(paths, char(10)) > 0 THEN substr(paths, 1, instr(paths, char(10)) - 1) ELSE paths END
+FROM (SELECT ifnull(agent_id, '') AS agent_id,
+             replace(replace(ifnull(title, ''), char(10), ' '), char(13), ' ') AS title,
+             ifnull(updated_at, '') AS updated_at,
+             ifnull(folder_paths, '') AS paths
+      FROM sidebar_threads
+      ORDER BY updated_at DESC
+      LIMIT 40);
+"""
+
+
+def zed_databases():
+    """One database per Zed release channel, and several channels can be installed at once."""
+    found = []
+    for root in ZED_DB_ROOTS:
+        try:
+            channels = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for channel in channels:
+            path = os.path.join(root, channel, "db.sqlite")
+            if os.path.exists(path):
+                found.append(path)
+    return found
+
+
+def zed_threads():
+    """Zed's own record of every agent thread: the only place a Zed session names itself."""
+    rows = []
+    for db in zed_databases():
+        out = shell(["/usr/bin/sqlite3", "-readonly", "-separator", "\x1f", db, ZED_THREAD_QUERY])
+        if out is None:
+            out = shell(["/usr/bin/sqlite3", "-readonly", "-separator", "\x1f", db,
+                         ZED_THREAD_QUERY_LEGACY])
+        for line in (out or "").splitlines():
+            fields = line.split("\x1f")
+            if len(fields) != 4:
+                continue
+            directory = fields[3].strip()
+            rows.append({
+                "agent": fields[0].strip(),
+                "title": fields[1].strip(),
+                "updated": fields[2].strip(),
+                "cwd": directory if directory.startswith("/") else None,
+            })
+    rows.sort(key=lambda row: row["updated"], reverse=True)
+    return rows
+
+
+def zed_thread_title(cwd):
+    """Zed hands an ACP server the worktree as its working directory and tells it nothing else, so
+    the folder is the only link back to the conversation the user is looking at."""
+    if not cwd:
+        return None
+    target = os.path.realpath(cwd)
+    for row in zed_threads():
+        if row["cwd"] and os.path.realpath(row["cwd"]) == target:
+            return row["title"] or (row["agent"] or None)
+    return None
 
 
 def opencode_query(sql, params=()):
@@ -1308,6 +1430,8 @@ def display_path(cwd):
 
 def chat_title(provider, path, cwd):
     fallback = os.path.basename(cwd) if cwd else provider
+    if provider == "zed":
+        return zed_thread_title(cwd) or fallback
     if provider == "opencode":
         raw_title = opencode_title(path) if path else None
         return (clean_user_text(raw_title) if raw_title else None) or fallback

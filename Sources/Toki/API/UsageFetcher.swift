@@ -84,6 +84,10 @@ enum UsageFetcher {
            let detected = SarvamCodeUsageClient.autoDetectedAccount() {
             accounts.append(detected)
         }
+        if !configured.contains(where: { $0.provider == .zed }),
+           let detected = zedAutoDetectedAccount() {
+            accounts.append(detected)
+        }
         return accounts
     }
 
@@ -97,6 +101,11 @@ enum UsageFetcher {
         return ["/Applications/Cursor.app", "~/Applications/Cursor.app"]
             .map { ($0 as NSString).expandingTildeInPath }
             .contains { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    private static func zedAutoDetectedAccount() -> AccountConfig? {
+        guard ZedThreadStore.isInstalled() else { return nil }
+        return AccountConfig(id: "zed-auto", name: "Zed", provider: .zed)
     }
 
     private static func antigravityAutoDetectedAccount() -> AccountConfig? {
@@ -140,7 +149,7 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .grok, .gemini, .antigravity:
+            case .copilot, .grok, .gemini, .antigravity, .zed:
                 snapshots = [agentOnlySnapshot(for: account)]
             case .cursor:
                 snapshots = [try await CursorUsageClient(account: account).snapshot()]
@@ -199,7 +208,7 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .zed, .manual:
             return nil
         case .claudeCode, .codex, .openai, .anthropic, .fx, .cursor:
             return "\(account.provider.rawValue):\(account.id)"
@@ -223,7 +232,7 @@ enum UsageFetcher {
             return claudeRefreshInterval
         case .codex, .openai, .anthropic, .fx, .cursor:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .zed, .manual:
             return 0
         }
     }

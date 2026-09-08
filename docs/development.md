@@ -59,6 +59,12 @@ Version ordering is semver-aware (`2.4.3` < `2.5.0-beta.1` < `2.5.0-beta.2` < `2
 
 Two casks live in the tap (`aashutoshrathi/homebrew-tap`): `toki` (stable) and `toki-beta` (prereleases). They conflict with each other — install one.
 
+Homebrew refuses to load a cask from a third-party tap until it is trusted, and it records trust per cask rather than per tap, so `brew trust --cask aashutoshrathi/tap/toki` is part of installing and installing `toki` does not cover `toki-beta`. Switching channels in the app trusts the cask it is moving to for you, naming that one cask so nothing else in the tap is trusted along with it.
+
+`homebrew/toki.rb` and `homebrew/toki-beta.rb` in this repo are the cask bodies. The release workflow copies the matching one into the tap on every release and then stamps it, so a change anywhere in a cask is made here, never in the tap: `scripts/update-cask.sh` rewrites only `version` and `sha256`, and anything edited straight in the tap is overwritten at the next release.
+
+A prerelease tag copies and stamps `toki-beta` alone. The stable cask is deliberately left untouched on that path, because its body would arrive carrying the template's placeholder version with nothing to stamp a real one over it.
+
 `scripts/update-cask.sh <cask.rb> [version]` rewrites a cask's version and DMG sha256. The version argument defaults to `appVersion`; prerelease tags must pass the full version (e.g. `3.2.0-beta.1`) because it exists only in the tag. The DMG filename always carries the base version (`Toki_3.2.0_universal.dmg`), which the script and the cask's URL handle.
 
 When Toki was installed by a cask, the in-app updater detects it (`BrewCask.installedCask` — the Caskroom entry is a symlink to the installed bundle) and routes "Install update" through `brew upgrade --cask <toki|toki-beta>` instead of swapping the DMG underneath brew. This keeps brew's receipt in sync with the app on disk; the DMG path would desync it, and the next `brew upgrade` would then clobber the newer build with the cask's older one. Dev builds and manual installs keep the direct DMG path.

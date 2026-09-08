@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 3.2.0" src="https://img.shields.io/badge/version-3.2.0-2f80ed">
+  <img alt="Version 3.3.0" src="https://img.shields.io/badge/version-3.3.0-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -30,9 +30,9 @@ If you move between Claude Code, Codex, Cursor, and half a dozen others during t
 
 **Analytics that go back further than the install.** Spend and token counts across today, this week, this month, and all time, plus a thirty-day heatmap filterable by provider. Both are read from each tool's own session history, so they cover work you did before Toki existed. Reported currencies are preserved.
 
-**Live sessions, and the ones stuck waiting.** Agent discovery across every supported tool, with navigation to the terminal tab or app hosting each one. A session parked on a permission prompt or a question gets a red dot and the question itself, on the card, the tab, and the menu bar, so you find out now rather than twenty minutes later.
+**Live sessions, and the ones stuck waiting.** Agent discovery across every supported tool, with navigation to the terminal tab or app hosting each one. A session parked on a permission prompt or a question gets a red dot and the question itself, on the card, the tab, and the menu bar, so you find out now rather than twenty minutes later. Discovery is not limited to processes: an agent that runs inside an editor, like Zed's agent panel, is read from that editor's own session store instead.
 
-**Remote Control, with no middleman.** Follow a running agent's transcript from another room and answer it: send a message, approve or reject a prompt, pick an option, switch its model, or mirror its terminal and drive whatever is on screen. There is a server, but it is **your Mac** — no relay, no account, no service of ours in the path. Replies land in the session already running, delivered to the agent's own TTY, so the agent cannot tell the difference. Off by default. See [Remote Control](docs/remote-control.md).
+**Remote Control, with no middleman.** Follow a running agent's transcript from another room and answer it: send a message, approve or reject a prompt, pick an option, switch its model, or mirror its terminal and drive whatever is on screen. There is a server, but it is **your Mac** — no relay, no account, no service of ours in the path. Replies land in the session already running, delivered to the agent's own TTY, so the agent cannot tell the difference. Agents with no terminal behind them are shown but read-only. Off by default. See [Remote Control](docs/remote-control.md).
 
 Also: on-device Apple Intelligence summaries on macOS 26+, low-quota and session notifications with cooldowns and DND, desktop widgets, provider-colored quota rings, and an experimental notch mode.
 
@@ -42,7 +42,7 @@ Also: on-device Apple Intelligence summaries on macOS 26+, low-quota and session
 |---|---|
 | **Quota tracked** | Claude Code (multi-account), Codex |
 | **Spend tracked** | Cursor, OpenCode, Pi, Sarvam Code, Vercel's fx |
-| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Grok CLI, Google's Antigravity, and ChatGPT-hosted Codex |
+| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Grok CLI, Google's Antigravity, Zed's agent panel, and ChatGPT-hosted Codex |
 
 Toki works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): it reads the same Claude Code account registry, so accounts switch without either tool reimplementing the other's credential handling.
 

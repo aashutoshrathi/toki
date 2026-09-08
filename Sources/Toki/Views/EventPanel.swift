@@ -89,6 +89,7 @@ struct EventPanel: View {
         case .notification: return event.deliveredNotification ? "bell.fill" : "bell.slash"
         case .refresh: return "arrow.clockwise"
         case .reset: return "arrow.counterclockwise"
+        case .serviceStatus: return "bolt.horizontal.circle.fill"
         }
     }
 
@@ -101,6 +102,7 @@ struct EventPanel: View {
         case .notification: return event.deliveredNotification ? .blue : .secondary
         case .refresh: return .secondary
         case .reset: return .teal
+        case .serviceStatus: return .orange
         }
     }
 }
