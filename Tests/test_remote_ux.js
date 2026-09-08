@@ -66,6 +66,21 @@ assert.match(app, /function dispPath/);
 assert.match(app, /dispPath\(a\.path\)/);
 assert.match(app, /class="tp"/);
 assert.match(css, /#dd \.tp\{/);
+// The picker is capped to the room left above the footer. The footer is painted over the header,
+// so a list sized as a flat slice of the viewport ran its last rows behind the key pad, and the
+// composer growing (or a mirrored screen) moved that edge without the list ever hearing about it.
+assert.match(app, /function sizeAgentList/);
+assert.match(app, /function setAgentListOpen/);
+assert.match(app, /\$\("footer"\)\.getBoundingClientRect\(\)\.top/);
+assert.match(app, /window\.visualViewport/);
+assert.match(app, /setProperty\("--dd-max"/);
+assert.match(app, /window\.addEventListener\("resize", sizeAgentList\)/);
+assert.match(css, /max-height:var\(--dd-max,60vh\)/);
+// While it is open the picker outranks the footer, so a list clamped to its floor stays readable.
+assert.match(css, /header:has\(#dd\.open\)\{z-index:6\}/);
+// Every open goes through the helper: a raw class toggle would leave the list unmeasured.
+assert.ok(!/\$\("#dd"\)\.classList\.(toggle|add)\("open"\)/.test(app),
+          "the picker is opened without sizing it against the footer");
 // A Clear button sends /clear, behind a confirm tap: it sits beside Send and cannot be undone.
 assert.match(html, /id="clear"/);
 assert.match(app, /function clearContext/);

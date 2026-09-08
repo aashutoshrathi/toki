@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.1 - 2026-09-09
+
+### Fixed
+
+- **A first run can get past the permissions checklist.** The checklist lists every permission Toki will ever ask for, and on a shorter screen that ran past the bottom of the panel and took the button that dismisses it with it, leaving a fresh install with no way forward. Skipping moved up beside the heading where it cannot be pushed off, and the rows scroll.
+- **The agent picker no longer runs off under the keys.** Remote Control's list was a flat 60% of the viewport, but the key pad and composer are painted over the header, so on a phone the foot of the list sat behind the key pad: the last row was cut in half, and scrolling only moved another row into the same covered strip. The list is measured against the room actually left above the footer now, re-measured whenever the composer grows or the screen turns, and it opens with the current agent already in view.
+
 ## 3.3.0 - 2026-09-09
 
 ### Added
