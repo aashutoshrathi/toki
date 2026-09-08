@@ -444,6 +444,31 @@ function setDocTitle(agent) {
   document.title = agent.machine ? agent.machine + " - " + chat : chat;
 }
 
+// The agent picker hangs off the header, but the footer is painted over it and the composer grows,
+// so the list has to be measured against whatever room is left rather than a fixed slice of the
+// viewport - otherwise its foot is cut in half by the key pad and scrolling never clears it.
+function sizeAgentList() {
+  const dd = $("#dd");
+  if (!dd.classList.contains("open")) return;
+  const top = $("#ddlist").getBoundingClientRect().top;
+  const vv = window.visualViewport;
+  // The keyboard shrinks the visual viewport without moving the footer, so honour whichever is higher.
+  const floor = Math.min($("footer").getBoundingClientRect().top,
+                         vv ? vv.offsetTop + vv.height : window.innerHeight);
+  // Never collapse to a sliver: a couple of scrollable rows beat an unusable list.
+  dd.style.setProperty("--dd-max", Math.max(Math.round(floor - top - 10), 132) + "px");
+}
+
+function setAgentListOpen(open) {
+  const dd = $("#dd");
+  dd.classList.toggle("open", open);
+  if (!open) return;
+  sizeAgentList();
+  // With many agents the current one can start out below the fold.
+  const sel = $("#ddlist").querySelector(".dditem.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
 function renderAgents() {
   const btn = $("#ddbtn");
   const list = $("#ddlist");
@@ -467,13 +492,13 @@ function renderAgents() {
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
     if (+el.dataset.pid == current) {
-      $("#dd").classList.remove("open");
+      setAgentListOpen(false);
       return;
     }
     current = +el.dataset.pid;
     resetTranscript();
     clearPendingImage();  // Attachments are agent-scoped.
-    $("#dd").classList.remove("open");
+    setAgentListOpen(false);
     renderAgents();
     refreshLog();
   });
@@ -1385,15 +1410,19 @@ const footer = $("footer");
 new ResizeObserver(() => {
   const stick = nearBottom();
   document.documentElement.style.setProperty("--footer-height", footer.offsetHeight + "px");
+  sizeAgentList();  // An expanded composer or a mirrored screen eats into the picker's room.
   if (stick) scrollToLatest();
 }).observe(footer);
 resizeComposer();
 
 $("#ddbtn").addEventListener("click", e => {
   e.stopPropagation();
-  $("#dd").classList.toggle("open");
+  setAgentListOpen(!$("#dd").classList.contains("open"));
 });
-document.addEventListener("click", () => $("#dd").classList.remove("open"));
+document.addEventListener("click", () => setAgentListOpen(false));
+window.addEventListener("resize", sizeAgentList);
+window.addEventListener("orientationchange", sizeAgentList);
+if (window.visualViewport) window.visualViewport.addEventListener("resize", sizeAgentList);
 $("#tolatest").addEventListener("click", scrollToLatest);
 $("#log").addEventListener("scroll", () => {
   if (nearBottom()) $("#tolatest").hidden = true;
