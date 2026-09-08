@@ -46,11 +46,7 @@ struct SetupChecklistView: View {
             }
 
             if !collapsible || expanded {
-                VStack(spacing: 4) {
-                    ForEach(steps) { step in
-                        row(for: step)
-                    }
-                }
+                stepRows
 
                 if let launchAtLoginError {
                     Text(launchAtLoginError)
@@ -75,15 +71,57 @@ struct SetupChecklistView: View {
         .onChange(of: store.preferences.notificationsEnabled) { notificationTestSent = false }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Permissions")
-                .font(.system(size: 13, weight: .semibold))
-            Text(headerDetail)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    /// A first run lists every permission Toki will ever ask for, and the popover is a fixed
+    /// height that nothing in this path scrolls. Eight rows plus the copy above them ran past the
+    /// bottom edge, taking the footer with them - so the button that dismisses the checklist was
+    /// off screen and a fresh install had no way past it. The rows scroll within half the popover
+    /// and the footer stays put.
+    @ViewBuilder
+    private var stepRows: some View {
+        let rows = VStack(spacing: 4) {
+            ForEach(steps) { step in
+                row(for: step)
+            }
         }
+
+        if mode == .firstRun {
+            ScrollView(.vertical) { rows }
+                .frame(maxHeight: popoverHeight() / 2)
+                .scrollBounceBehavior(.basedOnSize)
+        } else {
+            rows
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Permissions")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(headerDetail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Above the list rather than under it: this is the way out of the checklist, and
+            // under a list long enough to overflow the popover it was the part that fell off.
+            if showsDismiss {
+                Spacer(minLength: 8)
+                dismissButton
+            }
+        }
+    }
+
+    private var dismissButton: some View {
+        Button(outstanding.isEmpty ? "Done" : "Skip for now") {
+            store.completeSetupChecklist()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize()
+        .disabled(requestingAll)
+        .pointerOnHover()
     }
 
     private var collapsibleHeader: some View {
@@ -169,16 +207,6 @@ struct SetupChecklistView: View {
                 .help("Permissions can be changed in System Settings; this reads them again")
                 .pointerOnHover()
 
-            if showsDismiss {
-                Button(outstanding.isEmpty ? "Done" : "Skip for now") {
-                    store.completeSetupChecklist()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .disabled(requestingAll)
-                .pointerOnHover()
-            }
         }
     }
 

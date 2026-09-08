@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A first run can get past the permissions checklist.** The checklist lists every permission Toki will ever ask for, and on a shorter screen that ran past the bottom of the panel and took the button that dismisses it with it, leaving a fresh install with no way forward. Skipping moved up beside the heading where it cannot be pushed off, and the rows scroll.
+
 ## 3.3.0 - 2026-09-09
 
 ### Added

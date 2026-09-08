@@ -82,7 +82,12 @@ struct MenuContentView: View {
                 SessionRecordingCard(startedAt: session.startedAt)
             }
             if store.needsOnboarding {
-                OnboardingView(store: store) { showConfig = true }
+                // Nothing else is on screen during onboarding, so this is the one place the body
+                // itself can scroll without nesting inside a tab's own scroll view.
+                ScrollView(.vertical) {
+                    OnboardingView(store: store) { showConfig = true }
+                }
+                .scrollBounceBehavior(.basedOnSize)
             } else {
                 // Connecting an account ends onboarding but not setup: the permissions Toki needs
                 // to actually be useful are still unanswered, so the first-run checklist stays
