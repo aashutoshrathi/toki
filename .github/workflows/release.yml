@@ -108,24 +108,29 @@ jobs:
         run: |
           TAP_DIR="$(mktemp -d)"
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/aashutoshrathi/homebrew-tap.git" "$TAP_DIR"
-          # First run on a tap that predates the beta cask: seed it from the in-repo
-          # template so update-cask.sh has a file to rewrite. Once the tap carries the
-          # cask this is skipped and the existing file is bumped in place.
-          if [ ! -f "$TAP_DIR/Casks/toki-beta.rb" ]; then
-            mkdir -p "$TAP_DIR/Casks"
-            cp homebrew/toki-beta.rb "$TAP_DIR/Casks/toki-beta.rb"
-          fi
+          mkdir -p "$TAP_DIR/Casks"
+          # The in-repo template is the cask body; update-cask.sh then stamps version and
+          # sha256 onto it. Copying it every release is what makes the template authoritative:
+          # update-cask.sh rewrites only those two lines, so before this, a fix anywhere else
+          # in the cask - a deprecated stanza, a wrong caveat - stayed in this repo and never
+          # reached the tap the users install from.
+          #
+          # A prerelease must not touch the stable cask at all: its body would arrive with the
+          # template's placeholder version, and nothing on this path stamps a real one over it.
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            cp homebrew/toki-beta.rb "$TAP_DIR/Casks/toki-beta.rb"
             # Prerelease: the cask version is the full tag; the DMG filename carries only
             # the base version, which update-cask.sh handles.
             bash scripts/update-cask.sh "$TAP_DIR/Casks/toki-beta.rb" "${GITHUB_REF_NAME#v}"
           else
+            cp homebrew/toki.rb "$TAP_DIR/Casks/toki.rb"
+            cp homebrew/toki-beta.rb "$TAP_DIR/Casks/toki-beta.rb"
             # Both casks take the same stable version, which is update-cask.sh's default.
             bash scripts/update-cask.sh "$TAP_DIR/Casks/toki.rb"
             bash scripts/update-cask.sh "$TAP_DIR/Casks/toki-beta.rb"
           fi
           cd "$TAP_DIR"
-          # Stage before checking: a freshly seeded Casks/toki-beta.rb is untracked, and
+          # Stage before checking: a cask the tap does not carry yet is untracked, and
           # `git diff --quiet` alone would ignore it and skip the first bootstrap commit.
           git add Casks/
           if git diff --cached --quiet; then

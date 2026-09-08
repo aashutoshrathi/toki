@@ -6,6 +6,11 @@
 
 - **An outage indicator on the provider cards.** A coloured dot on the account logo when a provider's own status page reports an outage or degraded service, and a line in the opened card naming what is down, with a link to the page. Claude, Codex, Copilot, and Cursor are covered, checked at most every five minutes and only for the providers you actually use, and each change is recorded in Events.
 
+### Fixed
+
+- **`brew` stops warning about Toki's casks on every command.** Both casks used `postflight`, which Homebrew now reports as deprecated and asks the tap to fix, four times over on a single `brew upgrade`. They use the declarative `postflight_steps` instead, which does the same quarantine strip.
+- **A cask fix now reaches the tap people install from.** The release only ever rewrote `version` and `sha256` there, so everything else in a cask stayed behind in this repo: the deprecated stanza survived every release, and the stable cask never picked up the `conflicts_with` that is supposed to keep it and the beta cask mutually exclusive. The cask body is copied from this repo on each release now, then stamped.
+
 ## 3.2.0 - 2026-09-03
 
 ### Added
