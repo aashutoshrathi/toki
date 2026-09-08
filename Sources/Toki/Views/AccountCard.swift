@@ -116,7 +116,7 @@ struct AccountCard: View {
                     }
                 }
 
-                Spacer(minLength: 12)
+                Spacer(minLength: 8)
 
                 collapsedSummary
 
@@ -128,13 +128,16 @@ struct AccountCard: View {
                         Button {
                             store.switchClaudeAccount(target: switchTarget, command: snapshot.switchCommand)
                         } label: {
-                            Label("Switch", systemImage: "arrow.triangle.2.circlepath")
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11, weight: .semibold))
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .help("Switch Claude Code to this account")
+                        .accessibilityLabel("Switch Claude Code to this account")
                         .pointerOnHover()
                     }
+                    .layoutPriority(1)
                 }
             }
 
@@ -486,14 +489,14 @@ struct AccountCard: View {
             // one in its own compact column instead of merging unrelated quota buckets or adding
             // an empty placeholder when a plan has only a recent or weekly limit.
             VStack(alignment: .trailing, spacing: 3) {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
                     ForEach(quotaWindows) { window in
                         QuotaSummaryLine(
                             label: window.label,
                             value: "\(window.percentLeft)% left",
                             resetHint: window.resetHint
                         )
-                        .frame(minWidth: quotaWindows.count > 1 ? 68 : nil, alignment: .trailing)
+                        .frame(minWidth: quotaWindows.count > 1 ? 62 : nil, alignment: .trailing)
                     }
                 }
                 ZStack(alignment: .trailing) {

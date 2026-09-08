@@ -167,11 +167,20 @@ final class UpdateChecker: ObservableObject {
     }
 
     private func performCaskSwitch(install: BrewCaskInstall, target: String) async {
+        // Best effort: a Homebrew without the trust gate has no `trust` command either, and a
+        // failure here is not a failed switch. The commands below report the real outcome.
+        _ = await BrewCask.run(BrewCask.trustCommand(for: target), brewBinary: install.brewBinary)
+
+        var uninstalled = false
         for command in BrewCask.switchCommands(from: install.cask, to: target) {
-            guard await BrewCask.run(command, brewBinary: install.brewBinary) == 0 else {
-                await recoverFromFailedCaskSwitch(install: install, target: target)
+            let result = await BrewCask.run(command, brewBinary: install.brewBinary)
+            guard result.succeeded else {
+                await recoverFromFailedCaskSwitch(
+                    install: install, target: target, uninstalled: uninstalled, failure: result
+                )
                 return
             }
+            if BrewCask.isUninstall(command) { uninstalled = true }
         }
         isSwitchingCask = false
         // The bundle on disk is a different build now, so the running process is stale.
@@ -182,18 +191,39 @@ final class UpdateChecker: ObservableObject {
         NSApp.terminate(nil)
     }
 
-    /// The uninstall runs before the install, so a failure can leave no app on disk at all.
-    /// Reinstalling what was there is the only way back, and the preference follows it so
+    /// The uninstall runs before the install, so a failure after it can leave no app on disk at
+    /// all. Reinstalling what was there is the only way back, and the preference follows it so
     /// the picker keeps describing what is installed.
-    private func recoverFromFailedCaskSwitch(install: BrewCaskInstall, target: String) async {
-        let restored = await BrewCask.run(["install", "--cask", install.cask], brewBinary: install.brewBinary) == 0
-        DiagnosticLogger.shared.record(
-            .error, component: "updater", code: "cask_switch_failed", detail: "to=\(target) restored=\(restored)"
-        )
+    private func recoverFromFailedCaskSwitch(
+        install: BrewCaskInstall,
+        target: String,
+        uninstalled: Bool,
+        failure: BrewCaskResult
+    ) async {
+        let reason = BrewCask.failureReason(failure.output)
         storeChannel(BrewCask.channel(for: install.cask))
-        isSwitchingCask = false
+        defer { isSwitchingCask = false }
+
+        guard uninstalled else {
+            DiagnosticLogger.shared.record(
+                .error, component: "updater", code: "cask_switch_failed",
+                detail: "to=\(target) uninstalled=false reason=\(reason ?? "unknown")"
+            )
+            caskSwitchError = [
+                "Couldn't switch to the \(target) cask, so nothing changed.", reason,
+            ].compactMap { $0 }.joined(separator: " ")
+            return
+        }
+
+        let restored = await BrewCask.run(["install", "--cask", install.cask], brewBinary: install.brewBinary).succeeded
+        DiagnosticLogger.shared.record(
+            .error, component: "updater", code: "cask_switch_failed",
+            detail: "to=\(target) uninstalled=true restored=\(restored) reason=\(reason ?? "unknown")"
+        )
         caskSwitchError = restored
-            ? "Couldn't switch to the \(target) cask, so nothing changed."
+            ? [
+                "Couldn't switch to the \(target) cask, so nothing changed.", reason,
+            ].compactMap { $0 }.joined(separator: " ")
             : "Switching to the \(target) cask failed and Toki may be gone from Applications. Run `brew install --cask \(target)`."
     }
 
@@ -279,16 +309,17 @@ final class UpdateChecker: ObservableObject {
     private func installViaBrew(install: BrewCaskInstall, update: AvailableUpdate) async {
         let cask = install.cask
         let manually = "Update with `brew upgrade --cask \(cask)`."
-        guard let status = await BrewCask.run(["upgrade", "--cask", cask], brewBinary: install.brewBinary) else {
+        let result = await BrewCask.run(["upgrade", "--cask", cask], brewBinary: install.brewBinary)
+        guard result.status != nil else {
             failBrewHandoff(code: "brew_missing", message: "Couldn't run \(install.brewBinary). \(manually)")
             return
         }
 
-        guard status == 0, BrewCask.handoffSucceeded(
+        guard result.succeeded, BrewCask.handoffSucceeded(
             appURL: UpdateInstaller.installedAppURL(),
             expectedVersion: update.version
         ) else {
-            failBrewHandoff(code: "brew_handoff_failed", message: "brew finished but Toki wasn't updated. \(manually)", detail: "exit=\(status)")
+            failBrewHandoff(code: "brew_handoff_failed", message: "brew finished but Toki wasn't updated. \(manually)", detail: "exit=\(result.status.map(String.init) ?? "none")")
             return
         }
 

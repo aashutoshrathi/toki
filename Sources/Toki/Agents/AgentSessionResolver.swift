@@ -50,6 +50,8 @@ enum AgentSessionResolver {
             return attention(from: parsed, modified: session.modified, now: Date())
         case .openCode:
             return openCodeAttention(cwd: cwd, now: Date())
+        case .sarvamCode:
+            return sarvamAttention(cwd: cwd, now: Date())
         default:
             return nil
         }
@@ -271,6 +273,98 @@ enum AgentSessionResolver {
 
         let tool = parts[0].trimmingCharacters(in: .whitespaces)
         return AgentAttention(kind: .permission, prompt: tool.isEmpty ? nil : "Allow \(tool)?")
+    }
+
+    // Sarvam Code pauses a turn with `request_user_input`, whose call carries the same question
+    // shape Claude's AskUserQuestion does. An unresolved call is one waiting on an answer.
+    private static func sarvamAttention(cwd: String?, now: Date) -> AgentAttention? {
+        guard let session = newestSarvamSession(cwd: cwd) else { return nil }
+        guard let modified = session.modified, now.timeIntervalSince(modified) >= attentionQuietPeriod else {
+            return nil
+        }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: session.path)) else { return nil }
+        return sarvamAttention(fromJSONLData: data)
+    }
+
+    static func sarvamAttention(fromJSONLData data: Data) -> AgentAttention? {
+        var pending: [String: String?] = [:]
+        var order: [String] = []
+
+        for line in data.split(separator: 0x0A) {
+            guard let record = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                  let payload = record["payload"] as? [String: Any],
+                  let type = payload["type"] as? String
+            else { continue }
+
+            switch type {
+            case "function_call", "custom_tool_call", "local_shell_call":
+                guard let id = (payload["call_id"] ?? payload["id"]) as? String else { continue }
+                pending[id] = payload["name"] as? String == "request_user_input"
+                    ? sarvamQuestion(arguments: payload["arguments"] as? String)
+                    : .some(nil)
+                order.append(id)
+            case "function_call_output", "custom_tool_call_output":
+                if let id = payload["call_id"] as? String {
+                    pending.removeValue(forKey: id)
+                    order.removeAll { $0 == id }
+                }
+            default:
+                continue
+            }
+        }
+
+        // Only a question is reported: an unresolved shell or edit call is Codex-style approval,
+        // which the CLI may be running rather than prompting for.
+        guard let last = order.last, let question = pending[last], let prompt = question else { return nil }
+        return AgentAttention(kind: .question, prompt: prompt)
+    }
+
+    private static func sarvamQuestion(arguments: String?) -> String? {
+        guard let arguments, let data = arguments.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let questions = parsed["questions"] as? [[String: Any]],
+              let first = questions.first,
+              let text = first["question"] as? String,
+              !text.isEmpty
+        else { return nil }
+        return text
+    }
+
+    private static func newestSarvamSession(cwd: String?) -> ResolvedSession? {
+        let root = SarvamCodeUsageClient.sessionRoot()
+        guard let enumerator = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: root),
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey]
+        ) else { return nil }
+
+        var candidates: [ResolvedSession] = []
+        for case let url as URL in enumerator where url.pathExtension.lowercased() == "jsonl" {
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
+            guard values?.isRegularFile == true else { continue }
+            candidates.append(ResolvedSession(path: url.path, modified: values?.contentModificationDate))
+        }
+        candidates.sort { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }
+
+        guard let cwd else { return candidates.first }
+        let recent = candidates.prefix(80)
+        return recent.first { sarvamSessionCwd(of: $0.path) == cwd } ?? candidates.first
+    }
+
+    private static func sarvamSessionCwd(of path: String) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return nil }
+        defer { try? handle.close() }
+        // The cwd is recorded in session_meta and turn_context, both near the head of the file.
+        guard let head = try? handle.read(upToCount: 64 * 1024) else { return nil }
+        for line in head.split(separator: 0x0A).prefix(20) {
+            guard let record = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                  let type = record["type"] as? String,
+                  type == "session_meta" || type == "turn_context",
+                  let payload = record["payload"] as? [String: Any],
+                  let cwd = payload["cwd"] as? String, !cwd.isEmpty
+            else { continue }
+            return cwd
+        }
+        return nil
     }
 
     // A running tool writes its result within moments; a prompt sits indefinitely. Quiet time
