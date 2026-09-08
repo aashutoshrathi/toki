@@ -186,3 +186,51 @@ final class ZedAgentTests: XCTestCase {
         XCTAssertFalse(Provider.zed.isConsumerTracked)
     }
 }
+
+/// Zed commits threads through a write-ahead log, so the database file the cache was keyed on
+/// stops changing while the threads behind it keep moving.
+final class ZedThreadCacheTests: XCTestCase {
+    private func sqlite(_ database: String, _ statement: String) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [database, statement]
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+    }
+
+    func testAThreadCommittedThroughTheWriteAheadLogIsSeen() throws {
+        let database = NSTemporaryDirectory() + "zed-\(UUID().uuidString).sqlite"
+        addCleanup(database)
+
+        try sqlite(database, """
+        PRAGMA journal_mode=WAL;
+        CREATE TABLE sidebar_threads (
+            agent_id TEXT, title TEXT, title_override TEXT, updated_at TEXT,
+            main_worktree_paths TEXT, folder_paths TEXT, archived INTEGER
+        );
+        INSERT INTO sidebar_threads VALUES (NULL,'First',NULL,'2026-09-08T10:00:00Z','/tmp/a',NULL,0);
+        """)
+
+        XCTAssertEqual(ZedThreadStore.threads(inDatabase: database, limit: 40).map(\.title), ["First"])
+
+        let before = try FileManager.default.attributesOfItem(atPath: database)[.modificationDate] as? Date
+        try sqlite(database, "INSERT INTO sidebar_threads VALUES (NULL,'Second',NULL,'2026-09-08T11:00:00Z','/tmp/b',NULL,0);")
+        // Pin the main file's date to what it was, which is what WAL leaves behind in practice,
+        // so the test fails on a stale cache rather than on a checkpoint that happened to run.
+        if let before {
+            try FileManager.default.setAttributes([.modificationDate: before], ofItemAtPath: database)
+        }
+
+        let titles = ZedThreadStore.threads(inDatabase: database, limit: 40).map(\.title)
+        XCTAssertEqual(Set(titles.compactMap { $0 }), ["First", "Second"])
+    }
+
+    private func addCleanup(_ database: String) {
+        addTeardownBlock {
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(atPath: database + suffix)
+            }
+        }
+    }
+}

@@ -88,18 +88,41 @@ enum ZedThreadStore {
     }
 
     private struct CacheEntry {
-        let modified: Date?
+        let signature: String
         let threads: [Thread]
+        let succeeded: Bool
+        let readAt: Date
     }
     private nonisolated(unsafe) static var cache: [String: CacheEntry] = [:]
 
-    private static func threads(inDatabase path: String, limit: Int) -> [Thread] {
-        let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
-        if let cached = cache[path], cached.modified == modified { return cached.threads }
+    /// A read that failed says nothing about what the database holds, so it is only held long
+    /// enough to keep a channel with no threads table from being re-queried on every scan.
+    private static let failedReadRetryInterval: TimeInterval = 60
+
+    /// Zed runs SQLite in WAL mode, so a committed thread lands in `-wal` and leaves the main
+    /// file's modification date untouched until a checkpoint. Keyed on that date alone, the
+    /// first read of the process was served for the life of the app: a thread started after
+    /// Toki launched never appeared, and one that was live at launch went stale and vanished.
+    private static func signature(of path: String) -> String {
+        [path, path + "-wal"].map { file in
+            let attributes = try? FileManager.default.attributesOfItem(atPath: file)
+            let modified = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
+            let size = (attributes?[.size] as? Int) ?? -1
+            return "\(modified):\(size)"
+        }.joined(separator: "|")
+    }
+
+    static func threads(inDatabase path: String, limit: Int) -> [Thread] {
+        let now = Date()
+        let signature = signature(of: path)
+        if let cached = cache[path], cached.signature == signature,
+           cached.succeeded || now.timeIntervalSince(cached.readAt) < failedReadRetryInterval {
+            return cached.threads
+        }
         let raw = read(database: path, query: listQuery(limit: limit))
             ?? read(database: path, query: legacyListQuery(limit: limit))
         let threads = (raw?.split(separator: "\n").compactMap(parse(row:)) ?? [])
-        cache[path] = CacheEntry(modified: modified, threads: threads)
+        cache[path] = CacheEntry(signature: signature, threads: threads, succeeded: raw != nil, readAt: now)
         return threads
     }
 
