@@ -6,7 +6,7 @@ The Agents tab inspects the local process table without persisting command lines
 
 Clicking an agent with a terminal TTY selects its exact surface in iTerm2, Ghostty, or Terminal; other hosts (VS Code, Cursor, ChatGPT) are activated by bundle ID.
 
-**Agents waiting on you** are marked with a red dot and the question they asked — on the card, on the Agents tab, and in the menu bar. Supported for Claude Code and OpenCode. The signal is a tool call that has gone unanswered for at least ten seconds: a tool that is genuinely running writes its result promptly, so quiet time is what separates "working" from "blocked on you".
+**Agents waiting on you** are marked with a red dot and the question they asked — on the card, on the Agents tab, and in the menu bar. Supported for Claude Code and OpenCode, and for the questions Sarvam Code asks with `request_user_input`. The signal is a tool call that has gone unanswered for at least ten seconds: a tool that is genuinely running writes its result promptly, so quiet time is what separates "working" from "blocked on you".
 
 ## Remote Control
 
