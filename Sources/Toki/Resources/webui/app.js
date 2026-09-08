@@ -843,6 +843,8 @@ function toggleOption(spec) {
 // OpenCode navigates with arrows/Enter/Tab; Claude selects by number and advances with Tab.
 // Antigravity numbers its options too, but a single-select number both selects and advances (and on
 // the last question submits), while a multi-select number toggles and Enter advances or submits.
+// Sarvam's picker is single-select only and a number alone answers the question and moves on --
+// Enter would resubmit and Tab opens its notes field, so a digit per question is the whole answer.
 function buildKeySequence(provider, questions, sel) {
   const keys = [];
   const anyMulti = questions.some(q => q.multi);
@@ -861,7 +863,7 @@ function buildKeySequence(provider, questions, sel) {
         for (let i = 0, idx = chosen.length ? chosen[0] : 0; i < idx; i++) keys.push("down");
         keys.push("enter");
       }
-    } else if (provider == "antigravity") {
+    } else if (provider == "antigravity" || provider == "sarvam") {
       // The cursor resets to the top of each question, so no inter-question separator: a
       // single-select number carries straight on, and a multi-select needs Enter to move past it.
       chosen.forEach(i => keys.push(String(i + 1)));
@@ -873,7 +875,7 @@ function buildKeySequence(provider, questions, sel) {
     }
   });
   if (provider == "opencode" && (questions.length > 1 || anyMulti)) keys.push("enter");
-  else if (provider != "opencode" && provider != "antigravity" && !isQuickPick(questions)) keys.push("enter");
+  else if (provider != "opencode" && provider != "antigravity" && provider != "sarvam" && !isQuickPick(questions)) keys.push("enter");
   return keys;
 }
 

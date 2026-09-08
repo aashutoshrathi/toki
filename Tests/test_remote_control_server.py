@@ -442,6 +442,54 @@ class RemoteControlCodexAttentionTests(unittest.TestCase):
         attention = toki_remote.codex_attention(path)
         self.assertEqual(attention["prompt"], "Approve: pnpm test --filter members?")
 
+    SARVAM_ASK = {
+        "type": "function_call", "name": "request_user_input", "call_id": "c3",
+        "arguments": json.dumps({"questions": [{
+            "id": "widget_color", "header": "Color",
+            "question": "Which color should the widget be?",
+            "options": [
+                {"label": "Red", "description": "The widget will use a red color."},
+                {"label": "Blue", "description": "The widget will use a blue color."},
+            ],
+        }]}),
+    }
+
+    def test_pending_request_user_input_is_a_question_not_an_approval(self):
+        path = self._transcript([self.SARVAM_ASK])
+        attention = toki_remote.codex_attention(path)
+        self.assertEqual(attention["kind"], "question")
+        self.assertEqual(attention["prompt"], "Which color should the widget be?")
+        self.assertEqual(attention["options"], ["Red", "Blue"])
+        self.assertEqual(attention["questions"][0]["header"], "Color")
+        self.assertFalse(attention["questions"][0]["multi"])
+
+    def test_an_answered_request_clears_the_question(self):
+        path = self._transcript([self.SARVAM_ASK, {
+            "type": "function_call_output", "call_id": "c3",
+            "output": '{"answers":{"widget_color":{"answers":["Blue"]}}}',
+        }])
+        self.assertIsNone(toki_remote.codex_attention(path))
+
+    def test_a_question_outlives_a_never_approval_policy(self):
+        # `never` silences approvals because the CLI answers them itself; a question has no
+        # such answerer, so the turn is genuinely blocked and the phone must still say so.
+        f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        self.addCleanup(os.unlink, f.name)
+        f.write(json.dumps({"type": "turn_context",
+                            "payload": {"approval_policy": "never"}}) + "\n")
+        f.write(json.dumps({"type": "response_item", "payload": self.SARVAM_ASK}) + "\n")
+        f.close()
+        quiet = time.time() - 60
+        os.utime(f.name, (quiet, quiet))
+        attention = toki_remote.codex_attention(f.name)
+        self.assertEqual(attention["kind"], "question")
+
+    def test_the_transcript_row_reads_as_the_question_not_raw_json(self):
+        path = self._transcript([self.SARVAM_ASK])
+        entries, _ = toki_remote.parse_codex_transcript(path, 0)
+        self.assertEqual(entries[-1]["text"], "Which color should the widget be?")
+        self.assertEqual(len(entries[-1]["questions"]), 1)
+
     def test_dict_arguments_read_as_pairs_not_raw_json(self):
         name, summary = toki_remote.codex_call_summary({
             "type": "function_call", "name": "wait",
