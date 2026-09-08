@@ -794,6 +794,22 @@ def codex_call_summary(payload):
     return name, ""
 
 
+def sarvam_questions(payload):
+    """Sarvam Code's `request_user_input` carries Claude-shaped questions in the call arguments.
+    Sarvam has no multi-select -- a question is answered by pressing one option's number, which
+    also submits it -- so the multi key asked of normalize_questions is one that never appears."""
+    args = payload.get("arguments")
+    if not isinstance(args, str):
+        return None
+    try:
+        parsed = json.loads(args)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return normalize_questions(parsed.get("questions"), "multiSelect")
+
+
 def parse_codex_transcript(path, offset=0):
     entries = []
     try:
@@ -833,9 +849,13 @@ def parse_codex_transcript(path, offset=0):
                         entries.append({"role": "assistant", "text": text})
             elif ptype in ("function_call", "local_shell_call", "custom_tool_call"):
                 name, summary = codex_call_summary(payload)
+                questions = sarvam_questions(payload) if name == "request_user_input" else None
+                if questions:
+                    # The raw arguments are one JSON blob; the question is the readable part.
+                    summary = questions[0].get("question", "")[:160]
                 entries.append({"role": "tool", "tool": name,
                                 "id": payload.get("call_id") or payload.get("id"),
-                                "text": summary, "questions": None})
+                                "text": summary, "questions": questions})
             elif ptype in ("function_call_output", "custom_tool_call_output"):
                 entries.append({"role": "resolved", "id": payload.get("call_id")})
     return entries, offset + consumed
@@ -1034,7 +1054,13 @@ def codex_attention(path):
         elif e["role"] == "resolved":
             pending.pop(e.get("id"), None)
     last = next((pending[i] for i in reversed(order) if i in pending), None)
-    if not last or policy == "never":
+    if not last:
+        return None
+    # A question is not an approval: the policy only auto-answers approvals, so Sarvam's
+    # request_user_input blocks the turn under `never` just the same.
+    if last.get("questions"):
+        return question_attention(last["questions"])
+    if policy == "never":
         return None
     label = last["text"] or last["tool"]
     return {"kind": "permission", "prompt": f"Approve: {label}?", "options": []}

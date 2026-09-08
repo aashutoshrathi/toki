@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **Sarvam Code's questions reach your phone as questions.** When Sarvam Code pauses to ask you something, the companion app showed an approval alert carrying raw JSON, whose Approve button blindly submitted whichever option the cursor sat on. The card now renders each question with its tappable options and answers with the option numbers Sarvam's own picker expects.
 - **`brew` stops warning about Toki's casks on every command.** Both casks used `postflight`, which Homebrew now reports as deprecated on every command that touches them. They use the declarative `postflight_steps` instead.
 - **A cask fix now reaches the tap people install from.** The release only ever rewrote `version` and `sha256` there, so a fix anywhere else in a cask stayed behind in this repo. The cask body is copied from here on each release now, then stamped.
 

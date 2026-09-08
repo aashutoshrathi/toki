@@ -108,6 +108,10 @@ assert.match(css, /min-height:44px/);
 // accumulated choices into the keystrokes each TUI needs.
 assert.match(app, /function buildKeySequence/);
 assert.match(app, /function toggleOption/);
+// Sarvam's picker submits on the option number itself: no Tab (that opens its notes field) and
+// no trailing Enter (that would resubmit), so it rides Antigravity's digits-only branch.
+assert.match(app, /provider == "antigravity" \|\| provider == "sarvam"/);
+assert.match(app, /provider != "antigravity" && provider != "sarvam"/);
 assert.match(app, /data-submit="1"/);
 assert.match(app, /send\(\{ keys \}\)/);
 // Submit is gated on every question being answered, and the pending answer is keyed by agent pid,
