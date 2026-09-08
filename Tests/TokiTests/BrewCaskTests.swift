@@ -77,6 +77,43 @@ final class BrewCaskTests: XCTestCase {
         )
     }
 
+    /// Homebrew 6 records cask trust per cask, so installing `toki` leaves `toki-beta`
+    /// untrusted and every switch command against it is refused.
+    func testTheTargetCaskIsTrustedByItsFullyQualifiedName() {
+        XCTAssertEqual(
+            BrewCask.trustCommand(for: BrewCask.betaCask),
+            ["trust", "--cask", "aashutoshrathi/tap/toki-beta"]
+        )
+    }
+
+    /// Trusting the tap would cover everything published there; only the sibling cask is wanted.
+    func testTrustNamesOneCaskRatherThanTheWholeTap() {
+        XCTAssertFalse(BrewCask.trustCommand(for: BrewCask.betaCask).contains("--tap"))
+        XCTAssertEqual(BrewCask.qualified(BrewCask.stableCask), "aashutoshrathi/tap/toki")
+    }
+
+    func testOnlyTheUninstallStepCountsAsRemovingTheApp() {
+        let steps = BrewCask.switchCommands(from: BrewCask.stableCask, to: BrewCask.betaCask)
+        XCTAssertEqual(steps.map(BrewCask.isUninstall), [false, true, false])
+    }
+
+    func testFailureReasonPrefersBrewsOwnErrorLine() {
+        let output = """
+        ==> Downloading https://example.com/Toki.dmg
+        Error: Refusing to load cask aashutoshrathi/tap/toki-beta from untrusted tap.
+        Run `brew trust --cask aashutoshrathi/tap/toki-beta` to trust it.
+        """
+        XCTAssertEqual(
+            BrewCask.failureReason(output),
+            "Error: Refusing to load cask aashutoshrathi/tap/toki-beta from untrusted tap."
+        )
+    }
+
+    func testFailureReasonFallsBackToTheLastThingSaid() {
+        XCTAssertEqual(BrewCask.failureReason("something went sideways\n\n"), "something went sideways")
+        XCTAssertNil(BrewCask.failureReason("   \n  \n"))
+    }
+
     func testHandoffPostconditionDistinguishesBetaIterations() {
         XCTAssertTrue(BrewCask.handoffSucceeded(
             bundleVersion: "2.5.0-beta.2", marketingVersion: "2.5.0", expectedVersion: "2.5.0-beta.2"
