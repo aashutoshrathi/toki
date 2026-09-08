@@ -4,13 +4,13 @@
 
 ### Added
 
-- **An outage indicator on the provider cards.** A coloured dot on the account logo when a provider's own status page reports an outage or degraded service, and a line in the opened card naming what is down, with a link to the page. Claude, Codex, Copilot, and Cursor are covered, checked at most every five minutes and only for the providers you actually use, and each change is recorded in Events.
-- **Zed's agent panel is a tracked provider.** Toki finds both kinds of session Zed runs: the external ACP agent servers it launches as real processes, and its built-in agent, which runs inside the editor and leaves no process at all. Titles, project folder and last activity come from Zed's own thread store, the same list its sidebar draws, read across every installed release channel. Clicking a row raises Zed, and an agent started in Zed's integrated terminal now names Zed as its host instead of showing no host at all. Zed sessions are watch-only in Remote Control: they talk to the editor over a pipe rather than a terminal, so there is no TTY a reply or an interrupt could be delivered to.
+- **An outage indicator on the provider cards.** A coloured dot on the account logo when a provider's own status page reports an outage or degraded service, and a line in the opened card naming what is down, with a link to the page. Claude, Codex, Copilot, and Cursor are covered.
+- **Zed's agent panel is a tracked provider.** Toki finds both kinds of session Zed runs: the ACP agent servers it launches as real processes, and its built-in agent, which leaves no process at all. Titles, project folder and last activity come from Zed's own thread store, across every installed release channel, and clicking a row raises Zed. Zed sessions are watch-only in Remote Control, because they talk to the editor over a pipe rather than a terminal.
 
 ### Fixed
 
-- **`brew` stops warning about Toki's casks on every command.** Both casks used `postflight`, which Homebrew now reports as deprecated and asks the tap to fix, four times over on a single `brew upgrade`. They use the declarative `postflight_steps` instead, which does the same quarantine strip.
-- **A cask fix now reaches the tap people install from.** The release only ever rewrote `version` and `sha256` there, so everything else in a cask stayed behind in this repo: the deprecated stanza survived every release, and the stable cask never picked up the `conflicts_with` that is supposed to keep it and the beta cask mutually exclusive. The cask body is copied from this repo on each release now, then stamped.
+- **`brew` stops warning about Toki's casks on every command.** Both casks used `postflight`, which Homebrew now reports as deprecated on every command that touches them. They use the declarative `postflight_steps` instead.
+- **A cask fix now reaches the tap people install from.** The release only ever rewrote `version` and `sha256` there, so a fix anywhere else in a cask stayed behind in this repo. The cask body is copied from here on each release now, then stamped.
 
 ## 3.2.0 - 2026-09-03
 
