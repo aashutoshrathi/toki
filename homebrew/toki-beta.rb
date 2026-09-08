@@ -27,10 +27,8 @@ cask "toki-beta" do
 
   # The release DMG is ad-hoc signed and not notarized, so Gatekeeper quarantines it.
   # Strip the quarantine flag on install so the app opens without a right-click-Open.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Toki.app"],
-                   sudo: false
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Toki.app"]
   end
 
   zap trash: [
