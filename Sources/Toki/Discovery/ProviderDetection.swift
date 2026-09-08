@@ -37,6 +37,7 @@ enum ProviderDetection {
             if let antigravity = detectAntigravity() { detected.append(antigravity) }
             if let fx = detectFx() { detected.append(fx) }
             if let sarvam = detectSarvamCode() { detected.append(sarvam) }
+            if let zed = detectZed() { detected.append(zed) }
             return detected
         }.value
     }
@@ -161,6 +162,20 @@ enum ProviderDetection {
             title: "fx",
             detail: "Auto-detected from local usage - no setup needed",
             makeAccount: nil
+        )
+    }
+
+    // Zed has no quota API, so this is agent-detection-only: the card exists once Zed is
+    // installed and fills with whatever its agent panel is running.
+    private static func detectZed() -> DetectedProvider? {
+        guard ZedThreadStore.isInstalled() else { return nil }
+        return DetectedProvider(
+            provider: .zed,
+            title: "Zed",
+            detail: "Zed detected",
+            makeAccount: {
+                AccountConfig(id: "zed", name: "Zed", provider: .zed)
+            }
         )
     }
 

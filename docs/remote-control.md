@@ -160,6 +160,12 @@ Cursor and VS Code integrated terminals are writable when the agent runs inside 
 terminal surfaces expose no tty-addressable scripting API, so Toki does not guess which terminal
 should receive input.
 
+Zed's agents are always read-only. They talk to the editor over a pipe rather than a terminal, so
+there is no TTY to deliver a reply, an approval or an interrupt to. The alternative would be typing
+into Zed's window through synthetic keystrokes, and if the agent panel were not the focused element
+those keystrokes would land in whatever buffer was — so Toki does not do it. You can follow a Zed
+session from the phone and see what it is working on; answering it means going to the Mac.
+
 ### Ghostty needs a recent scripting build
 
 Bare Ghostty sessions use the terminal `tty`, `input text`, and `send key` properties from

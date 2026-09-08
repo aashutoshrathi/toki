@@ -353,6 +353,69 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         )
 
 
+class ZedAgentTests(unittest.TestCase):
+    ZED_SERVER = (
+        "/opt/homebrew/bin/node /Users/me/Library/Application Support/Zed/external_agents/"
+        "claude-code-acp/0.12.6/node_modules/@zed-industries/claude-code-acp/dist/index.js"
+    )
+
+    def test_zed_agent_server_is_classified_as_zed(self):
+        self.assertEqual(toki_remote.provider_of(self.ZED_SERVER), "zed")
+
+    def test_zed_wins_over_the_cli_bundled_inside_it(self):
+        command = (
+            "/usr/bin/node /Users/me/Library/Application Support/Zed/external_agents/registry/"
+            "codex-acp/v_1/node_modules/@openai/codex/dist/cli.js"
+        )
+        self.assertEqual(toki_remote.provider_of(command), "zed")
+
+    def test_a_lookalike_is_not_a_zed_agent(self):
+        self.assertIsNone(toki_remote.provider_of("node /tmp/zed-helper.js"))
+        self.assertIsNone(toki_remote.provider_of("/Applications/Zed.app/Contents/MacOS/zed"))
+
+    def test_zed_agent_has_no_writable_route(self):
+        self.assertFalse(toki_remote.agent_is_writable({"provider": "zed", "tty": None}))
+
+    def test_processless_agent_survives_the_canonical_snapshot(self):
+        snapshot = [
+            {
+                "pid": -42,
+                "provider": "zed",
+                "cwd": "/Users/me/git/toki",
+                "title": "Fix the parser",
+                "tty": None,
+                "host": "dev.zed.Zed",
+                "process": False,
+            },
+            {"pid": 99, "provider": "codex", "cwd": None, "title": "Gone", "tty": None},
+        ]
+        result = toki_remote.agents_from_snapshot([], snapshot)
+        self.assertEqual([agent["pid"] for agent in result], [-42])
+        self.assertEqual(result[0]["title"], "Fix the parser")
+        self.assertIsNone(result[0]["session"])
+
+    def test_thread_rows_are_read_from_every_installed_channel(self):
+        rows = "\x1f".join(["Claude Code", "Fix the parser", "2026-09-08T10:00:00Z", "/Users/me/git/toki"])
+        with mock.patch.object(toki_remote, "zed_databases", return_value=["/tmp/db.sqlite"]), \
+             mock.patch.object(toki_remote, "shell", return_value=rows + "\n"):
+            threads = toki_remote.zed_threads()
+        self.assertEqual(len(threads), 1)
+        self.assertEqual(threads[0]["agent"], "Claude Code")
+        self.assertEqual(threads[0]["cwd"], "/Users/me/git/toki")
+
+    def test_title_comes_from_the_thread_zed_recorded_for_the_folder(self):
+        threads = [
+            {"agent": "", "title": "Newest here", "updated": "2026-09-08T10:00:00Z", "cwd": "/tmp/a"},
+            {"agent": "Claude Code", "title": "", "updated": "2026-09-08T09:00:00Z", "cwd": "/tmp/b"},
+        ]
+        with mock.patch.object(toki_remote, "zed_threads", return_value=threads):
+            self.assertEqual(toki_remote.chat_title("zed", None, "/tmp/a"), "Newest here")
+            # No title yet, so the agent Zed named it after stands in.
+            self.assertEqual(toki_remote.chat_title("zed", None, "/tmp/b"), "Claude Code")
+            # Nothing recorded for this folder: fall back to the folder itself.
+            self.assertEqual(toki_remote.chat_title("zed", None, "/tmp/c"), "c")
+
+
 class RemoteControlCodexAttentionTests(unittest.TestCase):
     def _transcript(self, payloads):
         f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)

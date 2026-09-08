@@ -86,6 +86,13 @@ struct ProviderLogo: View {
                         .font(.system(size: size * 0.72, weight: .semibold))
                         .foregroundStyle(Color.primary)
                 }
+            case .zed:
+                SVGLogoMark(asset: "zed-logo", size: size, template: true) {
+                    Text("Z")
+                        .font(.system(size: size * 0.72, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.primary)
+                }
+                .foregroundStyle(Color.primary)
             case .manual:
                 Circle()
                     .foregroundStyle(Color.secondary)

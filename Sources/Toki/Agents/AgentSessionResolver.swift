@@ -20,6 +20,8 @@ enum AgentSessionResolver {
             return newestFxSession(cwd: cwd)?.title
         case .antigravity:
             return newestAntigravitySession(cwd: cwd)?.title
+        case .zed:
+            return zedThread(cwd: cwd).map { $0.title ?? $0.displayAgentName }
         default:
             return nil
         }
@@ -396,9 +398,19 @@ enum AgentSessionResolver {
             return newestFxSession(cwd: cwd)?.lastActive
         case .antigravity:
             return newestAntigravitySession(cwd: cwd)?.lastActive
+        case .zed:
+            return zedThread(cwd: cwd)?.updated
         default:
             return nil
         }
+    }
+
+    // The thread Zed recorded for this project folder. Zed hands an ACP server the worktree as
+    // its working directory and tells it nothing else, so the folder is the only link back to the
+    // conversation the user is actually looking at.
+    private static func zedThread(cwd: String?) -> ZedThreadStore.Thread? {
+        guard let cwd else { return nil }
+        return ZedThreadStore.thread(forDirectory: cwd, in: ZedThreadStore.threads())
     }
 
     // ~/.grok/sessions/<encoded-cwd>/<uuid>/summary.json; last_active_at picks the newest.
@@ -788,11 +800,18 @@ struct HostApp: Hashable, Sendable {
     static let terminal = HostApp(
         displayName: "Terminal", bundleID: "com.apple.Terminal", matchers: ["terminal"]
     )
+    // Matched on the bundle executable, which is `zed` on every release channel, rather than the
+    // bundle name: Preview and Nightly ship under their own names and their own bundle ids, and
+    // navigation resolves the running copy by PID before it ever falls back to this one.
+    static let zed = HostApp(
+        displayName: "Zed", bundleID: "dev.zed.Zed", matchers: [".app/contents/macos/zed"]
+    )
 
     private static let all: [HostApp] = [
         HostApp(displayName: "VS Code Insiders", bundleID: "com.microsoft.VSCodeInsiders", matchers: ["code - insiders"]),
         HostApp(displayName: "VS Code", bundleID: "com.microsoft.VSCode", matchers: ["code helper", "visual studio code"]),
         HostApp(displayName: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92", matchers: ["cursor"]),
+        zed,
         HostApp(displayName: "ChatGPT", bundleID: codexAppBundleIdentifier, matchers: ["chatgpt"]),
         iTerm,
         HostApp(displayName: "WezTerm", bundleID: "com.github.wez.wezterm", matchers: ["wezterm"]),

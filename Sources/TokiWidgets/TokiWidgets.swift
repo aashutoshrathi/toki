@@ -317,6 +317,8 @@ private func providerColor(_ provider: String) -> Color {
         return Color(red: 0.36, green: 0.55, blue: 0.96)
     case "fx":
         return Color(red: 0.66, green: 0.68, blue: 0.72)
+    case "zed":
+        return Color(red: 0.32, green: 0.62, blue: 0.55)
     default:
         return Color(red: 0.93, green: 0.39, blue: 0.58)
     }
@@ -448,7 +450,11 @@ private struct ProviderGlyph: View {
     var body: some View {
         Group {
             if let assetName {
-                WidgetSVGLogo(asset: assetName, size: size, template: item.provider == "grok" || item.provider == "fx" || item.provider == "sarvamCode")
+                WidgetSVGLogo(
+                    asset: assetName,
+                    size: size,
+                    template: ["grok", "fx", "sarvamCode", "zed"].contains(item.provider)
+                )
             } else if let leadingText = item.leadingText, !leadingText.isEmpty {
                 Text(leadingText)
             } else {
@@ -472,6 +478,7 @@ private struct ProviderGlyph: View {
         case "antigravity": return "antigravity-logo"
         case "fx": return "fx-logo"
         case "sarvamCode": return "sarvam-code-logo"
+        case "zed": return "zed-logo"
         default: return nil
         }
     }
