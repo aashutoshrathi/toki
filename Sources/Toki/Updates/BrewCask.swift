@@ -69,16 +69,56 @@ enum BrewCask {
         !isPrerelease || cask == betaCask
     }
 
+    /// Homebrew resolves a bare cask token against its own checkout of the tap, and only
+    /// refreshes a third-party tap on its own schedule: every 24 hours for a bare token,
+    /// every 5 minutes when the argument names the tap (`brew`'s auto-update looks for an
+    /// `owner/tap/cask` shaped argument). For the first day after a release that is the
+    /// difference between an upgrade and `Not upgrading toki, the latest version is
+    /// already installed` - which brew reports as a warning and an exit status of 0, so
+    /// the handoff reads as a success that changed nothing.
+    ///
+    /// Only the steps that have to resolve a version are named this way. An uninstall acts
+    /// on what is already recorded in the Caskroom, and would fail with the tap gone.
+    static func upgradeCommand(for cask: String) -> [String] {
+        ["upgrade", "--cask", qualified(cask)]
+    }
+
+    /// Refreshing every tap is heavier than the upgrade itself, so it is a fallback for
+    /// when brew's snapshot is old enough that the upgrade found nothing to do, not a
+    /// preamble to every update.
+    static let refreshCommand: [String] = ["update", "--quiet"]
+
+    /// What to tell someone the upgrade could not help. `update` refreshes the tap;
+    /// `reinstall` ignores a receipt claiming the new version is already installed, which
+    /// is the state left behind when the app on disk stopped matching brew's records.
+    /// Repeating `brew upgrade` is the one thing that cannot work: it just no-ops again.
+    static func recoveryAdvice(for cask: String) -> String {
+        "Run `brew update && brew reinstall --cask \(qualified(cask))`."
+    }
+
     /// `conflicts_with` makes brew refuse to install either cask while the other is
     /// present, so a switch is uninstall-then-install. Fetching first matters because the
     /// uninstall deletes the bundle this process runs from: a download that fails after
     /// that point would leave no app on disk.
+    ///
+    /// The refresh is what keeps that prefetch honest. `fetch` is not one of the commands
+    /// brew auto-updates a tap for, but `install` is, so a stale snapshot would have the
+    /// fetch cache one version and the install then refresh, resolve a newer one, and
+    /// download it for the first time with the old app already deleted. Refreshing before
+    /// the fetch means both steps resolve against the same revision of the tap, and it
+    /// fails, if it fails at all, while the installed app is still there.
     static func switchCommands(from installed: String, to target: String) -> [[String]] {
         [
-            ["fetch", "--cask", target],
+            refreshCommand,
+            ["fetch", "--cask", qualified(target)],
             ["uninstall", "--cask", installed],
-            ["install", "--cask", target],
+            ["install", "--cask", qualified(target)],
         ]
+    }
+
+    /// Installing resolves a version too, so it is named the same way as the upgrade.
+    static func installCommand(for cask: String) -> [String] {
+        ["install", "--cask", qualified(cask)]
     }
 
     /// Homebrew records cask trust per cask, not per tap, so installing `toki` never trusts

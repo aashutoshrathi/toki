@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.2 - 2026-09-09
+
+### Fixed
+
+- **A Homebrew update that brew said it had already done.** For the first day of a release, clicking Update on a cask install could come back with "brew finished but Toki wasn't updated", and running `brew upgrade --cask toki` by hand answered "the latest version is already installed" while the app stayed on the old version. Homebrew only refreshes a third-party tap every 24 hours when the cask is named on its own, and every five minutes when it is named with its tap — so brew was answering truthfully about a copy of the tap taken before the release existed, and saying so as a warning with a successful exit status. Toki names the tap on every command that has to resolve a version now, refreshes the tap before a channel switch caches anything so the download it relies on cannot be for a version the install then skips past, refreshes brew and retries once if an upgrade reports nothing to do, and if it still cannot deliver, it says which version is still installed, repeats brew's own last line, and points at `brew update && brew reinstall --cask ...` rather than the upgrade that just no-opped.
+
 ## 3.3.1 - 2026-09-09
 
 ### Fixed
