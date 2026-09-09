@@ -70,10 +70,53 @@ final class BrewCaskTests: XCTestCase {
         XCTAssertEqual(
             BrewCask.switchCommands(from: BrewCask.stableCask, to: BrewCask.betaCask),
             [
-                ["fetch", "--cask", "toki-beta"],
+                ["fetch", "--cask", "aashutoshrathi/tap/toki-beta"],
                 ["uninstall", "--cask", "toki"],
-                ["install", "--cask", "toki-beta"],
+                ["install", "--cask", "aashutoshrathi/tap/toki-beta"],
             ]
+        )
+    }
+
+    /// Homebrew refreshes a third-party tap every 24 hours for a bare token and every 5
+    /// minutes for one that names its tap, so a bare `brew upgrade --cask toki` spends the
+    /// first day of a release resolving against a snapshot taken before it existed - and
+    /// reports that as "the latest version is already installed" with an exit status of 0.
+    func testEveryStepThatResolvesAVersionNamesTheTap() {
+        XCTAssertEqual(
+            BrewCask.upgradeCommand(for: BrewCask.stableCask),
+            ["upgrade", "--cask", "aashutoshrathi/tap/toki"]
+        )
+        XCTAssertEqual(
+            BrewCask.installCommand(for: BrewCask.betaCask),
+            ["install", "--cask", "aashutoshrathi/tap/toki-beta"]
+        )
+        // An uninstall reads the Caskroom, not the tap, and naming a tap it no longer has
+        // would be the one way to make removing an installed cask fail.
+        let uninstall = BrewCask.switchCommands(from: BrewCask.stableCask, to: BrewCask.betaCask)
+            .first(where: BrewCask.isUninstall)
+        XCTAssertEqual(uninstall, ["uninstall", "--cask", "toki"])
+    }
+
+    /// The upgrade that just reported nothing to do cannot be the advice for it having done
+    /// nothing: `update` refreshes the tap and `reinstall` ignores a receipt that already
+    /// claims the new version.
+    func testRecoveryAdviceDoesNotSendAnyoneRoundTheSameNoOp() {
+        let advice = BrewCask.recoveryAdvice(for: BrewCask.stableCask)
+        XCTAssertEqual(advice, "Run `brew update && brew reinstall --cask aashutoshrathi/tap/toki`.")
+        XCTAssertFalse(advice.contains("brew upgrade"))
+        XCTAssertEqual(BrewCask.refreshCommand, ["update", "--quiet"])
+    }
+
+    /// The warning brew prints for a no-op upgrade is the line the user needs to see, and it
+    /// arrives on a run that exited 0, so it has to survive the "no Error: line" fallback.
+    func testTheNoOpUpgradeWarningIsWhatGetsReported() {
+        let output = """
+        ==> Auto-updating Homebrew...
+        Warning: Not upgrading toki, the latest version is already installed
+        """
+        XCTAssertEqual(
+            BrewCask.failureReason(output),
+            "Warning: Not upgrading toki, the latest version is already installed"
         )
     }
 

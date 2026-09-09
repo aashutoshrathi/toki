@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 3.3.1" src="https://img.shields.io/badge/version-3.3.1-2f80ed">
+  <img alt="Version 3.3.2" src="https://img.shields.io/badge/version-3.3.2-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -62,7 +62,7 @@ Beta builds are available as a separate cask that tracks prereleases:
 brew install --cask toki-beta
 ```
 
-The two casks conflict — install one. A stable release bumps both, so `brew upgrade` carries beta installs onto the graduated stable build. When Toki was installed by a cask, its in-app updater routes updates through `brew upgrade` so brew's bookkeeping stays in sync, and switching channels in Settings > Updates moves the install onto the other cask for you. Switching casks with brew yourself works too — the app picks up the change and follows it.
+The two casks conflict — install one. A stable release bumps both, so `brew upgrade` carries beta installs onto the graduated stable build. When Toki was installed by a cask, its in-app updater routes updates through `brew upgrade` so brew's bookkeeping stays in sync, and switching channels in Settings > Updates moves the install onto the other cask for you. Switching casks with brew yourself works too — the app picks up the change and follows it. If brew answers `Not upgrading toki, the latest version is already installed` while Toki is offering a newer one, brew is reading a copy of the tap it refreshes only once a day: `brew update && brew upgrade --cask aashutoshrathi/tap/toki` settles it, and naming the tap keeps brew's copy fresh from then on.
 
 Toki is ad-hoc signed and not notarized, so macOS quarantines it. Clear that with:
 

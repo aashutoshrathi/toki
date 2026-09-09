@@ -215,7 +215,7 @@ final class UpdateChecker: ObservableObject {
             return
         }
 
-        let restored = await BrewCask.run(["install", "--cask", install.cask], brewBinary: install.brewBinary).succeeded
+        let restored = await BrewCask.run(BrewCask.installCommand(for: install.cask), brewBinary: install.brewBinary).succeeded
         DiagnosticLogger.shared.record(
             .error, component: "updater", code: "cask_switch_failed",
             detail: "to=\(target) uninstalled=true restored=\(restored) reason=\(reason ?? "unknown")"
@@ -224,7 +224,7 @@ final class UpdateChecker: ObservableObject {
             ? [
                 "Couldn't switch to the \(target) cask, so nothing changed.", reason,
             ].compactMap { $0 }.joined(separator: " ")
-            : "Switching to the \(target) cask failed and Toki may be gone from Applications. Run `brew install --cask \(target)`."
+            : "Switching to the \(target) cask failed and Toki may be gone from Applications. Run `brew install --cask \(BrewCask.qualified(target))`."
     }
 
 
@@ -308,18 +308,40 @@ final class UpdateChecker: ObservableObject {
 
     private func installViaBrew(install: BrewCaskInstall, update: AvailableUpdate) async {
         let cask = install.cask
-        let manually = "Update with `brew upgrade --cask \(cask)`."
-        let result = await BrewCask.run(["upgrade", "--cask", cask], brewBinary: install.brewBinary)
+        let upgrade = BrewCask.upgradeCommand(for: cask)
+        var result = await BrewCask.run(upgrade, brewBinary: install.brewBinary)
         guard result.status != nil else {
-            failBrewHandoff(code: "brew_missing", message: "Couldn't run \(install.brewBinary). \(manually)")
+            failBrewHandoff(
+                code: "brew_missing",
+                message: "Couldn't run \(install.brewBinary). \(BrewCask.recoveryAdvice(for: cask))"
+            )
             return
         }
 
-        guard result.succeeded, BrewCask.handoffSucceeded(
-            appURL: UpdateInstaller.installedAppURL(),
-            expectedVersion: update.version
-        ) else {
-            failBrewHandoff(code: "brew_handoff_failed", message: "brew finished but Toki wasn't updated. \(manually)", detail: "exit=\(result.status.map(String.init) ?? "none")")
+        // brew can finish happily having done nothing at all: its copy of the tap is refreshed
+        // on a timer, so for a while after a release it still believes the installed version is
+        // the newest one there is and says so as a warning, with an exit status of 0. Refreshing
+        // and asking once more is what a person would do next, and it costs a slow command only
+        // in the case that is otherwise a dead end.
+        if result.succeeded, !brewDelivered(update) {
+            _ = await BrewCask.run(BrewCask.refreshCommand, brewBinary: install.brewBinary)
+            result = await BrewCask.run(upgrade, brewBinary: install.brewBinary)
+        }
+
+        guard result.succeeded, brewDelivered(update) else {
+            // brew's own last word is the useful half of this message ("Not upgrading toki,
+            // the latest version is already installed"), but it is a line, not a sentence.
+            let reason = BrewCask.failureReason(result.output)
+                .map { $0.hasSuffix(".") ? $0 : $0 + "." }
+            failBrewHandoff(
+                code: "brew_handoff_failed",
+                message: [
+                    "brew finished but Toki is still \(currentVersion).",
+                    reason,
+                    BrewCask.recoveryAdvice(for: cask),
+                ].compactMap { $0 }.joined(separator: " "),
+                detail: "exit=\(result.status.map(String.init) ?? "none") reason=\(reason ?? "unknown")"
+            )
             return
         }
 
@@ -331,6 +353,15 @@ final class UpdateChecker: ObservableObject {
             return
         }
         NSApp.terminate(nil)
+    }
+
+    /// Read off disk rather than from the running process: the point is what brew left in
+    /// Applications, not what this build was when it launched.
+    private func brewDelivered(_ update: AvailableUpdate) -> Bool {
+        BrewCask.handoffSucceeded(
+            appURL: UpdateInstaller.installedAppURL(),
+            expectedVersion: update.version
+        )
     }
 
     private func failBrewHandoff(code: String, message: String, detail: String? = nil) {
