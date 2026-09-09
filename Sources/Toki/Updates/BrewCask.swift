@@ -100,8 +100,16 @@ enum BrewCask {
     /// present, so a switch is uninstall-then-install. Fetching first matters because the
     /// uninstall deletes the bundle this process runs from: a download that fails after
     /// that point would leave no app on disk.
+    ///
+    /// The refresh is what keeps that prefetch honest. `fetch` is not one of the commands
+    /// brew auto-updates a tap for, but `install` is, so a stale snapshot would have the
+    /// fetch cache one version and the install then refresh, resolve a newer one, and
+    /// download it for the first time with the old app already deleted. Refreshing before
+    /// the fetch means both steps resolve against the same revision of the tap, and it
+    /// fails, if it fails at all, while the installed app is still there.
     static func switchCommands(from installed: String, to target: String) -> [[String]] {
         [
+            refreshCommand,
             ["fetch", "--cask", qualified(target)],
             ["uninstall", "--cask", installed],
             ["install", "--cask", qualified(target)],

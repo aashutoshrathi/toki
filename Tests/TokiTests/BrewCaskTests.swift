@@ -70,11 +70,27 @@ final class BrewCaskTests: XCTestCase {
         XCTAssertEqual(
             BrewCask.switchCommands(from: BrewCask.stableCask, to: BrewCask.betaCask),
             [
+                ["update", "--quiet"],
                 ["fetch", "--cask", "aashutoshrathi/tap/toki-beta"],
                 ["uninstall", "--cask", "toki"],
                 ["install", "--cask", "aashutoshrathi/tap/toki-beta"],
             ]
         )
+    }
+
+    /// `fetch` is not a command brew auto-updates a tap for, but `install` is, so without a
+    /// refresh up front the fetch could cache one version and the install resolve a newer one
+    /// with the old app already deleted - which is exactly what fetching first exists to avoid.
+    func testTheTapIsRefreshedBeforeAnythingIsCachedOrRemoved() {
+        let steps = BrewCask.switchCommands(from: BrewCask.stableCask, to: BrewCask.betaCask)
+        let refresh = steps.firstIndex(of: BrewCask.refreshCommand)
+        let fetch = steps.firstIndex { $0.first == "fetch" }
+        let uninstall = steps.firstIndex(where: BrewCask.isUninstall)
+        XCTAssertNotNil(refresh)
+        XCTAssertNotNil(fetch)
+        XCTAssertNotNil(uninstall)
+        XCTAssertLessThan(refresh!, fetch!)
+        XCTAssertLessThan(fetch!, uninstall!)
     }
 
     /// Homebrew refreshes a third-party tap every 24 hours for a bare token and every 5
@@ -137,7 +153,7 @@ final class BrewCaskTests: XCTestCase {
 
     func testOnlyTheUninstallStepCountsAsRemovingTheApp() {
         let steps = BrewCask.switchCommands(from: BrewCask.stableCask, to: BrewCask.betaCask)
-        XCTAssertEqual(steps.map(BrewCask.isUninstall), [false, true, false])
+        XCTAssertEqual(steps.map(BrewCask.isUninstall), [false, false, true, false])
     }
 
     func testFailureReasonPrefersBrewsOwnErrorLine() {
