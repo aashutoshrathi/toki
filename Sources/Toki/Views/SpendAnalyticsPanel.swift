@@ -88,8 +88,8 @@ struct SpendAnalyticsPanel: View {
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        if let todayTokens = todayTokens(for: snap.provider), todayTokens > 0 {
-                            Text("\(formatCompact(todayTokens)) tokens")
+                        if let tokens = allTimeTokens(for: snap.provider) {
+                            Text("\(formatCompact(tokens)) tokens")
                                 .font(.system(size: 9))
                                 .foregroundStyle(.tertiary)
                         }
@@ -508,12 +508,12 @@ struct SpendAnalyticsPanel: View {
         store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode || $0.provider == .fx }
     }
 
-    private func todayTokens(for provider: Provider) -> Double? {
+    private func allTimeTokens(for provider: Provider) -> Double? {
         switch provider {
-        case .pi: return piTotals?.todayTokens
-        case .openCode: return openCodeTotals?.todayTokens
-        case .fx: return fxTotals?.todayTokens
-        case .sarvamCode: return sarvamCodeTotals.map { Double($0.todayTokens) }
+        case .pi: return piTotals?.allTimeTokens
+        case .openCode: return openCodeTotals?.allTimeTokens
+        case .fx: return fxTotals?.allTimeTokens
+        case .sarvamCode: return sarvamCodeTotals.map { Double($0.allTimeTokens) }
         default: return nil
         }
     }
