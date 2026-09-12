@@ -3,10 +3,11 @@
 ## 3.3.3 - 2026-09-12
 
 ### Added
-- **Branch and Worktree Context in Remote Control:** The companion server now resolves the Git branch and root worktree directory for each agent session, and the Remote Control webapp displays them alongside the workspace path for full context.
+- **Branch and Worktree Context:** The companion server now resolves the Git branch and root worktree directory for each agent session. This context is now displayed alongside the workspace path in both the Remote Control webapp and the native macOS session cards.
 
 ### Fixed
 - **Local provider tokens missing in Spend rows:** The Spend Analytics panel now properly shows the all-time tokens processed for local providers (e.g., OpenCode, Pi, fx, Sarvam Code) even when no API cost is accrued.
+- **Button click hit areas:** Expanded the clickable area for header buttons in the native app (Refresh, Show/Hide, Settings, etc.) to fully cover their background padded area, not just the small 13x13 center icon.
 
 ## 3.3.2 - 2026-09-09
 
