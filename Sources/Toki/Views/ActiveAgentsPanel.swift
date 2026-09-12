@@ -73,7 +73,7 @@ struct ActiveAgentsPanel: View {
                                                     .lineLimit(2)
                                                     .fixedSize(horizontal: false, vertical: true)
                                             }
-                                            if let dir = agent.directoryDisplay {
+                                            if let dir = agent.contextDisplay {
                                                 Text(dir)
                                                     .font(.system(size: 10))
                                                     .foregroundStyle(.secondary)

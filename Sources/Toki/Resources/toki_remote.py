@@ -2453,9 +2453,28 @@ class Handler(BaseHTTPRequestHandler):
                         att = opencode_attention(a["session"])
                     # fx has no attention parser yet; leave it None rather than misreading it
                     # through opencode's, which expects a session id and not a transcript path.
+
+                branch = None
+                worktree = None
+                if a["cwd"]:
+                    try:
+                        branch = subprocess.check_output(
+                            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                            stderr=subprocess.DEVNULL, cwd=a["cwd"], text=True
+                        ).strip()
+                        wt_path = subprocess.check_output(
+                            ["git", "rev-parse", "--show-toplevel"],
+                            stderr=subprocess.DEVNULL, cwd=a["cwd"], text=True
+                        ).strip()
+                        worktree = display_path(wt_path)
+                    except Exception:
+                        pass
+
                 result.append({
                     "pid": a["pid"], "tty": a["tty"], "cwd": a["cwd"],
                     "path": display_path(a["cwd"]),
+                    "branch": branch,
+                    "worktree": worktree,
                     "provider": a["provider"],
                     "title": a.get("title") or chat_title(a["provider"], a["session"], a["cwd"]),
                     "attention": att,

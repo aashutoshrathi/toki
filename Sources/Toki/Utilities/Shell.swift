@@ -63,14 +63,14 @@ enum Shell {
     // failed run is the dangerous option: sqlite3 streams rows as it produces them, so a query
     // that dies halfway leaves real-looking output behind. Callers treat nil as "couldn't read",
     // which is the truth; they had no way to notice a short answer.
-    static func output(_ executable: String, _ arguments: [String]) -> String? {
-        try? run(executable, arguments, throwOnFailure: true)
+    static func output(_ executable: String, _ arguments: [String], cwd: String? = nil) -> String? {
+        try? run(executable, arguments, cwd: cwd, throwOnFailure: true)
     }
 
     // Throws LocalizedErrorMessage(failureMessage) if the process can't launch or exits non-zero.
-    static func require(_ executable: String, _ arguments: [String], failureMessage: String) throws -> String {
+    static func require(_ executable: String, _ arguments: [String], cwd: String? = nil, failureMessage: String) throws -> String {
         do {
-            return try run(executable, arguments, throwOnFailure: true)
+            return try run(executable, arguments, cwd: cwd, throwOnFailure: true)
         } catch {
             throw LocalizedErrorMessage(failureMessage)
         }
@@ -78,11 +78,14 @@ enum Shell {
 
     private struct NonZeroExit: Error {}
 
-    private static func run(_ executable: String, _ arguments: [String], throwOnFailure: Bool) throws -> String {
+    private static func run(_ executable: String, _ arguments: [String], cwd: String? = nil, throwOnFailure: Bool) throws -> String {
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        if let cwd = cwd, !cwd.isEmpty {
+            process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        }
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         try process.run()

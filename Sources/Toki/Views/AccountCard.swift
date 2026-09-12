@@ -561,9 +561,9 @@ struct AccountCard: View {
                                 Text(agent.title)
                                     .font(.system(size: 11, weight: .medium))
                                     .lineLimit(1)
-                                if let dir = agent.directoryDisplay {
+                                if let dir = agent.contextDisplay {
                                     Text(dir)
-                                        .font(.system(size: 9))
+                                        .font(.system(size: 10))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)

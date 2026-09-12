@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.3 - 2026-09-12
+
+### Added
+- **Branch and Worktree Context in Remote Control:** The companion server now resolves the Git branch and root worktree directory for each agent session, and the Remote Control webapp displays them alongside the workspace path for full context.
+
+### Fixed
+- **Local provider tokens missing in Spend rows:** The Spend Analytics panel now properly shows the all-time tokens processed for local providers (e.g., OpenCode, Pi, fx, Sarvam Code) even when no API cost is accrued.
+
 ## 3.3.2 - 2026-09-09
 
 ### Fixed

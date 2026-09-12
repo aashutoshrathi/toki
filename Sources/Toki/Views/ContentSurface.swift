@@ -23,18 +23,7 @@ extension View {
 
     @ViewBuilder
     func functionalControlStyle() -> some View {
-        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
-        if #available(macOS 26, *) {
-            buttonStyle(.plain)
-                .frame(width: 28, height: 28)
-                .contentShape(shape)
-                .glassEffect(.regular.interactive(), in: shape)
-        } else {
-            buttonStyle(.plain)
-                .frame(width: 28, height: 28)
-                .contentShape(shape)
-                .functionalGlass(in: shape, interactive: true)
-        }
+        self.buttonStyle(FunctionalControlButtonStyle())
     }
 
     @ViewBuilder
@@ -44,5 +33,16 @@ extension View {
         } else {
             buttonStyle(.borderedProminent)
         }
+    }
+}
+
+struct FunctionalControlButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        configuration.label
+            .frame(width: 28, height: 28)
+            .contentShape(shape)
+            .functionalGlass(in: shape, interactive: true)
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
     }
 }
