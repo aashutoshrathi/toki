@@ -423,7 +423,16 @@ function shortModel(m) {
 }
 
 function agentRow(a) {
-  const path = dispPath(a.path);
+  let path = dispPath(a.path);
+  if (a.worktree && a.branch) {
+    if (a.worktree !== a.path) {
+      path = dispPath(a.worktree) + " (" + esc(a.branch) + ") \u2022 " + dispPath(a.path);
+    } else {
+      path = dispPath(a.worktree) + " (" + esc(a.branch) + ")";
+    }
+  } else if (a.branch) {
+    path += " (" + esc(a.branch) + ")";
+  }
   const model = a.model ? '<span class="tm">' + esc(shortModel(a.model)) + "</span>" : "";
   const dot = a.attention ? '<span class="dot">\u25cf</span>' : "";
   return providerLogo(a.provider) +
