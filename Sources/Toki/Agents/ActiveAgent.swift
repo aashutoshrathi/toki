@@ -80,6 +80,8 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     // The resolved session/transcript file, disambiguated by process start time. Passed to Remote
     // Control so it shows each co-located agent's own transcript instead of re-guessing by cwd.
     var sessionPath: String? = nil
+    var branch: String? = nil
+    var worktree: String? = nil
     var origin: AgentOrigin = .process
     // A short marker (the terminal tty) appended to the title only when another agent would
     // otherwise show the same one - several agents in one project can resolve to the same
@@ -119,6 +121,29 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
         return directory
     }
 
+    // A rich context string combining the path with the git branch and worktree, if available.
+    var contextDisplay: String? {
+        guard let path = directoryDisplay else { return nil }
+        
+        let displayWorktree = worktree.flatMap { wt -> String? in
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            if wt == home { return "~" }
+            if wt.hasPrefix(home + "/") { return "~" + wt.dropFirst(home.count) }
+            return wt
+        }
+        
+        if let wt = displayWorktree, let br = branch {
+            if wt != path {
+                return "\(wt) (\(br)) \u{2022} \(path)"
+            } else {
+                return "\(wt) (\(br))"
+            }
+        } else if let br = branch {
+            return "\(path) (\(br))"
+        }
+        return path
+    }
+
     // Whether navigation lands on an exact terminal tab (vs. a best-effort host-app focus).
     var hasTerminalTarget: Bool { terminalTTY != nil }
 }
@@ -143,6 +168,8 @@ enum ActiveAgentScanner {
         let hostApp: HostApp?
         let hostProcessID: Int32?
         let hostViaTmux: Bool
+        let branch: String?
+        let worktree: String?
     }
     private nonisolated(unsafe) static var cache: [Int32: CacheEntry] = [:]
 
@@ -388,6 +415,8 @@ enum ActiveAgentScanner {
         let hostApp: HostApp?
         let hostProcessID: Int32?
         let startTime: Date?
+        let branch: String?
+        let worktree: String?
     }
 
     private static func isClaudeFamily(_ provider: Provider) -> Bool {
@@ -417,14 +446,20 @@ enum ActiveAgentScanner {
         let hostApp = cachedHost?.hostApp ?? resolvedHost?.app
         let hostProcessID = cachedHost?.hostProcessID ?? resolvedHost?.processID
         let hostViaTmux = cachedHost?.hostViaTmux ?? (resolvedHost?.viaTmux ?? false)
-        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux)
+        
+        let branch = reusable?.branch ?? (cwd.flatMap { Shell.output("/usr/bin/git", ["rev-parse", "--abbrev-ref", "HEAD"], cwd: $0)?.trimmingCharacters(in: .whitespacesAndNewlines) })
+        let worktree = reusable?.worktree ?? (cwd.flatMap { Shell.output("/usr/bin/git", ["rev-parse", "--show-toplevel"], cwd: $0)?.trimmingCharacters(in: .whitespacesAndNewlines) })
+
+        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux, branch: branch, worktree: worktree)
         return ProcessContext(
             candidate: c,
             directory: cwd,
             hostApp: hostApp,
             hostProcessID: hostProcessID,
             // The launch time is what separates two agents sharing one project folder.
-            startTime: startDate(fromETime: c.runtime)
+            startTime: startDate(fromETime: c.runtime),
+            branch: branch,
+            worktree: worktree
         )
     }
 
@@ -460,7 +495,9 @@ enum ActiveAgentScanner {
                 : AgentSessionResolver.attention(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
             sessionPath: isClaude
                 ? session?.path
-                : AgentSessionResolver.sessionPath(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime)
+                : AgentSessionResolver.sessionPath(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
+            branch: context.branch,
+            worktree: context.worktree
         )
     }
 }
