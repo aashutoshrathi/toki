@@ -61,9 +61,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
     private let store = UsageStore()
     private let updateChecker = UpdateChecker()
+    private let presentation = PopoverPresentationState()
+    private var terminationPending = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminationPending else { return .terminateLater }
+        guard presentation.settings.hasUnsavedDrafts else { return .terminateNow }
+        terminationPending = true
+        presentation.page = .settings
+        if !popover.isShown { togglePopover() }
+        presentation.confirmingQuit = true
+        return .terminateLater
+    }
+
+    private func finishQuit(_ allowed: Bool) {
+        guard terminationPending else { return }
+        terminationPending = false
+        presentation.confirmingQuit = false
+        NSApp.reply(toApplicationShouldTerminate: allowed)
+    }
+
+    // Restart helpers must not launch before a draft can cancel termination.
+    static func prepareToRestart() -> Bool {
+        guard let delegate = NSApp.delegate as? AppDelegate,
+              delegate.presentation.settings.hasUnsavedDrafts else { return true }
+        let settings = delegate.presentation.settings
+        let message = "Save or discard your unsaved changes, then restart or update Toki again."
+        if settings.configDraft.hasChanges {
+            settings.configError = message
+            settings.openConfigEditor()
+        } else {
+            settings.aiError = message
+            settings.openAIEditor()
+        }
+        delegate.presentation.page = .settings
+        if !delegate.popover.isShown { delegate.togglePopover() }
+        return false
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         RemoteControlServer.shared.stop()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !popover.isShown { togglePopover() }
+        return true
     }
 
     // A menu-bar (.accessory) app ships no menu bar, so the standard editing shortcuts never reach
@@ -71,6 +113,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // first responder, which is what makes Cmd+V work in fields like the Tailscale host input.
     private func installEditMenu() {
         let mainMenu = NSMenu()
+        let appItem = NSMenuItem()
+        mainMenu.addItem(appItem)
+        let appMenu = NSMenu(title: "Toki")
+        appItem.submenu = appMenu
+        let settingsItem = appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit Toki", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
         let editMenu = NSMenu(title: "Edit")
@@ -79,7 +129,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let viewItem = NSMenuItem()
+        mainMenu.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        viewItem.submenu = viewMenu
+        for (index, tab) in TokiTab.allCases.enumerated() {
+            let item = viewMenu.addItem(withTitle: tab.rawValue, action: #selector(selectTab(_:)), keyEquivalent: String(index + 1))
+            item.tag = index
+            item.target = self
+        }
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func openSettings() {
+        presentation.openSettings()
+        if !popover.isShown { togglePopover() }
+    }
+
+    @objc private func selectTab(_ sender: NSMenuItem) {
+        guard TokiTab.allCases.indices.contains(sender.tag) else { return }
+        presentation.select(TokiTab.allCases[sender.tag])
+        if !popover.isShown { togglePopover() }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -98,9 +168,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         statusItem.button?.action = #selector(togglePopover)
 
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: popoverWidth(), height: popoverHeight())
+        popover.contentSize = NSSize(width: popoverWidth(), height: presentation.contentHeight)
         let popoverController = NSHostingController(
-            rootView: MenuContentView(store: store, updateChecker: updateChecker)
+            rootView: MenuContentView(
+                store: store, updateChecker: updateChecker, presentation: presentation,
+                onDismiss: { [weak self] in self?.popover.performClose(nil) },
+                onFinishQuit: { [weak self] allowed in self?.finishQuit(allowed) }
+            )
         )
         // Keep AppKit's hosting layer clear so the popover's native material remains visible.
         popoverController.view.wantsLayer = true
@@ -128,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             for await snapshots in store.$snapshots.values {
                 RemoteControlServer.shared.updateUsage(snapshots)
                 railController?.update(snapshots: snapshots)
+                if !popover.isShown { updatePopoverHeight() }
             }
         }
 
@@ -145,6 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 notchController?.update(density: preferences.menuBarDensity)
                 applyNotchMode(enabled: preferences.notchModeEnabled)
                 applyRailMode(enabled: preferences.railModeEnabled)
+                updatePopoverHeight()
             }
         }
 
@@ -287,11 +363,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var hasDeferredStatusResize = false
 
+    private func updatePopoverHeight(on screen: NSScreen? = nil) {
+        let screen = screen ?? popover.contentViewController?.view.window?.screen ?? NSScreen.main
+        let quotaCount = store.preferences.quotaRingsEnabled && !store.needsOnboarding
+            ? store.snapshots.filter { !$0.isError && !$0.isLoadingPlaceholder && $0.remainingRatio != nil }.count
+            : 0
+        // Reserve the compact panels' space for every page, so tab navigation never resizes
+        // or re-anchors the popover.
+        let height = popoverHeight(
+            insightEnabled: store.preferences.aiInsightEnabled && !store.needsOnboarding,
+            quotaAccountCount: quotaCount,
+            visibleHeight: screen?.visibleFrame.height
+        )
+        guard presentation.contentHeight != height else { return }
+        presentation.contentHeight = height
+        popover.contentSize = NSSize(width: popover.contentSize.width, height: height)
+    }
+
     @objc private func togglePopover() {
         guard statusItem.button != nil else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            presentation.beginPresentation(snapshots: store.snapshots, agents: store.activeAgents)
             // Anchoring immediately can race the status bar's layout pass, and NSPopover then
             // falls back to the screen corner. Defer and retry until the button has a position.
             presentPopover(retriesRemaining: 6, activationPoint: currentPointerActivationPoint())
@@ -320,6 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // In notch mode the status item is hidden, so the panel is the anchor.
             if let controller = self.notchController, let anchor = controller.anchorView, anchor.window != nil {
                 // The pill, not the window: it can rest to one side of the notch.
+                self.updatePopoverHeight(on: anchor.window?.screen)
                 self.popover.show(relativeTo: controller.anchorRect, of: anchor, preferredEdge: .minY)
                 self.configurePopoverBackdrop()
                 self.popover.contentViewController?.view.window?.makeKey()
@@ -327,6 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
             guard let button = self.statusItem.button else { return }
             if self.hasValidScreenPosition(button, activationPoint: activationPoint) {
+                self.updatePopoverHeight(on: button.window?.screen)
                 self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 self.configurePopoverBackdrop()
                 self.popover.contentViewController?.view.window?.makeKey()
@@ -398,6 +494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         fallbackAnchorWindow.orderFrontRegardless()
 
         NSApp.activate(ignoringOtherApps: true)
+        updatePopoverHeight(on: screen)
         popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
         configurePopoverBackdrop()
         popover.contentViewController?.view.window?.makeKey()
@@ -418,6 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     // Tear the transient anchor down so it never lingers invisibly.
     func popoverDidClose(_ notification: Notification) {
+        finishQuit(false)
         fallbackAnchorWindow.orderOut(nil)
 
         if hasDeferredStatusResize {

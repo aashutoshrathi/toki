@@ -180,3 +180,150 @@ const missing = [...wanted].filter(id => !pageIds.has(id) && !RUNTIME_IDS.has(id
 assert.deepEqual(missing, [], "app.js selects ids that index.html does not define: " + missing);
 
 console.log("remote mobile UX tests passed");
+
+// Behavioral coverage of the browser boundary complements the markup contracts above.
+{
+const vm = require("node:vm");
+const source = app;
+// Exercise the page's event logic with the browser boundary replaced. Polling replaces option
+// nodes, so a source assertion alone cannot establish that keyboard focus survives the update.
+const document = { activeElement: null };
+function node(id, dataset = {}) {
+  const classes = new Set();
+  return {
+    id, dataset, hidden: false, disabled: false, attrs: {}, style: {}, children: [],
+    classList: {
+      contains: name => classes.has(name),
+      toggle(name, on) { if (on) classes.add(name); else classes.delete(name); },
+    },
+    setAttribute(name, value) { this.attrs[name] = String(value); },
+    getAttribute(name) { return this.attrs[name]; },
+    focus() { document.activeElement = this; },
+    scrollIntoView() {},
+    contains(other) { return this.children.includes(other); },
+    querySelectorAll() { return this.children; },
+    querySelector() { return this.children.find(child => child.attrs["aria-selected"] == "true"); },
+  };
+}
+const ids = ["dd", "ddbtn", "ddlist", "terminalkeys", "terminaltoggle", "readonly", "attach",
+  "model", "screen", "modelclose", "expand", "send", "clear", "fileinput", "msg", "composeravatar",
+  "modelmirror", "modelscreen", "mmlabel", "paircode", "manualhost", "manualtoken", "pairstatus"];
+const nodes = Object.fromEntries(ids.map(id => ["#" + id, node(id)]));
+const key = node("key", { key: "enter" });
+const inputIDs = ["attach", "model", "screen", "send", "clear", "fileinput", "msg"];
+const navigationIDs = ["terminaltoggle", "expand", "modelclose"];
+const footerControls = [...inputIDs, ...navigationIDs].map(id => nodes["#" + id]).concat(key);
+document.querySelectorAll = () => footerControls;
+Object.defineProperty(nodes["#ddlist"], "innerHTML", {
+  set(value) {
+    this.children = [...value.matchAll(/<button[^>]*aria-selected="([^"]+)"[^>]*data-pid="([^"]+)"/g)]
+      .map(([, selected, pid]) => {
+        const item = node("", { pid });
+        item.attrs["aria-selected"] = selected;
+        return item;
+      });
+  },
+});
+
+let resetCount = 0;
+let attachmentClearCount = 0;
+const context = vm.createContext({
+  document, $: id => nodes[id],
+  agents: [
+    { pid: 11, title: "One", provider: "codex", writable: true, screen: true, uploads: true },
+    { pid: 22, title: "Two", provider: "claude", writable: true },
+    { pid: 33, title: "Read only", provider: "zed", writable: false },
+  ],
+  current: 11, sending: false, uploading: false, modelMirror: null,
+  MODEL_COMMANDS: { codex: "/model" },
+  agentRow: a => a.title, plainTitle: t => t,
+  providerLogo: () => "logo", providerLabel: p => p,
+  setDocTitle() {}, sizeAgentList() {}, refreshLog() {}, refreshModelMirror() {},
+  resetTranscript() { resetCount++; }, clearPendingImage() { attachmentClearCount++; },
+  setTimeout() { return 1; }, clearTimeout() {},
+});
+for (const name of ["setPairStatus", "setAgentListOpen", "handleAgentPickerKeydown", "renderAgents",
+  "updateComposer", "setTerminalControlsOpen", "openMirror", "closeModelMirror"]) {
+  const found = source.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
+  assert.ok(found, name + " must be a top-level function");
+  vm.runInContext(found[0], context);
+}
+function run(code) { return vm.runInContext(code, context); }
+function press(key, shiftKey = false) {
+  const event = { key, shiftKey, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+  context.handleAgentPickerKeydown(event);
+  return event;
+}
+
+run("renderAgents()");
+nodes["#ddbtn"].focus();
+press("ArrowDown");
+assert.equal(nodes["#ddbtn"].attrs["aria-expanded"], "true");
+assert.equal(document.activeElement.dataset.pid, "11");
+press("ArrowDown");
+assert.equal(document.activeElement.dataset.pid, "22");
+run("renderAgents()");
+assert.equal(document.activeElement.dataset.pid, "22", "polling must preserve the focused option");
+press("End");
+assert.equal(document.activeElement.dataset.pid, "33");
+press("ArrowDown");
+assert.equal(document.activeElement.dataset.pid, "11", "arrow navigation wraps");
+press("Home");
+assert.equal(document.activeElement.dataset.pid, "11");
+press("ArrowUp");
+assert.equal(document.activeElement.dataset.pid, "33");
+document.activeElement.onclick({ stopPropagation() {} });
+assert.equal(run("current"), 33);
+assert.equal(resetCount, 1);
+assert.equal(attachmentClearCount, 1, "switching sessions must drop the previous attachment");
+assert.equal(document.activeElement, nodes["#ddbtn"]);
+assert.equal(nodes["#ddbtn"].attrs["aria-expanded"], "false");
+
+press("ArrowDown");
+run("agents = agents.filter(a => a.pid != 33); current = 11; renderAgents()");
+assert.equal(document.activeElement.dataset.pid, "11", "ended sessions fall back to the selected option");
+press("Escape");
+assert.equal(document.activeElement, nodes["#ddbtn"]);
+assert.equal(nodes["#ddbtn"].attrs["aria-expanded"], "false");
+press("ArrowDown");
+assert.equal(press("Tab").prevented, false, "Tab must continue to the next page control");
+assert.equal(document.activeElement, nodes["#ddbtn"]);
+press("ArrowDown");
+assert.equal(press("Tab", true).prevented, true, "Shift-Tab returns to the trigger");
+press("ArrowDown");
+run("agents = []; renderAgents()");
+assert.equal(document.activeElement, nodes["#ddbtn"]);
+assert.equal(nodes["#ddbtn"].attrs["aria-expanded"], "false");
+
+// A send/upload blocks every terminal-input route, while layout and dismissal remain operable.
+for (const state of ["sending = true; uploading = false", "sending = false; uploading = true"]) {
+  run(state + "; updateComposer({pid:11, provider:'codex', writable:true, screen:true, uploads:true})");
+  for (const id of inputIDs) assert.equal(nodes["#" + id].disabled, true, id + " must be gated");
+  assert.equal(key.disabled, true);
+  for (const id of navigationIDs) assert.equal(nodes["#" + id].disabled, false, id + " must remain operable");
+}
+run("sending = false; uploading = false; updateComposer({pid:11,provider:'codex',writable:true})");
+assert.equal(nodes["#send"].disabled, false);
+run("updateComposer({pid:33,provider:'zed',writable:false})");
+for (const id of inputIDs) assert.equal(nodes["#" + id].disabled, true);
+assert.equal(key.disabled, true);
+
+assert.match(html, /id="terminalkeys"[^>]*hidden/);
+run("setTerminalControlsOpen(false); openMirror({pid:11}, 'Live terminal', 'Reading', 250)");
+assert.equal(nodes["#terminalkeys"].hidden, false, "mirroring must reveal the terminal keys");
+assert.equal(nodes["#terminaltoggle"].attrs["aria-expanded"], "true");
+run("setTerminalControlsOpen(false)");
+assert.equal(nodes["#terminalkeys"].hidden, true);
+
+assert.match(html, /id="pairstatus"[^>]*role="status"[^>]*aria-live="polite"/);
+assert.match(html, /id="paircode"[\s\S]*?aria-describedby="pairinstructions pairstatus"/);
+run("setPairStatus('Enter all six digits.', 'paircode')");
+assert.equal(document.activeElement, nodes["#paircode"]);
+assert.equal(nodes["#paircode"].attrs["aria-invalid"], "true");
+assert.equal(nodes["#pairstatus"].textContent, "Enter all six digits.");
+run("setPairStatus('Network unavailable')");
+assert.equal(nodes["#paircode"].attrs["aria-invalid"], "false", "network failures are not invalid codes");
+
+console.log("remote keyboard, disclosure, pairing accessibility and send-gate tests passed");
+
+}

@@ -3,19 +3,13 @@ import SwiftUI
 
 struct SpendAnalyticsPanel: View {
     @ObservedObject var store: UsageStore
-    @State private var piTotals: PiUsageClient.Totals?
-    @State private var openCodeTotals: OpenCodeUsageClient.Totals?
-    @State private var sarvamCodeTotals: SarvamCodeUsageClient.Totals?
-    @State private var fxTotals: FxUsageClient.Totals?
-    @State private var isLoadingLocalTotals = true
-    @State private var selectedRange: TimeRange = .day
-    @State private var selectedAgentID: Int32?
+    @ObservedObject var presentation: AnalyticsPresentationState
 
     enum TimeRange: String, CaseIterable, Identifiable {
         case day = "24h"
-        case week = "1w"
-        case month = "1m"
-        case all = "All"
+        case week = "7d"
+        case month = "30d"
+        case all = "All history"
         var id: String { rawValue }
         var days: Int? {
             switch self {
@@ -29,313 +23,250 @@ struct SpendAnalyticsPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                UsageHeatmap(store: store)
-                Divider()
-                spendSection
-                Divider()
-                quotaSection
+            LazyVStack(alignment: .leading, spacing: 16) {
+                summarySection.id("summary")
+                DisclosureGroup("Activity", isExpanded: $presentation.activityExpanded) {
+                    UsageHeatmap(store: store, presentation: presentation)
+                        .padding(.top, 8)
+                }
+                .id("activity")
+                DisclosureGroup("Spend details", isExpanded: $presentation.spendExpanded) {
+                    spendSection.padding(.top, 8)
+                }
+                .id("spend")
+                DisclosureGroup("Quota history", isExpanded: $presentation.quotaExpanded) {
+                    quotaSection.padding(.top, 8)
+                }
+                .id("quota")
             }
+            .font(.system(size: 13))
+            .scrollTargetLayout()
             .padding(2)
         }
+        .scrollPosition(id: $presentation.scrollAnchor, anchor: .top)
         .frame(maxHeight: .infinity)
-        .task { await loadPiTotals() }
+        .task(id: localLoadID) {
+            await presentation.load(providers: localProviders, refreshID: store.lastUpdated)
+        }
     }
 
-    // MARK: - Summary
+    private var localProviders: [Provider] {
+        Array(Set(store.snapshots.map(\.provider)))
+            .filter { AnalyticsPresentationState.localProviders.contains($0) }
+            .sorted { $0.displayName < $1.displayName }
+    }
+
+    private var localLoadID: String {
+        localProviders.map(\.rawValue).joined(separator: ",") + String(describing: store.lastUpdated)
+    }
 
     private var summarySection: some View {
-        HStack(spacing: 4) {
-            summaryBlock(value: "\(store.snapshots.filter { !$0.isAgentDetectionOnly && !$0.isError }.count)", label: "Tracked")
-            if let oldest = store.history.min(by: { $0.timestamp < $1.timestamp })?.timestamp {
-                let daysAgo = Calendar.current.dateComponents([.day], from: oldest, to: Date()).day ?? 0
-                summaryBlock(value: "\(daysAgo)d ago", label: "Oldest data")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                Text("Local session spend today")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                if !localProviders.isEmpty {
+                    Button {
+                        Task { await presentation.load(providers: localProviders, refreshID: store.lastUpdated, force: true) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(presentation.isLoading)
+                    .help("Reload local spend")
+                    .accessibilityLabel("Reload local spend")
+                }
             }
-            summaryBlock(value: "\(store.activeAgents.count)", label: "Active agents")
+            if presentation.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Reading local session history…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            ForEach(presentation.rows, id: \.currencyCode) { row in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(formatMoney(Money(amount: row.today, currencyCode: row.currencyCode)))
+                        .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    Text(row.currencyCode)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(formatCompact(row.todayTokens)) tokens")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if !presentation.successfulProviders.isEmpty {
+                Text("Includes \(presentation.successfulProviders.map(\.displayName).joined(separator: ", ")). Local history only; provider billing summaries are separate.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else if localProviders.isEmpty {
+                Text("No supported local spend history connected. Provider billing and quota readings appear below when available.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            if !presentation.failures.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(presentation.rows.isEmpty ? "Local spend unavailable" : "Partial coverage")
+                        .font(.system(size: 13, weight: .medium))
+                    ForEach(presentation.failures, id: \.provider) { failure in
+                        Text("\(failure.provider.displayName): \(failure.message)")
+                            .font(.system(size: 11))
+                            .textSelection(.enabled)
+                    }
+                    Button("Retry failed reads") {
+                        Task { await presentation.retryFailures() }
+                    }
+                    .controlSize(.small)
+                    .disabled(presentation.isLoading)
+                }
+                .foregroundStyle(.secondary)
+            }
         }
-    }
-
-    private func summaryBlock(value: String, label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 15, weight: .bold, design: .monospaced))
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(8)
+        .padding(12)
         .contentSurface()
     }
 
-    // MARK: - Spend ($)
-
     private var spendSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Spend")
-                .font(.system(size: 11, weight: .semibold))
-
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(presentation.rows, id: \.currencyCode) { row in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(row.currencyCode)
+                        .font(.system(size: 13, weight: .semibold))
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode), tokens: row.todayTokens)
+                        spendBlock(label: "This week", money: Money(amount: row.week, currencyCode: row.currencyCode), tokens: row.weekTokens)
+                        spendBlock(label: "This month", money: Money(amount: row.month, currencyCode: row.currencyCode), tokens: row.monthTokens)
+                        spendBlock(label: "All time", money: Money(amount: row.allTime, currencyCode: row.currencyCode), tokens: row.allTimeTokens)
+                    }
+                }
+            }
+            if !presentation.rows.isEmpty {
+                Text("Week and month totals follow the current calendar in your time zone.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
             let costProviders = store.snapshots.filter { !$0.isError && $0.remainingRatio == nil && $0.menuBarValue != nil }
             if !costProviders.isEmpty {
+                Text("Provider readings")
+                    .font(.system(size: 13, weight: .semibold))
                 ForEach(costProviders) { snap in
                     HStack(spacing: 8) {
                         ProviderLogo(provider: snap.provider, size: 16)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(snap.name)
-                                .font(.system(size: 11, weight: .medium))
-                            Text(snap.provider.displayName)
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(snap.name).font(.system(size: 13, weight: .medium))
+                            Text(snap.menuBarValuePeriod ?? "Provider-reported period")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if let tokens = allTimeTokens(for: snap.provider) {
-                            Text("\(formatCompact(tokens)) tokens")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
-                        }
-                        if let bar = snap.menuBarValue {
-                            Text(bar)
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        }
+                        Text(snap.menuBarValue ?? "")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(10)
                     .contentSurface()
                 }
             }
-
-            if isLoadingLocalTotals && hasLocalCostProvider {
-                HStack(spacing: 4) {
-                    spendBlock(label: "Today", money: .usd(0), tokens: 0)
-                    spendBlock(label: "Week", money: .usd(0), tokens: 0)
-                    spendBlock(label: "Month", money: .usd(0), tokens: 0)
-                    spendBlock(label: "All Time", money: .usd(0), tokens: 0)
-                }
-                .redacted(reason: .placeholder)
-            } else {
-                ForEach(localSpendRows, id: \.currencyCode) { row in
-                    let tokens = row.allTimeTokens > 0
-                    VStack(alignment: .leading, spacing: 4) {
-                        if localSpendRows.count > 1 {
-                            Text(row.currencyCode)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.tertiary)
-                        }
-                        HStack(spacing: 4) {
-                            spendBlock(label: "Today", money: Money(amount: row.today, currencyCode: row.currencyCode), tokens: tokens ? row.todayTokens : nil)
-                            spendBlock(label: "Week", money: Money(amount: row.week, currencyCode: row.currencyCode), tokens: tokens ? row.weekTokens : nil)
-                            spendBlock(label: "Month", money: Money(amount: row.month, currencyCode: row.currencyCode), tokens: tokens ? row.monthTokens : nil)
-                            spendBlock(label: "All Time", money: Money(amount: row.allTime, currencyCode: row.currencyCode), tokens: tokens ? row.allTimeTokens : nil)
-                        }
-                    }
-                }
-            }
-
-            let costAgents = store.activeAgents.filter { $0.sessionUsage?.cost != nil }
-            if !costAgents.isEmpty {
-                Text("Session Costs")
-                    .font(.system(size: 10, weight: .medium))
+            let groups = Self.sessionCostGroups(store.activeAgents)
+            if !groups.isEmpty {
+                Text("Active session costs")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Current sessions, shown separately from historical totals.")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-                ForEach(sessionCostGroups(costAgents), id: \.currencyCode) { group in
-                    sessionCostChart(agents: group.agents, currencyCode: group.currencyCode)
+                ForEach(groups, id: \.currencyCode) { group in
+                    sessionCostList(agents: group.agents, currencyCode: group.currencyCode)
                 }
             }
-
-            if !isLoadingLocalTotals && costProviders.isEmpty && piTotals == nil && openCodeTotals == nil && sarvamCodeTotals == nil && fxTotals == nil && costAgents.isEmpty {
-                emptyState(icon: "dollarsign.circle", text: "No spend data yet")
+            if presentation.rows.isEmpty && costProviders.isEmpty && groups.isEmpty && !presentation.isLoading {
+                emptyState(icon: "dollarsign.circle", text: presentation.failures.isEmpty ? "No spend data yet" : "Retry local history reads above")
             }
         }
     }
 
-    private func spendBlock(label: String, money: Money, tokens: Double?) -> some View {
-        VStack(spacing: 4) {
+    private func spendBlock(label: String, money: Money, tokens: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
             Text(formatMoney(money))
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            if let tokens {
-                Text("\(formatCompact(tokens)) tokens")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 13, weight: .regular, design: .monospaced))
+            Text("\(formatCompact(tokens)) tokens")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .contentSurface()
     }
 
-    @ViewBuilder
-    private func sessionCostChart(agents: [ActiveAgent], currencyCode: String) -> some View {
-        let totalCost = agents.compactMap(\.sessionUsage?.cost).reduce(0, +)
-        if sessionCostGroups(store.activeAgents).count > 1 {
-            Text(currencyCode)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.tertiary)
-        }
-        Chart {
+    private func sessionCostList(agents: [ActiveAgent], currencyCode: String) -> some View {
+        let maxCost = agents.compactMap(\.sessionUsage?.cost).max() ?? 0
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(currencyCode).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
             ForEach(agents) { agent in
-                if let cost = agent.sessionUsage?.cost {
-                    SectorMark(
-                        angle: .value("Cost", cost),
-                        innerRadius: .ratio(0.62),
-                        angularInset: 2
-                    )
-                    .foregroundStyle(by: .value("Agent", agent.title))
-                    .opacity(selectedAgentID == nil || selectedAgentID == agent.id ? 1 : 0.3)
-                }
-            }
-        }
-        .chartLegend(.hidden)
-        .frame(height: 110)
-        .chartOverlay { _ in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            selectedAgentID = Self.agentID(at: location, in: geometry.size, agents: agents)
-                        case .ended:
-                            selectedAgentID = nil
-                        }
-                    }
-            }
-        }
-
-        Group {
-            if let selectedAgentID,
-               let agent = agents.first(where: { $0.id == selectedAgentID }),
-               let cost = agent.sessionUsage?.cost {
-                HStack(spacing: 6) {
-                    ProviderLogo(provider: agent.provider, size: 14)
-                    Text(agent.title)
-                        .font(.system(size: 10, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Text(formatMoney(Money(amount: cost, currencyCode: currencyCode)))
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                }
-            } else {
-                HStack {
-                    Text("Total")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                    Text(formatMoney(Money(amount: totalCost, currencyCode: currencyCode)))
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                }
-            }
-        }
-        .frame(height: 14)
-        .padding(.horizontal, 4)
-
-        ScrollView(.vertical) {
-            VStack(spacing: 0) {
-                ForEach(agents) { agent in
-                    HStack(spacing: 8) {
+                let identity = SessionIdentityPresentation(agent: agent, among: store.activeAgents)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top, spacing: 8) {
                         ProviderLogo(provider: agent.provider, size: 16)
-                        Text(agent.title)
-                            .font(.system(size: 11, weight: .medium))
-                            .lineLimit(1)
-                        Spacer()
-                        if let usage = agent.sessionUsage, let cost = usage.cost {
-                            Text(formatMoney(Money(amount: cost, currencyCode: usage.currencyCode)))
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            Text("\(formatCompact(Double(usage.tokensInput + usage.tokensOutput))) tokens")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(identity.title).font(.system(size: 13, weight: .medium))
+                            if let context = identity.context {
+                                Text(context).font(.system(size: 11)).foregroundStyle(.secondary)
+                            }
+                            Text(identity.detail).font(.system(size: 11)).foregroundStyle(.secondary)
                         }
+                        Spacer(minLength: 4)
+                        Text(agent.sessionUsage?.displayCost ?? "")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
                     }
-                    .padding(8)
-                    .contentSurface()
-                    .onHover { isHovered in
-                        selectedAgentID = isHovered ? agent.id : nil
+                    ProgressView(value: Self.relativeSessionCost(agent, maximum: maxCost))
+                        .tint(.accentColor)
+                        .accessibilityHidden(true)
+                    if let usage = agent.sessionUsage {
+                        Text(usage.displayTokens).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
+                .padding(10)
+                .contentSurface()
             }
         }
-        .scrollIndicators(.hidden)
-        .frame(maxHeight: 220)
     }
 
-    private func sessionCostGroups(_ agents: [ActiveAgent]) -> [(currencyCode: String, agents: [ActiveAgent])] {
+    nonisolated static func sessionCostGroups(_ agents: [ActiveAgent]) -> [(currencyCode: String, agents: [ActiveAgent])] {
         let billed = agents.filter { $0.sessionUsage?.cost != nil }
-        let grouped: [String: [ActiveAgent]] = Dictionary(grouping: billed) { agent in
-            agent.sessionUsage?.currencyCode ?? "USD"
-        }
-        return grouped
-            .map { key, value -> (currencyCode: String, agents: [ActiveAgent]) in
-                (currencyCode: key, agents: value.sorted { cost(of: $0) > cost(of: $1) })
+        return Dictionary(grouping: billed) { $0.sessionUsage?.currencyCode ?? "USD" }
+            .map { currency, values in
+                (currencyCode: currency, agents: values.sorted {
+                    let lhs = $0.sessionUsage?.cost ?? 0
+                    let rhs = $1.sessionUsage?.cost ?? 0
+                    return lhs == rhs ? $0.id < $1.id : lhs > rhs
+                })
             }
             .sorted { $0.currencyCode < $1.currencyCode }
     }
 
-    private func cost(of agent: ActiveAgent) -> Double {
-        agent.sessionUsage?.cost ?? 0
-    }
-
-    // MARK: - Quota (%)
-
-    /// Which slice sits under a point, or nil when the pointer is outside the ring.
-    ///
-    /// Extracted and made static so the geometry can be tested without a rendered chart.
-    /// Returns nil inside the donut hole and outside the outer edge, so the empty middle does
-    /// not select whichever slice happens to be nearest.
-    ///
-    /// nonisolated: pure geometry over values, with no view state. Without it the method
-    /// inherits the View's MainActor isolation and cannot be called from a synchronous test -
-    /// which builds locally but fails under CI's stricter concurrency checking.
-    nonisolated static func agentID(at point: CGPoint, in size: CGSize, agents: [ActiveAgent]) -> Int32? {
-        let costs = agents.compactMap { agent -> (id: Int32, cost: Double)? in
-            guard let cost = agent.sessionUsage?.cost, cost > 0 else { return nil }
-            return (agent.id, cost)
-        }
-        let total = costs.reduce(0) { $0 + $1.cost }
-        guard total > 0 else { return nil }
-
-        // The chart is centred in its frame; the legend occupies the lower portion, so the
-        // ring is centred on the square that the plot area actually occupies.
-        let outerRadius = min(size.width, size.height) / 2
-        let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        let dx = point.x - center.x
-        let dy = point.y - center.y
-        let distance = (dx * dx + dy * dy).squareRoot()
-        // innerRadius is .ratio(0.62) on the mark.
-        guard distance >= outerRadius * 0.62, distance <= outerRadius else { return nil }
-
-        // Clockwise from twelve o'clock. SwiftUI's y grows downward, hence -dy.
-        var angle = atan2(dx, -dy)
-        if angle < 0 { angle += 2 * .pi }
-        let fraction = angle / (2 * .pi)
-
-        var cumulative = 0.0
-        for entry in costs {
-            cumulative += entry.cost / total
-            if fraction <= cumulative { return entry.id }
-        }
-        return costs.last?.id
+    nonisolated static func relativeSessionCost(_ agent: ActiveAgent, maximum: Double) -> Double {
+        guard maximum > 0, maximum.isFinite, let cost = agent.sessionUsage?.cost, cost.isFinite else { return 0 }
+        return min(1, max(0, cost / maximum))
     }
 
     private var quotaSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Quota")
-                    .font(.system(size: 11, weight: .semibold))
-                Spacer()
-                Picker("", selection: $selectedRange) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Quota remaining")
+                    .font(.system(size: 13, weight: .semibold))
+                Picker("Quota history range", selection: $presentation.selectedRange) {
                     ForEach(TimeRange.allCases) { range in
                         Text(range.rawValue).tag(range)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 200)
+                .frame(maxWidth: .infinity)
             }
 
             // Quota-based account cards
@@ -346,15 +277,15 @@ struct SpendAnalyticsPanel: View {
                         ProviderLogo(provider: snap.provider, size: 16)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(snap.name)
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 13, weight: .medium))
                             Text(snap.provider.displayName)
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
                         if let ratio = snap.remainingRatio {
                             Text(ratio, format: PercentFormat())
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 13, weight: .regular, design: .monospaced))
                         }
                     }
                     .padding(.horizontal, 10)
@@ -400,7 +331,7 @@ struct SpendAnalyticsPanel: View {
                         if let date = value.as(Date.self) {
                             AxisValueLabel {
                                 Text(date, format: axisDateFormat)
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 11))
                             }
                         }
                     }
@@ -415,7 +346,7 @@ struct SpendAnalyticsPanel: View {
     /// Time labels scaled to the window being shown: a day of history wants clock times, a
     /// month wants dates. Showing both at every range is what made the labels too wide to fit.
     private var axisDateFormat: Date.FormatStyle {
-        switch selectedRange {
+        switch presentation.selectedRange {
         case .day:
             return .dateTime.hour()
         case .week:
@@ -426,7 +357,7 @@ struct SpendAnalyticsPanel: View {
     }
 
     private var chartData: [QuotaPoint] {
-        let cutoff = selectedRange.days.flatMap { Calendar.current.date(byAdding: .day, value: -$0, to: Date()) }
+        let cutoff = presentation.selectedRange.days.flatMap { Calendar.current.date(byAdding: .day, value: -$0, to: Date()) }
         let aliasMap = Dictionary(store.snapshots.map { ($0.id, $0.name) }, uniquingKeysWith: { _, last in last })
         // When a provider has exactly one active account, remap all its history entries to
         // that account's ID. This prevents old auto-detected IDs (e.g. "claude-code") and
@@ -473,52 +404,17 @@ struct SpendAnalyticsPanel: View {
         }
     }
 
-    // MARK: - Shared
-
     private func emptyState(icon: String, text: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundStyle(.tertiary)
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 24))
+            Text(text).font(.system(size: 13))
         }
+        .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, 16)
     }
 
-    private func loadPiTotals() async {
-        defer { isLoadingLocalTotals = false }
-        if store.snapshots.contains(where: { $0.provider == .pi }) {
-            piTotals = try? PiUsageClient.aggregate()
-        }
-        if store.snapshots.contains(where: { $0.provider == .openCode }) {
-            openCodeTotals = try? OpenCodeUsageClient.aggregate()
-        }
-        if store.snapshots.contains(where: { $0.provider == .sarvamCode }) {
-            sarvamCodeTotals = try? SarvamCodeUsageClient.aggregate()
-        }
-        if store.snapshots.contains(where: { $0.provider == .fx }) {
-            fxTotals = try? FxUsageClient.aggregate()
-        }
-    }
-
-    private var hasLocalCostProvider: Bool {
-        store.snapshots.contains { $0.provider == .pi || $0.provider == .openCode || $0.provider == .sarvamCode || $0.provider == .fx }
-    }
-
-    private func allTimeTokens(for provider: Provider) -> Double? {
-        switch provider {
-        case .pi: return piTotals?.allTimeTokens
-        case .openCode: return openCodeTotals?.allTimeTokens
-        case .fx: return fxTotals?.allTimeTokens
-        case .sarvamCode: return sarvamCodeTotals.map { Double($0.allTimeTokens) }
-        default: return nil
-        }
-    }
-
-    struct LocalSpendRow: Equatable {
+    struct LocalSpendRow: Equatable, Sendable {
         let currencyCode: String
         var today = 0.0
         var week = 0.0
@@ -528,10 +424,6 @@ struct SpendAnalyticsPanel: View {
         var weekTokens = 0.0
         var monthTokens = 0.0
         var allTimeTokens = 0.0
-    }
-
-    private var localSpendRows: [LocalSpendRow] {
-        Self.spendRows(pi: piTotals, openCode: openCodeTotals, fx: fxTotals, sarvam: sarvamCodeTotals)
     }
 
     nonisolated static func spendRows(

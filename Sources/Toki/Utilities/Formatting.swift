@@ -3,15 +3,19 @@ import Foundation
 import SwiftUI
 
 func resetDescription(_ value: Any?) -> String? {
+    resetDate(value).map { resetDescription(for: $0) }
+}
+
+func resetDate(_ value: Any?) -> Date? {
     // Accept an ISO8601 string or a numeric epoch (seconds or milliseconds), since
     // reset timestamps arrive in different shapes across providers/payloads.
     if let raw = value as? String, let resetDate = parseISODate(raw) {
-        return resetDescription(for: resetDate)
+        return resetDate
     }
     if let seconds = optionalNumber(value) {
         // Values above ~year-2001-in-ms are milliseconds; scale them down.
         let normalized = seconds > 100_000_000_000 ? seconds / 1000 : seconds
-        return resetDescription(for: Date(timeIntervalSince1970: normalized))
+        return Date(timeIntervalSince1970: normalized)
     }
     return nil
 }
@@ -30,16 +34,20 @@ func resetDescriptionFromUnix(_ value: Any?) -> String? {
     return resetDescription(for: Date(timeIntervalSince1970: seconds))
 }
 
-// Returns e.g. "3h (18:00)" - a countdown followed by the clock time. Callers prefix
+// Returns e.g. "3h 30m (18:00)" - a countdown followed by the clock time. Callers prefix
 // "resets in", so the countdown must not itself say "in". A fixed en_US_POSIX relative
 // formatter keeps this deterministic (system-locale strings vary in word order and would
 // either not start with "in" or embed it mid-word, e.g. Finnish "min").
 func resetDescription(for resetDate: Date) -> String {
+    let now = Date()
+    let seconds = resetDate.timeIntervalSince(now)
     let relative = RelativeDateTimeFormatter()
     relative.unitsStyle = .abbreviated
     relative.locale = Locale(identifier: "en_US_POSIX")
-    var countdown = relative.localizedString(for: resetDate, relativeTo: Date())
-    if countdown.hasPrefix("in ") {
+    var countdown = relative.localizedString(for: resetDate, relativeTo: now)
+    if seconds >= 3600 && seconds < 86_400 {
+        countdown = formatDuration(seconds: seconds.rounded(.down))
+    } else if countdown.hasPrefix("in ") {
         countdown.removeFirst(3)
     }
     let formatter = DateFormatter()
@@ -167,23 +175,6 @@ func formatDuration(seconds: Double) -> String {
         return "\(minutes)m"
     }
     return "\(total)s"
-}
-
-func remainingText(from value: String) -> String {
-    if let usedPercent = usedPercent(in: value) {
-        let remaining = max(0, min(100, 100 - Int(usedPercent.rounded())))
-        return "\(remaining)% left"
-    }
-    return value.components(separatedBy: " - ").first ?? value
-}
-
-func usedPercent(in value: String) -> Double? {
-    guard let percentIndex = value.firstIndex(of: "%") else { return nil }
-    let prefix = value[..<percentIndex]
-    let candidates = prefix.split { character in
-        !character.isNumber && character != "."
-    }
-    return candidates.last.flatMap { Double($0) }
 }
 
 func relativeDate(_ date: Date) -> String {

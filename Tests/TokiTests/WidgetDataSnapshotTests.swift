@@ -55,6 +55,50 @@ final class WidgetDataSnapshotTests: XCTestCase {
 
         XCTAssertTrue(snapshot.allExhausted)
         XCTAssertNotNil(snapshot.breakSuggestion)
+        XCTAssertEqual(snapshot.entries.first?.remainingRatio, 0)
+        XCTAssertEqual(snapshot.entries.first?.value, "0%")
+    }
+
+    func testResetContextDescribesTheMostConstrainedReportedWindow() {
+        var account = AccountSnapshot(
+            id: "codex", name: "Work", provider: .codex,
+            primary: "20% remaining", subtitle: "Codex", remainingRatio: 0.2, metrics: []
+        )
+        account.primaryWindow = RateLimitWindow(label: "5h", percentLeft: 70, resetHint: "resets in 1h")
+        account.secondaryWindow = RateLimitWindow(label: "7d", percentLeft: 20, resetHint: "resets in 2d")
+
+        let snapshot = WidgetDataStore.makeSnapshot(
+            entries: [], awaitingInput: 0, snapshots: [account], updatedAt: Date()
+        )
+        XCTAssertEqual(snapshot.entries.first?.resetContext, "7d · resets in 2d")
+    }
+
+    func testMissingResetHintIsNotInventedFromQuota() {
+        var account = AccountSnapshot(
+            id: "codex", name: "Work", provider: .codex,
+            primary: "0% remaining", subtitle: "Codex", remainingRatio: 0, metrics: []
+        )
+        account.primaryWindow = RateLimitWindow(label: "5h", percentLeft: 0, resetHint: nil)
+        let snapshot = WidgetDataStore.makeSnapshot(
+            entries: [], awaitingInput: 0, snapshots: [account], updatedAt: Date()
+        )
+        XCTAssertNil(snapshot.entries.first?.resetContext)
+    }
+
+    func testOlderWidgetEntriesDecodeWithoutResetContext() throws {
+        let data = Data(#"{"id":"codex","provider":"codex","displayName":"Codex","value":"72%","remainingRatio":0.72}"#.utf8)
+        let entry = try JSONDecoder().decode(WidgetEntry.self, from: data)
+        XCTAssertNil(entry.resetContext)
+        XCTAssertEqual(entry.remainingRatio, 0.72)
+    }
+
+    func testResetContextSurvivesSnapshotRoundTrip() throws {
+        let entry = WidgetEntry(
+            id: "codex", provider: "codex", displayName: "Codex", value: "0%",
+            remainingRatio: 0, leadingText: nil, colorHex: nil, resetContext: "5h · resets in 1h"
+        )
+        let restored = try JSONDecoder().decode(WidgetEntry.self, from: JSONEncoder().encode(entry))
+        XCTAssertEqual(restored.resetContext, entry.resetContext)
     }
 
     func testStalenessWindowOutlastsTheRefreshCadence() {

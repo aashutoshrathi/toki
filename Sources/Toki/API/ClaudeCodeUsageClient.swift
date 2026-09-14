@@ -136,7 +136,8 @@ struct ClaudeCodeUsageClient {
             colorHex: record.label?.color,
             primaryWindow: usage.rateLimitWindows.first,
             secondaryWindow: usage.rateLimitWindows.dropFirst().first,
-            modelWindows: usage.modelWindows
+            modelWindows: usage.modelWindows,
+            progressKind: .quota
         )
     }
 

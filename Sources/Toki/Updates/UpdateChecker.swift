@@ -184,6 +184,7 @@ final class UpdateChecker: ObservableObject {
         }
         isSwitchingCask = false
         // The bundle on disk is a different build now, so the running process is stale.
+        guard AppDelegate.prepareToRestart() else { return }
         if !relaunchAfterBrewChange() {
             caskSwitchError = "Switched to the \(target) cask. Reopen Toki to finish."
             return
@@ -268,6 +269,7 @@ final class UpdateChecker: ObservableObject {
 
     func installUpdate() {
         guard let availableUpdate, !isInstalling else { return }
+        guard AppDelegate.prepareToRestart() else { return }
         isInstalling = true
         installError = nil
         guard !startBrewHandoff(for: availableUpdate) else { return }
@@ -278,6 +280,10 @@ final class UpdateChecker: ObservableObject {
                     downloadURL: availableUpdate.downloadURL,
                     expectedVersion: availableUpdate.version
                 )
+                guard AppDelegate.prepareToRestart() else {
+                    isInstalling = false
+                    return
+                }
                 try UpdateInstaller.launchHelper(for: prepared)
                 NSApp.terminate(nil)
             } catch {
@@ -345,6 +351,10 @@ final class UpdateChecker: ObservableObject {
             return
         }
 
+        guard AppDelegate.prepareToRestart() else {
+            isInstalling = false
+            return
+        }
         guard relaunchAfterBrewChange() else {
             // The upgrade landed but relaunching failed; keep the app up rather than
             // close it, and tell the user how to get the new build running.

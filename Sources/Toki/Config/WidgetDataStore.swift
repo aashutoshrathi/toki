@@ -37,7 +37,8 @@ enum WidgetDataStore {
                     value: widgetValue(for: snapshot),
                     remainingRatio: snapshot.remainingRatio,
                     leadingText: snapshot.emoji,
-                    colorHex: snapshot.colorHex
+                    colorHex: snapshot.colorHex,
+                    resetContext: resetContext(for: snapshot)
                 )
             }
 
@@ -155,5 +156,17 @@ enum WidgetDataStore {
             return value
         }
         return snapshot.isError ? "--" : snapshot.primary
+    }
+
+    private static func resetContext(for snapshot: AccountSnapshot) -> String? {
+        let windows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
+            + snapshot.modelWindows
+        // The compact snapshot has room for one reset. Use the most constrained reported
+        // window so the hint explains the limit most likely to prevent further work.
+        guard let window = windows.filter({ $0.resetHint?.isEmpty == false })
+            .min(by: { $0.percentLeft < $1.percentLeft }), let hint = window.resetHint else {
+            return nil
+        }
+        return "\(window.label) · \(hint)"
     }
 }

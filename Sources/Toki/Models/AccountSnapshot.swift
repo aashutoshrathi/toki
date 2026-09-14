@@ -1,9 +1,22 @@
 import Foundation
 
+enum MetricGroup: String, CaseIterable, Hashable {
+    case quota = "Quota"
+    case activity = "Activity"
+    case usage = "Usage"
+    case account = "Account details"
+}
+
 struct MetricLine: Identifiable, Hashable {
     var id = UUID()
     var label: String
     var value: String
+    var group: MetricGroup = .usage
+}
+
+enum AccountProgressKind: Hashable {
+    case quota
+    case usage
 }
 
 // A single rate-limit window (e.g. Codex's rolling 5h window or its 7-day window), broken
@@ -14,6 +27,21 @@ struct RateLimitWindow: Identifiable, Hashable {
     var label: String
     var percentLeft: Int
     var resetHint: String?
+    var resetAt: Date? = nil
+    var duration: TimeInterval? = nil
+
+    func expectedRemainingRatio(at date: Date = Date()) -> Double? {
+        guard let resetAt, let duration, duration.isFinite, duration > 0 else { return nil }
+        let remaining = resetAt.timeIntervalSince(date)
+        guard remaining > 0, remaining <= duration else { return nil }
+        return remaining / duration
+    }
+
+    func paceDeviation(at date: Date = Date()) -> Int? {
+        guard let expectedRemaining = expectedRemainingRatio(at: date) else { return nil }
+        let expectedUsed = (1 - expectedRemaining) * 100
+        return Int((Double(100 - percentLeft) - expectedUsed).rounded())
+    }
 }
 
 struct AccountSnapshot: Identifiable, Hashable {
@@ -50,6 +78,15 @@ struct AccountSnapshot: Identifiable, Hashable {
     var isAgentDetectionOnly: Bool = false
     var isSignInExpired: Bool = false
     var lastActivity: Date? = nil
+    /// Supplied by the source of a compact cost reading; a display string alone cannot tell
+    /// whether a provider reports a day, billing cycle, or lifetime amount.
+    var menuBarValuePeriod: String? = nil
+    var progressKind: AccountProgressKind = .usage
+
+    var displayProgressRatio: Double? {
+        let value = progressKind == .quota ? remainingRatio : (progressRatio ?? remainingRatio.map { 1 - $0 })
+        return value.map { min(1, max(0, $0)) }
+    }
 
     static let loadingPrimary = "Refreshing"
 

@@ -20,7 +20,7 @@ struct RailGeometry: Equatable {
     static let ringDiameter: CGFloat = 30
     static let rowSpacing: CGFloat = 8
     static let railPadding: CGFloat = 9
-    static let cardWidth: CGFloat = 236
+    static let cardWidth: CGFloat = 244
     static let cardGap: CGFloat = 8
     /// Rows past this are collapsed. The rail hangs into the screen, so an unbounded one would
     /// run down the whole edge on a machine with many accounts connected.
@@ -28,6 +28,13 @@ struct RailGeometry: Equatable {
 
     /// Height of one row: the ring plus the percentage printed under it.
     static let rowHeight: CGFloat = ringDiameter + 15
+
+    static let maxDetailWindows = 3
+
+    static func detailCardHeight(windowCount: Int) -> CGFloat {
+        40 + CGFloat(max(min(windowCount, maxDetailWindows), 1)) * 40
+            + (windowCount > maxDetailWindows ? 18 : 0)
+    }
 
     static func rowPitch() -> CGFloat { rowHeight + rowSpacing }
 
@@ -37,7 +44,7 @@ struct RailGeometry: Equatable {
     }
 
     /// nil when there is nothing to draw, which is what keeps an empty rail off the screen.
-    static func make(screen: ScreenMetrics, providerCount: Int) -> RailGeometry? {
+    static func make(screen: ScreenMetrics, providerCount: Int, detailCardHeight: CGFloat = 0) -> RailGeometry? {
         guard providerCount > 0 else { return nil }
 
         let drawn = min(providerCount, maxRows)
@@ -56,11 +63,14 @@ struct RailGeometry: Equatable {
         // without the window growing on hover.
         let windowX = railX - cardWidth - cardGap
         let windowWidth = railWidth + cardWidth + cardGap
+        // Reserve detail space before hover, including with a single account. Otherwise the
+        // larger readable card is clipped by the hosting window, or resizing moves tracking areas.
+        let windowHeight = max(railHeight, min(detailCardHeight, screen.frame.height - screen.bandHeight))
         let window = NSRect(
             x: windowX,
-            y: railTop - railHeight,
+            y: railTop - windowHeight,
             width: windowWidth,
-            height: railHeight
+            height: windowHeight
         )
 
         return RailGeometry(
