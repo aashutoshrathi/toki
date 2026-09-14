@@ -70,7 +70,8 @@ func menuBarEntries(
     for snapshots: [AccountSnapshot],
     mode: MenuBarDisplayMode = .smart,
     pinnedProviders: [Provider] = [],
-    density: MenuBarDensity = .comfortable
+    density: MenuBarDensity = .comfortable,
+    quotaWindows: [String: String] = [:]
 ) -> [MenuBarStatusEntry] {
     // Logo-only asks for no readout at all, so the break suggestion - which is a readout -
     // would defeat the point of picking it.
@@ -81,11 +82,11 @@ func menuBarEntries(
 
     switch mode {
     case .smart:
-        return smartMenuBarEntries(for: snapshots)
+        return smartMenuBarEntries(for: snapshots, quotaWindows: quotaWindows)
     case .lowest:
-        return lowestMenuBarEntries(for: snapshots)
+        return lowestMenuBarEntries(for: snapshots, quotaWindows: quotaWindows)
     case .pinned:
-        return pinnedMenuBarEntries(for: snapshots, pinnedProviders: pinnedProviders, density: density)
+        return pinnedMenuBarEntries(for: snapshots, pinnedProviders: pinnedProviders, density: density, quotaWindows: quotaWindows)
     case .logoOnly:
         return []
     }
@@ -98,14 +99,15 @@ func menuBarEntries(
 private func pinnedMenuBarEntries(
     for snapshots: [AccountSnapshot],
     pinnedProviders: [Provider],
-    density: MenuBarDensity
+    density: MenuBarDensity,
+    quotaWindows: [String: String]
 ) -> [MenuBarStatusEntry] {
-    guard !pinnedProviders.isEmpty else { return smartMenuBarEntries(for: snapshots) }
+    guard !pinnedProviders.isEmpty else { return smartMenuBarEntries(for: snapshots, quotaWindows: quotaWindows) }
 
     let entries = pinnedProviders.compactMap { provider -> MenuBarStatusEntry? in
         let match = snapshots.first { $0.provider == provider && $0.switchTarget == nil && !$0.isError }
             ?? snapshots.first { $0.provider == provider && !$0.isError }
-        return match.map(menuBarEntry)
+        return match.map { menuBarEntry(for: $0, preferredWindow: quotaWindows[provider.rawValue]) }
     }
 
     // The density owns the cap, so what the settings panel promises and what the bar draws
@@ -113,7 +115,7 @@ private func pinnedMenuBarEntries(
     return Array(entries.prefix(density.maxSegments))
 }
 
-private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
+private func smartMenuBarEntries(for snapshots: [AccountSnapshot], quotaWindows: [String: String]) -> [MenuBarStatusEntry] {
     let activeClaude = snapshots.first {
         $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError && ($0.remainingRatio ?? 1) > 0
     }
@@ -138,14 +140,19 @@ private func smartMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarSt
     // Claude+Codex+Pi user stays at two.
     let segments = Array((quotaSegments + costSegments).prefix(2))
 
-    return segments.map(menuBarEntry)
+    return segments.map { menuBarEntry(for: $0, preferredWindow: quotaWindows[$0.provider.rawValue]) }
 }
 
-private func lowestMenuBarEntries(for snapshots: [AccountSnapshot]) -> [MenuBarStatusEntry] {
-    snapshots
+private func lowestMenuBarEntries(for snapshots: [AccountSnapshot], quotaWindows: [String: String]) -> [MenuBarStatusEntry] {
+    let candidates = snapshots
         .filter { !$0.isError && $0.remainingRatio != nil && ($0.remainingRatio ?? 0) > 0 }
-        .min { ($0.remainingRatio ?? 1) < ($1.remainingRatio ?? 1) }
-        .map { [menuBarEntry(for: $0)] } ?? []
+    let lowest = candidates.min { lhs, rhs in
+        let left = displayQuotaWindow(for: lhs, preferredWindow: quotaWindows[lhs.provider.rawValue])
+        let right = displayQuotaWindow(for: rhs, preferredWindow: quotaWindows[rhs.provider.rawValue])
+        return (left.map { Double($0.percentLeft) / 100 } ?? lhs.remainingRatio ?? 1)
+            < (right.map { Double($0.percentLeft) / 100 } ?? rhs.remainingRatio ?? 1)
+    }
+    return lowest.map { [menuBarEntry(for: $0, preferredWindow: quotaWindows[$0.provider.rawValue])] } ?? []
 }
 
 func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
@@ -155,7 +162,19 @@ func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
     ]
 }
 
-func menuBarEntry(for snapshot: AccountSnapshot) -> MenuBarStatusEntry {
+func displayQuotaWindow(for snapshot: AccountSnapshot, preferredWindow: String? = nil) -> RateLimitWindow? {
+    let windows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
+    return windows.first { $0.label == preferredWindow }
+        ?? windows.min {
+            if $0.percentLeft != $1.percentLeft { return $0.percentLeft < $1.percentLeft }
+            return $0.label == "7d" && $1.label != "7d"
+        }
+}
+
+func menuBarEntry(for snapshot: AccountSnapshot, preferredWindow: String? = nil) -> MenuBarStatusEntry {
+    if let window = displayQuotaWindow(for: snapshot, preferredWindow: preferredWindow) {
+        return MenuBarStatusEntry(provider: snapshot.provider, value: "\(window.percentLeft)%", windowLabel: window.label)
+    }
     let value = snapshot.remainingRatio.map(percentText) ?? snapshot.menuBarValue ?? "--"
     return MenuBarStatusEntry(provider: snapshot.provider, value: value)
 }

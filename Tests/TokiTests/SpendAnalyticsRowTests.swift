@@ -113,3 +113,58 @@ final class SpendAnalyticsRowTests: XCTestCase {
         XCTAssertTrue(rows().isEmpty)
     }
 }
+
+@MainActor
+final class AnalyticsLoadingTests: XCTestCase {
+    func testPartialFailureKeepsSuccessfulZeroAndRetryPreservesOtherCurrency() async {
+        let state = AnalyticsPresentationState()
+        await state.load(providers: [.pi, .sarvamCode], refreshID: nil) { provider in
+            guard !Thread.isMainThread else { return .failed("Read ran on main thread") }
+            return provider == .pi ? .loaded([.init(currencyCode: "USD")]) : .failed("History is unreadable")
+        }
+        XCTAssertFalse(state.isLoading)
+        XCTAssertEqual(state.successfulProviders, [.pi])
+        XCTAssertEqual(state.failures.map(\.provider), [.sarvamCode])
+        XCTAssertEqual(state.rows.map(\.today), [0])
+
+        await state.retryFailures { provider in
+            guard provider == .sarvamCode else { return .failed("Successful provider was read again") }
+            var row = SpendAnalyticsPanel.LocalSpendRow(currencyCode: "INR")
+            row.today = 10
+            return .loaded([row])
+        }
+        XCTAssertTrue(state.failures.isEmpty)
+        XCTAssertEqual(state.rows.map(\.currencyCode), ["INR", "USD"])
+        XCTAssertEqual(state.rows.map(\.today), [10, 0])
+    }
+
+    func testTotalFailureIsNotZeroAndUnchangedRefreshDoesNotReadAgain() async {
+        let state = AnalyticsPresentationState()
+        await state.load(providers: [.pi], refreshID: nil) { _ in .failed("Missing history") }
+        XCTAssertTrue(state.rows.isEmpty)
+        XCTAssertEqual(state.failures.first?.message, "Missing history")
+        await state.load(providers: [.pi], refreshID: nil) { _ in .loaded([.init(currencyCode: "USD")]) }
+        XCTAssertTrue(state.rows.isEmpty)
+        XCTAssertEqual(state.failures.count, 1)
+    }
+}
+
+final class SessionCostRankingTests: XCTestCase {
+    private func agent(_ id: Int32, cost: Double?, currency: String = "USD") -> ActiveAgent {
+        ActiveAgent(id: id, provider: .pi, directory: nil, chatTitle: "Session", hostApp: nil,
+                    hostProcessID: nil, lastActivity: nil, processID: id, runtime: "1:00", terminalTTY: nil,
+                    memoryKB: 0, command: "pi", sessionUsage: .init(cost: cost, tokensInput: 0,
+                    tokensOutput: 0, currencyCode: currency), attention: nil)
+    }
+
+    func testRankingKeepsCurrenciesSeparateAndZeroDistinctFromMissing() {
+        let groups = SpendAnalyticsPanel.sessionCostGroups([
+            agent(1, cost: 2), agent(2, cost: nil), agent(3, cost: 100, currency: "INR"),
+            agent(4, cost: 0), agent(5, cost: 4)
+        ])
+        XCTAssertEqual(groups.map(\.currencyCode), ["INR", "USD"])
+        XCTAssertEqual(groups[1].agents.map(\.id), [5, 1, 4])
+        XCTAssertEqual(SpendAnalyticsPanel.relativeSessionCost(agent(1, cost: 2), maximum: 4), 0.5)
+        XCTAssertEqual(SpendAnalyticsPanel.relativeSessionCost(agent(1, cost: 0), maximum: 0), 0)
+    }
+}

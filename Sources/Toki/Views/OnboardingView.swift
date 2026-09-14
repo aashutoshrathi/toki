@@ -17,7 +17,7 @@ struct OnboardingView: View {
                 Text("Connect an account")
                     .font(.system(size: 13, weight: .semibold))
                 Text("Toki tracks usage locally - nothing leaves your machine.")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
 
@@ -60,7 +60,7 @@ struct OnboardingView: View {
 
             if let configError = store.configError {
                 Text(configError)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.red)
             }
 
@@ -68,19 +68,18 @@ struct OnboardingView: View {
                 openConfigEditor()
             } label: {
                 Text("Or edit config.json manually")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .pointerOnHover()
 
-            // Second half of a first run: the permissions Toki would otherwise ask for one dialog
-            // at a time, listed with what each one buys and nothing requested until it is. It can
-            // be put away from here, and stays available in Settings afterwards.
+            // Connecting is the primary first-run task. Permission setup remains available without
+            // pushing detected accounts offscreen or requesting access for unused integrations.
             if !store.preferences.setupChecklistCompleted {
                 Divider()
                     .padding(.vertical, 2)
-                SetupChecklistView(store: store, mode: .firstRun, showsDismiss: true)
+                SetupChecklistView(store: store, mode: .firstRun, showsDismiss: true, collapsible: true)
             }
         }
         .padding(10)
@@ -92,7 +91,7 @@ struct OnboardingView: View {
             ProgressView()
                 .controlSize(.small)
             Text("Looking for supported coding agents and local usage…")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
     }
@@ -102,7 +101,7 @@ struct OnboardingView: View {
             Text("Nothing detected yet")
                 .font(.system(size: 11, weight: .medium))
             Text("Sign in to or use a supported coding agent, then reopen this menu - Toki will pick it up automatically.")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -113,7 +112,7 @@ struct OnboardingView: View {
             Text("Everything detected is already connected")
                 .font(.system(size: 11, weight: .medium))
             Text("Sign in to another provider, then reopen this menu - Toki will pick it up automatically.")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -129,12 +128,11 @@ private struct ProviderConnectRow: View {
             ProviderLogo(provider: detected.provider, size: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(detected.title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                 Text(detected.detail)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 4)
             if detected.isConnectable {
@@ -144,7 +142,7 @@ private struct ProviderConnectRow: View {
                     .pointerOnHover()
             } else {
                 Text("Auto-detected")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)

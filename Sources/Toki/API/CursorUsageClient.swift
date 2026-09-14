@@ -70,7 +70,7 @@ struct CursorUsageClient {
         }
 
         var metrics: [MetricLine] = []
-        if let plan = usage.plan { metrics.append(MetricLine(label: "Plan", value: plan.capitalized)) }
+        if let plan = usage.plan { metrics.append(MetricLine(label: "Plan", value: plan.capitalized, group: .account)) }
         if let limit = usage.hardLimitDollars, limit > 0 {
             metrics.append(MetricLine(label: "Spend", value: "\(formatUSD(spent)) / \(formatUSD(limit))"))
         } else {
@@ -94,7 +94,8 @@ struct CursorUsageClient {
             metrics: metrics,
             isError: false,
             menuBarValue: ratio == nil ? formatUSD(spent) : nil,
-            lastActivity: activity
+            lastActivity: activity,
+            menuBarValuePeriod: "This cycle"
         )
     }
 

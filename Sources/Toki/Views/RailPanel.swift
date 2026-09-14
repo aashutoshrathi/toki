@@ -5,7 +5,9 @@ import SwiftUI
 /// Pinned dark like the notch panel. It hangs off the menu bar band and reads as an extension
 /// of it, which only works if it stays the same colour whatever the desktop behind it is doing.
 struct RailPanel: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let snapshots: [AccountSnapshot]
+    var quotaWindows: [String: String] = [:]
     let geometry: RailGeometry
     let hoveredID: String?
     let onHover: (String?) -> Void
@@ -39,13 +41,13 @@ struct RailPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(.easeOut(duration: 0.12), value: hoveredID)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hoveredID)
+        .environment(\.colorScheme, .dark)
     }
 
-    // Two rows plus the title, or one row for a provider with a single window.
     private func cardHeight(for snapshot: AccountSnapshot) -> CGFloat {
         let rows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }.count + snapshot.modelWindows.count
-        return 34 + CGFloat(max(rows, 1)) * 32
+        return RailGeometry.detailCardHeight(windowCount: rows)
     }
 
     private var rail: some View {
@@ -61,41 +63,60 @@ struct RailPanel: View {
         .frame(width: geometry.rail.width, height: geometry.rail.height, alignment: .top)
         .background(Color.black, in: RailShape())
         .contentShape(RailShape())
-        .onTapGesture(perform: onClick)
         .pointerOnHover()
     }
 
     private func row(_ snapshot: AccountSnapshot) -> some View {
-        VStack(spacing: 1) {
-            RingGauge(
-                provider: snapshot.provider,
-                remainingRatio: snapshot.remainingRatio,
-                color: ringColor(snapshot),
-                diameter: RailGeometry.ringDiameter,
-                isHighlighted: hoveredID == snapshot.id,
-                seatsGlyph: true
-            )
-            Text(snapshot.remainingRatio.map { percentText($0) } ?? "--")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
+        let window = displayQuotaWindow(for: snapshot, preferredWindow: quotaWindows[snapshot.provider.rawValue])
+        let ratio = window.map { Double($0.percentLeft) / 100 } ?? snapshot.remainingRatio
+        return Button(action: onClick) {
+            VStack(spacing: 1) {
+                RingGauge(
+                    provider: snapshot.provider,
+                    remainingRatio: ratio,
+                    color: ringColor(snapshot),
+                    diameter: RailGeometry.ringDiameter,
+                    isHighlighted: hoveredID == snapshot.id,
+                    seatsGlyph: true
+                )
+                Text(ratio.map { percentText($0) } ?? "--")
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .fixedSize()
+                if let window {
+                    Text(window.label)
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .fixedSize()
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: RailGeometry.rowHeight, alignment: .top)
+            .contentShape(Rectangle())
         }
-        .frame(height: RailGeometry.rowHeight)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .onHover { onHover($0 ? snapshot.id : nil) }
-        .accessibilityLabel("\(snapshot.name), \(snapshot.remainingRatio.map { percentText($0) } ?? "unknown") left")
+        .accessibilityLabel("Open Toki")
+        .accessibilityValue("\(snapshot.name), \(ratio.map { percentText($0) } ?? "unknown") remaining\(window.map { ", \($0.label) window" } ?? "")")
+        .accessibilityHint("View quota and reset details in Accounts")
     }
 
     private var overflowRow: some View {
-        Text("+\(geometry.overflowCount)")
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .foregroundStyle(.white.opacity(0.55))
-            .frame(height: RailGeometry.rowHeight)
-            .accessibilityLabel("\(geometry.overflowCount) more account\(geometry.overflowCount == 1 ? "" : "s"), open Toki to see them")
+        Button(action: onClick) {
+            Text("+\(geometry.overflowCount)")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(maxWidth: .infinity)
+                .frame(height: RailGeometry.rowHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open Toki")
+        .accessibilityValue("\(geometry.overflowCount) more account\(geometry.overflowCount == 1 ? "" : "s")")
     }
 }
 
-/// The hover detail: every quota window the provider reports, each with a bar, a percentage and
-/// when it resets.
+/// A compact preview of quota windows. Accounts provides all windows without relying on hover.
 private struct DetailCard: View {
     let snapshot: AccountSnapshot
     /// Where the tail meets the card, measured from its top.
@@ -115,16 +136,21 @@ private struct DetailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                ProviderLogo(provider: snapshot.provider, size: 12)
+                ProviderLogo(provider: snapshot.provider, size: 14)
                 Text(snapshot.name)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
 
-            ForEach(windows) { window in
+            ForEach(windows.prefix(RailGeometry.maxDetailWindows)) { window in
                 windowRow(window)
+            }
+            if windows.count > RailGeometry.maxDetailWindows {
+                Text("+\(windows.count - RailGeometry.maxDetailWindows) more in Accounts")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.75))
             }
         }
         .padding(10)
@@ -143,11 +169,11 @@ private struct DetailCard: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(window.label)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 4)
                 Text("\(window.percentLeft)% left")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
                     .foregroundStyle(.white)
             }
             GeometryReader { proxy in
@@ -160,10 +186,11 @@ private struct DetailCard: View {
             }
             .frame(height: 4)
             if let resetHint = window.resetHint {
-                Text(resetHint)
-                    .font(.system(size: 8))
-                    .foregroundStyle(.white.opacity(0.45))
+                Text(compactResetDescription(resetHint) ?? resetHint)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.75))
                     .lineLimit(1)
+                    .help(resetHint)
             }
         }
     }

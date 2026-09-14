@@ -13,11 +13,13 @@ final class RailWindowController {
     private var hostingView: RailHostingView<RailPanel>?
     private let onClick: () -> Void
     private var snapshots: [AccountSnapshot] = []
+    private var quotaWindows: [String: String]
     private var hoveredID: String?
     private var spaceObserver: NSObjectProtocol?
 
-    init(snapshots: [AccountSnapshot], onClick: @escaping () -> Void) {
+    init(snapshots: [AccountSnapshot], quotaWindows: [String: String] = [:], onClick: @escaping () -> Void) {
         self.snapshots = snapshots
+        self.quotaWindows = quotaWindows
         self.onClick = onClick
         // Full screen takes the menu bar away, and the rail hangs off it, so it would end up
         // floating over the app's own content with nothing to attach to.
@@ -43,7 +45,10 @@ final class RailWindowController {
     /// Providers with a quota to draw. Cost-only and detection-only accounts have no ring, and a
     /// rail of empty circles says less than no rail at all.
     private var ringSnapshots: [AccountSnapshot] {
-        snapshots.filter { !$0.isError && $0.remainingRatio != nil }
+        snapshots.filter {
+            !$0.isError && ($0.remainingRatio != nil
+                || displayQuotaWindow(for: $0, preferredWindow: quotaWindows[$0.provider.rawValue]) != nil)
+        }
     }
 
     private static func metrics(for screen: NSScreen?) -> ScreenMetrics? {
@@ -62,8 +67,9 @@ final class RailWindowController {
         return screen.visibleFrame.maxY < screen.frame.maxY
     }
 
-    func update(snapshots: [AccountSnapshot]) {
+    func update(snapshots: [AccountSnapshot], quotaWindows: [String: String] = [:]) {
         self.snapshots = snapshots
+        self.quotaWindows = quotaWindows
         if hoveredID != nil, !ringSnapshots.contains(where: { $0.id == hoveredID }) {
             hoveredID = nil
         }
@@ -74,7 +80,14 @@ final class RailWindowController {
     func show() -> Bool {
         guard bandIsVisible,
               let metrics = Self.metrics(for: NSScreen.main),
-              let geometry = RailGeometry.make(screen: metrics, providerCount: ringSnapshots.count) else {
+              let geometry = RailGeometry.make(
+                screen: metrics,
+                providerCount: ringSnapshots.count,
+                detailCardHeight: ringSnapshots.prefix(RailGeometry.maxRows).map {
+                    let windows = [$0.primaryWindow, $0.secondaryWindow].compactMap { $0 }.count + $0.modelWindows.count
+                    return RailGeometry.detailCardHeight(windowCount: windows)
+                }.max() ?? 0
+              ) else {
             hide()
             return false
         }
@@ -97,6 +110,7 @@ final class RailWindowController {
     private func render(_ geometry: RailGeometry) {
         let panel = RailPanel(
             snapshots: ringSnapshots,
+            quotaWindows: quotaWindows,
             geometry: geometry,
             hoveredID: hoveredID,
             onHover: { [weak self] id in

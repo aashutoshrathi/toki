@@ -74,10 +74,10 @@ struct ClaudeCodeUsage {
         guard let data = json as? [String: Any] else { return }
 
         if let fiveHour = data["five_hour"] as? [String: Any] {
-            appendWindow("5h", fiveHour)
+            appendWindow("5h", fiveHour, duration: 5 * 3600)
         }
         if let sevenDay = data["seven_day"] as? [String: Any] {
-            appendWindow("7d", sevenDay)
+            appendWindow("7d", sevenDay, duration: 7 * 86_400)
         }
         if let extraUsage = data["extra_usage"] as? [String: Any] {
             appendExtraUsage(extraUsage)
@@ -103,16 +103,18 @@ struct ClaudeCodeUsage {
             modelWindows.append(RateLimitWindow(
                 label: label,
                 percentLeft: Int((100 - clampedUsed).rounded()),
-                resetHint: reset.map { "resets in \($0)" }
+                resetHint: reset.map { "resets in \($0)" },
+                resetAt: resetDate(entry["resets_at"]),
+                duration: 7 * 86_400
             ))
 
             // Written the same way the 5h and 7d lines are, so the detail list reads as one set
             // rather than as a stray row in its own format.
-            var value = "\(Int(clampedUsed.rounded()))% used"
+            var value = "\(Int((100 - clampedUsed).rounded()))% left"
             if let reset {
                 value += " - resets in \(reset)"
             }
-            metrics.append(MetricLine(label: label, value: value))
+            metrics.append(MetricLine(label: label, value: value, group: .quota))
         }
     }
 
@@ -137,7 +139,7 @@ struct ClaudeCodeUsage {
         return nil
     }
 
-    private mutating func appendWindow(_ label: String, _ window: [String: Any]) {
+    private mutating func appendWindow(_ label: String, _ window: [String: Any], duration: TimeInterval) {
         // Anthropic keeps a window key in the response even when that quota does not apply,
         // using null utilization. Treat that as absent rather than inventing 0% usage.
         guard let utilization = optionalNumber(window["utilization"]) else { return }
@@ -157,26 +159,28 @@ struct ClaudeCodeUsage {
         rateLimitWindows.append(RateLimitWindow(
             label: label,
             percentLeft: Int((100 - clampedUsed).rounded()),
-            resetHint: reset.map { "resets in \($0)" }
+            resetHint: reset.map { "resets in \($0)" },
+            resetAt: resetDate(window["resets_at"]),
+            duration: duration
         ))
 
-        var value = "\(Int(utilization.rounded()))% used"
+        var value = "\(Int((100 - clampedUsed).rounded()))% left"
         if let reset {
             value += " - resets in \(reset)"
         }
-        metrics.append(MetricLine(label: label, value: value))
+        metrics.append(MetricLine(label: label, value: value, group: .quota))
     }
 
     private mutating func appendExtraUsage(_ extraUsage: [String: Any]) {
         guard (extraUsage["is_enabled"] as? Bool) == true else {
-            metrics.append(MetricLine(label: "Extra", value: "Disabled"))
+            metrics.append(MetricLine(label: "Extra", value: "Disabled", group: .quota))
             return
         }
 
         guard let usedCents = optionalNumber(extraUsage["used_credits"]),
               let limitCents = optionalNumber(extraUsage["monthly_limit"]),
               let utilization = optionalNumber(extraUsage["utilization"]) else {
-            metrics.append(MetricLine(label: "Extra", value: "Enabled"))
+            metrics.append(MetricLine(label: "Extra", value: "Enabled", group: .quota))
             return
         }
         var value = "\(formatUSD(usedCents / 100)) / \(formatUSD(limitCents / 100))"
@@ -184,7 +188,7 @@ struct ClaudeCodeUsage {
         if let reset = resetDescription(extraUsage["resets_at"]) {
             value += " - resets in \(reset)"
         }
-        metrics.append(MetricLine(label: "Extra", value: value))
+        metrics.append(MetricLine(label: "Extra", value: value, group: .quota))
     }
 }
 
@@ -199,4 +203,5 @@ struct MenuBarStatusEntry: Identifiable, Codable, Sendable {
     var provider: Provider
     var value: String
     var leadingText: String? = nil
+    var windowLabel: String? = nil
 }

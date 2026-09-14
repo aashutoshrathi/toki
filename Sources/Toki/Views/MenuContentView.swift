@@ -4,51 +4,67 @@ struct MenuContentView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
     @ObservedObject private var remoteServer = RemoteControlServer.shared
-    @State private var selectedTab: TokiTab = .accounts
-    @State private var showConfig = false
-    @State private var focusRemoteControlSettings = false
-    @State private var showChangelog = false
+    @ObservedObject var presentation: PopoverPresentationState
+    var onDismiss: () -> Void
+    var onFinishQuit: (Bool) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showMoreActions = false
     @State private var hoveredMoreAction: String?
 
-    private enum TokiTab: String, CaseIterable, Identifiable {
-        case accounts = "Accounts"
-        case agents = "Agents"
-        case analytics = "Analytics"
-        case events = "Events"
-
-        var id: String { rawValue }
-
-        var systemImage: String {
-            switch self {
-            case .accounts: return "person.crop.circle"
-            case .events: return "bell.badge"
-            case .agents: return "terminal"
-            case .analytics: return "chart.bar.xaxis"
-            }
-        }
-    }
-
     var body: some View {
         Group {
-            if showConfig {
+            switch presentation.page {
+            case .settings:
                 ConfigPage(
                     store: store,
                     updateChecker: updateChecker,
-                    focusRemoteControl: focusRemoteControlSettings
-                ) {
-                    showConfig = false
-                }
-            } else if showChangelog {
-                ChangelogPage { showChangelog = false }
-            } else {
+                    navigation: presentation.settings
+                ) { presentation.page = .main }
+            case .changelog:
+                ChangelogPage { presentation.page = .main }
+            case .main:
                 mainContent
             }
         }
+        .disabled(presentation.confirmingQuit)
+        .accessibilityHidden(presentation.confirmingQuit)
         // Keep the popover frame stable while switching tabs. Allowing the hosting controller to
         // follow each tab's preferred height makes AppKit re-anchor the panel while the menu bar
         // auto-hides, which can move the entire popover to the left edge of the screen.
-        .frame(width: popoverWidth(), height: popoverHeight(), alignment: .top)
+        .frame(width: popoverWidth(), height: presentation.contentHeight, alignment: .top)
+        .onExitCommand {
+            if presentation.confirmingQuit { onFinishQuit(false) }
+            else if !presentation.goBack() { onDismiss() }
+        }
+        .onChange(of: store.snapshots.map(\.id)) { _, ids in
+            presentation.retainPresentAccounts(ids)
+        }
+        .overlay {
+            if presentation.confirmingQuit { quitConfirmation }
+        }
+    }
+
+    private var quitConfirmation: some View {
+        ZStack {
+            Rectangle().fill(.regularMaterial)
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Save changes before quitting?").font(TokiTypography.heading)
+                Text("Your configuration or AI instructions have unsaved changes.")
+                    .font(TokiTypography.body)
+                Button("Save and Quit") {
+                    onFinishQuit(presentation.settings.saveDrafts(store: store))
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Discard and Quit", role: .destructive) {
+                    presentation.settings.discardDrafts()
+                    onFinishQuit(true)
+                }
+                Button("Cancel", role: .cancel) { onFinishQuit(false) }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .controlSize(.large)
+            .padding(24)
+        }
     }
 
     @ViewBuilder
@@ -85,18 +101,22 @@ struct MenuContentView: View {
                 // Nothing else is on screen during onboarding, so this is the one place the body
                 // itself can scroll without nesting inside a tab's own scroll view.
                 ScrollView(.vertical) {
-                    OnboardingView(store: store) { showConfig = true }
+                    OnboardingView(store: store) { presentation.openConfigEditor() }
                 }
                 .scrollBounceBehavior(.basedOnSize)
             } else {
-                // Connecting an account ends onboarding but not setup: the permissions Toki needs
-                // to actually be useful are still unanswered, so the first-run checklist stays
-                // until it is worked through or put away. Only for an install that started from
-                // nothing - an existing one finds the same list in Settings.
                 if store.preferences.setupChecklistStarted, !store.preferences.setupChecklistCompleted {
-                    SetupChecklistView(store: store, mode: .firstRun, showsDismiss: true)
-                        .padding(10)
-                        .contentSurface()
+                    HStack {
+                        Button("Finish optional setup") {
+                            presentation.settings.openPermissions()
+                            presentation.page = .settings
+                        }
+                            .buttonStyle(.borderless)
+                        Spacer()
+                        Button("Dismiss") { store.completeSetupChecklist() }
+                            .buttonStyle(.borderless)
+                    }
+                    .font(TokiTypography.supporting)
                 }
                 if store.preferences.aiInsightEnabled {
                     overview
@@ -140,11 +160,11 @@ struct MenuContentView: View {
                 .fixedSize()
 
             Text("v\(appVersion)")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
-                .functionalGlass(in: Capsule(), interactive: true)
+                .background(.fill.tertiary, in: Capsule())
                 .accessibilityLabel("Toki version \(appVersion)")
                 .onTapGesture(count: 7) {
                     store.toggleDebug()
@@ -181,8 +201,7 @@ struct MenuContentView: View {
         HStack(spacing: 8) {
             if remoteServer.isRunning {
                 Button {
-                    focusRemoteControlSettings = true
-                    showConfig = true
+                    presentation.openSettings(remoteControl: true)
                 } label: {
                     Image(systemName: "arcade.stick")
                         .frame(width: 13, height: 13)
@@ -215,6 +234,7 @@ struct MenuContentView: View {
                 }
                 .functionalControlStyle()
                 .disabled(store.isRefreshing || !store.isNetworkAvailable)
+                .accessibilityLabel(store.isRefreshing ? "Refreshing" : "Refresh usage")
                 .help(
                     store.isRefreshing
                         ? "Refreshing…"
@@ -240,15 +260,15 @@ struct MenuContentView: View {
 
             HStack(spacing: 5) {
                 Button {
-                    focusRemoteControlSettings = false
-                    showConfig = true
+                    presentation.openSettings()
                 } label: {
                     Image(systemName: "gearshape")
                         .frame(width: 13, height: 13)
                         .contentShape(Rectangle())
                 }
                 .functionalControlStyle()
-                .help("Settings")
+                .help("Settings (⌘,)")
+                .accessibilityLabel("Settings")
                 .pointerOnHover()
 
                 // A popover rather than a Menu: SwiftUI hands a Menu's rows to AppKit as
@@ -269,7 +289,7 @@ struct MenuContentView: View {
                 .popover(isPresented: $showMoreActions, arrowEdge: .bottom) {
                     VStack(alignment: .leading, spacing: 2) {
                         moreActionRow(title: "What's New", icon: "doc.text") {
-                            showChangelog = true
+                            presentation.page = .changelog
                         }
                         Divider()
                             .padding(.horizontal, 6)
@@ -325,92 +345,76 @@ struct MenuContentView: View {
         HStack(spacing: 2) {
             ForEach(TokiTab.allCases) { tab in
                 Button {
-                    selectedTab = tab
+                    presentation.select(tab)
                 } label: {
-                    Image(systemName: tab.systemImage)
-                    .overlay(alignment: .topTrailing) {
-                        if tab == .agents, !store.activeAgents.isEmpty {
-                            let blocked = store.activeAgents.filter(\.needsInput).count
-                            Text("\(blocked > 0 ? blocked : store.activeAgents.count)")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(2)
-                                .frame(minWidth: 12, minHeight: 12)
-                                .background(blocked > 0 ? Color.red : Color.blue, in: Circle())
-                                .offset(x: 8, y: -6)
-                        }
+                    VStack(spacing: 3) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 13, weight: .medium))
+                            .overlay(alignment: .topTrailing) {
+                                let blocked = store.activeAgents.filter(\.needsInput).count
+                                if tab == .agents, blocked > 0 {
+                                    Text("\(blocked)")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 4)
+                                        .background(Color.red, in: Capsule())
+                                        .offset(x: 10, y: -6)
+                                        .accessibilityLabel("\(blocked) agents need input")
+                                }
+                            }
+                        Text(tab.rawValue).font(TokiTypography.supporting)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .frame(maxWidth: .infinity, minHeight: 40)
                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(selectedTab == tab ? Color.primary : Color.secondary)
+                .foregroundStyle(presentation.selectedTab == tab ? Color.primary : Color.secondary)
                 .background(
-                    selectedTab == tab ? Color.accentColor.opacity(0.16) : Color.clear,
+                    presentation.selectedTab == tab ? Color.accentColor.opacity(0.16) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
                 .help(tab.rawValue)
                 .accessibilityLabel(tab.rawValue)
-                .accessibilityValue(selectedTab == tab ? "Selected" : "")
+                .accessibilityValue(presentation.selectedTab == tab ? "Selected" : "")
                 .pointerOnHover()
             }
         }
         .padding(3)
         .frame(maxWidth: .infinity)
-        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .functionalGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityLabel("Toki section")
     }
 
     private var tabContent: some View {
         Group {
-            switch selectedTab {
+            switch presentation.selectedTab {
             case .accounts:
                 accountsContent
             case .agents:
-                ActiveAgentsPanel(store: store)
+                ActiveAgentsPanel(store: store, presentation: presentation.accounts)
             case .analytics:
-                SpendAnalyticsPanel(store: store)
+                SpendAnalyticsPanel(store: store, presentation: presentation.analytics)
             case .events:
-                EventPanel(store: store)
+                EventPanel(store: store, presentation: presentation.events)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    // Active accounts first, then exhausted (0% remaining), then errored/not connected.
     private var sortedSnapshots: [AccountSnapshot] {
-        let order = Dictionary(store.snapshots.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
-        return store.snapshots.sorted { a, b in
-            let aPriority = accountSortPriority(a)
-            let bPriority = accountSortPriority(b)
-            if aPriority != bPriority { return aPriority < bPriority }
-            let aActivity = latestActivity(for: a)
-            let bActivity = latestActivity(for: b)
-            if aActivity != bActivity {
-                return (aActivity ?? .distantPast) > (bActivity ?? .distantPast)
-            }
-            return (order[a.id] ?? 0) < (order[b.id] ?? 0)
-        }
-    }
-
-    private func latestActivity(for snapshot: AccountSnapshot) -> Date? {
-        let agentActivity = store.activeAgents
-            .filter { $0.provider == snapshot.provider }
-            .compactMap { $0.lastActivity }
-            .max()
-        return [agentActivity, snapshot.lastActivity].compactMap { $0 }.max()
-    }
-
-    private func accountSortPriority(_ snapshot: AccountSnapshot) -> Int {
-        if snapshot.isError { return 2 }
-        if let ratio = snapshot.remainingRatio, ratio <= 0 { return 1 }
-        return 0
+        let byID = Dictionary(store.snapshots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ids = PopoverPresentationState.reconciledOrder(presentation.accountOrder, presentIDs: store.snapshots.map(\.id))
+        return ids.compactMap { byID[$0] }
     }
 
     private var accountsContent: some View {
         VStack(spacing: 0) {
             if showsQuotaRings {
-                QuotaRingsPanel(snapshots: store.snapshots) {
+                QuotaRingsPanel(
+                    snapshots: store.snapshots,
+                    quotaWindows: store.preferences.quotaDisplayWindows,
+                    presentation: presentation.accounts
+                ) {
                     var next = store.preferences
                     next.quotaRingsEnabled = false
                     store.updatePreferences(next)
@@ -431,9 +435,10 @@ struct MenuContentView: View {
                 let snapshots = sortedSnapshots
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
-                        AccountCard(snapshot: snapshot, store: store) { id in
+                        AccountCard(snapshot: snapshot, store: store, presentation: presentation.accounts) { id in
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                                    presentation.accountScrollID = id
                                     proxy.scrollTo(id, anchor: .top)
                                 }
                             }
@@ -447,15 +452,17 @@ struct MenuContentView: View {
                         }
                     }
                 }
+                .scrollTargetLayout()
                 .padding(.trailing, 8)
             }
+            .scrollPosition(id: $presentation.accountScrollID, anchor: .top)
             .frame(maxHeight: .infinity)
         }
     }
 
     private var showsQuotaRings: Bool {
         store.preferences.quotaRingsEnabled
-            && selectedTab == .accounts
+            && presentation.selectedTab == .accounts
             && store.snapshots.contains(where: { !$0.isError && $0.remainingRatio != nil })
     }
 

@@ -7,6 +7,16 @@ func popoverWidth() -> CGFloat {
     min(390, max(360, (NSScreen.main?.visibleFrame.width ?? 390) - 32))
 }
 
-func popoverHeight() -> CGFloat {
-    min(500, max(340, (NSScreen.main?.visibleFrame.height ?? 500) - 96))
+func popoverHeight(
+    insightEnabled: Bool = false,
+    quotaAccountCount: Int = 0,
+    visibleHeight: CGFloat? = nil
+) -> CGFloat {
+    // Quota space includes its header, padding, and the taller of the ring or account cards.
+    let quotaHeight: CGFloat = quotaAccountCount > 0
+        ? 60 + max(96, CGFloat(quotaAccountCount) * 56 + CGFloat(quotaAccountCount - 1) * 6)
+        : 0
+    let desiredHeight: CGFloat = 500 + (insightEnabled ? 64 : 0) + quotaHeight
+    let availableHeight = (visibleHeight ?? NSScreen.main?.visibleFrame.height ?? 596) - 96
+    return min(desiredHeight, max(0, availableHeight))
 }

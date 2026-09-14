@@ -13,9 +13,9 @@ final class CodexResetStateTests: XCTestCase {
             progressRatio: 0.89,
             resetCreditsAvailable: 2,
             metrics: [
-                MetricLine(label: "5h", value: "89% used - resets in 2h"),
-                MetricLine(label: "7d", value: "44% used - resets in 3d"),
-                MetricLine(label: "Resets", value: "2 available"),
+                MetricLine(label: "5h", value: "11% left - resets in 2h", group: .quota),
+                MetricLine(label: "7d", value: "56% left - resets in 3d", group: .quota),
+                MetricLine(label: "Resets", value: "2 available", group: .quota),
                 MetricLine(label: "Limit", value: "primary")
             ],
             primaryWindow: RateLimitWindow(label: "5h", percentLeft: 11, resetHint: "resets in 2h"),
@@ -31,7 +31,10 @@ final class CodexResetStateTests: XCTestCase {
         XCTAssertEqual(updated.primaryWindow?.percentLeft, 100)
         XCTAssertEqual(updated.secondaryWindow?.percentLeft, 100)
         XCTAssertEqual(updated.metrics.first(where: { $0.label == "Resets" })?.value, "1 available")
-        XCTAssertEqual(updated.metrics.first(where: { $0.label == "5h" })?.value, "0% used")
+        XCTAssertEqual(updated.metrics.first(where: { $0.label == "5h" })?.value, "100% left")
+        XCTAssertEqual(updated.metrics.first(where: { $0.label == "5h" })?.group, .quota)
+        XCTAssertEqual(updated.metrics.first(where: { $0.label == "Resets" })?.group, .quota)
+        XCTAssertEqual(updated.metrics.first(where: { $0.label == "5h" })?.id, snapshot.metrics[0].id)
         XCTAssertFalse(updated.metrics.contains(where: { $0.label == "Limit" }))
     }
 

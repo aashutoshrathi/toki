@@ -331,11 +331,13 @@ vm.runInContext(`renderUsage({accounts:[
   {id:"b",name:"Codex",remaining:0.11},
   {id:"c",name:"Grok",primary:"no quota API"}
 ],stale:true})`, render);
-assert.match(nodes["#usagesummary"].textContent, /^Codex 11% left/);
+assert.match(nodes["#usagesummary"].textContent, /^Account quota · Codex 11% left/);
 assert.match(nodes["#usagesummary"].textContent, /3 accounts/);
 assert.match(nodes["#usage"].innerHTML, /width:62%/);
 assert.match(nodes["#usage"].innerHTML, /u-fill low/);
 assert.match(nodes["#usage"].innerHTML, /no quota API/);
+assert.match(nodes["#usage"].innerHTML, /shared across sessions/);
+assert.match(nodes["#usage"].innerHTML, /11% left/);
 // A reading the Mac stopped refreshing says so rather than looking current, in the collapsed strip too.
 assert.match(nodes["#usage"].innerHTML, /out of date/);
 assert.match(nodes["#usagesummary"].textContent, /out of date/);

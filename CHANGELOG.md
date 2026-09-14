@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.3.4 - 2026-09-15
+
+### Added
+- **One quota window preference per provider.** Accounts can now be set to **Auto**, **5h**, or **7d**, and that single choice drives the menu bar, the quota rail, and the quota overview together, so the number in the menu bar and the number in the popover are always the same window. Auto shows whichever limit has the least left, preferring the weekly window when the two are level. If a provider stops reporting the window you picked, the display falls back to one it does report instead of going blank, and every compact display now labels the interval it is actually showing.
+- **Quota pacing and reset detail.** Each limit gets its own bar with a readable percentage and an hour-and-minute countdown to its reset, plus a pace marker showing whether you are ahead of or behind an even burn for the window. Compact account rows can trigger a reset directly.
+
+### Changed
+- **Settings, editors, and pairing now live inside the popover.** Navigation, scroll positions, account expansion, and in-progress editor drafts survive the popover closing, and unsaved edits are protected when quitting. The Accounts, Agents, Analytics, and Events pages were reworked for clearer agent identity and attention grouping, selectable daily activity and spend with separate currencies, and event filtering with date grouping and expandable detail. Remote Control setup separates required access from optional integrations and reads better on a phone.
+
+### Fixed
+- **Quota colors now match across light and dark appearance.**
+
 ## 3.3.3 - 2026-09-12
 
 ### Added

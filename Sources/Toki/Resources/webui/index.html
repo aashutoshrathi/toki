@@ -3,7 +3,8 @@
 <title>Toki Remote Control</title><link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#101216">
+<meta name="theme-color" content="#101216" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,13 +13,13 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="toki-mark" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="232" fill="#181a1f"/><g transform="translate(0 6)"><path d="M268 245H704L682 282L704 319H268C248 319 232 303 232 282C232 261 248 245 268 245Z" fill="#f4f1ea"/><path d="M520 600L636 484" fill="none" stroke="#f4f1ea" stroke-width="74" stroke-linecap="round" stroke-linejoin="round"/><path d="M465 354H539V626C539 664 558 671 600 671H704L684 708L704 745H566C502 745 465 708 465 636Z" fill="#f4f1ea"/><circle cx="502" cy="282" r="96" fill="#f4f1ea"/><circle cx="502" cy="282" r="48" fill="#181a1f"/><circle cx="746" cy="282" r="39" fill="#9bb5a7"/><circle cx="636" cy="484" r="39" fill="#f4f1ea"/><circle cx="744" cy="708" r="38" fill="#d3a45c"/></g></symbol></svg>
 <div id="pairing">
   <button type="button" id="pairhome" class="homebtn" aria-label="Restart connection" title="Restart connection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.4V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.4"/><path d="M9.5 21v-6h5v6"/></svg></button>
-  <form id="pairform">
+  <form id="pairform" novalidate>
     <div class="pair-brand"><svg width="28" height="28" aria-hidden="true"><use href="#toki-mark"/></svg><span>Toki Remote Control</span></div>
     <h2 id="pairtitle">Verify this device</h2>
     <p id="pairinstructions">Enter the six-digit code shown by Toki on your Mac.</p>
     <div id="paircontrols">
       <input id="paircode" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
-             autocomplete="one-time-code" placeholder="000 000" aria-label="Verification code">
+             autocomplete="one-time-code" placeholder="000 000" aria-label="Verification code" aria-describedby="pairinstructions pairstatus">
       <button type="submit">Connect</button>
     </div>
     <div id="connectmethods" hidden>
@@ -26,23 +27,23 @@
       <div class="or" id="scanor" hidden><span>or enter manually</span></div>
       <div id="manualfields">
         <input id="manualhost" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-               placeholder="your-mac.tailnet.ts.net" aria-label="Tailscale host">
+               placeholder="your-mac.tailnet.ts.net" aria-label="Tailscale host" aria-describedby="pairstatus">
         <input id="manualtoken" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-               placeholder="Connection token" aria-label="Connection token">
+               placeholder="Connection token" aria-label="Connection token" aria-describedby="pairstatus">
         <button type="button" id="manualconnect">Connect</button>
       </div>
     </div>
-    <div id="pairstatus"></div>
+    <div id="pairstatus" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="privacy-note"><strong>Private by design</strong><span>This is a static interface that runs in your browser. After verification, it connects directly to Toki on your Mac. Toki RC does not receive or store your agent data.</span></div>
   </form>
 </div>
 <div id="scanner" hidden>
   <div class="scan-stage"><video id="scanvideo" playsinline muted autoplay></video><div class="scan-box"></div></div>
-  <p id="scanhint">Point your camera at the QR code shown in Toki&#8217;s Connect window.</p>
+  <p id="scanhint">Point your camera at the QR code shown in Toki&#8217;s Connect page.</p>
   <div id="scanstatus" role="status" aria-live="polite"></div>
   <button type="button" id="scancancel">Cancel</button>
 </div>
-<header><div class="hdr-top"><button id="home" class="homebtn" type="button" aria-label="Restart connection" title="Restart connection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.4V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.4"/><path d="M9.5 21v-6h5v6"/></svg></button><h1><svg width="24" height="24" aria-label="Toki"><use href="#toki-mark"/></svg>Remote Control</h1><button id="privacytoggle" type="button" aria-pressed="false" aria-label="Hide agent names" title="Hide agent names"><svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.3 4.3M6.6 6.6A17.6 17.6 0 0 0 2 12s3.5 7 10 7a10.9 10.9 0 0 0 4.3-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg></button></div><div id="dd"><button id="ddbtn" type="button"></button><div id="ddlist"></div></div></header>
+<header><div class="hdr-top"><button id="home" class="homebtn" type="button" aria-label="Restart connection" title="Restart connection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.4V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.4"/><path d="M9.5 21v-6h5v6"/></svg></button><h1><svg width="24" height="24" aria-label="Toki"><use href="#toki-mark"/></svg>Remote Control</h1><button id="privacytoggle" type="button" aria-pressed="false" aria-label="Hide agent names" title="Hide agent names"><svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.3 4.3M6.6 6.6A17.6 17.6 0 0 0 2 12s3.5 7 10 7a10.9 10.9 0 0 0 4.3-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg></button></div><div id="dd"><button id="ddbtn" type="button" aria-label="Choose agent" aria-haspopup="listbox" aria-expanded="false" aria-controls="ddlist"></button><div id="ddlist" role="listbox" aria-label="Agents"></div></div></header>
 <div id="conn" role="status" hidden><span class="conn-dot"></span>Reconnecting to Toki on your Mac&#8230;</div>
 <button id="usagetoggle" type="button" hidden aria-expanded="false" aria-controls="usage"><span id="usagesummary"></span><span class="chev" aria-hidden="true"></span></button>
 <div id="usage" hidden></div>
@@ -54,7 +55,8 @@
     <div class="mm-head"><span id="mmlabel">Model picker: choose with the keys below</span><button id="modelclose" type="button">Done</button></div>
     <pre id="modelscreen" aria-live="polite"></pre>
   </div>
-  <div class="keys" aria-label="Terminal controls">
+  <button id="terminaltoggle" type="button" aria-expanded="false" aria-controls="terminalkeys">Terminal controls<span class="chev" aria-hidden="true"></span></button>
+  <div id="terminalkeys" class="keys" aria-label="Terminal controls" hidden>
     <button data-key="up" aria-label="Up arrow"><span>&#8593;</span><small>Up</small></button>
     <button data-key="down" aria-label="Down arrow"><span>&#8595;</span><small>Down</small></button>
     <button data-key="tab" aria-label="Tab"><span>&#8677;</span><small>Tab</small></button>
@@ -69,7 +71,7 @@
   <div class="composer">
     <div class="composer-top">
       <span class="composer-avatar" id="composeravatar" aria-hidden="true"></span>
-      <textarea id="msg" rows="1" placeholder="Reply to the agent&#8230;" aria-describedby="composerhint"></textarea>
+      <textarea id="msg" aria-label="Reply to the selected agent" rows="1" placeholder="Reply to the agent&#8230;" aria-describedby="composerhint"></textarea>
       <button id="expand" type="button" aria-label="Expand the composer" title="Expand the composer" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg></button>
     </div>
     <div class="composer-actions">

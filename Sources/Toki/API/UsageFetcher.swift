@@ -315,14 +315,14 @@ enum UsageFetcher {
         let ratio = limit > 0 ? max(min(remaining / limit, 1), 0) : nil
 
         var metrics = [
-            MetricLine(label: "Used", value: "\(formatCompact(used)) \(label)"),
-            MetricLine(label: "Limit", value: "\(formatCompact(limit)) \(label)")
+            MetricLine(label: "Used", value: "\(formatCompact(used)) \(label)", group: .quota),
+            MetricLine(label: "Limit", value: "\(formatCompact(limit)) \(label)", group: .quota)
         ]
         if let resetsAt = account.resetsAt {
-            metrics.append(MetricLine(label: "Resets", value: resetsAt))
+            metrics.append(MetricLine(label: "Resets", value: resetsAt, group: .quota))
         }
         if let nextReset = nextResetDate(for: account, state: state.accounts[account.id]) {
-            metrics.append(MetricLine(label: "Next reset", value: relativeDate(nextReset)))
+            metrics.append(MetricLine(label: "Next reset", value: relativeDate(nextReset), group: .quota))
         }
         if let notes = account.notes {
             metrics.append(MetricLine(label: "Note", value: notes))
@@ -336,7 +336,8 @@ enum UsageFetcher {
             subtitle: ratio.map { "\(Int(($0 * 100).rounded()))% remaining" } ?? "Consumer usage ledger",
             remainingRatio: ratio,
             metrics: metrics,
-            canAdjust: true
+            canAdjust: true,
+            progressKind: .quota
         )
     }
 

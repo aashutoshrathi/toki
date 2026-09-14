@@ -142,6 +142,28 @@ final class AgentDisambiguationTests: XCTestCase {
         XCTAssertEqual(result.map(\.title), ["A", "B"])
     }
 
+    func testPresentationUsesTerminalThenPIDOnlyForUnresolvedCollisions() {
+        let first = agent(pid: 1, title: "Audit", tty: "/dev/ttys004")
+        let differentTerminal = agent(pid: 2, title: "Audit", tty: "ttys005")
+        let distinct = SessionIdentityPresentation(agent: first, among: [first, differentTerminal])
+        XCTAssertEqual(distinct.title, "Audit")
+        XCTAssertEqual(distinct.detail, "Terminal · ttys004")
+
+        let sameTerminal = agent(pid: 3, title: "Audit", tty: "ttys004")
+        let collision = SessionIdentityPresentation(agent: first, among: [first, sameTerminal])
+        XCTAssertEqual(collision.detail, "Terminal · ttys004 · PID 1")
+    }
+
+    func testPresentationDoesNotRepeatTheScannerTerminalMarker() {
+        let agents = ActiveAgentScanner.disambiguate([
+            agent(pid: 1, title: "Audit", tty: "ttys004"),
+            agent(pid: 2, title: "Audit", tty: "ttys005")
+        ])
+        let identity = SessionIdentityPresentation(agent: agents[0], among: agents)
+        XCTAssertEqual(identity.title, "Audit")
+        XCTAssertEqual(identity.detail, "Terminal · ttys004")
+    }
+
     func testStartDateParsesETimeFormats() {
         let now = Date()
         // mm:ss
@@ -178,6 +200,24 @@ final class AgentOrderingTests: XCTestCase {
                      agent(pid: 2, activity: older, attention: blocked)]
 
         XCTAssertEqual(sortedIDs(before), sortedIDs(after))
+    }
+
+    @MainActor
+    func testPresentationPreservesOrderWithinGroupsAcrossScanReordering() {
+        let state = AccountPresentationState()
+        let first = agent(pid: 1, activity: Date(), attention: nil)
+        let second = agent(pid: 2, activity: Date(), attention: nil)
+        state.reconcileAgents([first, second])
+        state.reconcileAgents([second, first])
+        XCTAssertEqual(state.orderedAgents([second, first], needsInput: false).map(\.id), [1, 2])
+
+        let waiting = agent(pid: 2, activity: Date(), attention: AgentAttention(kind: .question, prompt: nil))
+        let newcomer = agent(pid: 3, activity: Date(), attention: nil)
+        state.reconcileAgents([newcomer, waiting, first])
+        XCTAssertEqual(state.orderedAgents([newcomer, waiting, first], needsInput: true).map(\.id), [2])
+        XCTAssertEqual(state.orderedAgents([newcomer, waiting, first], needsInput: false).map(\.id), [1, 3])
+        state.reconcileAgents([newcomer])
+        XCTAssertEqual(state.agentOrder, [3])
     }
 
     /// Mirrors the scanner's ordering rule: most recent activity first.

@@ -187,37 +187,6 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertFalse(step?.isRequestable ?? true)
     }
 
-    // "Allow all" is one dialog at a time, and the one that sends you to System Settings goes last
-    // so the rest are not stacked up behind a trip out of the app.
-    func testAskingForEverythingLeavesAccessibilityUntilLast() {
-        var facts = SetupFacts()
-        facts.automation = [
-            AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .pending),
-            AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .pending)
-        ]
-        let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts, mode: .firstRun))
-        XCTAssertEqual(
-            order.map(\.kind),
-            [.claudeKeychain, .notifications, .automation, .automation, .launchAtLogin, .accessibility]
-        )
-        // Two terminals keep the order the list showed them in.
-        XCTAssertEqual(order.filter { $0.kind == .automation }.map(\.subject),
-                       ["com.googlecode.iterm2", "com.apple.Terminal"])
-    }
-
-    func testAlreadyGrantedAndUnaskableStepsAreNotRequestedAgain() {
-        var facts = SetupFacts()
-        facts.keychainApproved = true
-        facts.accessibilityGranted = true
-        facts.launchAtLoginEnabled = true
-        facts.claudeSignInFound = true
-        facts.automation = [AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .blocked)]
-        let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts, mode: .firstRun))
-        // Notifications can't be read back, so it stays askable; everything else here is settled,
-        // refused (macOS won't ask twice), or not Toki's to ask for.
-        XCTAssertEqual(order.map(\.kind), [.notifications])
-    }
-
     func testEverythingOptionalIsMarkedAsOptional() {
         var facts = SetupFacts()
         facts.workspaceAppRunning = true
@@ -225,5 +194,49 @@ final class SetupChecklistTests: XCTestCase {
         facts.automation = [AutomationTarget(name: "iTerm", bundleID: "com.googlecode.iterm2", status: .pending)]
         let optional = steps(facts).filter(\.isOptional).map(\.kind)
         XCTAssertEqual(Set(optional), [.automation, .accessibility, .localNetwork])
+    }
+}
+
+final class SetupChecklistPresentationTests: XCTestCase {
+    func testUnusedIntegrationsDoNotBlockConnectedAccounts() {
+        var facts = SetupFacts()
+        facts.hasConnectedAccount = true
+        facts.notificationAuthorization = .denied
+        facts.automation = [AutomationTarget(name: "Terminal", bundleID: "com.apple.Terminal", status: .pending)]
+        let presentation = SetupChecklistPresentation(
+            steps: SetupChecklist.steps(from: facts, mode: .firstRun),
+            hasClaudeAccount: false
+        )
+        XCTAssertEqual(presentation.required.map(\.kind), [.account])
+        XCTAssertTrue(presentation.requiredOutstanding.isEmpty)
+        XCTAssertTrue(presentation.optional.contains { $0.kind == .claudeKeychain })
+        XCTAssertTrue(presentation.optional.contains { $0.kind == .notifications })
+        XCTAssertEqual(presentation.summary, "Usage access is ready")
+    }
+
+    func testConfiguredClaudeWithUnreadableSignInRequiresAttention() {
+        var facts = SetupFacts()
+        facts.hasConnectedAccount = true
+        facts.claudeAccountConfigured = true
+        facts.keychainApproved = true
+        let presentation = SetupChecklistPresentation(
+            steps: SetupChecklist.steps(from: facts),
+            hasClaudeAccount: true
+        )
+        XCTAssertEqual(presentation.requiredOutstanding.map(\.kind), [.claudeKeychain])
+        XCTAssertEqual(presentation.summary, "1 required step needs attention")
+    }
+
+    func testFreshInstallRequiresAnAccountWithoutOptionalPermissionPressure() {
+        let presentation = SetupChecklistPresentation(
+            steps: SetupChecklist.steps(from: SetupFacts(), mode: .firstRun),
+            hasClaudeAccount: false
+        )
+        XCTAssertEqual(presentation.requiredOutstanding.map(\.kind), [.account])
+        XCTAssertEqual(presentation.optional.count, 5)
+    }
+
+    func testUnloadedChecklistDoesNotClaimReady() {
+        XCTAssertEqual(SetupChecklistPresentation(steps: [], hasClaudeAccount: false).summary, "Checking access…")
     }
 }

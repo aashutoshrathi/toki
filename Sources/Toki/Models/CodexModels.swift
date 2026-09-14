@@ -23,28 +23,30 @@ struct CodexUsage {
         let buckets = dailyBuckets(in: data)
         if let todayBucket = bucketForToday(buckets) {
             todayTokens = optionalNumber(firstValue(todayBucket, keys: ["tokens"]))
-        } else if let latestBucket = latestBucket(buckets) {
-            todayTokens = optionalNumber(firstValue(latestBucket, keys: ["tokens"]))
         }
 
         if let todayTokens {
-            metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayTokens)) tokens"))
+            metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayTokens)) tokens", group: .activity))
+        } else if let bucket = latestBucket(buckets),
+                  let tokens = optionalNumber(firstValue(bucket, keys: ["tokens"])),
+                  let day = firstValue(bucket, keys: ["start_date", "startDate"]) as? String {
+            metrics.append(MetricLine(label: "Latest day", value: "\(formatCompact(tokens)) tokens · \(day.prefix(10))", group: .activity))
         }
         if let lifetime = summaryMetric("lifetime_tokens", "lifetimeTokens") {
-            metrics.append(MetricLine(label: "Lifetime", value: "\(formatCompact(lifetime)) tokens"))
+            metrics.append(MetricLine(label: "Lifetime", value: "\(formatCompact(lifetime)) tokens", group: .activity))
         }
         if let peak = summaryMetric("peak_daily_tokens", "peakDailyTokens") {
-            metrics.append(MetricLine(label: "Peak day", value: "\(formatCompact(peak)) tokens"))
+            metrics.append(MetricLine(label: "Peak day", value: "\(formatCompact(peak)) tokens", group: .activity))
         }
         if let longestTurn = summaryMetric("longest_running_turn_sec", "longestRunningTurnSec"),
            longestTurn > 0 {
-            metrics.append(MetricLine(label: "Longest turn", value: formatDuration(seconds: longestTurn)))
+            metrics.append(MetricLine(label: "Longest turn", value: formatDuration(seconds: longestTurn), group: .activity))
         }
         if let currentStreak = summaryMetric("current_streak_days", "currentStreakDays") {
-            metrics.append(MetricLine(label: "Current streak", value: "\(Int(currentStreak)) days"))
+            metrics.append(MetricLine(label: "Current streak", value: "\(Int(currentStreak)) days", group: .activity))
         }
         if let longestStreak = summaryMetric("longest_streak_days", "longestStreakDays") {
-            metrics.append(MetricLine(label: "Longest streak", value: "\(Int(longestStreak)) days"))
+            metrics.append(MetricLine(label: "Longest streak", value: "\(Int(longestStreak)) days", group: .activity))
         }
     }
 
@@ -132,14 +134,14 @@ struct CodexRateLimits {
                 if let expiry = resetCreditExpiry {
                     value += " · expires \(resetDescription(for: expiry))"
                 }
-                metrics.append(MetricLine(label: "Resets", value: value))
+                metrics.append(MetricLine(label: "Resets", value: value, group: .quota))
             }
         }
         if let credits = limits["credits"] as? [String: Any] {
             appendCredits(credits)
         }
         if let reached = firstValue(limits, keys: ["rateLimitReachedType"]) as? String, !reached.isEmpty {
-            metrics.append(MetricLine(label: "Limit", value: reached))
+            metrics.append(MetricLine(label: "Limit", value: reached, group: .quota))
         }
     }
 
@@ -205,15 +207,19 @@ struct CodexRateLimits {
             remainingRatio = 1 - (clampedUsed / 100)
         }
 
-        let summary = RateLimitWindow(label: label, percentLeft: percentLeft, resetHint: resetText)
+        let summary = RateLimitWindow(
+            label: label, percentLeft: percentLeft, resetHint: resetText,
+            resetAt: optionalNumber(window["resetsAt"]).map { Date(timeIntervalSince1970: $0) },
+            duration: optionalNumber(window["windowDurationMins"]).map { $0 * 60 }
+        )
         switch slot {
         case .primary: primaryWindow = summary
         case .secondary: secondaryWindow = summary
         }
 
-        var value = "\(Int(clampedUsed.rounded()))% used"
+        var value = "\(Int((100 - clampedUsed).rounded()))% left"
         if let resetText { value += " - \(resetText)" }
-        metrics.append(MetricLine(label: label, value: value))
+        metrics.append(MetricLine(label: label, value: value, group: .quota))
     }
 
     private func windowLabel(_ window: [String: Any], fallback: String) -> String {
@@ -229,14 +235,14 @@ struct CodexRateLimits {
 
     private mutating func appendCredits(_ credits: [String: Any]) {
         if let unlimited = credits["unlimited"] as? Bool, unlimited {
-            metrics.append(MetricLine(label: "Credits", value: "Unlimited"))
+            metrics.append(MetricLine(label: "Credits", value: "Unlimited", group: .quota))
             return
         }
         if let hasCredits = credits["hasCredits"] as? Bool {
-            metrics.append(MetricLine(label: "Credits", value: hasCredits ? "Available" : "Depleted"))
+            metrics.append(MetricLine(label: "Credits", value: hasCredits ? "Available" : "Depleted", group: .quota))
         }
         if let balance = credits["balance"] as? String, !balance.isEmpty {
-            metrics.append(MetricLine(label: "Balance", value: balance))
+            metrics.append(MetricLine(label: "Balance", value: balance, group: .quota))
         }
     }
 }
@@ -259,13 +265,13 @@ struct CodexAccountInfo {
 
         var lines: [MetricLine] = []
         if let type = firstValue(account, keys: ["type"]) as? String {
-            lines.append(MetricLine(label: "Account type", value: type))
+            lines.append(MetricLine(label: "Account type", value: type, group: .account))
         }
         if let plan = firstValue(account, keys: ["planType"]) as? String {
-            lines.append(MetricLine(label: "Plan", value: plan))
+            lines.append(MetricLine(label: "Plan", value: plan, group: .account))
         }
         if let email = firstValue(account, keys: ["email"]) as? String, !email.isEmpty {
-            lines.append(MetricLine(label: "Email", value: email))
+            lines.append(MetricLine(label: "Email", value: email, group: .account))
         }
         return lines
     }

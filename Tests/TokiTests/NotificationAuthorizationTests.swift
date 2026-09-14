@@ -113,21 +113,6 @@ final class NotificationChecklistStepTests: XCTestCase {
         XCTAssertEqual(row.status, .done)
         XCTAssertNil(row.actionLabel)
     }
-
-    // The pass exists to bring dialogs forward; an unasked notification permission is one.
-    func testUnaskedRowJoinsTheAllowAllPass() {
-        var facts = SetupFacts()
-        facts.notificationAuthorization = .notDetermined
-        let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts))
-        XCTAssertTrue(order.contains { $0.kind == .notifications })
-    }
-
-    func testDeniedRowIsLeftOutOfTheAllowAllPass() {
-        var facts = SetupFacts()
-        facts.notificationAuthorization = .denied
-        let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts))
-        XCTAssertFalse(order.contains { $0.kind == .notifications })
-    }
 }
 
 // Accessibility is granted in System Settings rather than a dialog, and macOS only hands the
@@ -160,18 +145,31 @@ final class AccessibilityStepTests: XCTestCase {
         XCTAssertTrue(detail.contains("restart"), "the row has to say what the button is for")
     }
 
-    // Requesting twice in the "allow all" pass would open System Settings a second time.
-    func testARequestedRowDropsOutOfTheAllowAllPass() {
-        var facts = SetupFacts()
-        facts.accessibilityRequested = true
-        facts.workspaceAppRunning = true
-        let order = SetupChecklist.requestOrder(SetupChecklist.steps(from: facts))
-        XCTAssertFalse(order.contains { $0.kind == .accessibility })
-    }
-
     // Granted is granted: the row goes away whether or not it was asked for in this run.
     func testAGrantedPermissionShowsNoRowEitherWay() {
         XCTAssertNil(step(requested: true, granted: true))
         XCTAssertNil(step(requested: false, granted: true))
+    }
+}
+
+final class EventPresentationTests: XCTestCase {
+    func testGroupingUsesLocalDaysAndFiltersWithoutRemovingOtherEvents() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 19_800))
+        let parse = ISO8601DateFormatter()
+        let beforeMidnight = try XCTUnwrap(parse.date(from: "2026-09-13T18:29:00Z"))
+        let afterMidnight = try XCTUnwrap(parse.date(from: "2026-09-13T18:31:00Z"))
+        let events = [
+            TokiEvent(timestamp: beforeMidnight, kind: .session, title: "Earlier", detail: "A", deliveredNotification: false),
+            TokiEvent(timestamp: afterMidnight, kind: .notification, title: "Later", detail: "B", deliveredNotification: true)
+        ]
+        let groups = EventPresentationState.sections(events, filter: nil, calendar: calendar)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(groups.first?.events.first?.title, "Later")
+        XCTAssertEqual(EventPresentationState.dateLabel(groups[0].day, now: afterMidnight, calendar: calendar), "Today")
+        XCTAssertEqual(EventPresentationState.dateLabel(groups[1].day, now: afterMidnight, calendar: calendar), "Yesterday")
+        XCTAssertEqual(EventPresentationState.sections(events, filter: .session, calendar: calendar).flatMap(\.events).map(\.title), ["Earlier"])
+        XCTAssertTrue(EventPresentationState.sections(events, filter: .reset, calendar: calendar).isEmpty)
+        XCTAssertEqual(events.count, 2)
     }
 }
