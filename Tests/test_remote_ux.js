@@ -3,6 +3,7 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const root = path.join(__dirname, "..", "Sources", "Toki", "Resources", "webui");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
@@ -179,14 +180,7 @@ const wanted = new Set([
 const missing = [...wanted].filter(id => !pageIds.has(id) && !RUNTIME_IDS.has(id));
 assert.deepEqual(missing, [], "app.js selects ids that index.html does not define: " + missing);
 
-console.log("remote mobile UX tests passed");
-
-// Behavioral coverage of the browser boundary complements the markup contracts above.
-{
-const vm = require("node:vm");
-const source = app;
-// Exercise the page's event logic with the browser boundary replaced. Polling replaces option
-// nodes, so a source assertion alone cannot establish that keyboard focus survives the update.
+// Replacing option nodes on each poll must preserve keyboard focus.
 const document = { activeElement: null };
 function node(id, dataset = {}) {
   const classes = new Set();
@@ -197,7 +191,6 @@ function node(id, dataset = {}) {
       toggle(name, on) { if (on) classes.add(name); else classes.delete(name); },
     },
     setAttribute(name, value) { this.attrs[name] = String(value); },
-    getAttribute(name) { return this.attrs[name]; },
     focus() { document.activeElement = this; },
     scrollIntoView() {},
     contains(other) { return this.children.includes(other); },
@@ -244,7 +237,7 @@ const context = vm.createContext({
 });
 for (const name of ["setPairStatus", "setAgentListOpen", "handleAgentPickerKeydown", "renderAgents",
   "updateComposer", "setTerminalControlsOpen", "openMirror", "closeModelMirror"]) {
-  const found = source.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
+  const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
   assert.ok(found, name + " must be a top-level function");
   vm.runInContext(found[0], context);
 }
@@ -324,6 +317,4 @@ assert.equal(nodes["#pairstatus"].textContent, "Enter all six digits.");
 run("setPairStatus('Network unavailable')");
 assert.equal(nodes["#paircode"].attrs["aria-invalid"], "false", "network failures are not invalid codes");
 
-console.log("remote keyboard, disclosure, pairing accessibility and send-gate tests passed");
-
-}
+console.log("remote mobile UX and accessibility tests passed");

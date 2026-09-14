@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-// Embedded in the Settings route; Done returns to management without stopping sessions.
 struct RemoteConnectSheet: View {
     @ObservedObject private var server = RemoteControlServer.shared
     var onDone: () -> Void

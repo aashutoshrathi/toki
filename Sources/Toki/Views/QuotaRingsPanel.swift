@@ -27,8 +27,6 @@ struct QuotaRingsPanel: View {
             }
 
             if presentation.quotaOverviewExpanded {
-                // Cards fill the available width instead of a fixed 150; the HStack spacing keeps a
-                // comfortable gap to the ring so the wider cards never feel crowded against it.
                 HStack(alignment: .center, spacing: 14) {
                     VStack(spacing: 6) {
                         ForEach(ringSnapshots) { snapshot in

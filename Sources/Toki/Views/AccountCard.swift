@@ -517,8 +517,6 @@ struct AccountCard: View {
         } else if snapshot.provider == .codex, snapshot.resetCreditsAvailable > 0 {
             resetCreditAction
         } else if snapshot.remainingRatio == nil {
-            // The source supplies the reporting period; compact costs may describe a
-            // billing cycle even when another provider reports today's spend.
             VStack(alignment: .trailing, spacing: 2) {
                 if let bar = snapshot.menuBarValue {
                     Text(bar)

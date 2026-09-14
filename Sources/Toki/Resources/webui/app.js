@@ -793,7 +793,6 @@ function closeModelMirror() {
 function setTerminalControlsOpen(open) {
   $("#terminalkeys").hidden = !open;
   $("#terminaltoggle").setAttribute("aria-expanded", String(open));
-  sizeAgentList();
 }
 
 let notifiedAttention = {};

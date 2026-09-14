@@ -44,7 +44,6 @@ struct RailPanel: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hoveredID)
     }
 
-    // Two rows plus the title, or one row for a provider with a single window.
     private func cardHeight(for snapshot: AccountSnapshot) -> CGFloat {
         let rows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }.count + snapshot.modelWindows.count
         return RailGeometry.detailCardHeight(windowCount: rows)

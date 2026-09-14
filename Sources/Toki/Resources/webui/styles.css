@@ -338,7 +338,6 @@ input{flex:1;padding:11px;border-radius:var(--r-sm);background:var(--surface-2);
                  display:flex;align-items:center;justify-content:center}
 .composer button:active{background:var(--surface-3)}
 .composer button svg{width:20px;height:20px;fill:currentColor}
-#expand{width:44px;min-width:44px;height:44px}
 #expand svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;
             stroke-linecap:round;stroke-linejoin:round}
 #send{width:auto;min-width:60px;height:44px;padding:0 16px;border-radius:22px;
@@ -418,7 +417,6 @@ footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.4
 .u-scope{padding:4px 0 6px;color:var(--text-2);font-size:12px}
 input[aria-invalid="true"]{border-color:var(--danger)}
 #pairstatus:empty{visibility:hidden}
-/* Layout and status changes stay immediate when system motion is reduced. */
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
   button:not(:disabled):active{transform:none}

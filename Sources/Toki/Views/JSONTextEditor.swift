@@ -85,10 +85,8 @@ struct JSONTextEditor: NSViewRepresentable {
                 }
             }
 
-            // Order matters only for readability here, not correctness - each pattern only
-            // matches its own token kind, so overlapping recolors can't happen.
             highlight("\"(?:[^\"\\\\]|\\\\.)*\"(?=\\s*:)", color: .systemPurple) // keys
-            highlight("\"(?:[^\"\\\\]|\\\\.)*\"(?!\\s*:)", color: .systemBlue) // string values (object values and array elements alike)
+            highlight("\"(?:[^\"\\\\]|\\\\.)*\"(?!\\s*:)", color: .systemBlue) // string values
             highlight("(?<![\\w\"])-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?", color: .labelColor) // numbers
             highlight("\\btrue\\b|\\bfalse\\b|\\bnull\\b", color: .systemPurple) // literals
 

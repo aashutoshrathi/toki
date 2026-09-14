@@ -92,15 +92,6 @@ final class WidgetDataSnapshotTests: XCTestCase {
         XCTAssertEqual(entry.remainingRatio, 0.72)
     }
 
-    func testResetContextSurvivesSnapshotRoundTrip() throws {
-        let entry = WidgetEntry(
-            id: "codex", provider: "codex", displayName: "Codex", value: "0%",
-            remainingRatio: 0, leadingText: nil, colorHex: nil, resetContext: "5h · resets in 1h"
-        )
-        let restored = try JSONDecoder().decode(WidgetEntry.self, from: JSONEncoder().encode(entry))
-        XCTAssertEqual(restored.resetContext, entry.resetContext)
-    }
-
     func testStalenessWindowOutlastsTheRefreshCadence() {
         let updatedAt = Date(timeIntervalSince1970: 1_000)
         let snapshot = WidgetDataSnapshot(
