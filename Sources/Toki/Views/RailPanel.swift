@@ -42,6 +42,7 @@ struct RailPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hoveredID)
+        .environment(\.colorScheme, .dark)
     }
 
     private func cardHeight(for snapshot: AccountSnapshot) -> CGFloat {

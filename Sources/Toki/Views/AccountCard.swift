@@ -558,24 +558,27 @@ struct AccountCard: View {
             }
             .font(TokiTypography.supporting)
             .foregroundStyle(.secondary)
-            ProgressView(value: min(1, max(0, ratio)))
-                .tint(progressTint(ratio))
-                .scaleEffect(y: 0.65, anchor: .center)
-                .frame(height: 4)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.primary.opacity(0.12))
+                    Capsule()
+                        .fill(progressTint(ratio))
+                        .frame(width: geometry.size.width * min(1, max(0, ratio)))
+                }
                 .overlay {
                     if let paceRatio {
-                        GeometryReader { geometry in
-                            Capsule()
-                                .fill(.primary.opacity(0.8))
-                                .frame(width: 2, height: 10)
-                                .position(
-                                    x: min(geometry.size.width - 1, max(1, geometry.size.width * paceRatio)),
-                                    y: geometry.size.height / 2
-                                )
-                        }
-                        .allowsHitTesting(false)
+                        Capsule()
+                            .fill(.primary.opacity(0.8))
+                            .frame(width: 2, height: 10)
+                            .position(
+                                x: min(geometry.size.width - 1, max(1, geometry.size.width * paceRatio)),
+                                y: geometry.size.height / 2
+                            )
+                            .allowsHitTesting(false)
                     }
                 }
+            }
+            .frame(height: 4)
             if let paceHint {
                 Text(paceHint)
                     .font(TokiTypography.supporting)
