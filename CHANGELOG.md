@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.3.4 - 2026-09-15
 
 ### Added
 - **One quota window preference per provider.** Accounts can now be set to **Auto**, **5h**, or **7d**, and that single choice drives the menu bar, the quota rail, and the quota overview together, so the number in the menu bar and the number in the popover are always the same window. Auto shows whichever limit has the least left, preferring the weekly window when the two are level. If a provider stops reporting the window you picked, the display falls back to one it does report instead of going blank, and every compact display now labels the interval it is actually showing.
