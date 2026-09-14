@@ -26,8 +26,8 @@ struct RailGeometry: Equatable {
     /// run down the whole edge on a machine with many accounts connected.
     static let maxRows = 4
 
-    /// Height of one row: the ring plus the percentage printed under it.
-    static let rowHeight: CGFloat = ringDiameter + 15
+    /// Height of one row: the ring, percentage, and quota period printed under it.
+    static let rowHeight: CGFloat = ringDiameter + 25
 
     static let maxDetailWindows = 3
 

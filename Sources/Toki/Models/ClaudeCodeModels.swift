@@ -203,4 +203,5 @@ struct MenuBarStatusEntry: Identifiable, Codable, Sendable {
     var provider: Provider
     var value: String
     var leadingText: String? = nil
+    var windowLabel: String? = nil
 }

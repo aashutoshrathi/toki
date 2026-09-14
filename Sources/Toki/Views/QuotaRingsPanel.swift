@@ -4,6 +4,7 @@ import SwiftUI
 struct QuotaRingsPanel: View {
     @Environment(\.colorScheme) private var colorScheme
     let snapshots: [AccountSnapshot]
+    var quotaWindows: [String: String] = [:]
     @ObservedObject var presentation: AccountPresentationState
     var onHide: () -> Void = {}
     @State private var hoveredSnapshotID: String?
@@ -115,24 +116,23 @@ struct QuotaRingsPanel: View {
             }
         }
         .pointerOnHover()
+        .accessibilityElement(children: .combine)
     }
 
     private var ringSnapshots: [AccountSnapshot] {
         var seen = Set<String>()
-        return snapshots.filter {
+        return snapshots.map {
+            Self.overviewSnapshot($0, preferredWindow: quotaWindows[$0.provider.rawValue])
+        }.filter {
             !$0.isError
                 && !$0.isLoadingPlaceholder
                 && $0.remainingRatio != nil
                 && seen.insert($0.id).inserted
-        }.map(Self.overviewSnapshot)
+        }
     }
 
-    nonisolated static func overviewSnapshot(_ snapshot: AccountSnapshot) -> AccountSnapshot {
-        let windows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
-        guard let window = windows.sorted(by: {
-            if $0.percentLeft != $1.percentLeft { return $0.percentLeft < $1.percentLeft }
-            return $0.label == "7d" && $1.label != "7d"
-        }).first else { return snapshot }
+    nonisolated static func overviewSnapshot(_ snapshot: AccountSnapshot, preferredWindow: String? = nil) -> AccountSnapshot {
+        guard let window = displayQuotaWindow(for: snapshot, preferredWindow: preferredWindow) else { return snapshot }
         var displayed = snapshot
         displayed.primaryWindow = window
         displayed.remainingRatio = Double(window.percentLeft) / 100
@@ -229,7 +229,7 @@ private struct QuotaRingsView: View {
                 .map { snap in
                     let alias = snap.name.trimmingCharacters(in: .whitespacesAndNewlines)
                     let label = alias.isEmpty ? snap.provider.displayName : alias
-                    return "\(label), \(percentText(snap.remainingRatio ?? 0)) remaining"
+                    return "\(label), \(percentText(snap.remainingRatio ?? 0)) remaining\(snap.primaryWindow.map { ", \($0.label) window" } ?? "")"
                 }
                 .joined(separator: "; ")
         )

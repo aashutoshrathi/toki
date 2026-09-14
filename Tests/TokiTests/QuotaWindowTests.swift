@@ -142,4 +142,20 @@ final class QuotaWindowTests: XCTestCase {
         XCTAssertNil(limited.primaryWindow?.resetHint)
         XCTAssertEqual(limited.remainingRatio, 0.25)
     }
+
+    func testOverviewUsesPreferredWindowAndFallsBackWhenUnavailable() {
+        let fiveHour = RateLimitWindow(label: "5h", percentLeft: 75, resetHint: "in 4h")
+        let weekly = RateLimitWindow(label: "7d", percentLeft: 10, resetHint: "in 6d")
+        let snapshot = AccountSnapshot(
+            id: "claude", name: "Claude", provider: .claudeCode,
+            primary: "10% left", subtitle: "", remainingRatio: 0.1, metrics: [],
+            primaryWindow: fiveHour, secondaryWindow: weekly
+        )
+
+        for (preference, expected) in [("5h", fiveHour), ("7d", weekly), ("unavailable", weekly)] {
+            let displayed = QuotaRingsPanel.overviewSnapshot(snapshot, preferredWindow: preference)
+            XCTAssertEqual(displayed.primaryWindow, expected, "Preference: \(preference)")
+            XCTAssertEqual(displayed.remainingRatio, Double(expected.percentLeft) / 100)
+        }
+    }
 }

@@ -308,7 +308,9 @@ private struct NotchPanel: View {
         .onHover(perform: onHoverChange)
         .pointerOnHover()
         .accessibilityLabel("Open Toki")
-        .accessibilityValue(entries.map { "\($0.provider.displayName), \($0.value)" }.joined(separator: "; "))
+        .accessibilityValue(entries.map { entry in
+            "\(entry.leadingText ?? entry.provider.displayName), \(entry.value)\(entry.windowLabel.map { ", \($0) window" } ?? "")"
+        }.joined(separator: "; "))
         .accessibilityHint("View account usage and active agents")
     }
 

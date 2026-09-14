@@ -177,6 +177,10 @@ struct SettingsPanel: View {
 
         railModeRow.id("rail")
 
+        if pinnableProviders.contains(where: { !quotaWindowLabels(for: $0).isEmpty }) {
+            quotaWindowCard.id("quota-window")
+        }
+
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 cardLabel(
@@ -527,6 +531,64 @@ struct SettingsPanel: View {
                 .padding(.bottom, 4)
             }
         }
+    }
+
+    private var quotaWindowCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            cardLabel(
+                icon: "clock",
+                iconColor: .secondary,
+                title: "Quota window",
+                subtitle: "Menu bar, quota rail, and quota overview."
+            )
+            .padding(8)
+
+            ForEach(pinnableProviders, id: \.self) { provider in
+                let windows = quotaWindowLabels(for: provider)
+                if !windows.isEmpty {
+                    HStack(spacing: 8) {
+                        Text(provider.displayName)
+                            .padding(.leading, 26)
+                        Spacer(minLength: 8)
+                        if windows.count > 1 {
+                            Picker("\(provider.displayName) quota window", selection: Binding(
+                                get: {
+                                    let selected = store.preferences.quotaDisplayWindows[provider.rawValue] ?? ""
+                                    return windows.contains(selected) ? selected : ""
+                                },
+                                set: { selected in
+                                    var next = store.preferences
+                                    next.quotaDisplayWindows[provider.rawValue] = selected.isEmpty ? nil : selected
+                                    store.updatePreferences(next)
+                                }
+                            )) {
+                                Text("Auto").tag("")
+                                ForEach(windows, id: \.self) { Text($0).tag($0) }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .controlSize(.small)
+                            .fixedSize()
+                            .help("Auto shows the available limit with the least quota remaining.")
+                        } else {
+                            Text(windows[0])
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.system(size: 11))
+                    .padding(8)
+                }
+            }
+        }
+    }
+
+    private func quotaWindowLabels(for provider: Provider) -> [String] {
+        let snapshot = store.snapshots.first { $0.provider == provider && $0.switchTarget == nil && !$0.isError }
+            ?? store.snapshots.first { $0.provider == provider && !$0.isError }
+        return [snapshot?.primaryWindow, snapshot?.secondaryWindow].compactMap { $0?.label }
+            .reduce(into: []) { labels, label in
+                if !labels.contains(label) { labels.append(label) }
+            }
     }
 
     // Driven off connected accounts rather than the full Provider list, so the choices are

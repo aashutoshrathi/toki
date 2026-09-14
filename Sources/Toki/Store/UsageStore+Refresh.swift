@@ -69,7 +69,8 @@ extension UsageStore {
             for: snapshots,
             mode: preferences.menuBarMode,
             pinnedProviders: preferences.menuBarPinnedProviders,
-            density: preferences.menuBarDensity
+            density: preferences.menuBarDensity,
+            quotaWindows: preferences.quotaDisplayWindows
         )
         // Logo-only is empty on purpose; every other mode falling empty means there is nothing
         // to report yet, and the placeholder keeps the status item from collapsing.

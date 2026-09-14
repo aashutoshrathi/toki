@@ -37,6 +37,7 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertFalse(state.preferences.notchModeEnabled, "a missing field must fall back to its default")
         XCTAssertTrue(state.preferences.aiInsightEnabled, "a missing field must keep the insight visible")
         XCTAssertTrue(state.preferences.quotaRingsEnabled, "a missing field adopts the current default — rings are now on by default")
+        XCTAssertTrue(state.preferences.quotaDisplayWindows.isEmpty)
     }
 
     // The general rule, not just the one field: any subset of preferences must decode.
@@ -62,8 +63,22 @@ final class StateCompatibilityTests: XCTestCase {
         preferences.historyRetentionDays = 21
         preferences.aiInsightEnabled = false
         preferences.quotaRingsEnabled = true
+        preferences.quotaDisplayWindows = ["claudeCode": "5h", "codex": "7d"]
         let data = try JSONEncoder.toki.encode(preferences)
         XCTAssertEqual(try JSONDecoder.toki.decode(AppPreferences.self, from: data), preferences)
+    }
+
+    func testUnknownQuotaChoicesPreserveTheRestOfTheState() throws {
+        let state = try decodeState(#"{"preferences":{"quotaDisplayWindows":{"claudeCode":"5h","futureProvider":"14d"},"dndEnabled":true}}"#)
+        XCTAssertEqual(state.preferences.quotaDisplayWindows["claudeCode"], "5h")
+        XCTAssertTrue(state.preferences.dndEnabled)
+    }
+
+    func testOldMenuBarEntriesDecodeWithoutAWindowLabel() throws {
+        let data = Data(#"{"provider":"codex","value":"42%"}"#.utf8)
+        let entry = try JSONDecoder.toki.decode(MenuBarStatusEntry.self, from: data)
+        XCTAssertEqual(entry.value, "42%")
+        XCTAssertNil(entry.windowLabel)
     }
 
     // Retired menu bar modes must map onto their replacements rather than throw. Decoding

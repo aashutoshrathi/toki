@@ -66,7 +66,15 @@ struct MenuBarStatusView: View {
                 .font(.system(size: metrics.textSize, weight: .regular, design: .monospaced))
                 .foregroundStyle(.primary)
                 .frame(minWidth: metrics.valueMinWidth, alignment: .trailing)
+            if let windowLabel = entry.windowLabel {
+                Text(windowLabel)
+                    .font(.system(size: max(metrics.textSize - 3, 8), weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(entry.leadingText ?? entry.provider.displayName), \(entry.value)\(entry.windowLabel.map { ", \($0) window" } ?? "")")
     }
 
     private var metrics: Metrics { Metrics(density: density) }

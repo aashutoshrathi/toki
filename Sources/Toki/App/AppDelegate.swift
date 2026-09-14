@@ -201,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task { @MainActor in
             for await snapshots in store.$snapshots.values {
                 RemoteControlServer.shared.updateUsage(snapshots)
-                railController?.update(snapshots: snapshots)
+                railController?.update(snapshots: snapshots, quotaWindows: store.preferences.quotaDisplayWindows)
                 if !popover.isShown { updatePopoverHeight() }
             }
         }
@@ -279,10 +279,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if railController == nil {
             railController = RailWindowController(
                 snapshots: store.snapshots,
+                quotaWindows: store.preferences.quotaDisplayWindows,
                 onClick: { [weak self] in self?.togglePopover() }
             )
         }
-        railController?.update(snapshots: store.snapshots)
+        railController?.update(snapshots: store.snapshots, quotaWindows: store.preferences.quotaDisplayWindows)
     }
 
     private func installCLISymlink() {

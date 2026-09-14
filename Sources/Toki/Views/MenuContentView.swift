@@ -410,7 +410,11 @@ struct MenuContentView: View {
     private var accountsContent: some View {
         VStack(spacing: 0) {
             if showsQuotaRings {
-                QuotaRingsPanel(snapshots: store.snapshots, presentation: presentation.accounts) {
+                QuotaRingsPanel(
+                    snapshots: store.snapshots,
+                    quotaWindows: store.preferences.quotaDisplayWindows,
+                    presentation: presentation.accounts
+                ) {
                     var next = store.preferences
                     next.quotaRingsEnabled = false
                     store.updatePreferences(next)

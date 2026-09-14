@@ -7,6 +7,7 @@ import SwiftUI
 struct RailPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let snapshots: [AccountSnapshot]
+    var quotaWindows: [String: String] = [:]
     let geometry: RailGeometry
     let hoveredID: String?
     let onHover: (String?) -> Void
@@ -66,29 +67,37 @@ struct RailPanel: View {
     }
 
     private func row(_ snapshot: AccountSnapshot) -> some View {
-        Button(action: onClick) {
+        let window = displayQuotaWindow(for: snapshot, preferredWindow: quotaWindows[snapshot.provider.rawValue])
+        let ratio = window.map { Double($0.percentLeft) / 100 } ?? snapshot.remainingRatio
+        return Button(action: onClick) {
             VStack(spacing: 1) {
                 RingGauge(
                     provider: snapshot.provider,
-                    remainingRatio: snapshot.remainingRatio,
+                    remainingRatio: ratio,
                     color: ringColor(snapshot),
                     diameter: RailGeometry.ringDiameter,
                     isHighlighted: hoveredID == snapshot.id,
                     seatsGlyph: true
                 )
-                Text(snapshot.remainingRatio.map { percentText($0) } ?? "--")
+                Text(ratio.map { percentText($0) } ?? "--")
                     .font(.system(size: 10).monospacedDigit())
                     .foregroundStyle(.white)
                     .fixedSize()
+                if let window {
+                    Text(window.label)
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .fixedSize()
+                }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: RailGeometry.rowHeight)
+            .frame(height: RailGeometry.rowHeight, alignment: .top)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { onHover($0 ? snapshot.id : nil) }
         .accessibilityLabel("Open Toki")
-        .accessibilityValue("\(snapshot.name), \(snapshot.remainingRatio.map { percentText($0) } ?? "unknown") remaining")
+        .accessibilityValue("\(snapshot.name), \(ratio.map { percentText($0) } ?? "unknown") remaining\(window.map { ", \($0.label) window" } ?? "")")
         .accessibilityHint("View quota and reset details in Accounts")
     }
 
