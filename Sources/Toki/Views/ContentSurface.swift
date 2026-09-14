@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum TokiTypography {
+    static let body = Font.system(size: 13)
+    static let supporting = Font.system(size: 11)
+    static let heading = Font.system(size: 15, weight: .semibold)
+}
+
 extension View {
     func contentSurface(cornerRadius: CGFloat = 8, stroke: Color? = nil) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -23,26 +29,25 @@ extension View {
 
     @ViewBuilder
     func functionalControlStyle() -> some View {
-        self.buttonStyle(FunctionalControlButtonStyle())
-    }
-
-    @ViewBuilder
-    func accentGlassControlStyle() -> some View {
         if #available(macOS 26, *) {
-            buttonStyle(.glass(.regular.tint(.accentColor)))
+            buttonStyle(.glass)
+                .buttonBorderShape(.roundedRectangle(radius: 8))
+                .controlSize(.large)
         } else {
-            buttonStyle(.borderedProminent)
+            buttonStyle(FunctionalControlButtonStyle())
         }
     }
 }
 
 struct FunctionalControlButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         configuration.label
             .frame(width: 28, height: 28)
             .contentShape(shape)
             .functionalGlass(in: shape, interactive: true)
-            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1.0) : 0.4)
     }
 }

@@ -75,4 +75,23 @@ final class ProviderOrderingTests: XCTestCase {
 
         XCTAssertEqual(order(snapshots, active: [.sarvamCode]), ["pi", "sarvam"])
     }
+
+    func testOpenPopoverRetainsOrderWhileReconcilingRefresh() {
+        XCTAssertEqual(
+            PopoverPresentationState.reconciledOrder(["codex", "claude", "removed"], presentIDs: ["claude", "new", "codex", "new"]),
+            ["codex", "claude", "new"]
+        )
+    }
+
+    func testPopoverRanksErrorsLastWithoutChangingRecommendationOrder() {
+        let snapshots = [
+            snapshot("error", provider: .pi, isError: true),
+            snapshot("exhausted", provider: .codex, remaining: 0),
+            snapshot("ready", provider: .claudeCode, remaining: 0.8)
+        ]
+        XCTAssertEqual(
+            PopoverPresentationState.rankedAccountIDs(snapshots: snapshots, agents: []),
+            ["ready", "exhausted", "error"]
+        )
+    }
 }

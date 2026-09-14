@@ -58,9 +58,32 @@ final class CodexAuthenticationTests: XCTestCase {
         let snapshot = try CodexUsageClient(account: account).snapshot(from: payload)
 
         XCTAssertEqual(snapshot.primary, "75% left")
+        XCTAssertEqual(snapshot.displayProgressRatio, 0.75)
+        XCTAssertEqual(snapshot.metrics.first?.group, .quota)
+        XCTAssertEqual(snapshot.metrics.first?.value, "75% left")
         XCTAssertTrue(snapshot.accountInfo.contains {
             $0.label == "Email" && $0.value == "person@example.com"
         })
         XCTAssertFalse(snapshot.accountInfo.contains { $0.label == "Source" })
     }
+    func testHistoricalUsageDoesNotBecomeTodaysReading() {
+        let usage = CodexUsage(json: [
+            "daily_usage_buckets": [["start_date": "2000-01-01", "tokens": 300]],
+            "summary": ["lifetime_tokens": 300]
+        ])
+        XCTAssertNil(usage.todayTokens)
+        XCTAssertFalse(usage.metrics.contains { $0.label == "Today" })
+        XCTAssertEqual(usage.metrics.first?.group, .activity)
+        XCTAssertEqual(usage.metrics.first?.label, "Latest day")
+        XCTAssertTrue(usage.metrics.first?.value.contains("2000-01-01") == true)
+    }
+
+    func testSpendingProgressKeepsItsExistingDirection() {
+        var snapshot = AccountSnapshot(id: "cursor", name: "Cursor", provider: .cursor,
+                                       primary: "", subtitle: "", remainingRatio: 0.75, metrics: [])
+        XCTAssertEqual(snapshot.displayProgressRatio, 0.25)
+        snapshot.progressRatio = 0.4
+        XCTAssertEqual(snapshot.displayProgressRatio, 0.4)
+    }
+
 }

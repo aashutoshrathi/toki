@@ -28,7 +28,7 @@ final class ModelWindowTests: XCTestCase {
         let u = usage(limits: [scoped("Fable 5", percent: 30)])
         let line = u.metrics.first { $0.label == "Fable 5 7d" }
         XCTAssertNotNil(line, "the model limit has to reach the detail list")
-        XCTAssertEqual(line?.value, "30% used", "written like the 5h and 7d lines, which report used")
+        XCTAssertEqual(line?.value, "70% left", "all quota presentations report remaining allowance")
     }
 
     func testTheDetailLineCarriesTheResetWhenThereIsOne() {
@@ -38,7 +38,7 @@ final class ModelWindowTests: XCTestCase {
             "scope": ["model": ["display_name": "Fable 5"]]
         ]]])
         let value = u.metrics.first { $0.label == "Fable 5 7d" }?.value ?? ""
-        XCTAssertTrue(value.hasPrefix("30% used - resets in "), "got \(value)")
+        XCTAssertTrue(value.hasPrefix("70% left - resets in "), "got \(value)")
     }
 
     func testAScopedWeeklyLimitReadsItsModelsDisplayName() {

@@ -26,9 +26,8 @@ enum SetupStepID: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// A first run lists everything Toki will ever ask for, so the whole cost is visible at once and
-/// can be granted in one pass. Afterwards the list is a status board and only shows what applies
-/// to the Mac right now.
+/// First run includes optional integrations so their access requirements are discoverable.
+/// Afterwards the list is a status board showing integrations applicable to this Mac.
 enum SetupChecklistMode {
     case firstRun
     case ongoing
@@ -49,8 +48,7 @@ struct SetupStep: Identifiable, Equatable {
     /// True when Toki works without it and the row is only worth showing while it is missing.
     let isOptional: Bool
     /// True when pressing the button puts a real macOS request in front of the user. False for
-    /// rows that only open System Settings or explain something Toki cannot ask for on its own,
-    /// which is what keeps those out of the "ask for everything" pass.
+    /// rows that only open System Settings or explain something Toki cannot ask for on its own.
     let isRequestable: Bool
     /// True when an `.unknown` row is still unfinished work, not the benign kind (a closed terminal
     /// Toki can't read) - a required read that failed keeps onboarding from reading as done.
@@ -343,32 +341,6 @@ enum SetupChecklist {
         }
     }
 
-    // What "allow everything" actually runs, in the order it runs them. Each request is a dialog,
-    // so they go one at a time; Accessibility is last because answering it means leaving for
-    // System Settings, and coming back to three more dialogs would be worse than finding them.
-    static func requestOrder(_ steps: [SetupStep]) -> [SetupStep] {
-        let rank: [SetupStepID: Int] = [
-            .claudeKeychain: 0,
-            .notifications: 1,
-            .automation: 2,
-            .launchAtLogin: 3,
-            .accessibility: 4
-        ]
-        // `.unknown` counts: notifications can't be read back, and skipping them would leave the
-        // one prompt this pass exists to bring forward for the first low-quota warning instead.
-        // Swift's sort isn't stable, so the original position breaks ties - two terminals must
-        // not swap places between two renders of the same list.
-        return steps
-            .filter { $0.isRequestable && ($0.status == .pending || $0.status == .unknown) }
-            .enumerated()
-            .sorted { left, right in
-                let leftRank = rank[left.element.kind] ?? 99
-                let rightRank = rank[right.element.kind] ?? 99
-                return leftRank == rightRank ? left.offset < right.offset : leftRank < rightRank
-            }
-            .map(\.element)
-    }
-
     // Terminals Toki scripts to focus a tab and deliver a reply.
     private static let scriptedTerminals = [
         (name: HostApp.iTerm.displayName, bundleID: HostApp.iTerm.bundleID),
@@ -510,11 +482,19 @@ enum SystemPermissions {
     /// process to go away first, so the two never overlap and race over the state file.
     @MainActor
     static func relaunch() {
+        guard AppDelegate.prepareToRestart() else { return }
         let path = Bundle.main.bundleURL.path
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "sleep 1; /usr/bin/open \"\(path)\""]
-        try? task.run()
+        task.arguments = [
+            "-c", #"while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open "$2""#,
+            "sh", String(ProcessInfo.processInfo.processIdentifier), path
+        ]
+        do { try task.run() }
+        catch {
+            DiagnosticLogger.shared.record(.error, component: "permissions", code: "relaunch_failed", detail: diagnosticErrorDetail(error))
+            return
+        }
         NSApp.terminate(nil)
     }
 

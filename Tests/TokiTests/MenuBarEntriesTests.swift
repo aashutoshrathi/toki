@@ -64,6 +64,61 @@ final class MenuBarEntriesTests: XCTestCase {
     func testQuotaProviderStillRendersPercentage() {
         let entry = menuBarEntry(for: snapshot(id: "codex", provider: .codex, remainingRatio: 0.42))
         XCTAssertEqual(entry.value, "42%")
+        XCTAssertNil(entry.windowLabel)
+    }
+
+    func testAutoUsesTheMostConstrainedMainWindow() {
+        var account = snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8)
+        account.primaryWindow = RateLimitWindow(label: "5h", percentLeft: 80, resetHint: nil)
+        account.secondaryWindow = RateLimitWindow(label: "7d", percentLeft: 30, resetHint: nil)
+        account.modelWindows = [RateLimitWindow(label: "Sonnet", percentLeft: 10, resetHint: nil)]
+
+        XCTAssertEqual(displayQuotaWindow(for: account)?.label, "7d")
+        XCTAssertEqual(menuBarEntry(for: account).value, "30%")
+        XCTAssertEqual(menuBarEntry(for: account).windowLabel, "7d")
+        XCTAssertEqual(menuBarEntry(for: account, preferredWindow: "5h").value, "80%")
+        XCTAssertEqual(menuBarEntry(for: account, preferredWindow: "5h").windowLabel, "5h")
+
+        account.secondaryWindow?.percentLeft = 90
+        XCTAssertEqual(displayQuotaWindow(for: account)?.label, "5h")
+    }
+
+    func testUnavailableWindowFallsBackToTheActualAvailableWindow() {
+        var account = snapshot(id: "codex", provider: .codex, remainingRatio: 0.6)
+        account.primaryWindow = RateLimitWindow(label: "7d", percentLeft: 60, resetHint: nil)
+        let entry = menuBarEntry(for: account, preferredWindow: "5h")
+        XCTAssertEqual(entry.value, "60%")
+        XCTAssertEqual(entry.windowLabel, "7d")
+        XCTAssertEqual(displayQuotaWindow(for: account, preferredWindow: "unknown")?.label, "7d")
+    }
+
+    func testProviderChoicesApplyIndependentlyInSmartAndPinnedModes() {
+        var claude = snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8)
+        claude.primaryWindow = RateLimitWindow(label: "5h", percentLeft: 80, resetHint: nil)
+        claude.secondaryWindow = RateLimitWindow(label: "7d", percentLeft: 30, resetHint: nil)
+        var codex = snapshot(id: "codex", provider: .codex, remainingRatio: 0.6)
+        codex.primaryWindow = RateLimitWindow(label: "5h", percentLeft: 60, resetHint: nil)
+        codex.secondaryWindow = RateLimitWindow(label: "7d", percentLeft: 90, resetHint: nil)
+
+        for mode in [MenuBarDisplayMode.smart, .pinned] {
+            let entries = menuBarEntries(
+                for: [claude, codex], mode: mode, pinnedProviders: [.claudeCode, .codex],
+                quotaWindows: ["claudeCode": "5h", "codex": "7d"]
+            )
+            XCTAssertEqual(entries.map(\.value), ["80%", "90%"])
+            XCTAssertEqual(entries.map(\.windowLabel), ["5h", "7d"])
+        }
+
+        let lowest = menuBarEntries(for: [claude, codex], mode: .lowest, quotaWindows: ["claudeCode": "5h"])
+        XCTAssertEqual(lowest.first?.provider, .codex)
+        XCTAssertEqual(lowest.first?.value, "60%")
+    }
+
+    func testSpendAndPlaceholderNeverInventAWindow() {
+        let entry = menuBarEntry(for: snapshot(id: "pi", provider: .pi, menuBarValue: "$1.20"), preferredWindow: "5h")
+        XCTAssertEqual(entry.value, "$1.20")
+        XCTAssertNil(entry.windowLabel)
+        XCTAssertTrue(menuBarPlaceholderEntries().allSatisfy { $0.windowLabel == nil })
     }
 
     func testLogoOnlyProducesNoEntries() {

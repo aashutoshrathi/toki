@@ -161,12 +161,16 @@ func codexSnapshotAfterReset(_ snapshot: AccountSnapshot, resetsQuota: Bool) -> 
                 if let expiry = updated.resetCreditExpiry {
                     value += " · expires \(resetDescription(for: expiry))"
                 }
-                return MetricLine(label: "Resets", value: value)
+                var updatedMetric = metric
+                updatedMetric.value = value
+                return updatedMetric
             }
             return nil
         }
         if resetsQuota, windowLabels.contains(metric.label) {
-            return MetricLine(label: metric.label, value: "0% used")
+            var updatedMetric = metric
+            updatedMetric.value = "100% left"
+            return updatedMetric
         }
         if resetsQuota, metric.label == "Limit" {
             return nil

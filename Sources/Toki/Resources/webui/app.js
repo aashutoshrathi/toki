@@ -211,6 +211,8 @@ function lockApp() {
   $("#connectmethods").hidden = true;
   $("#pairtitle").textContent = "Verify this device";
   $("#pairinstructions").textContent = "Enter the six-digit code shown by Toki on your Mac.";
+  setPairStatus("");
+  setAgentListOpen(false);
   $("#paircode").focus();
 }
 
@@ -226,7 +228,7 @@ function invalidLink(message) {
   $("#pairinstructions").textContent = message;
   $("#paircontrols").hidden = true;
   $("#connectmethods").hidden = false;
-  $("#pairstatus").textContent = "";
+  setPairStatus("");
 }
 
 let started = false;
@@ -274,13 +276,13 @@ function renderUsage(data) {
     ? plainTitle(lowest.name) + " " + lowestValue + " · " + accounts.length + " accounts"
     : plainTitle(lowest.name) + " " + lowestValue;
   const stale = !!(data && data.stale);
-  $("#usagesummary").textContent = stale ? summary + " · may be out of date" : summary;
+  $("#usagesummary").textContent = "Account quota · " + summary + (stale ? " · may be out of date" : "");
   toggle.classList.toggle("stale", stale);
   toggle.setAttribute("aria-expanded", usageOpen ? "true" : "false");
   panel.hidden = !usageOpen;
   if (!usageOpen) return;
 
-  panel.innerHTML = accounts.map(a => {
+  panel.innerHTML = '<p class="u-scope">Provider account usage, shared across sessions.</p>' + accounts.map(a => {
     const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
     if (typeof a.remaining != "number") {
       return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
@@ -291,7 +293,7 @@ function renderUsage(data) {
     return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
       '<span class="u-track"><span class="u-fill ' + usageClass(a.remaining) +
       '" style="width:' + pct + '%"></span></span>' +
-      '<span class="u-value">' + pct + "%</span></div>";
+      '<span class="u-value">' + pct + "% left</span></div>";
   }).join("") + (data.stale
     ? '<div class="u-stale">Toki stopped sending updates, so this may be out of date.</div>'
     : "");
@@ -329,7 +331,8 @@ function startApp() {
 $("#usagetoggle").addEventListener("click", () => {
   usageOpen = !usageOpen;
   feedback();
-  refreshUsage();
+  if (lastUsage) renderUsage(lastUsage);
+  pollUsage();
 });
 
 // Backgrounded tabs throttle timers; refresh immediately on return.
@@ -340,14 +343,28 @@ document.addEventListener("visibilitychange", () => {
   pollUsage();
 });
 
+function setPairStatus(message, invalidField = null) {
+  $("#pairstatus").textContent = message;
+  for (const id of ["paircode", "manualhost", "manualtoken"]) {
+    $("#" + id).setAttribute("aria-invalid", String(id == invalidField));
+  }
+  if (invalidField) $("#" + invalidField).focus();
+}
+
+for (const id of ["paircode", "manualhost", "manualtoken"]) {
+  $("#" + id).addEventListener("input", () => {
+    if ($("#" + id).getAttribute("aria-invalid") == "true") setPairStatus("");
+  });
+}
+
 $("#pairform").addEventListener("submit", async e => {
   e.preventDefault();
   const code = $("#paircode").value.replace(/\s/g, "");
   if (!/^\d{6}$/.test(code)) {
-    $("#pairstatus").textContent = "Enter all six digits.";
+    setPairStatus("Enter all six digits.", "paircode");
     return;
   }
-  $("#pairstatus").textContent = "verifying\u2026";
+  setPairStatus("Verifying\u2026");
   try {
     const r = await fetch(API_BASE + "/api/pair?token=" + encodeURIComponent(LINK_TOKEN), {
       method: "POST",
@@ -360,17 +377,20 @@ $("#pairform").addEventListener("submit", async e => {
         invalidLink("This Remote Control link is invalid or expired. Open Connect in Toki and use its latest link.");
         return;
       }
-      if (body.error == "incorrect verification code")
-        throw new Error("That code is incorrect or has rotated. Check the current code in Toki and try again.");
+      if (body.error == "incorrect verification code") {
+        feedback("error");
+        setPairStatus("That code is incorrect or has rotated. Check the current code in Toki and try again.", "paircode");
+        return;
+      }
       throw new Error(body.error || "verification failed");
     }
     TOKEN = body.token;
     saveSession(TOKEN, body.expiresIn);
-    $("#pairstatus").textContent = "";
+    setPairStatus("");
     startApp();
   } catch (err) {
     feedback("error");
-    $("#pairstatus").textContent = err.message;
+    setPairStatus(err.message);
   }
 });
 
@@ -468,40 +488,83 @@ function sizeAgentList() {
   dd.style.setProperty("--dd-max", Math.max(Math.round(floor - top - 10), 132) + "px");
 }
 
-function setAgentListOpen(open) {
+function setAgentListOpen(open, focusSelection = false) {
+  open = open && agents.length > 0;
   const dd = $("#dd");
   dd.classList.toggle("open", open);
+  $("#ddbtn").setAttribute("aria-expanded", String(open));
   if (!open) return;
   sizeAgentList();
   // With many agents the current one can start out below the fold.
   const sel = $("#ddlist").querySelector(".dditem.sel");
-  if (sel) sel.scrollIntoView({ block: "nearest" });
+  if (sel) {
+    if (focusSelection) sel.focus({ preventScroll: true });
+    sel.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function handleAgentPickerKeydown(e) {
+  const open = $("#dd").classList.contains("open");
+  if (e.key == "Escape" && open) {
+    e.preventDefault();
+    e.stopPropagation();
+    setAgentListOpen(false);
+    $("#ddbtn").focus();
+    return;
+  }
+  if (e.key == "Tab" && open) {
+    // Focus the trigger before hiding its options so Safari keeps a valid tab-order origin.
+    setAgentListOpen(false);
+    $("#ddbtn").focus();
+    if (e.shiftKey) e.preventDefault();
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+  e.preventDefault();
+  if (!open) {
+    setAgentListOpen(true, true);
+    if (e.key != "Home" && e.key != "End") return;
+  }
+  const items = Array.from($("#ddlist").querySelectorAll(".dditem"));
+  if (!items.length) return;
+  const currentIndex = items.indexOf(document.activeElement);
+  const index = e.key == "Home" ? 0 : e.key == "End" ? items.length - 1
+    : (currentIndex + (e.key == "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  items[index].focus({ preventScroll: true });
+  items[index].scrollIntoView({ block: "nearest" });
 }
 
 function renderAgents() {
   const btn = $("#ddbtn");
   const list = $("#ddlist");
+  const focusedPID = list.contains(document.activeElement) ? document.activeElement.dataset.pid : null;
   if (!agents.length) {
     btn.innerHTML = '<span class="t">no agents found</span>';
+    btn.setAttribute("aria-label", "No active agents");
     list.innerHTML = "";
+    setAgentListOpen(false);
+    if (focusedPID) btn.focus();
     updateComposer(null);
     setDocTitle(null);
     return;
   }
   const cur = agents.find(a => a.pid == current) || agents[0];
   btn.innerHTML = agentRow(cur) + '<span class="caret">\u25be</span>';
+  btn.setAttribute("aria-label", "Choose agent: " + plainTitle(cur.title));
   updateComposer(cur);
   setDocTitle(cur);
   // The server sorts writable agents first, making read-only agents one contiguous group.
   list.innerHTML = agents.map((a, i) => {
     const startsReadOnly = !a.writable && (i == 0 || agents[i - 1].writable);
     return (startsReadOnly ? '<div class="ddgroup">Read-only</div>' : "") +
-      '<div class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + a.pid + '">' + agentRow(a) + "</div>";
+      '<button type="button" role="option" tabindex="-1" aria-selected="' + (a.pid == current) +
+      '" class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + a.pid + '">' + agentRow(a) + "</button>";
   }).join("");
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
     if (+el.dataset.pid == current) {
       setAgentListOpen(false);
+      btn.focus();
       return;
     }
     current = +el.dataset.pid;
@@ -509,8 +572,16 @@ function renderAgents() {
     clearPendingImage();  // Attachments are agent-scoped.
     setAgentListOpen(false);
     renderAgents();
+    btn.focus();
     refreshLog();
   });
+  // Polls replace option nodes. Keep keyboard focus on the same session, or on the selected one
+  // if that session has ended, without stealing focus from the composer or another control.
+  if (focusedPID && $("#dd").classList.contains("open")) {
+    const item = Array.from(list.querySelectorAll(".dditem")).find(el => el.dataset.pid == focusedPID)
+      || list.querySelector(".dditem.sel");
+    if (item) item.focus({ preventScroll: true });
+  }
 }
 
 function updateComposer(agent) {
@@ -525,7 +596,11 @@ function updateComposer(agent) {
   $("#model").hidden = !(canMirror && MODEL_COMMANDS[agent.provider]);
   $("#screen").hidden = !canMirror;
   if (!writable || (modelMirror && (!agent || modelMirror.pid != agent.pid))) closeModelMirror();
-  document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => el.disabled = !enabled);
+  document.querySelectorAll("footer button,footer input,footer textarea").forEach(el => {
+    // Layout and mirror dismissal do not deliver terminal input and remain available during a send.
+    if (["terminaltoggle", "expand", "modelclose"].includes(el.id)) el.disabled = false;
+    else el.disabled = !enabled;
+  });
   // The avatar names who the reply is going to, which the placeholder alone never did once
   // more than one agent was running.
   $("#composeravatar").innerHTML = agent ? providerLogo(agent.provider) : "";
@@ -684,6 +759,7 @@ function openMirror(agent, label, opening, delay) {
   $("#mmlabel").textContent = label;
   $("#modelmirror").hidden = false;
   $("#modelscreen").textContent = opening;
+  setTerminalControlsOpen(true);
   modelMirror.timer = setTimeout(refreshModelMirror, delay);
 }
 
@@ -712,6 +788,11 @@ function closeModelMirror() {
   clearTimeout(modelMirror.timer);
   modelMirror = null;
   $("#modelmirror").hidden = true;
+}
+
+function setTerminalControlsOpen(open) {
+  $("#terminalkeys").hidden = !open;
+  $("#terminaltoggle").setAttribute("aria-expanded", String(open));
 }
 
 let notifiedAttention = {};
@@ -1332,7 +1413,7 @@ document.addEventListener("pointerdown", e => {
 
 document.addEventListener("click", async e => {
   const b = e.target.closest("button");
-  if (!b) return;
+  if (!b || b.disabled) return;
   if (uploading && (b.id == "send" || b.id == "clear" || b.id == "model" || b.id == "screen" ||
       b.dataset.key || b.dataset.opt || b.dataset.submit || b.dataset.text)) return;
   if (b.id == "send") {
@@ -1387,6 +1468,7 @@ function resizeComposer() {
 }
 
 $("#expand").addEventListener("click", toggleComposerExpanded);
+$("#terminaltoggle").addEventListener("click", () => setTerminalControlsOpen($("#terminalkeys").hidden));
 $("#msg").addEventListener("input", resizeComposer);
 $("#msg").addEventListener("keydown", e => {
   if (e.key == "Enter" && !e.isComposing && (e.metaKey || e.ctrlKey)) {
@@ -1426,8 +1508,9 @@ resizeComposer();
 
 $("#ddbtn").addEventListener("click", e => {
   e.stopPropagation();
-  setAgentListOpen(!$("#dd").classList.contains("open"));
+  setAgentListOpen(!$("#dd").classList.contains("open"), true);
 });
+$("#dd").addEventListener("keydown", handleAgentPickerKeydown);
 document.addEventListener("click", () => setAgentListOpen(false));
 window.addEventListener("resize", sizeAgentList);
 window.addEventListener("orientationchange", sizeAgentList);
@@ -1472,14 +1555,14 @@ function manualConnect() {
   const token = $("#manualtoken").value.trim();
   if (!token) {
     feedback("error");
-    $("#pairstatus").textContent = "Enter the connection token from Toki.";
+    setPairStatus("Enter the connection token from Toki.", "manualtoken");
     return;
   }
   try {
     remoteAPIBase(host);
   } catch (e) {
     feedback("error");
-    $("#pairstatus").textContent = "Enter your Mac\u2019s Tailscale host, like name.tailnet.ts.net.";
+    setPairStatus("Enter your Mac\u2019s Tailscale host, like name.tailnet.ts.net.", "manualhost");
     return;
   }
   connectWith(host, token);
