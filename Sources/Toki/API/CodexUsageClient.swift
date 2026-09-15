@@ -45,14 +45,13 @@ struct CodexUsageClient {
             accountInfo: CodexAccountInfo.lines(from: payload.account)
                 + Self.binaryInfoLines(payload.binarySource),
             primaryWindow: rateLimits.primaryWindow,
-            secondaryWindow: rateLimits.secondaryWindow,
-            progressKind: .quota
+            secondaryWindow: rateLimits.secondaryWindow
         )
     }
 
     private static func binaryInfoLines(_ binary: CodexBinary?) -> [MetricLine] {
         guard let binary else { return [] }
-        return [MetricLine(label: "Codex CLI", value: binary.displayName, group: .account)]
+        return [MetricLine(label: "Codex CLI", value: binary.displayName)]
     }
 }
 

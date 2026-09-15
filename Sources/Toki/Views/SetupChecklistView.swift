@@ -1,67 +1,46 @@
 import AppKit
 import SwiftUI
 
-// Status checks never prompt. Required usage access stays separate from optional integrations,
-// so a user can connect accounts without being encouraged to grant access for unused features.
-struct SetupChecklistPresentation {
-    let steps: [SetupStep]
-    let hasClaudeAccount: Bool
-
-    func isRequired(_ step: SetupStep) -> Bool {
-        if step.kind == .claudeKeychain { return hasClaudeAccount }
-        return !step.isOptional && step.kind != .notifications
-    }
-
-    var required: [SetupStep] { steps.filter(isRequired) }
-    var optional: [SetupStep] { steps.filter { !isRequired($0) } }
-    var requiredOutstanding: [SetupStep] { SetupChecklist.outstanding(required) }
-
-    var summary: String {
-        if steps.isEmpty { return "Checking access…" }
-        if requiredOutstanding.isEmpty { return "Usage access is ready" }
-        let count = requiredOutstanding.count
-        return "\(count) required \(count == 1 ? "step needs" : "steps need") attention"
-    }
-}
-
+// The permissions Toki needs, as a list you work through, instead of dialogs that arrive while
+// you are doing something else. Nothing here asks macOS for anything until a button is pressed;
+// the statuses come from checks that never prompt.
+//
+// A first run lists everything Toki will ever ask for - including the ones that don't apply yet -
+// and can request them all in one pass, so a fresh install ends up working rather than working
+// once you have discovered each feature and answered its dialog.
 struct SetupChecklistView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject private var remoteServer = RemoteControlServer.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var mode: SetupChecklistMode = .ongoing
     /// The onboarding copy introduces itself; the Settings card sits under a heading already.
     var showsHeader = true
     /// Settings keeps the list around permanently; onboarding lets it be put away once done.
     var showsDismiss = false
-    /// First run folds the list behind a summary so connecting an account stays primary.
+    /// The Settings card folds the whole list behind a one-line summary until it is opened.
     var collapsible = false
-    /// False where a section header already names this list, so the row leads with its status.
+    /// False where a section header already names this list, so the collapsed row leads with
+    /// the count instead of repeating the word "Permissions" directly under it.
     var showsCollapsedTitle = true
 
     @State private var steps: [SetupStep] = []
     @State private var expanded = false
     @State private var busyStepID: String?
-    @State private var optionalExpanded = true
+    @State private var requestingAll = false
+    @State private var currentRequest: String?
     @State private var notificationTestSent = false
     /// Sticky for the life of this view: once Toki has sent someone to the Accessibility pane,
     /// the row keeps offering the restart that makes a grant made over there take effect.
     @State private var accessibilityRequested = false
     @State private var launchAtLoginError: String?
 
-    private var presentation: SetupChecklistPresentation {
-        SetupChecklistPresentation(
-            steps: steps,
-            hasClaudeAccount: store.snapshots.contains { $0.provider.isClaudeAccount }
-        )
-    }
+    private var outstanding: [SetupStep] { SetupChecklist.outstanding(steps) }
+    private var requestable: [SetupStep] { SetupChecklist.requestOrder(steps) }
+    private var grantedCount: Int { steps.filter { $0.status == .done }.count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if collapsible {
-                HStack(alignment: .top, spacing: 8) {
-                    collapsibleHeader
-                    if showsDismiss { dismissButton }
-                }
+                collapsibleHeader
             } else if showsHeader {
                 header
             }
@@ -71,7 +50,7 @@ struct SetupChecklistView: View {
 
                 if let launchAtLoginError {
                     Text(launchAtLoginError)
-                        .font(.system(size: 11))
+                        .font(.system(size: 9))
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -92,38 +71,16 @@ struct SetupChecklistView: View {
         .onChange(of: store.preferences.notificationsEnabled) { notificationTestSent = false }
     }
 
-    /// A first-run checklist shares the fixed popover with account discovery, so only the rows
-    /// scroll; the dismiss action stays alongside its heading.
+    /// A first run lists every permission Toki will ever ask for, and the popover is a fixed
+    /// height that nothing in this path scrolls. Eight rows plus the copy above them ran past the
+    /// bottom edge, taking the footer with them - so the button that dismisses the checklist was
+    /// off screen and a fresh install had no way past it. The rows scroll within half the popover
+    /// and the footer stays put.
     @ViewBuilder
     private var stepRows: some View {
-        let rows = VStack(alignment: .leading, spacing: 12) {
-            if !presentation.required.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Required for usage")
-                        .font(.system(size: 13, weight: .semibold))
-                    ForEach(presentation.required) { step in
-                        row(for: step)
-                    }
-                }
-            }
-            if !presentation.optional.isEmpty {
-                DisclosureGroup(isExpanded: $optionalExpanded) {
-                    VStack(spacing: 4) {
-                        ForEach(presentation.optional) { step in
-                            row(for: step)
-                        }
-                    }
-                    .padding(.top, 6)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Optional integrations")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Enable access when you use a feature. Usage tracking works without these permissions.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+        let rows = VStack(spacing: 4) {
+            ForEach(steps) { step in
+                row(for: step)
             }
         }
 
@@ -142,7 +99,7 @@ struct SetupChecklistView: View {
                 Text("Permissions")
                     .font(.system(size: 13, weight: .semibold))
                 Text(headerDetail)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -157,35 +114,43 @@ struct SetupChecklistView: View {
     }
 
     private var dismissButton: some View {
-        Button(presentation.requiredOutstanding.isEmpty ? "Done" : "Skip for now") {
+        Button(outstanding.isEmpty ? "Done" : "Skip for now") {
             store.completeSetupChecklist()
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .fixedSize()
-        .disabled(busyStepID != nil)
+        .disabled(requestingAll)
         .pointerOnHover()
     }
 
     private var collapsibleHeader: some View {
         Button {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { expanded.toggle() }
+            withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checklist")
-                    .font(.system(size: 12))
-                    .foregroundStyle(presentation.requiredOutstanding.isEmpty ? Color.green : Color.orange)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.green)
                     .frame(width: 18, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(showsCollapsedTitle ? "Permissions" : presentation.summary)
+                    Text(showsCollapsedTitle ? "Permissions" : collapsedCount)
                         .font(.system(size: 12, weight: .semibold))
-                    Text(showsCollapsedTitle ? presentation.summary : "Optional integrations can be enabled when needed.")
-                        .font(.system(size: 11))
+                    Text(showsCollapsedTitle ? collapsedSummary : "What Toki asks macOS for, and why.")
+                        .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
+                if !outstanding.isEmpty {
+                    Text("\(outstanding.count) to allow")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.15), in: Capsule())
+                }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
             }
@@ -195,18 +160,54 @@ struct SetupChecklistView: View {
         .pointerOnHover()
     }
 
-    private var headerDetail: LocalizedStringKey {
-        "Required access supports your connected accounts. Optional integrations can be enabled when you use their features. Nothing is requested until you press a button."
+    private var collapsedSummary: String {
+        guard !steps.isEmpty else { return "Checking what Toki has been granted…" }
+        return "\(grantedCount) of \(steps.count) granted. What Toki asks macOS for, and why."
     }
 
+    private var collapsedCount: String {
+        steps.isEmpty ? "Checking…" : "\(grantedCount) of \(steps.count) granted"
+    }
+
+    private var headerDetail: LocalizedStringKey {
+        if requestingAll {
+            return "Answer each dialog as it appears. Refusing one only turns off what it was for."
+        }
+        if requestable.isEmpty {
+            return "Nothing left to allow. Everything Toki asks macOS for is listed here, with what it is used for."
+        }
+        return "Everything Toki asks macOS for, and why. Grant them now, or one at a time as you use the features - nothing is requested until you press a button."
+    }
+
+    @ViewBuilder
     private var footer: some View {
-        Button("Re-check", action: refresh)
-            .buttonStyle(.plain)
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .help("Permissions can be changed in System Settings; this reads them again")
-            .disabled(busyStepID != nil)
-            .pointerOnHover()
+        HStack(spacing: 8) {
+            if mode == .firstRun, !requestable.isEmpty {
+                Button(action: requestEverything) {
+                    if requestingAll {
+                        HStack(spacing: 5) {
+                            ProgressView().controlSize(.small).scaleEffect(0.7)
+                            Text(currentRequest.map { "Asking: \($0)" } ?? "Asking…")
+                        }
+                    } else {
+                        Label("Allow all \(requestable.count)", systemImage: "checkmark.shield")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(requestingAll || busyStepID != nil)
+                .help("Ask for each permission in turn, one dialog at a time")
+                .pointerOnHover()
+            }
+
+            Button("Re-check", action: refresh)
+                .buttonStyle(.plain)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .help("Permissions can be changed in System Settings; this reads them again")
+                .pointerOnHover()
+
+        }
     }
 
     private func row(for step: SetupStep) -> some View {
@@ -217,47 +218,52 @@ struct SetupChecklistView: View {
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(step.title)
-                    .font(.system(size: 13))
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 4) {
+                    Text(step.title)
+                        .font(.system(size: 11, weight: .semibold))
+                    if step.isOptional {
+                        Text("optional")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.fill.quaternary, in: Capsule())
+                    }
+                }
                 Text(detailText(for: step))
-                    .font(.system(size: 11))
+                    .font(.system(size: 9))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 4)
 
-            VStack(alignment: .trailing, spacing: 6) {
-                // macOS decides whether a notification appears and won't say after the fact, so the only
-                // honest follow-up is a way to go and look.
-                if step.kind == .notifications, notificationTestSent {
-                    Button("Open Settings") {
-                        SystemPermissions.openNotificationSettings()
-                    }
-                    .controlSize(.small)
-                    .fixedSize()
-                    .pointerOnHover()
+            // macOS decides whether a notification appears and won't say after the fact, so the only
+            // honest follow-up is a way to go and look.
+            if step.kind == .notifications, notificationTestSent {
+                Button("Open Settings") {
+                    SystemPermissions.openNotificationSettings()
                 }
+                .controlSize(.small)
+                .fixedSize()
+                .pointerOnHover()
+            }
 
-                if let label = step.actionLabel {
-                    Button {
-                        perform(step)
-                    } label: {
-                        ZStack {
-                            Text(label)
-                                .opacity(busyStepID == step.id ? 0 : 1)
-                            if busyStepID == step.id {
-                                ProgressView().controlSize(.small).scaleEffect(0.6)
-                            }
-                        }
+            if let label = step.actionLabel {
+                Button {
+                    perform(step)
+                } label: {
+                    if busyStepID == step.id {
+                        ProgressView().controlSize(.small).scaleEffect(0.6)
+                    } else {
+                        Text(label)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .fixedSize()
-                    .disabled(busyStepID != nil)
-                    .pointerOnHover()
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(busyStepID != nil || requestingAll)
+                .pointerOnHover()
             }
         }
         .padding(.horizontal, 8)
@@ -293,6 +299,9 @@ struct SetupChecklistView: View {
         Task { await refreshAndWait() }
     }
 
+    // Awaiting the refresh matters inside the "allow all" pass: each request has to see the list
+    // as it stands after the previous answer, or a permission granted along the way gets asked
+    // for twice.
     private func refreshAndWait() async {
         let facts = await SetupChecklist.currentFacts(
             store: store,
@@ -302,8 +311,27 @@ struct SetupChecklistView: View {
         steps = SetupChecklist.steps(from: facts, mode: mode)
     }
 
+    // One dialog at a time, in an order that ends with the one that sends you to System Settings.
+    // The list is rebuilt between requests so anything answered along the way drops out.
+    private func requestEverything() {
+        guard !requestingAll else { return }
+        requestingAll = true
+        Task {
+            var handled: Set<String> = []
+            while let next = SetupChecklist.requestOrder(steps).first(where: { !handled.contains($0.id) }) {
+                handled.insert(next.id)
+                currentRequest = next.title
+                await request(next)
+                await refreshAndWait()
+            }
+            currentRequest = nil
+            requestingAll = false
+        }
+    }
+
     private func perform(_ step: SetupStep) {
-        // macOS cannot repeat a denied request; those rows open the relevant settings pane.
+        // Rows that only open System Settings act immediately; a real request goes through the
+        // same path as the "allow all" pass so the two can't drift apart.
         guard step.isRequestable else {
             switch step.kind {
             case .account: store.rescanProviders()

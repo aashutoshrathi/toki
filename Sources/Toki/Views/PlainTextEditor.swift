@@ -8,18 +8,16 @@ import SwiftUI
 // an overlaid placeholder can match it exactly.
 struct PlainTextEditor: NSViewRepresentable {
     @Binding var text: String
-    var font: NSFont = .systemFont(ofSize: 13)
-    static let inset = NSSize(width: 8, height: 8)
+    var font: NSFont = .systemFont(ofSize: 10)
+    static let inset = NSSize(width: 4, height: 4)
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = NSTextView()
         textView.delegate = context.coordinator
-        textView.isEditable = context.environment.isEnabled
+        textView.isEditable = true
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = font
-        textView.textColor = .labelColor
-        textView.insertionPointColor = .labelColor
         textView.textContainerInset = Self.inset
         textView.textContainer?.lineFragmentPadding = 0
         textView.drawsBackground = false
@@ -35,15 +33,13 @@ struct PlainTextEditor: NSViewRepresentable {
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
+        scrollView.hasVerticalScroller = false
         scrollView.drawsBackground = false
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        textView.isEditable = context.environment.isEnabled
         if textView.string != text {
             textView.string = text
         }

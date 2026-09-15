@@ -5,45 +5,38 @@ struct QuotaRingsPanel: View {
     @Environment(\.colorScheme) private var colorScheme
     let snapshots: [AccountSnapshot]
     var quotaWindows: [String: String] = [:]
-    @ObservedObject var presentation: AccountPresentationState
     var onHide: () -> Void = {}
     @State private var hoveredSnapshotID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button {
-                    presentation.quotaOverviewExpanded.toggle()
-                } label: {
-                    Label("Quota overview", systemImage: presentation.quotaOverviewExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(minHeight: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityValue(presentation.quotaOverviewExpanded ? "Expanded" : "Collapsed")
+                Text("Quota")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(.tertiary)
                 Spacer(minLength: 8)
                 hideButton
             }
 
-            if presentation.quotaOverviewExpanded {
-                HStack(alignment: .center, spacing: 14) {
-                    VStack(spacing: 6) {
-                        ForEach(ringSnapshots) { snapshot in
-                            card(snapshot)
-                        }
+            // Cards fill the available width instead of a fixed 150; the HStack spacing keeps a
+            // comfortable gap to the ring so the wider cards never feel crowded against it.
+            HStack(alignment: .center, spacing: 14) {
+                VStack(spacing: 6) {
+                    ForEach(ringSnapshots) { snapshot in
+                        card(snapshot)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    QuotaRingsView(
-                        snapshots: ringSnapshots,
-                        colors: ringColors,
-                        size: 88,
-                        hoveredSnapshotID: $hoveredSnapshotID
-                    )
-                    .padding(.trailing, 4)
-                    .padding(.vertical, 4)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                QuotaRingsView(
+                    snapshots: ringSnapshots,
+                    colors: ringColors,
+                    size: 88,
+                    hoveredSnapshotID: $hoveredSnapshotID
+                )
+                .padding(.trailing, 4)
+                .padding(.vertical, 4)
             }
         }
         .padding(.horizontal, 10)
@@ -56,12 +49,11 @@ struct QuotaRingsPanel: View {
         Button(action: onHide) {
             HStack(spacing: 3) {
                 Image(systemName: "eye.slash")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                 Text("Hide")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
             }
             .foregroundStyle(.secondary)
-            .frame(minHeight: 28)
             .contentShape(Capsule())
         }
         .buttonStyle(.borderless)
@@ -74,27 +66,22 @@ struct QuotaRingsPanel: View {
     private func card(_ snapshot: AccountSnapshot) -> some View {
         let isHovered = hoveredSnapshotID == snapshot.id
         let color = color(for: snapshot)
-        let period = snapshot.primaryWindow?.label
-            .replacingOccurrences(of: "7d", with: "7-day")
-            .replacingOccurrences(of: "5h", with: "5-hour")
         return HStack(spacing: 8) {
             ProviderLogo(provider: snapshot.provider, size: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(chipTitle(for: snapshot))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text([period, "\(percentText(snapshot.remainingRatio ?? 0)) left"].compactMap { $0 }.joined(separator: " · "))
-                    .font(TokiTypography.supporting)
-                    .monospacedDigit()
+                Text([snapshot.primaryWindow?.label, "\(percentText(snapshot.remainingRatio ?? 0)) left"].compactMap { $0 }.joined(separator: " · "))
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                 if let resetHint = snapshot.primaryWindow?.resetHint {
-                    Text(compactResetDescription(resetHint) ?? resetHint)
-                        .font(.system(size: 10))
+                    Text(resetHint)
+                        .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .help(resetHint)
                 }
             }
             Spacer(minLength: 0)
@@ -114,7 +101,6 @@ struct QuotaRingsPanel: View {
             }
         }
         .pointerOnHover()
-        .accessibilityElement(children: .combine)
     }
 
     private var ringSnapshots: [AccountSnapshot] {

@@ -177,6 +177,23 @@ func formatDuration(seconds: Double) -> String {
     return "\(total)s"
 }
 
+func remainingText(from value: String) -> String {
+    if let usedPercent = usedPercent(in: value) {
+        let remaining = max(0, min(100, 100 - Int(usedPercent.rounded())))
+        return "\(remaining)% left"
+    }
+    return value.components(separatedBy: " - ").first ?? value
+}
+
+func usedPercent(in value: String) -> Double? {
+    guard let percentIndex = value.firstIndex(of: "%") else { return nil }
+    let prefix = value[..<percentIndex]
+    let candidates = prefix.split { character in
+        !character.isNumber && character != "."
+    }
+    return candidates.last.flatMap { Double($0) }
+}
+
 func relativeDate(_ date: Date) -> String {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .abbreviated

@@ -88,25 +88,6 @@ final class RailGeometryTests: XCTestCase {
         }
     }
 
-    func testSingleAccountReservesReadableDetailSpaceWithoutMovingTheRail() {
-        let base = RailGeometry.make(screen: screen(), providerCount: 1)!
-        let height = RailGeometry.detailCardHeight(windowCount: 3)
-        let expanded = RailGeometry.make(screen: screen(), providerCount: 1, detailCardHeight: height)!
-        let card = expanded.card(forRow: 0, height: height)
-
-        XCTAssertEqual(expanded.window.maxY, base.window.maxY)
-        XCTAssertEqual(expanded.rail, base.rail)
-        XCTAssertLessThanOrEqual(card.maxY, expanded.window.height)
-        XCTAssertEqual(expanded.window.height, height)
-    }
-
-    func testManyWindowsHaveABoundedPreviewHeight() {
-        let three = RailGeometry.detailCardHeight(windowCount: 3)
-        let many = RailGeometry.detailCardHeight(windowCount: 20)
-        XCTAssertGreaterThan(many, three, "The preview includes a more-in-Accounts hint")
-        XCTAssertEqual(many, RailGeometry.detailCardHeight(windowCount: 4))
-    }
-
     // No dependence on auxiliaryTopArea, which is what lets the rail work on a display with no
     // notch and on external monitors.
     func testItLaysOutOnADisplayWithNoNotchBand() {

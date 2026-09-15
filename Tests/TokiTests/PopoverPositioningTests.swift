@@ -66,12 +66,4 @@ final class PopoverPositioningTests: XCTestCase {
             previous.midX
         )
     }
-
-    func testOptionalPanelsGrowThePopoverWithinTheDisplayLimit() {
-        let base = popoverHeight(visibleHeight: 1_000)
-        let withPanels = popoverHeight(insightEnabled: true, quotaAccountCount: 2, visibleHeight: 1_000)
-        XCTAssertGreaterThan(withPanels, base)
-        XCTAssertEqual(popoverHeight(insightEnabled: true, quotaAccountCount: 2, visibleHeight: 600), 504)
-        XCTAssertLessThanOrEqual(popoverHeight(insightEnabled: true, quotaAccountCount: 10, visibleHeight: 400), 304)
-    }
 }

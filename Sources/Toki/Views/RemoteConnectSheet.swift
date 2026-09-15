@@ -3,89 +3,99 @@ import SwiftUI
 
 struct RemoteConnectSheet: View {
     @ObservedObject private var server = RemoteControlServer.shared
-    var onDone: () -> Void
-    @State private var copiedCode = false
-    @State private var copiedLink = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 8) {
-            ScrollView {
-                VStack(spacing: 8) {
-                    Text(server.hostMode == .tailscale || server.companionAppMode == .hosted
-                        ? "Scan with a phone connected to your tailnet."
-                        : "Scan with your phone on the same network.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    if let url = server.connectURL, let image = RemoteControlServer.qrImage(for: url) {
-                        Image(nsImage: image)
-                            .interpolation(.none)
-                            .resizable()
-                            .frame(width: 160, height: 160)
-                            .padding(8)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
-                            .accessibilityLabel("Connection QR code. Use Copy link below as an alternative.")
-                        Text(url)
-                            .font(.system(size: 11, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                        if let code = server.pairingCode {
-                            Button {
-                                copy(code)
-                                copiedCode = true
-                            } label: {
-                                VStack(spacing: 3) {
-                                    Text("Verification code").font(.system(size: 11)).foregroundStyle(.secondary)
-                                    Text(code.prefix(3) + " " + code.suffix(3))
-                                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
-                                    Text(copiedCode ? "Copied" : "Copy code")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(copiedCode ? "Verification code copied" : "Copy verification code \(code)")
+        VStack(spacing: 14) {
+            Text("Scan to connect")
+                .font(.headline)
+            Text(server.hostMode == .tailscale || server.companionAppMode == .hosted
+                ? "Open this on a phone connected to your tailnet."
+                : "Point your phone's camera at the code on the same network.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            if let url = server.connectURL, let image = RemoteControlServer.qrImage(for: url) {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 220, height: 220)
+                    .padding(10)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                Text(url)
+                    .font(.system(size: 11).monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+
+                if let code = server.pairingCode {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(code, forType: .string)
+                    } label: {
+                        VStack(spacing: 3) {
+                            Text("Verification code")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(code.prefix(3) + " " + code.suffix(3))
+                                .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                            Text("Click to copy")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                             if let expiresAt = server.pairingCodeExpiresAt {
                                 TimelineView(.periodic(from: .now, by: 1)) { context in
                                     let remaining = max(0, expiresAt.timeIntervalSince(context.date))
-                                    Text("New code in \(Int(remaining.rounded()))s")
-                                        .font(.system(size: 11))
-                                        .monospacedDigit()
-                                        .foregroundStyle(remaining <= 20 ? .orange : .secondary)
+                                    VStack(spacing: 2) {
+                                        ProgressView(value: remaining, total: RemoteControlServer.pairingCodeTTL)
+                                            .progressViewStyle(.linear)
+                                            .tint(remaining <= 20 ? .orange : .secondary)
+                                            .frame(width: 96)
+                                            .scaleEffect(y: 0.55)
+                                        Text("New code in \(Int(remaining.rounded()))s")
+                                            .font(.caption2)
+                                            .monospacedDigit()
+                                            .foregroundStyle(remaining <= 20 ? .orange : .secondary)
+                                    }
+                                    .padding(.top, 1)
                                 }
                             }
                         }
-                    } else {
-                        ContentUnavailableView("Connection unavailable", systemImage: "wifi.slash",
-                                               description: Text("Return to Remote Control to check the server and its address."))
                     }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .help("Copy verification code")
+                    .accessibilityLabel("Copy verification code \(code)")
                 }
-                .frame(maxWidth: .infinity)
-            }
-            Divider()
-            HStack(spacing: 8) {
-                Button {
-                    guard let url = server.connectURL else { return }
-                    copy(url)
-                    copiedLink = true
-                } label: {
-                    Label(copiedLink ? "Copied" : "Copy link", systemImage: copiedLink ? "checkmark" : "doc.on.doc")
+
+                HStack(spacing: 8) {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url, forType: .string)
+                    } label: {
+                        Label("Copy link", systemImage: "doc.on.doc")
+                    }
+                    Button("Done") { dismiss() }
+                        .keyboardShortcut(.defaultAction)
                 }
-                .disabled(server.connectURL == nil)
-                Spacer()
-                Button("Done", action: onDone)
-                    .buttonStyle(.borderedProminent)
+
+                Button("Stop Remote Control", role: .destructive) {
+                    server.stop()
+                    dismiss()
+                }
+                .help("Stop the server and invalidate this link and every connected session")
+            } else {
+                Text("The server isn't reachable at this address right now.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
-        .onChange(of: server.pairingCode) { copiedCode = false }
-        .onChange(of: server.connectURL) { copiedLink = false }
-    }
-
-    private func copy(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+        .padding(20)
+        .frame(width: 300)
     }
 }

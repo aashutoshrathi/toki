@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.5 - 2026-09-15
+
+### Fixed
+- **The 3.3.4 interface is back to its old size.** The visual overhaul in 3.3.4 grew text and spacing throughout the native app, which left the popover feeling loose and pushed content out of view. The 3.3.3 layout, typography, settings controls, and widgets are restored, while everything 3.3.4 added to quota itself is kept: the per-provider Auto / 5h / 7d preference shared by the menu bar, quota rail, and quota overview, along with the interval labels and a short note explaining what Auto picks.
+- **Quota bars read more clearly and stop shifting.** Each window gets its own thin bar with a pace marker and a short utilization hint, and the space for the reset countdown is now reserved, so a row no longer jumps as timing data arrives. Bar color and percentage text now change at the same points - neutral above 75% remaining, amber from 43% to 75%, and red at 42% or below - in both light and dark appearance.
+
 ## 3.3.4 - 2026-09-15
 
 ### Added

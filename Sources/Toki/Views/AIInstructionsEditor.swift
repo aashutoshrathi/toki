@@ -1,84 +1,109 @@
 import SwiftUI
 
+// Editor for the on-device AI prompt (config's `aiInstructions`), shown inline below its
+// disclosure row in SettingsPanel - not its own page, so the title/chevron toggle it lives
+// under doubles as this view's header. Empty means the built-in default is used, shown as
+// placeholder text. Saving persists and regenerates immediately.
 struct AIInstructionsEditor: View {
     @ObservedObject var store: UsageStore
-    @ObservedObject var navigation: SettingsNavigationState
-    @State private var confirmingDiscard = false
-    @State private var confirmingReset = false
+
+    @State private var text: String
+    @State private var saved = false
+    @State private var error: String?
+
+    init(store: UsageStore) {
+        self.store = store
+        _text = State(initialValue: store.aiInstructions ?? "")
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Steer how the on-device AI summarizes usage. Leave empty for the default.")
-                .font(.system(size: 11))
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Steer how the on-device AI summarizes your usage. Leave empty for the default.")
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             if !store.isAIInsightAvailable {
-                Text("Apple Intelligence is unavailable. Instructions can be saved and will apply when it is enabled.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                    Text("Apple Intelligence isn't available or enabled on this Mac. Your instructions are saved but won't generate insights until it is (System Settings \u{2192} Apple Intelligence & Siri).")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.orange)
+                .padding(6)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-            Text(navigation.aiDraft.hasChanges ? "Unsaved changes • draft kept when you go back" : "Instructions saved in config.json")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+
             ZStack(alignment: .topLeading) {
-                if navigation.aiDraft.text.isEmpty {
-                    ScrollView {
-                        Text(defaultAIInstructions)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, PlainTextEditor.inset.width)
-                            .padding(.vertical, PlainTextEditor.inset.height)
-                    }
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                if text.isEmpty {
+                    // Padding matches PlainTextEditor.inset exactly so the placeholder sits
+                    // precisely where the real caret lands - a SwiftUI TextEditor's internal
+                    // inset isn't public API, so this only lines up because both the editor
+                    // and this overlay use the same explicit, known inset value.
+                    Text(defaultAIInstructions)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, PlainTextEditor.inset.width)
+                        .padding(.vertical, PlainTextEditor.inset.height)
+                        .allowsHitTesting(false)
                 }
-                PlainTextEditor(text: $navigation.aiDraft.text)
-                    .disabled(navigation.aiDraft.source == nil)
-                    .accessibilityLabel("AI instructions. Leave empty to use the default instructions.")
+                PlainTextEditor(text: $text, font: .systemFont(ofSize: 10))
+                    .frame(height: 110)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.background, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator))
-            if let error = navigation.aiError {
-                ScrollView {
-                    Text(error)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(maxHeight: 72)
-                if navigation.aiDraft.source == nil {
-                    Button("Retry reading configuration") { navigation.prepareAIDraft() }
-                }
+            .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.purple.opacity(0.18), lineWidth: 1)
+            )
+
+            if let error {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Divider()
+
             HStack(spacing: 8) {
-                Button(navigation.aiSaved ? "Saved" : "Save") { navigation.saveAI(store: store) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!navigation.aiDraft.hasChanges)
-                    .keyboardShortcut("s", modifiers: .command)
-                Button("Discard") { confirmingDiscard = true }
-                    .disabled(!navigation.aiDraft.hasChanges)
-                Spacer(minLength: 0)
-                Button("Use default") { confirmingReset = true }
-                    .disabled(navigation.aiDraft.text.isEmpty)
+                Button {
+                    persist(text)
+                } label: {
+                    ZStack {
+                        Label("Saved", systemImage: "checkmark")
+                            .hidden()
+                        Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "checkmark.circle.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .pointerOnHover()
+
+                Button {
+                    text = ""
+                    persist("")
+                } label: {
+                    Label("Reset to default", systemImage: "arrow.uturn.backward")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(text.isEmpty && store.aiInstructions == nil)
+                .pointerOnHover()
             }
         }
-        .onAppear { navigation.prepareAIDraft() }
-        .onChange(of: navigation.aiDraft.text) {
-            if navigation.aiDraft.hasChanges { navigation.aiSaved = false }
+    }
+
+    private func persist(_ value: String) {
+        if let failure = store.updateAIInstructions(value) {
+            error = failure
+            saved = false
+            return
         }
-        .confirmationDialog("Discard unsaved instructions?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
-            Button("Discard changes", role: .destructive) { navigation.discardAIDraft() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This reloads the saved instructions. Your draft will be lost.")
-        }
-        .confirmationDialog("Replace this draft with the default?", isPresented: $confirmingReset, titleVisibility: .visible) {
-            Button("Use default", role: .destructive) { navigation.aiDraft.text = "" }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Your current draft will be cleared. Choose Save to apply the default instructions.")
+        error = nil
+        saved = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            saved = false
         }
     }
 }

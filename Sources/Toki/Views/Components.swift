@@ -10,39 +10,78 @@ struct UpdateAvailableBanner: View {
     @ObservedObject var updateChecker: UpdateChecker
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(update.isPrerelease ? "Toki \(update.version) beta is available" : "Toki \(update.version) is available",
-                  systemImage: "arrow.down.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                Button("What's New") { updateChecker.openRelease() }
-                    .buttonStyle(.bordered)
-                Button(updateChecker.isInstalling ? "Installing…" : "Update") { updateChecker.installUpdate() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(updateChecker.isInstalling)
-                if updateChecker.isInstalling { ProgressView().controlSize(.small) }
-                Spacer(minLength: 0)
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(update.isPrerelease ? "Toki \(update.version) (beta) is available" : "Toki \(update.version) is available")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(updateChecker.isInstalling
+                        ? "Downloading and verifying update…"
+                        : (update.isPrerelease ? "Install the latest pre-release from GitHub." : "Install the latest GitHub release."))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    updateChecker.openRelease()
+                } label: {
+                    Text("What's New")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Open this release's notes on GitHub")
+                .accessibilityLabel("What's new in Toki \(update.version)")
+
+                Button {
+                    updateChecker.installUpdate()
+                } label: {
+                    ZStack {
+                        Text("Update")
+                            .opacity(updateChecker.isInstalling ? 0 : 1)
+                        if updateChecker.isInstalling {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Installing update")
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(updateChecker.isInstalling)
+
+                // A menu rather than a bare close button. Closing used to mean "skip this
+                // version for good", which is a heavier commitment than an X implies - anyone
+                // who wanted the update just not right now had to either leave the banner up or
+                // silently opt out of the release.
                 Menu {
                     Button("Remind me in 6 hours") { updateChecker.snooze() }
                     Button("Skip \(update.version)") { updateChecker.dismiss() }
                 } label: {
-                    Image(systemName: "ellipsis").frame(width: 28, height: 28)
+                    Image(systemName: "xmark")
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .foregroundStyle(.secondary)
+                .help("Snooze for 6 hours, or skip this version")
                 .accessibilityLabel("Snooze or skip update")
             }
-            .controlSize(.small)
+
             if let error = updateChecker.installError {
-                DisclosureGroup("Update couldn't be installed") {
-                    Text(error).textSelection(.enabled)
-                }
-                .font(TokiTypography.supporting)
-                .foregroundStyle(.red)
+                Text(error)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
             }
         }
-        .padding(10)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
         .contentSurface(stroke: .blue)
     }
 }
@@ -148,7 +187,7 @@ struct AIInsightCard: View {
 
     @State private var expanded = false
 
-    private var canExpand: Bool { !suggestions.isEmpty || summary.count > 110 }
+    private var canExpand: Bool { !suggestions.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: expanded ? 6 : 0) {
@@ -163,40 +202,44 @@ struct AIInsightCard: View {
                                     .controlSize(.mini)
                             } else {
                                 Image(systemName: isAI ? "sparkles" : "lightbulb")
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(isAI ? .purple : .secondary)
                             }
                         }
                         .frame(width: 11, height: 11)
-                        Text(summary)
-                            .font(TokiTypography.supporting)
-                            .foregroundStyle(.primary)
-                            .lineLimit(expanded ? nil : 2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if canExpand {
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                        Group {
+                            if canExpand {
+                                Text(summary)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.primary)
+                                + Text(" ")
+                                + Text(Image(systemName: expanded ? "chevron.up" : "chevron.down"))
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundColor(Color(nsColor: .tertiaryLabelColor))
+                            } else {
+                                Text(summary)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.primary)
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
                     }
                 }
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityValue(canExpand ? (expanded ? "Expanded" : "Collapsed") : "")
                 .pointerOnHover()
 
                 if let switchAction {
                     Button(action: switchAction.perform) {
-                        Label("Switch", systemImage: switchAction.systemImage)
-                            .font(TokiTypography.supporting)
-                            .frame(minHeight: 28)
+                        Image(systemName: switchAction.systemImage)
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 22, height: 22)
+                            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                     .help(switchAction.help)
-                    .accessibilityLabel(switchAction.help)
                     .pointerOnHover()
                 }
             }
@@ -209,7 +252,7 @@ struct AIInsightCard: View {
                             .frame(width: 5, height: 5)
                             .padding(.top, 5)
                         Text(suggestion.text)
-                            .font(TokiTypography.supporting)
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -272,6 +315,30 @@ struct StatusBadge: View {
     }
 }
 
+// MARK: - ResetCreditBadge
+
+struct ResetCreditBadge: View {
+    var count: Int
+    var expiry: Date?
+
+    var body: some View {
+        Label(count > 1 ? "\(count) resets" : "1 reset", systemImage: "arrow.counterclockwise")
+            .labelStyle(.titleAndIcon)
+            .fixedSize()
+            .help(badgeHelp)
+            .accessibilityLabel(count > 1 ? "\(count) resets available" : "1 reset available")
+    }
+
+    private var badgeHelp: String {
+        let base = count > 1 ? "\(count) rate-limit resets are banked and ready to redeem"
+                             : "A rate-limit reset is banked and ready to redeem"
+        if let expiry {
+            return "\(base). Expires \(resetDescription(for: expiry))."
+        }
+        return base
+    }
+}
+
 // MARK: - ProviderPill
 
 struct ProviderPill: View {
@@ -308,20 +375,75 @@ struct MetricRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(metric.label)
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 75, idealWidth: 90, alignment: .leading)
+                    .frame(width: 90, alignment: .leading)
                     .lineLimit(1)
                 Text(copied ? "Copied" : metric.value)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .font(TokiTypography.supporting)
-            .frame(minHeight: 28)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Copy \(metric.label)")
         .pointerOnHover()
+    }
+}
+
+// MARK: - QuotaSummaryLine
+
+struct QuotaSummaryLine: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var label: String
+    var value: String
+    var resetHint: String?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                valueView
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            if let compactReset = compactResetDescription(resetHint) {
+                Text(compactReset)
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .help(resetHint ?? compactReset)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var valueView: some View {
+        if let availability = availabilityPercent {
+            HStack(spacing: 3) {
+                Text("\(availability)%")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(availabilityColor(for: availability, colorScheme: colorScheme))
+                Text("left")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Text(value)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private var availabilityPercent: Int? {
+        guard value.hasSuffix(" left"),
+              let percentIndex = value.firstIndex(of: "%"),
+              let percent = Int(value[..<percentIndex]) else {
+            return nil
+        }
+        return percent
     }
 }
 
@@ -396,7 +518,7 @@ struct ServiceStatusRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(status.level.tint)
                 Text(status.detail)
-                    .font(TokiTypography.supporting)
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -432,9 +554,9 @@ struct EmptyPanel: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
             Text(detail)
-                .font(TokiTypography.supporting)
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
