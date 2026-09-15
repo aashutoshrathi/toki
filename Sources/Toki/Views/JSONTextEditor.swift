@@ -5,19 +5,16 @@ import SwiftUI
 // hook, and pulling in a dependency for a once-in-a-while config edit box isn't worth it.
 struct JSONTextEditor: NSViewRepresentable {
     @Binding var text: String
-    var font: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular)
+    var font: NSFont = .monospacedSystemFont(ofSize: 10, weight: .regular)
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = NSTextView()
         textView.delegate = context.coordinator
-        textView.isEditable = context.environment.isEnabled
+        textView.isEditable = true
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = font
-        textView.textColor = .labelColor
-        textView.insertionPointColor = .labelColor
-        textView.textContainerInset = NSSize(width: 8, height: 8)
-        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainerInset = NSSize(width: 4, height: 4)
         textView.drawsBackground = false
         textView.string = text
         textView.isVerticallyResizable = true
@@ -40,7 +37,6 @@ struct JSONTextEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        textView.isEditable = context.environment.isEnabled
         if textView.string != text {
             textView.string = text
             Coordinator.applyHighlighting(to: textView.textStorage!, font: font)
@@ -63,7 +59,7 @@ struct JSONTextEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
-            Coordinator.applyHighlighting(to: textView.textStorage!, font: textView.font ?? .monospacedSystemFont(ofSize: 13, weight: .regular))
+            Coordinator.applyHighlighting(to: textView.textStorage!, font: textView.font ?? .monospacedSystemFont(ofSize: 10, weight: .regular))
         }
 
         @MainActor @objc func selectAll(_ sender: Any?) {
@@ -85,10 +81,12 @@ struct JSONTextEditor: NSViewRepresentable {
                 }
             }
 
+            // Order matters only for readability here, not correctness - each pattern only
+            // matches its own token kind, so overlapping recolors can't happen.
             highlight("\"(?:[^\"\\\\]|\\\\.)*\"(?=\\s*:)", color: .systemPurple) // keys
-            highlight("\"(?:[^\"\\\\]|\\\\.)*\"(?!\\s*:)", color: .systemBlue) // string values
-            highlight("(?<![\\w\"])-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?", color: .labelColor) // numbers
-            highlight("\\btrue\\b|\\bfalse\\b|\\bnull\\b", color: .systemPurple) // literals
+            highlight("\"(?:[^\"\\\\]|\\\\.)*\"(?!\\s*:)", color: .systemGreen) // string values (object values and array elements alike)
+            highlight("(?<![\\w\"])-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?", color: .systemOrange) // numbers
+            highlight("\\btrue\\b|\\bfalse\\b|\\bnull\\b", color: .systemPink) // literals
 
             storage.endEditing()
         }

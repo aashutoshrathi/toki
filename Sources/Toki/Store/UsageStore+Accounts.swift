@@ -169,7 +169,7 @@ func codexSnapshotAfterReset(_ snapshot: AccountSnapshot, resetsQuota: Bool) -> 
         }
         if resetsQuota, windowLabels.contains(metric.label) {
             var updatedMetric = metric
-            updatedMetric.value = "100% left"
+            updatedMetric.value = "0% used"
             return updatedMetric
         }
         if resetsQuota, metric.label == "Limit" {

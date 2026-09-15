@@ -4,32 +4,27 @@ struct AccountCard: View {
     var snapshot: AccountSnapshot
     @ObservedObject var store: UsageStore
     var onExpand: (String) -> Void = { _ in }
-    @ObservedObject var presentation: AccountPresentationState
+    @State private var isExpanded = false
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
     @FocusState private var aliasFocused: Bool
+    @State private var expandedTab: ExpandedTab
     @State private var confirmingReset = false
     @State private var isHovered = false
 
-    init(snapshot: AccountSnapshot, store: UsageStore, presentation: AccountPresentationState,
-         onExpand: @escaping (String) -> Void = { _ in }) {
+    private enum ExpandedTab: String, CaseIterable, Identifiable {
+        case usage = "Usage"
+        case sessions = "Sessions"
+        var id: String { rawValue }
+    }
+
+    init(snapshot: AccountSnapshot, store: UsageStore, onExpand: @escaping (String) -> Void = { _ in }) {
         self.snapshot = snapshot
         self.store = store
-        self.presentation = presentation
         self.onExpand = onExpand
-    }
-
-    private var isExpanded: Bool {
-        get { presentation.expandedAccountIDs.contains(snapshot.id) }
-        nonmutating set {
-            if newValue { presentation.expandedAccountIDs.insert(snapshot.id) }
-            else { presentation.expandedAccountIDs.remove(snapshot.id) }
-        }
-    }
-
-    private var expandedTab: AccountDetailTab {
-        get { presentation.detailTab(for: snapshot) }
-        nonmutating set { presentation.detailTabs[snapshot.id] = newValue }
+        // No usage metrics ever populate for agent-detection-only providers, so the
+        // Usage tab would just be empty - open straight to Sessions instead.
+        _expandedTab = State(initialValue: snapshot.isAgentDetectionOnly ? .sessions : .usage)
     }
 
     // Active agents are discovered by scanning processes, which reveals the provider but not
@@ -69,7 +64,7 @@ struct AccountCard: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 12)
                 }
                 .buttonStyle(.plain)
                 .help(isExpanded ? "Collapse account" : "Show account details")
@@ -105,12 +100,12 @@ struct AccountCard: View {
                         // Provider name is omitted here - the account logo already conveys it.
                         if store.debugMode && snapshot.isError {
                             Image(systemName: "exclamationmark.bubble.fill")
-                                .font(.system(size: 11))
+                                .font(.system(size: 9))
                                 .foregroundStyle(.orange)
                         }
                         if let secondaryIdentifier {
                             Text(secondaryIdentifier)
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 // Error text reads better cut from the end (keeps the
@@ -148,23 +143,15 @@ struct AccountCard: View {
 
             if !quotaWindows.isEmpty {
                 ForEach(quotaWindows) { window in
-                    let paceHint = window.paceDeviation().map { $0 == 0 ? "On pace" : "\(abs($0))% \($0 > 0 ? "over" : "under") pace" }
-                    usageBar(
-                        period: window.label,
-                        value: "\(window.percentLeft)% left",
-                        ratio: Double(window.percentLeft) / 100,
-                        resetHint: compactResetDescription(window.resetHint),
-                        paceHint: paceHint,
-                        paceRatio: window.expectedRemainingRatio()
-                    )
-                    .help([window.resetHint, paceHint].compactMap { $0 }.joined(separator: "\n"))
+                    quotaBar(window)
                 }
-            } else if let ratio = snapshot.displayProgressRatio {
-                usageBar(
-                    period: snapshot.menuBarValuePeriod ?? (snapshot.progressKind == .quota ? "Quota" : "Usage"),
-                    value: "\(percentText(ratio)) \(snapshot.progressKind == .quota ? "left" : "used")",
-                    ratio: ratio
-                )
+            } else if let ratio = progressRatio {
+                ProgressView(value: ratio)
+                    .tint(progressTint(ratio))
+                    .scaleEffect(y: 0.65, anchor: .center)
+                    // scaleEffect changes only the pixels, not SwiftUI's layout proposal.
+                    // Constrain the layout height too, or the thin bar leaves a large dead zone.
+                    .frame(height: 4)
             }
 
             if isExpanded {
@@ -188,7 +175,7 @@ struct AccountCard: View {
                         Spacer(minLength: 0)
                     } else {
                         Text(snapshot.primary)
-                            .font(TokiTypography.supporting)
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
@@ -198,7 +185,6 @@ struct AccountCard: View {
                         // provider a custom alias maps to.
                         ProviderPill(provider: snapshot.provider)
                     }
-                    accountActions
                 }
 
                 // The provider being down explains a stalled agent or a failing refresh, so it
@@ -210,8 +196,8 @@ struct AccountCard: View {
                 // Sessions only make sense for a connected account; when the account is
                 // not connected, hide the toggle and just show usage (the error state).
                 if !snapshot.isError && !snapshot.isAgentDetectionOnly {
-                    Picker("Account detail", selection: Binding(get: { expandedTab }, set: { expandedTab = $0 })) {
-                        ForEach(AccountDetailTab.allCases) { tab in
+                    Picker("", selection: $expandedTab) {
+                        ForEach(ExpandedTab.allCases) { tab in
                             Text(tab.rawValue).tag(tab)
                         }
                     }
@@ -220,9 +206,59 @@ struct AccountCard: View {
                 }
 
                 if snapshot.isError || (expandedTab == .usage && !snapshot.isAgentDetectionOnly) {
-                    usageDetails
+                    // The Error metric is dropped here because it is now the headline above -
+                    // listing it twice in one card is just noise.
+                    let rows = snapshot.isError
+                        ? snapshot.metrics.filter { $0.label != "Error" }
+                        : snapshot.metrics
+                    if !rows.isEmpty {
+                        VStack(spacing: 3) {
+                            ForEach(rows) { metric in
+                                MetricRow(metric: metric)
+                            }
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                    }
                 } else {
                     accountSessions
+                }
+
+                if expandedTab == .usage && !snapshot.accountInfo.isEmpty {
+                    Divider()
+                        .padding(.vertical, 1)
+                    VStack(spacing: 3) {
+                        ForEach(snapshot.accountInfo) { metric in
+                            MetricRow(metric: maskedAccountInfo(metric))
+                        }
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                }
+
+                if snapshot.resetCreditsAvailable > 0 {
+                    HStack(spacing: 8) {
+                        Button {
+                            // Same confirm-first flow as the collapsed-card badge; a reset is a
+                            // limited credit, so redeeming always asks first.
+                            confirmingReset = true
+                        } label: {
+                            ZStack {
+                                Label(resetButtonTitle, systemImage: "arrow.counterclockwise")
+                                    .opacity(isResetting ? 0 : 1)
+                                if isResetting {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .accessibilityLabel("Resetting Codex rate limit")
+                                }
+                            }
+                        }
+                        .accentGlassControlStyle()
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                        .disabled(isResetting)
+                        .help(resetButtonHelp)
+                        .pointerOnHover()
+                        Spacer()
+                    }
                 }
 
                 if store.debugMode && snapshot.isError {
@@ -245,7 +281,7 @@ struct AccountCard: View {
                     .foregroundStyle(.secondary)
                 }
 
-                if snapshot.canAdjust && expandedTab == .usage {
+                if snapshot.canAdjust {
                     HStack(spacing: 8) {
                         Button {
                             store.adjustUsage(accountID: snapshot.id, delta: -1)
@@ -299,95 +335,11 @@ struct AccountCard: View {
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeInOut(duration: 0.15), value: isExpanded)
-        .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
-            Button("Redeem reset", role: .destructive) {
-                store.consumeCodexResetCredit(accountID: snapshot.id)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(resetWasteWarning)
-        }
         .onChange(of: snapshot.isError) { _, isError in
             // Sessions has no meaning for a disconnected account; snap back to Usage so a
             // reconnect doesn't leave the toggle stuck on a hidden Sessions selection.
             if isError { expandedTab = .usage }
         }
-    }
-
-    private var accountActions: some View {
-        Menu {
-            Button("Rename", systemImage: "pencil") {
-                aliasDraft = accountIdentifier
-                isEditingAlias = true
-                aliasFocused = true
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Account actions")
-        .accessibilityLabel("Account actions")
-    }
-
-    @ViewBuilder
-    private var usageDetails: some View {
-        let rows = snapshot.isError ? snapshot.metrics.filter { $0.label != "Error" } : snapshot.metrics
-        ForEach([MetricGroup.quota, .activity, .usage], id: \.self) { group in
-            let metrics = rows.filter { $0.group == group }
-            if !metrics.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(group.rawValue)
-                        .font(.system(size: 13, weight: .medium))
-                    ForEach(metrics) { metric in
-                        MetricRow(metric: metric)
-                    }
-                }
-                .font(TokiTypography.supporting)
-                .padding(.vertical, 4)
-            }
-        }
-        let details = snapshot.accountInfo + rows.filter { $0.group == .account }
-        if !details.isEmpty {
-            DisclosureGroup("Account details", isExpanded: Binding(
-                get: { presentation.expandedAccountDetails.contains(snapshot.id) },
-                set: { expanded in
-                    if expanded { presentation.expandedAccountDetails.insert(snapshot.id) }
-                    else { presentation.expandedAccountDetails.remove(snapshot.id) }
-                }
-            )) {
-                VStack(spacing: 6) {
-                    ForEach(details) { metric in
-                        MetricRow(metric: maskedAccountInfo(metric))
-                    }
-                }
-                .font(.system(size: 11))
-                .padding(.top, 6)
-            }
-            .font(.system(size: 13, weight: .medium))
-        }
-    }
-
-    private var resetCreditAction: some View {
-        Button {
-            confirmingReset = true
-        } label: {
-            HStack(spacing: 6) {
-                if isResetting { ProgressView().controlSize(.small) }
-                Label(isResetting ? "Resetting…" : resetButtonTitle, systemImage: "arrow.counterclockwise")
-            }
-        }
-        .font(TokiTypography.supporting)
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.small)
-        .disabled(isResetting)
-        .accessibilityLabel("Reset quota, \(snapshot.resetCreditsAvailable) resets available")
-        .help(resetButtonHelp)
-        .pointerOnHover()
     }
 
     private var rowBackground: Color {
@@ -403,7 +355,7 @@ struct AccountCard: View {
             if isEditingAlias {
                 TextField("Alias", text: $aliasDraft)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .frame(width: 120)
                     .focused($aliasFocused)
                     .onSubmit(saveAlias)
@@ -411,18 +363,28 @@ struct AccountCard: View {
                     saveAlias()
                 } label: {
                     Image(systemName: "checkmark")
-                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
                 .help("Save alias")
                 .pointerOnHover()
             } else {
                 Text(displayedAccountIdentifier)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-
+                Button {
+                    aliasDraft = accountIdentifier
+                    isEditingAlias = true
+                    aliasFocused = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Edit alias")
+                .pointerOnHover()
             }
         }
     }
@@ -464,13 +426,9 @@ struct AccountCard: View {
         guard store.hidesSensitiveInfo else { return metric }
         switch metric.label {
         case "Email":
-            var masked = metric
-            masked.value = SensitiveText.redactingEmails(metric.value)
-            return masked
+            return MetricLine(label: metric.label, value: SensitiveText.redactingEmails(metric.value))
         case "Org", "Org ID":
-            var masked = metric
-            masked.value = SensitiveText.redactedValue(metric.value)
-            return masked
+            return MetricLine(label: metric.label, value: SensitiveText.redactedValue(metric.value))
         default:
             return metric
         }
@@ -503,7 +461,7 @@ struct AccountCard: View {
             EmptyView()
         } else if snapshot.isError {
             Text(collapsedStatus)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(statusColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -512,52 +470,81 @@ struct AccountCard: View {
             // account logo above already covers the live signal, so this just says
             // whether anything is running at all.
             Text(agentStatusActive ? "Active" : "Not running")
-                .font(TokiTypography.supporting)
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(agentStatusActive ? Color.blue : Color.secondary)
-        } else if snapshot.provider == .codex, snapshot.resetCreditsAvailable > 0 {
-            resetCreditAction
         } else if snapshot.remainingRatio == nil {
+            // Cost-based providers (Pi, OpenCode) have no quota percentage - show
+            // today's spend prominently, with token counts on a second line.
             VStack(alignment: .trailing, spacing: 2) {
                 if let bar = snapshot.menuBarValue {
                     Text(bar)
-                        .font(.system(size: 13, weight: .medium))
-                        .monospacedDigit()
-                    if let period = snapshot.menuBarValuePeriod {
-                        Text(period)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 if let todayMetric = snapshot.metrics.first(where: { $0.label == "Today" }) {
                     Text(todayMetric.value)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                 }
             }
             .lineLimit(1)
             .minimumScaleFactor(0.8)
+        } else if !quotaWindows.isEmpty {
+            if snapshot.provider == .codex, snapshot.resetCreditsAvailable > 0 {
+                Button {
+                    confirmingReset = true
+                } label: {
+                    ResetCreditBadge(count: snapshot.resetCreditsAvailable, expiry: snapshot.resetCreditExpiry)
+                }
+                .accentGlassControlStyle()
+                .buttonBorderShape(.capsule)
+                .controlSize(.mini)
+                .disabled(isResetting)
+                .pointerOnHover()
+                .help(resetButtonHelp)
+                .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
+                    Button("Redeem reset", role: .destructive) {
+                        store.consumeCodexResetCredit(accountID: snapshot.id)
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text(resetWasteWarning)
+                }
+            }
+        } else {
+            QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
         }
     }
 
-    private func usageBar(
-        period: String, value: String, ratio: Double,
-        resetHint: String? = nil, paceHint: String? = nil, paceRatio: Double? = nil
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(period)
-                if let resetHint {
-                    Text(resetHint).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Text(value)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-                    .fixedSize()
+    private func quotaBar(_ window: RateLimitWindow) -> some View {
+        let ratio = Double(100 - window.percentLeft) / 100
+        let now = Date()
+        let paceRatio = window.expectedRemainingRatio(at: now).map { 1 - $0 }
+        let deviation = window.paceDeviation(at: now)
+        let paceHint = deviation.map {
+            if $0 == 0 { return "On track" }
+            return $0 > 0
+                ? "Using quota too fast · \($0)% overutilized"
+                : "Room to use more · \(abs($0))% underutilized"
+        }
+        let paceHelp = deviation.map { difference in
+            let explanation: String
+            if difference < 0 {
+                explanation = "Room to use more: \(abs(difference)) percentage points under pace."
+            } else if difference > 0 {
+                explanation = "Using quota too fast: \(difference) percentage points over pace."
+            } else {
+                explanation = "On track."
             }
-            .font(TokiTypography.supporting)
-            .foregroundStyle(.secondary)
+            return explanation + "\nMarker denotes expected usage by now."
+        }
+        let resetHint = compactResetDescription(window.resetHint)
+        let help = ["\(100 - window.percentLeft)% used · \(window.percentLeft)% left", window.resetHint, paceHelp]
+            .compactMap { $0 }.joined(separator: "\n")
+        return VStack(spacing: 4) {
+            HStack {
+                Spacer(minLength: 0)
+                QuotaSummaryLine(label: window.label, value: "\(window.percentLeft)% left", resetHint: nil)
+            }
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.primary.opacity(0.12))
@@ -565,6 +552,9 @@ struct AccountCard: View {
                         .fill(progressTint(ratio))
                         .frame(width: geometry.size.width * min(1, max(0, ratio)))
                 }
+                // Native track sizing, with an explicit fill to keep quota colors stable across appearances.
+                .frame(height: 5)
+                .frame(height: geometry.size.height)
                 .overlay {
                     if let paceRatio {
                         Capsule()
@@ -579,72 +569,98 @@ struct AccountCard: View {
                 }
             }
             .frame(height: 4)
-            if let paceHint {
-                Text(paceHint)
-                    .font(TokiTypography.supporting)
-                    .foregroundStyle(.secondary)
+            HStack {
+                // Reserve the caption line before reset timing is known.
+                Text(paceHint ?? " ")
+                Spacer(minLength: 4)
+                if let resetHint {
+                    Text(resetHint).foregroundStyle(.tertiary).fixedSize()
+                }
             }
+            .font(.system(size: 9))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
+        .help(help)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(period)
-        .accessibilityValue([value, resetHint, paceHint?.replacingOccurrences(of: "% ", with: " percentage points ")].compactMap { $0 }.joined(separator: ". "))
+        .accessibilityLabel(window.label)
+        .accessibilityValue(help)
     }
 
     private var quotaWindows: [RateLimitWindow] {
         [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
     }
 
+    private var currentSessionAvailability: String {
+        availabilityText(for: ["Daily", "5h", "Today"]) ?? snapshot.primary
+    }
+
     @ViewBuilder
     private var accountSessions: some View {
         if accountAgents.isEmpty {
             Text("No active \(snapshot.provider.displayName) sessions")
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 6)
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Text("All active \(snapshot.provider.displayName) sessions")
-                    .font(.system(size: 11))
+                    .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
                 ForEach(accountAgents) { agent in
-                    let identity = SessionIdentityPresentation(agent: agent, among: store.activeAgents)
                     Button {
                         ActiveAgentNavigator.navigate(to: agent)
                     } label: {
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(identity.title)
-                                    .font(.system(size: 13, weight: .medium))
+                        HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(agent.title)
+                                    .font(.system(size: 11, weight: .medium))
                                     .lineLimit(1)
-                                if let context = identity.context {
-                                    Text(context)
-                                        .font(.system(size: 11))
+                                if let dir = agent.contextDisplay {
+                                    Text(dir)
+                                        .font(.system(size: 10))
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                                        .lineLimit(1)
                                         .truncationMode(.middle)
                                 }
-                                Text(identity.detail)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
                             }
-                            Spacer(minLength: 0)
+                            Spacer()
+                            if let host = agent.hostApp {
+                                Text(host.displayName)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                            }
                             Image(systemName: agent.hasTerminalTarget ? "arrow.up.forward.app" : "macwindow.on.rectangle")
-                                .font(.system(size: 11))
+                                .font(.system(size: 10))
                                 .foregroundStyle(.blue)
-                                .frame(width: 28, height: 28)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .padding(.vertical, 4)
                     }
                     .buttonStyle(.plain)
-                    .help("Open " + identity.title)
                     .pointerOnHover()
                 }
             }
         }
+    }
+
+    private func availabilityText(for labels: Set<String>) -> String? {
+        guard let metric = snapshot.metrics.first(where: { labels.contains($0.label) }) else {
+            return nil
+        }
+        return remainingText(from: metric.value)
+    }
+
+    private var currentResetTime: String? {
+        guard let metric = snapshot.metrics.first(where: { ["Daily", "5h", "Today"].contains($0.label) }),
+              let range = metric.value.range(of: "resets in ") else {
+            return nil
+        }
+        return String(metric.value[range.lowerBound...])
+    }
+
+
+    private var progressRatio: Double? {
+        snapshot.progressRatio ?? snapshot.remainingRatio.map { 1 - $0 }
     }
 
     private var isResetting: Bool {
@@ -652,7 +668,7 @@ struct AccountCard: View {
     }
 
     private var resetButtonTitle: String {
-        snapshot.resetCreditsAvailable > 1 ? "\(snapshot.resetCreditsAvailable) resets" : "1 reset"
+        snapshot.resetCreditsAvailable > 1 ? "Reset now (\(snapshot.resetCreditsAvailable) available)" : "Reset now"
     }
 
     private var resetButtonHelp: String {
@@ -668,7 +684,7 @@ struct AccountCard: View {
     // choice rather than a bare warning. Also surface the credit's expiry when known, so the
     // user can decide whether to redeem now or wait (issue #130).
     private var resetWasteWarning: String {
-        let leftRatio = snapshot.remainingRatio ?? snapshot.progressRatio.map { 1 - $0 }
+        let leftRatio = snapshot.remainingRatio ?? progressRatio.map { 1 - $0 }
         if let percentLeft = leftRatio.map({ Int(($0 * 100).rounded()) }) {
             var warning = "You still have \(percentLeft)% of this window left. A reset is a limited banked credit, and redeeming it now discards that remaining quota."
             if let expiry = snapshot.resetCreditExpiry {
@@ -692,9 +708,8 @@ struct AccountCard: View {
     }
 
     private func progressTint(_ ratio: Double) -> Color {
-        let used = snapshot.progressKind == .quota ? 1 - ratio : ratio
-        if used >= 0.85 { return .red }
-        if used >= 0.60 { return .orange }
+        if ratio >= 0.58 { return .red }
+        if ratio >= 0.25 { return .orange }
         return .green
     }
 

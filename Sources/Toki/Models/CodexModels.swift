@@ -26,27 +26,27 @@ struct CodexUsage {
         }
 
         if let todayTokens {
-            metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayTokens)) tokens", group: .activity))
+            metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayTokens)) tokens"))
         } else if let bucket = latestBucket(buckets),
                   let tokens = optionalNumber(firstValue(bucket, keys: ["tokens"])),
                   let day = firstValue(bucket, keys: ["start_date", "startDate"]) as? String {
-            metrics.append(MetricLine(label: "Latest day", value: "\(formatCompact(tokens)) tokens · \(day.prefix(10))", group: .activity))
+            metrics.append(MetricLine(label: "Latest day", value: "\(formatCompact(tokens)) tokens · \(day.prefix(10))"))
         }
         if let lifetime = summaryMetric("lifetime_tokens", "lifetimeTokens") {
-            metrics.append(MetricLine(label: "Lifetime", value: "\(formatCompact(lifetime)) tokens", group: .activity))
+            metrics.append(MetricLine(label: "Lifetime", value: "\(formatCompact(lifetime)) tokens"))
         }
         if let peak = summaryMetric("peak_daily_tokens", "peakDailyTokens") {
-            metrics.append(MetricLine(label: "Peak day", value: "\(formatCompact(peak)) tokens", group: .activity))
+            metrics.append(MetricLine(label: "Peak day", value: "\(formatCompact(peak)) tokens"))
         }
         if let longestTurn = summaryMetric("longest_running_turn_sec", "longestRunningTurnSec"),
            longestTurn > 0 {
-            metrics.append(MetricLine(label: "Longest turn", value: formatDuration(seconds: longestTurn), group: .activity))
+            metrics.append(MetricLine(label: "Longest turn", value: formatDuration(seconds: longestTurn)))
         }
         if let currentStreak = summaryMetric("current_streak_days", "currentStreakDays") {
-            metrics.append(MetricLine(label: "Current streak", value: "\(Int(currentStreak)) days", group: .activity))
+            metrics.append(MetricLine(label: "Current streak", value: "\(Int(currentStreak)) days"))
         }
         if let longestStreak = summaryMetric("longest_streak_days", "longestStreakDays") {
-            metrics.append(MetricLine(label: "Longest streak", value: "\(Int(longestStreak)) days", group: .activity))
+            metrics.append(MetricLine(label: "Longest streak", value: "\(Int(longestStreak)) days"))
         }
     }
 
@@ -134,14 +134,14 @@ struct CodexRateLimits {
                 if let expiry = resetCreditExpiry {
                     value += " · expires \(resetDescription(for: expiry))"
                 }
-                metrics.append(MetricLine(label: "Resets", value: value, group: .quota))
+                metrics.append(MetricLine(label: "Resets", value: value))
             }
         }
         if let credits = limits["credits"] as? [String: Any] {
             appendCredits(credits)
         }
         if let reached = firstValue(limits, keys: ["rateLimitReachedType"]) as? String, !reached.isEmpty {
-            metrics.append(MetricLine(label: "Limit", value: reached, group: .quota))
+            metrics.append(MetricLine(label: "Limit", value: reached))
         }
     }
 
@@ -217,9 +217,9 @@ struct CodexRateLimits {
         case .secondary: secondaryWindow = summary
         }
 
-        var value = "\(Int((100 - clampedUsed).rounded()))% left"
+        var value = "\(Int(clampedUsed.rounded()))% used"
         if let resetText { value += " - \(resetText)" }
-        metrics.append(MetricLine(label: label, value: value, group: .quota))
+        metrics.append(MetricLine(label: label, value: value))
     }
 
     private func windowLabel(_ window: [String: Any], fallback: String) -> String {
@@ -235,14 +235,14 @@ struct CodexRateLimits {
 
     private mutating func appendCredits(_ credits: [String: Any]) {
         if let unlimited = credits["unlimited"] as? Bool, unlimited {
-            metrics.append(MetricLine(label: "Credits", value: "Unlimited", group: .quota))
+            metrics.append(MetricLine(label: "Credits", value: "Unlimited"))
             return
         }
         if let hasCredits = credits["hasCredits"] as? Bool {
-            metrics.append(MetricLine(label: "Credits", value: hasCredits ? "Available" : "Depleted", group: .quota))
+            metrics.append(MetricLine(label: "Credits", value: hasCredits ? "Available" : "Depleted"))
         }
         if let balance = credits["balance"] as? String, !balance.isEmpty {
-            metrics.append(MetricLine(label: "Balance", value: balance, group: .quota))
+            metrics.append(MetricLine(label: "Balance", value: balance))
         }
     }
 }
@@ -265,13 +265,13 @@ struct CodexAccountInfo {
 
         var lines: [MetricLine] = []
         if let type = firstValue(account, keys: ["type"]) as? String {
-            lines.append(MetricLine(label: "Account type", value: type, group: .account))
+            lines.append(MetricLine(label: "Account type", value: type))
         }
         if let plan = firstValue(account, keys: ["planType"]) as? String {
-            lines.append(MetricLine(label: "Plan", value: plan, group: .account))
+            lines.append(MetricLine(label: "Plan", value: plan))
         }
         if let email = firstValue(account, keys: ["email"]) as? String, !email.isEmpty {
-            lines.append(MetricLine(label: "Email", value: email, group: .account))
+            lines.append(MetricLine(label: "Email", value: email))
         }
         return lines
     }

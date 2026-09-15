@@ -6,9 +6,9 @@ struct UsageHeatmap: View {
     @ObservedObject var store: UsageStore
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @ObservedObject var presentation: AnalyticsPresentationState
+    @State private var provider: Provider?
     @State private var isPulsing = false
-    @State private var hoveredDayID: String?
+    @State private var hoveredDay: HeatmapDay?
 
     // Capped at retention: rendering days already pruned would show them as "no usage".
     private var dayCount: Int {
@@ -18,27 +18,24 @@ struct UsageHeatmap: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            Text(dateRange)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             // Without this the empty grid renders first, which reads as "no activity".
             if store.isScanningActivity, store.dailyActivity.isEmpty {
                 loadingGrid
             } else if days.allSatisfy({ $0.level == nil }) {
                 // A read failure is not an absence of work - say which one this is.
-                Text(unreadableProviders.isEmpty
+                Text(store.unreadableActivityProviders.isEmpty
                      ? "No agent activity found in the last \(dayCount) days"
                      : unreadableNotice)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(store.unreadableActivityProviders.isEmpty ? .tertiary : .secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 12)
             } else {
                 // A grid drawn from some of the providers looks exactly like one drawn from all
                 // of them, so a partial failure has to say so above the data it is missing from.
-                if !unreadableProviders.isEmpty {
+                if !store.unreadableActivityProviders.isEmpty {
                     Text(unreadableNotice)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
                 grid
@@ -49,28 +46,26 @@ struct UsageHeatmap: View {
     }
 
     private var unreadableNotice: String {
-        let names = unreadableProviders.map(\.displayName).joined(separator: ", ")
+        let names = store.unreadableActivityProviders.map(\.displayName).joined(separator: ", ")
         return "Couldn't read session history for \(names)"
     }
 
     private var header: some View {
         HStack {
-            Text("Daily activity")
+            Text("Daily usage")
                 .font(.system(size: 11, weight: .semibold))
             Spacer()
             Menu {
-                Button("All providers") { presentation.provider = nil }
+                Button("All providers") { provider = nil }
                 ForEach(availableProviders, id: \.self) { candidate in
-                    Button(candidate.displayName) { presentation.provider = candidate }
+                    Button(candidate.displayName) { provider = candidate }
                 }
             } label: {
-                Text(presentation.provider?.displayName ?? "All providers")
-                    .font(.system(size: 11, weight: .medium))
+                Text(provider?.displayName ?? "All providers")
+                    .font(.system(size: 10, weight: .medium))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .frame(minHeight: 28)
-            .accessibilityLabel("Activity provider")
         }
     }
 
@@ -79,8 +74,8 @@ struct UsageHeatmap: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text("Reading session history…")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
                 Spacer()
                 ProgressView()
                     .controlSize(.small)
@@ -93,7 +88,7 @@ struct UsageHeatmap: View {
                     ForEach(0..<7, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .fill(emptyColor)
-                            .frame(height: 28)
+                            .frame(height: 18)
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -114,10 +109,10 @@ struct UsageHeatmap: View {
     private var grid: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 3) {
-                ForEach(weekdaySymbols.indices, id: \.self) { index in
-                    Text(weekdaySymbols[index])
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -133,75 +128,86 @@ struct UsageHeatmap: View {
 
     @ViewBuilder
     private func cell(for day: HeatmapDay) -> some View {
-        if day.isPlaceholder {
-            Color.clear.frame(height: 28).frame(maxWidth: .infinity)
-                .accessibilityHidden(true)
-        } else {
-            Button {
-                presentation.pinnedDayID = presentation.pinnedDayID == day.id ? nil : day.id
-            } label: {
-                Text(day.date, format: .dateTime.day())
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    // These crossings maximize text contrast on the light and dark blue ramps.
-                    .foregroundStyle(day.level.map { $0 >= (colorScheme == .dark ? 55 : 46) ? Color.white : Color.black } ?? Color.primary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 28)
-                    .background(color(for: day.level), in: RoundedRectangle(cornerRadius: 4))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.primary.opacity((hoveredDayID ?? presentation.pinnedDayID) == day.id ? 0.85 : 0.18),
-                                    lineWidth: (hoveredDayID ?? presentation.pinnedDayID) == day.id ? 2 : 1)
-                    }
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(color(for: day.level))
+            .frame(height: 18)
+            .frame(maxWidth: .infinity)
+            // The palest steps fall under 3:1 against the surface, so the fill alone is not
+            // enough to delimit a cell - and forced-colors modes may drop the fill entirely.
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .stroke(
+                        // Ringed so the detail line below has a visible anchor.
+                        hoveredDay?.id == day.id
+                            ? Color.primary.opacity(0.85)
+                            : Color.primary.opacity(day.isPlaceholder ? 0 : 0.18),
+                        lineWidth: hoveredDay?.id == day.id ? 1.5 : 1
+                    )
+            )
+            .opacity(day.isPlaceholder ? 0 : 1)
+            // Not .help(): system tooltips are delayed and frequently never appear inside a
+            // popover. Figures go to the detail line below instead.
             .onHover { isInside in
-                if isInside { hoveredDayID = day.id }
-                else if hoveredDayID == day.id { hoveredDayID = nil }
-            }
-            .accessibilityLabel(day.tooltip)
-            .accessibilityValue(presentation.pinnedDayID == day.id ? "Pinned" : "")
-            .accessibilityHint("Activate to pin or unpin daily details")
-        }
-    }
-
-    private var detailDay: HeatmapDay? {
-        guard let id = hoveredDayID ?? presentation.pinnedDayID else { return nil }
-        return days.first { $0.id == id }
-    }
-
-    private var legend: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let day = detailDay {
-                Text("\(day.headline) · \(day.figures)")
-                    .font(.system(size: 11, weight: .medium))
-                    .fixedSize(horizontal: false, vertical: true)
-                if !day.breakdown.isEmpty {
-                    Text(day.breakdown)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                guard !day.isPlaceholder else { return }
+                if isInside {
+                    hoveredDay = day
+                } else if hoveredDay?.id == day.id {
+                    hoveredDay = nil
                 }
+            }
+            // Not colour-alone: VoiceOver gets the same figures.
+            .accessibilityLabel(day.tooltip)
+    }
+
+    // Fixed height, shared with the legend, so the panel doesn't resize on hover.
+    private var legend: some View {
+        ZStack {
+            if let day = hoveredDay {
+                hoverDetail(for: day)
             } else {
-                HStack(spacing: 6) {
-                    Text("Select a day for details")
+                HStack(spacing: 5) {
                     Spacer()
                     Text("Less")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tertiary)
+                    // A bar, not swatches: 64 chips would be illegible.
                     LinearGradient(
                         colors: (0..<Self.shadeCount).map { shade(at: Double($0) / Double(Self.shadeCount - 1)) },
-                        startPoint: .leading, endPoint: .trailing
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
-                    .frame(width: 48, height: 8)
+                    .frame(width: 72, height: 8)
                     .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.18), lineWidth: 0.5))
                     Text("More")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tertiary)
                 }
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
-        .padding(.top, 4)
-        .accessibilityElement(children: .combine)
+        .frame(height: 26, alignment: .center)
+    }
+
+    private func hoverDetail(for day: HeatmapDay) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                Text(day.headline)
+                    .font(.system(size: 10, weight: .semibold))
+                // Shown for quiet days too - a bare date reads as a failed load.
+                Text(day.figures)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(day.level == nil ? .tertiary : .secondary)
+                Spacer()
+            }
+            if !day.breakdown.isEmpty {
+                Text(day.breakdown)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Colour
@@ -260,21 +266,11 @@ struct UsageHeatmap: View {
     // MARK: - Data
 
     private var availableProviders: [Provider] {
-        Array(Set(store.dailyActivity.map(\.provider)).union(store.unreadableActivityProviders)).sorted { $0.displayName < $1.displayName }
-    }
-
-    private var unreadableProviders: [Provider] {
-        store.unreadableActivityProviders.filter { presentation.provider == nil || $0 == presentation.provider }
-    }
-
-    private var dateRange: String {
-        guard let first = days.first, let last = days.last else { return "" }
-        let format = Date.FormatStyle.dateTime.month(.abbreviated).day().year()
-        return "\(first.date.formatted(format)) – \(last.date.formatted(format))"
+        Array(Set(store.dailyActivity.map(\.provider))).sorted { $0.displayName < $1.displayName }
     }
 
     private var days: [HeatmapDay] {
-        UsageHeatmap.days(from: store.dailyActivity, provider: presentation.provider, dayCount: dayCount, now: Date())
+        UsageHeatmap.days(from: store.dailyActivity, provider: provider, dayCount: dayCount, now: Date())
     }
 
     // Padded to whole weeks; placeholders render blank, not as zero-usage days.

@@ -40,14 +40,14 @@ private enum ChangelogAsset {
 }
 
 private struct ChangelogRelease: Identifiable {
-    var id: String { version }
+    let id = UUID()
     let version: String
     let date: String
     let sections: [ChangelogSection]
 }
 
 private struct ChangelogSection: Identifiable {
-    var id: String { title }
+    let id = UUID()
     let title: String
     let items: [String]
 }
@@ -115,18 +115,8 @@ func inlineMarkdown(_ text: String) -> AttributedString {
     )) ?? AttributedString(text)
 }
 
-// Entries use a bold lead sentence as their user-facing headline. Keep the complete item in
-// the expanded notes, including links and technical detail, rather than truncating source text.
-func changelogHeadline(_ item: String) -> String {
-    guard item.hasPrefix("**"),
-          let end = item.dropFirst(2).range(of: "**") else { return item }
-    return String(item[..<end.upperBound])
-}
-
 struct ChangelogPage: View {
     var onClose: () -> Void
-    @State private var showsLatestDetails = false
-    @State private var expandedVersions: Set<String> = []
 
     private var releases: [ChangelogRelease] {
         guard let raw = ChangelogAsset.text() else { return [] }
@@ -134,115 +124,74 @@ struct ChangelogPage: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Button(action: onClose) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 13, height: 13)
-                        .contentShape(Rectangle())
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 25, height: 25)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
-                .functionalControlStyle()
+                .buttonStyle(.plain)
                 .help("Back")
                 .accessibilityLabel("Back")
                 .pointerOnHover()
-                Text("What’s new")
-                    .font(.system(size: 15, weight: .semibold))
+                Text("What's new")
+                    .font(.system(size: 14, weight: .semibold))
                 Spacer()
             }
 
-            if let latest = releases.first {
+            if releases.isEmpty {
+                Text("Changelog unavailable.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        latestCard(latest)
-                        if releases.count > 1 {
-                            Text("Earlier releases")
-                                .font(.system(size: 13, weight: .semibold))
-                            ForEach(Array(releases.dropFirst())) { release in
-                                DisclosureGroup(isExpanded: Binding(
-                                    get: { expandedVersions.contains(release.version) },
-                                    set: { expanded in
-                                        if expanded { expandedVersions.insert(release.version) }
-                                        else { expandedVersions.remove(release.version) }
-                                    }
-                                )) {
-                                    releaseNotes(release)
-                                        .padding(.top, 8)
-                                } label: {
-                                    releaseHeading(release)
-                                }
-                                .padding(10)
-                                .contentSurface()
-                            }
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(releases) { release in
+                            releaseCard(release)
                         }
                     }
                 }
-            } else {
-                Text("Release notes are unavailable in this build.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private func latestCard(_ release: ChangelogRelease) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Latest release")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-            releaseHeading(release)
-            if !showsLatestDetails {
-                ForEach(Array(release.sections.flatMap(\.items).prefix(4)), id: \.self) { item in
-                    bullet(changelogHeadline(item))
+    private func releaseCard(_ release: ChangelogRelease) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(release.version == "Unreleased" ? release.version : "v\(release.version)")
+                    .font(.system(size: 12, weight: .bold))
+                if !release.date.isEmpty {
+                    Text(release.date)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                 }
             }
-            DisclosureGroup("Complete release notes", isExpanded: $showsLatestDetails) {
-                releaseNotes(release)
-                    .padding(.top, 8)
-            }
-            .font(.system(size: 11, weight: .medium))
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .contentSurface()
-    }
-
-    private func releaseHeading(_ release: ChangelogRelease) -> some View {
-        HStack(spacing: 8) {
-            Text(release.version == "Unreleased" ? release.version : "v\(release.version)")
-                .font(.system(size: 13, weight: .semibold))
-            if !release.date.isEmpty {
-                Text(release.date)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func releaseNotes(_ release: ChangelogRelease) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
             ForEach(release.sections) { section in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(section.title)
-                        .font(.system(size: 13, weight: .semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(section.title.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.tertiary)
+                        .tracking(0.5)
                     ForEach(section.items, id: \.self) { item in
-                        bullet(item)
+                        HStack(alignment: .top, spacing: 5) {
+                            Text("-")
+                                .foregroundStyle(.secondary)
+                            Text(inlineMarkdown(item))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .tint(.blue)
+                        }
+                        .font(.system(size: 10.5))
                     }
                 }
             }
         }
-    }
-
-    private func bullet(_ item: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text("•")
-                .foregroundStyle(.secondary)
-            Text(inlineMarkdown(item))
-                .fixedSize(horizontal: false, vertical: true)
-                .tint(.accentColor)
-        }
-        .font(.system(size: 11))
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .contentSurface()
     }
 }

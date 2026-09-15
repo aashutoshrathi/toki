@@ -110,11 +110,11 @@ struct ClaudeCodeUsage {
 
             // Written the same way the 5h and 7d lines are, so the detail list reads as one set
             // rather than as a stray row in its own format.
-            var value = "\(Int((100 - clampedUsed).rounded()))% left"
+            var value = "\(Int(clampedUsed.rounded()))% used"
             if let reset {
                 value += " - resets in \(reset)"
             }
-            metrics.append(MetricLine(label: label, value: value, group: .quota))
+            metrics.append(MetricLine(label: label, value: value))
         }
     }
 
@@ -164,23 +164,23 @@ struct ClaudeCodeUsage {
             duration: duration
         ))
 
-        var value = "\(Int((100 - clampedUsed).rounded()))% left"
+        var value = "\(Int(clampedUsed.rounded()))% used"
         if let reset {
             value += " - resets in \(reset)"
         }
-        metrics.append(MetricLine(label: label, value: value, group: .quota))
+        metrics.append(MetricLine(label: label, value: value))
     }
 
     private mutating func appendExtraUsage(_ extraUsage: [String: Any]) {
         guard (extraUsage["is_enabled"] as? Bool) == true else {
-            metrics.append(MetricLine(label: "Extra", value: "Disabled", group: .quota))
+            metrics.append(MetricLine(label: "Extra", value: "Disabled"))
             return
         }
 
         guard let usedCents = optionalNumber(extraUsage["used_credits"]),
               let limitCents = optionalNumber(extraUsage["monthly_limit"]),
               let utilization = optionalNumber(extraUsage["utilization"]) else {
-            metrics.append(MetricLine(label: "Extra", value: "Enabled", group: .quota))
+            metrics.append(MetricLine(label: "Extra", value: "Enabled"))
             return
         }
         var value = "\(formatUSD(usedCents / 100)) / \(formatUSD(limitCents / 100))"
@@ -188,7 +188,7 @@ struct ClaudeCodeUsage {
         if let reset = resetDescription(extraUsage["resets_at"]) {
             value += " - resets in \(reset)"
         }
-        metrics.append(MetricLine(label: "Extra", value: value, group: .quota))
+        metrics.append(MetricLine(label: "Extra", value: value))
     }
 }
 

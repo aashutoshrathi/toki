@@ -103,19 +103,18 @@ struct SarvamCodeUsageClient {
             subtitle: "Sarvam Code - local usage",
             remainingRatio: nil,
             metrics: [
-                MetricLine(label: "Today", value: "\(formatCompact(Double(totals.todayInput))) in / \(formatCompact(Double(totals.todayOutput))) out", group: .activity),
-                MetricLine(label: "Cached input", value: formatCompact(Double(totals.todayCachedInput)), group: .activity),
-                MetricLine(label: "Reasoning output", value: formatCompact(Double(totals.todayReasoningOutput)), group: .activity),
-                MetricLine(label: "This week", value: "\(formatCompact(Double(totals.weekTokens))) tokens", group: .activity),
-                MetricLine(label: "This month", value: "\(formatCompact(Double(totals.monthTokens))) tokens", group: .activity),
-                MetricLine(label: "Total", value: "\(formatCompact(Double(totals.allTimeTokens))) tokens", group: .activity),
-                MetricLine(label: "Cost today", value: todayCost, group: .activity),
-                MetricLine(label: "Cost total", value: totalCost, group: .activity),
-                MetricLine(label: "Sessions", value: "\(totals.sessionCount)", group: .activity)
+                MetricLine(label: "Today", value: "\(formatCompact(Double(totals.todayInput))) in / \(formatCompact(Double(totals.todayOutput))) out"),
+                MetricLine(label: "Cached input", value: formatCompact(Double(totals.todayCachedInput))),
+                MetricLine(label: "Reasoning output", value: formatCompact(Double(totals.todayReasoningOutput))),
+                MetricLine(label: "This week", value: "\(formatCompact(Double(totals.weekTokens))) tokens"),
+                MetricLine(label: "This month", value: "\(formatCompact(Double(totals.monthTokens))) tokens"),
+                MetricLine(label: "Total", value: "\(formatCompact(Double(totals.allTimeTokens))) tokens"),
+                MetricLine(label: "Cost today", value: todayCost),
+                MetricLine(label: "Cost total", value: totalCost),
+                MetricLine(label: "Sessions", value: "\(totals.sessionCount)")
             ],
             isError: false,
-            menuBarValue: todayCost,
-            menuBarValuePeriod: "Today"
+            menuBarValue: todayCost
         )
     }
 

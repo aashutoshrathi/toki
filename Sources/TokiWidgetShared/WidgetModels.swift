@@ -62,8 +62,6 @@ public struct WidgetEntry: Codable, Identifiable, Sendable {
     public var remainingRatio: Double?
     public var leadingText: String?
     public var colorHex: String?
-    /// Reported reset wording at the snapshot's update time, never a live countdown.
-    public var resetContext: String?
 
     public init(
         id: String,
@@ -72,8 +70,7 @@ public struct WidgetEntry: Codable, Identifiable, Sendable {
         value: String,
         remainingRatio: Double?,
         leadingText: String?,
-        colorHex: String?,
-        resetContext: String? = nil
+        colorHex: String?
     ) {
         self.id = id
         self.provider = provider
@@ -82,6 +79,5 @@ public struct WidgetEntry: Codable, Identifiable, Sendable {
         self.remainingRatio = remainingRatio
         self.leadingText = leadingText
         self.colorHex = colorHex
-        self.resetContext = resetContext
     }
 }

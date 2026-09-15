@@ -80,14 +80,7 @@ final class RailWindowController {
     func show() -> Bool {
         guard bandIsVisible,
               let metrics = Self.metrics(for: NSScreen.main),
-              let geometry = RailGeometry.make(
-                screen: metrics,
-                providerCount: ringSnapshots.count,
-                detailCardHeight: ringSnapshots.prefix(RailGeometry.maxRows).map {
-                    let windows = [$0.primaryWindow, $0.secondaryWindow].compactMap { $0 }.count + $0.modelWindows.count
-                    return RailGeometry.detailCardHeight(windowCount: windows)
-                }.max() ?? 0
-              ) else {
+              let geometry = RailGeometry.make(screen: metrics, providerCount: ringSnapshots.count) else {
             hide()
             return false
         }

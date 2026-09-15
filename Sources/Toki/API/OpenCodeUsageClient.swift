@@ -45,9 +45,9 @@ struct OpenCodeUsageClient {
         let sessionCount = Int(row.value(4))
 
         var metrics: [MetricLine] = []
-        metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayIn)) in / \(formatCompact(todayOut)) out", group: .activity))
-        metrics.append(MetricLine(label: "Total", value: formatUSD(totalCost), group: .activity))
-        metrics.append(MetricLine(label: "Sessions", value: "\(sessionCount)", group: .activity))
+        metrics.append(MetricLine(label: "Today", value: "\(formatCompact(todayIn)) in / \(formatCompact(todayOut)) out"))
+        metrics.append(MetricLine(label: "Total", value: formatUSD(totalCost)))
+        metrics.append(MetricLine(label: "Sessions", value: "\(sessionCount)"))
 
         return AccountSnapshot(
             id: account.id,
@@ -58,8 +58,7 @@ struct OpenCodeUsageClient {
             remainingRatio: nil,
             metrics: metrics,
             isError: false,
-            menuBarValue: formatUSD(todayCost),
-            menuBarValuePeriod: "Today"
+            menuBarValue: formatUSD(todayCost)
         )
     }
 
