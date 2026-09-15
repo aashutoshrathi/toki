@@ -246,7 +246,6 @@ private final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
 // Pinned dark: it sits against the black housing, which doesn't follow the system theme.
 private struct NotchPanel: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let entries: [MenuBarStatusEntry]
     let awaitingInput: Int
     let isExpanded: Bool
@@ -273,7 +272,7 @@ private struct NotchPanel: View {
                 .offset(x: pillRect.minX, y: pillRect.minY)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.82), value: isExpanded)
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: isExpanded)
     }
 
     /// Around splits the readout across both bands; the badge goes right. With nothing to
@@ -301,27 +300,13 @@ private struct NotchPanel: View {
     }
 
     private var pill: some View {
-        Button(action: onClick) {
-            pillContent
-        }
-        .buttonStyle(.plain)
-        .onHover(perform: onHoverChange)
-        .pointerOnHover()
-        .accessibilityLabel("Open Toki")
-        .accessibilityValue(entries.map { entry in
-            "\(entry.leadingText ?? entry.provider.displayName), \(entry.value)\(entry.windowLabel.map { ", \($0) window" } ?? "")"
-        }.joined(separator: "; "))
-        .accessibilityHint("View account usage and active agents")
-    }
-
-    private var pillContent: some View {
         VStack(spacing: isExpanded ? 6 : 0) {
             readout
                 .frame(height: 22)
             if isExpanded {
-                Text("Open Toki")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
+                Text("Click to open Toki")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
             }
         }
         .padding(.top, clearsHousing ? bandHeight : 0)
@@ -334,6 +319,9 @@ private struct NotchPanel: View {
         .clipShape(BottomRoundedShape(cornerRadius: isExpanded ? 18 : 12))
         .environment(\.colorScheme, .dark)
         .contentShape(Rectangle())
+        .onHover(perform: onHoverChange)
+        .onTapGesture(perform: onClick)
+        .pointerOnHover()
     }
 }
 

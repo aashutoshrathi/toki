@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Restore the 3.3.3 popover layout, typography, settings, and widgets while keeping quota-window preferences and interval labels.
+- Refine quota bars with concise utilization hints, pace markers, stable reset-countdown spacing, and matching bar and percentage warning thresholds.
+
 ## 3.3.4 - 2026-09-15
 
 ### Added

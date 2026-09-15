@@ -108,17 +108,16 @@ struct PiUsageClient {
             subtitle: "Pi - local usage (estimated)",
             remainingRatio: nil,
             metrics: [
-                MetricLine(label: "Today", value: "\(formatCompact(totals.todayInput)) in / \(formatCompact(totals.todayOutput)) out", group: .activity),
-                MetricLine(label: "Cache", value: "\(formatCompact(totals.todayCacheRead)) read / \(formatCompact(totals.todayCacheWrite)) write", group: .activity),
-                MetricLine(label: "This week", value: formatUSD(totals.weekCost), group: .activity),
-                MetricLine(label: "This month", value: formatUSD(totals.monthCost), group: .activity),
-                MetricLine(label: "Estimated total", value: formatUSD(totals.allTimeCost), group: .activity),
-                MetricLine(label: "Sessions", value: "\(totals.sessionCount)", group: .activity)
+                MetricLine(label: "Today", value: "\(formatCompact(totals.todayInput)) in / \(formatCompact(totals.todayOutput)) out"),
+                MetricLine(label: "Cache", value: "\(formatCompact(totals.todayCacheRead)) read / \(formatCompact(totals.todayCacheWrite)) write"),
+                MetricLine(label: "This week", value: formatUSD(totals.weekCost)),
+                MetricLine(label: "This month", value: formatUSD(totals.monthCost)),
+                MetricLine(label: "Estimated total", value: formatUSD(totals.allTimeCost)),
+                MetricLine(label: "Sessions", value: "\(totals.sessionCount)")
             ],
             isError: false,
             // Cost-only provider: surfaces today's spend in the menu bar instead of a percentage.
-            menuBarValue: formatUSD(totals.todayCost),
-            menuBarValuePeriod: "Today"
+            menuBarValue: formatUSD(totals.todayCost)
         )
     }
 

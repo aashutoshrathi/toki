@@ -24,7 +24,7 @@ private struct TokiTimelineProvider: TimelineProvider {
         let regularRefresh = now.addingTimeInterval(15 * 60)
         let staleRefresh = data?.updatedAt.addingTimeInterval(tokiWidgetStaleAfter) ?? regularRefresh
         // Never ask WidgetKit to refresh in the past, but do schedule a re-render for when a
-        // snapshot crosses the stale boundary and needs its refresh reminder.
+        // snapshot is about to cross the stale boundary and fall back to the empty state.
         let nextRefresh = max(now.addingTimeInterval(60), min(regularRefresh, staleRefresh))
         completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
     }
@@ -87,7 +87,7 @@ private struct TokiWidgetEntryView: View {
 
     var body: some View {
         Group {
-            if let data = entry.data, !data.entries.isEmpty {
+            if let data = entry.data, !data.entries.isEmpty, !data.isStale(at: entry.date) {
                 content(data)
             } else {
                 emptyState
@@ -98,7 +98,20 @@ private struct TokiWidgetEntryView: View {
 
     @ViewBuilder
     private func content(_ data: WidgetDataSnapshot) -> some View {
-        if family == .systemMedium {
+        if data.allExhausted {
+            VStack(alignment: .leading, spacing: 8) {
+                widgetHeader
+                Text(data.breakSuggestion ?? "Take a break")
+                    .font(family == .systemSmall ? .title3 : .title2)
+                    .fontWeight(.semibold)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay(alignment: .topTrailing) {
+                attentionBadge(data.awaitingInputCount)
+            }
+        } else if family == .systemMedium {
             mediumContent(data)
         } else {
             smallContent(data)
@@ -106,9 +119,9 @@ private struct TokiWidgetEntryView: View {
     }
 
     private func smallContent(_ data: WidgetDataSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                widgetHeader(data)
+                widgetHeader
                 Spacer()
                 attentionBadge(data.awaitingInputCount)
             }
@@ -118,51 +131,46 @@ private struct TokiWidgetEntryView: View {
                 ProviderRow(item: item, title: titles[item.id] ?? item.displayName)
             }
             Spacer(minLength: 0)
-            SnapshotFooter(data: data, date: entry.date)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func mediumContent(_ data: WidgetDataSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                widgetHeader(data)
+                widgetHeader
                 Spacer()
                 attentionBadge(data.awaitingInputCount)
             }
             let shown = Array(data.entries.prefix(4))
             let titles = disambiguatedTitles(shown)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+            HStack(alignment: .top, spacing: 12) {
                 ForEach(shown) { item in
-                    ProviderRow(item: item, title: titles[item.id] ?? item.displayName)
+                    ProviderColumn(item: item, title: titles[item.id] ?? item.displayName)
+                        .frame(maxWidth: .infinity)
                 }
             }
             Spacer(minLength: 0)
-            SnapshotFooter(data: data, date: entry.date)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            WidgetTokiLogo(size: 24)
+            WidgetTokiLogo(size: 32)
             Text("Open Toki")
-                .font(.system(size: 13, weight: .semibold))
-            Text("No saved usage yet. Connect an account in Toki to get started.")
+                .font(.headline)
+            Text("Refresh usage to enable this widget.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func widgetHeader(_ data: WidgetDataSnapshot) -> some View {
-        HStack(spacing: 6) {
-            WidgetTokiLogo(size: 18)
-                .accessibilityLabel("Toki")
-            Text(data.entries.allSatisfy { $0.remainingRatio != nil } ? "Remaining" : "Usage")
-                .font(.system(size: 11, weight: .medium))
-        }
+    private var widgetHeader: some View {
+        WidgetTokiLogo(size: 20)
+            .accessibilityLabel("Toki")
     }
 
     @ViewBuilder
@@ -180,64 +188,46 @@ private struct TokiWidgetEntryView: View {
 
 }
 
-private struct SnapshotFooter: View {
-    let data: WidgetDataSnapshot
-    let date: Date
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            if data.allExhausted && !data.isStale(at: date) {
-                Text(data.breakSuggestion ?? "Take a break")
-                    .lineLimit(1)
-            }
-            Text("As of \(data.updatedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
-                .lineLimit(1)
-            if data.isStale(at: date) {
-                Text("Open Toki to refresh")
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-            }
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Last updated \(data.updatedAt.formatted(date: .abbreviated, time: .shortened))"
-            + (data.isStale(at: date) ? ". Data is stale. Open Toki to refresh."
-               : data.allExhausted ? ". \(data.breakSuggestion ?? "Take a break")" : ""))
-    }
-}
-
 private struct ProviderRow: View {
     let item: WidgetEntry
     var title: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 6) {
-                ProviderGlyph(item: item, size: 16)
-                Text(title)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                Spacer(minLength: 2)
-                Text(item.value)
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                    .lineLimit(1)
-            }
-            if let reset = item.resetContext {
-                Text(reset)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(spacing: 8) {
+            ProviderGlyph(item: item, size: 18)
+            Text(title)
+                .font(.caption)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(item.value)
+                .font(.body.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(widgetEntrySummary(item, title: title))
     }
 }
 
-private func widgetEntrySummary(_ item: WidgetEntry, title: String) -> String {
-    "\(title), \(item.value)" + (item.remainingRatio == nil ? "" : " remaining")
-        + (item.resetContext.map { ". At last update: \($0)" } ?? "")
+private struct ProviderColumn: View {
+    let item: WidgetEntry
+    var title: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ProviderGlyph(item: item, size: 22)
+            Text(item.value)
+                .font(.title3.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity)
+        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
 }
 
 private func disambiguatedTitles(_ entries: [WidgetEntry]) -> [String: String] {
@@ -303,9 +293,7 @@ private struct QuotaRings: View {
     }
 
     private var accessibilitySummary: String {
-        let titles = disambiguatedTitles(ringEntries)
-        return ringEntries.map { widgetEntrySummary($0, title: titles[$0.id] ?? $0.displayName) }
-            .joined(separator: "; ")
+        ringEntries.map { "\($0.displayName), \($0.value) remaining" }.joined(separator: "; ")
     }
 }
 
@@ -343,7 +331,9 @@ private struct TokiQuotaRingsEntryView: View {
 
     var body: some View {
         Group {
-            if let data = entry.data, !ringEntries(data).isEmpty {
+            if let data = entry.data,
+               !data.isStale(at: entry.date),
+               !ringEntries(data).isEmpty {
                 content(data)
             } else {
                 emptyState
@@ -353,12 +343,10 @@ private struct TokiQuotaRingsEntryView: View {
     }
 
     private func content(_ data: WidgetDataSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                WidgetTokiLogo(size: 18)
+                WidgetTokiLogo(size: 20)
                     .accessibilityLabel("Toki")
-                Text("Remaining")
-                    .font(.system(size: 11, weight: .medium))
                 Spacer()
                 if data.awaitingInputCount > 0 {
                     Image(systemName: "exclamationmark.circle.fill")
@@ -367,66 +355,47 @@ private struct TokiQuotaRingsEntryView: View {
                 }
             }
 
-            let rings = Array(ringEntries(data).prefix(3))
-            let titles = disambiguatedTitles(rings)
             if family == .systemMedium {
+                let rings = ringEntries(data)
                 let colors = resolvedRingColors(rings, colorScheme: colorScheme)
-                HStack(spacing: 16) {
-                    QuotaRings(entries: rings, size: 76)
-                    VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 22) {
+                    QuotaRings(entries: data.entries, size: 104)
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(rings) { item in
-                            HStack(spacing: 6) {
+                            HStack(spacing: 7) {
                                 Circle()
                                     .fill(colors[item.id] ?? providerColor(item.provider))
                                     .frame(width: 8, height: 8)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    HStack(spacing: 4) {
-                                        Text(titles[item.id] ?? item.displayName)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 2)
-                                        Text(item.value)
-                                            .monospacedDigit().fontWeight(.semibold)
-                                    }
-                                    if item.id == rings.first?.id, let reset = item.resetContext {
-                                        Text(reset)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
+                                Text(item.displayName)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(item.value)
+                                    .font(.caption.monospacedDigit().weight(.semibold))
                             }
-                            .font(.system(size: 11))
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(widgetEntrySummary(item, title: titles[item.id] ?? item.displayName))
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                QuotaRings(entries: rings, size: 52)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if let item = rings.first(where: { $0.resetContext != nil }), let reset = item.resetContext {
-                    Text("\(titles[item.id] ?? item.displayName): \(reset)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Spacer(minLength: 6)
+                QuotaRings(entries: data.entries, size: 94)
+                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 6)
             }
-            SnapshotFooter(data: data, date: entry.date)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            WidgetTokiLogo(size: 24)
-            Text(entry.data?.entries.isEmpty == false ? "No percentage quotas" : "Open Toki")
-                .font(.system(size: 13, weight: .semibold))
-            Text(entry.data?.entries.isEmpty == false
-                 ? "Open Toki to refresh quota, or choose Toki Usage for other readings."
-                 : "No saved usage yet. Connect an account in Toki to get started.")
-                .font(.system(size: 11))
+            WidgetTokiLogo(size: 32)
+            Text("Open Toki")
+                .font(.headline)
+            Text("Refresh percentage-based usage to draw your quota rings.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(4)
+                .lineLimit(3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -631,7 +600,7 @@ private struct TokiQuotaRingsWidget: Widget {
             TokiQuotaRingsEntryView(entry: entry)
         }
         .configurationDisplayName("Toki Quota Rings")
-        .description("Up to three quota rings from your latest account readings.")
+        .description("Three live quota rings for your percentage-based AI accounts.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

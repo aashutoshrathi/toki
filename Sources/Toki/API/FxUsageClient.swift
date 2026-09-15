@@ -48,14 +48,14 @@ struct FxUsageClient {
 
         var metrics: [MetricLine] = []
         if let balance {
-            metrics.append(MetricLine(label: "Credits", value: balance, group: .quota))
+            metrics.append(MetricLine(label: "Credits", value: balance))
         }
         metrics.append(contentsOf: [
-            MetricLine(label: "Today", value: "\(formatCompact(totals.todayInput)) in / \(formatCompact(totals.todayOutput)) out", group: .activity),
-            MetricLine(label: "This week", value: formatUSD(totals.weekCost), group: .activity),
-            MetricLine(label: "This month", value: formatUSD(totals.monthCost), group: .activity),
-            MetricLine(label: "Total", value: formatUSD(totals.allTimeCost), group: .activity),
-            MetricLine(label: "Requests", value: "\(totals.requestCount)", group: .activity)
+            MetricLine(label: "Today", value: "\(formatCompact(totals.todayInput)) in / \(formatCompact(totals.todayOutput)) out"),
+            MetricLine(label: "This week", value: formatUSD(totals.weekCost)),
+            MetricLine(label: "This month", value: formatUSD(totals.monthCost)),
+            MetricLine(label: "Total", value: formatUSD(totals.allTimeCost)),
+            MetricLine(label: "Requests", value: "\(totals.requestCount)")
         ])
 
         return AccountSnapshot(
@@ -68,8 +68,7 @@ struct FxUsageClient {
             metrics: metrics,
             isError: false,
             menuBarValue: formatUSD(totals.todayCost),
-            lastActivity: totals.lastActivityMs > 0 ? Date(timeIntervalSince1970: totals.lastActivityMs / 1000) : nil,
-            menuBarValuePeriod: "Today"
+            lastActivity: totals.lastActivityMs > 0 ? Date(timeIntervalSince1970: totals.lastActivityMs / 1000) : nil
         )
     }
 

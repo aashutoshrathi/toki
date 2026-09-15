@@ -15,7 +15,7 @@ extension UsageStore {
         updatePreferences(next)
         appendEvent(
             kind: .notification,
-            title: isEnabled ? "Toki notifications paused" : "Toki notifications resumed",
+            title: isEnabled ? "DND enabled" : "DND disabled",
             detail: isEnabled ? "Notifications will be recorded but not delivered." : "Notifications can be delivered again.",
             deliveredNotification: false
         )

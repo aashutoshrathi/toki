@@ -37,16 +37,4 @@ final class ChangelogMarkdownTests: XCTestCase {
     func testMalformedMarkdownFallsBackToTheRawText() {
         XCTAssertFalse(rendered("A **dangling bold and a [link(broken").isEmpty)
     }
-
-    func testBoldLeadIsUsedWithoutTechnicalBody() {
-        XCTAssertEqual(
-            changelogHeadline("**Quota reset actions are easier to find.** Full details and `technical code`."),
-            "**Quota reset actions are easier to find.**"
-        )
-    }
-
-    func testUnstructuredEntryRemainsReadable() {
-        XCTAssertEqual(changelogHeadline("An entry without a bold headline."), "An entry without a bold headline.")
-        XCTAssertEqual(changelogHeadline("**An unclosed heading"), "**An unclosed heading")
-    }
 }

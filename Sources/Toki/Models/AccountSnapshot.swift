@@ -1,22 +1,9 @@
 import Foundation
 
-enum MetricGroup: String, CaseIterable, Hashable {
-    case quota = "Quota"
-    case activity = "Activity"
-    case usage = "Usage"
-    case account = "Account details"
-}
-
 struct MetricLine: Identifiable, Hashable {
     var id = UUID()
     var label: String
     var value: String
-    var group: MetricGroup = .usage
-}
-
-enum AccountProgressKind: Hashable {
-    case quota
-    case usage
 }
 
 // A single rate-limit window (e.g. Codex's rolling 5h window or its 7-day window), broken
@@ -78,15 +65,6 @@ struct AccountSnapshot: Identifiable, Hashable {
     var isAgentDetectionOnly: Bool = false
     var isSignInExpired: Bool = false
     var lastActivity: Date? = nil
-    /// Supplied by the source of a compact cost reading; a display string alone cannot tell
-    /// whether a provider reports a day, billing cycle, or lifetime amount.
-    var menuBarValuePeriod: String? = nil
-    var progressKind: AccountProgressKind = .usage
-
-    var displayProgressRatio: Double? {
-        let value = progressKind == .quota ? remainingRatio : (progressRatio ?? remainingRatio.map { 1 - $0 })
-        return value.map { min(1, max(0, $0)) }
-    }
 
     static let loadingPrimary = "Refreshing"
 

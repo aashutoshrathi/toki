@@ -2,430 +2,400 @@ import AppKit
 import Combine
 import SwiftUI
 
+private enum SettingsAnchor: Hashable {
+    case remoteControl
+}
+
+// Top-level "where can my phone reach this Mac" choice, mapped onto the underlying host/app modes.
 private enum ReachMode: Hashable {
     case network
     case anywhere
 }
 
+// Full-page settings/config view opened from the header gear (no longer a bottom tab).
 struct ConfigPage: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
-    @ObservedObject var navigation: SettingsNavigationState
+    var focusRemoteControl = false
     var onClose: () -> Void
 
     var body: some View {
-        Group {
-            if navigation.route == .changelog {
-                ChangelogPage { _ = navigation.goBack() }
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Button {
-                            if !navigation.goBack() { onClose() }
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 13, weight: .medium))
-                                .frame(width: 13, height: 13)
-                                .contentShape(Rectangle())
-                        }
-                        .functionalControlStyle()
-                        .help("Back")
-                        .accessibilityLabel("Back")
-                        Text(navigation.route.title)
-                            .font(.system(size: 15, weight: .semibold))
-                        Spacer(minLength: 0)
-                    }
-                    switch navigation.route {
-                    case .settings:
-                        SettingsPanel(store: store, updateChecker: updateChecker, navigation: navigation)
-                    case .configEditor:
-                        ConfigEditor(store: store, navigation: navigation)
-                    case .aiEditor:
-                        AIInstructionsEditor(store: store, navigation: navigation)
-                    case .pairing:
-                        RemoteConnectSheet { _ = navigation.goBack() }
-                    case .tailscaleGuide:
-                        ScrollView { TailscaleSetupGuide(port: RemoteControlServer.shared.port) }
-                    case .changelog:
-                        EmptyView()
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Button(action: onClose) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 13, height: 13)
+                        .contentShape(Rectangle())
                 }
-                .padding(12)
+                .functionalControlStyle()
+                .help("Back")
+                .accessibilityLabel("Back")
+                .pointerOnHover()
+                Text("Settings")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
             }
+            SettingsPanel(
+                store: store,
+                updateChecker: updateChecker,
+                focusRemoteControl: focusRemoteControl
+            )
         }
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
-
 }
 
 struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
-    @ObservedObject var navigation: SettingsNavigationState
+    var focusRemoteControl = false
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     @State private var launchAtLoginError: String?
+    @State private var isEditingPrompt = false
+
     @ObservedObject private var remoteServer = RemoteControlServer.shared
-    @State private var copiedCommand: String?
+    @State private var showingConnect = false
+    @State private var advancedExpanded = false
+    @State private var showingTailscaleGuide = false
+
+    // A brew install is moved onto the other cask when the channel changes, which takes
+    // long enough that the card has to say so rather than look inert.
+    private var channelSubtitle: String {
+        if updateChecker.isSwitchingCask {
+            return "Moving your Homebrew install to the other cask…"
+        }
+        if let error = updateChecker.caskSwitchError {
+            return error
+        }
+        return updateChecker.channel == .beta
+            ? "Includes pre-releases for early testing."
+            : "Stable releases only."
+    }
     private let reachabilityTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
-    private var channelSubtitle: String {
-        if updateChecker.isSwitchingCask { return "Moving your Homebrew install to the other cask…" }
-        if updateChecker.caskSwitchError != nil { return "Could not switch channels. See details below." }
-        return updateChecker.channel == .beta ? "Includes pre-releases for early testing." : "Stable releases only."
-    }
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("General").id("general")
-                generalContent
-                sectionHeader("Remote Control").id("remote-control")
-                remoteControlCard
-                sectionHeader("Appearance").id("appearance")
-                appearanceContent
-                sectionHeader("Notifications").id("notifications")
-                notificationsContent
-                sectionHeader("Permissions").id("permissions")
-                permissionsCard
-                sectionHeader("Updates").id("updates")
-                updatesContent
-                sectionHeader("Advanced").id("advanced")
-                advancedContent
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader("Remote Control")
+
+                    remoteControlCard
+                        .id(SettingsAnchor.remoteControl)
+
+                    sectionHeader("Permissions")
+
+                    permissionsCard
+
+                    sectionHeader("General")
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "power",
+                            iconColor: .secondary,
+                            title: "Launch at login",
+                            subtitle: "Start Toki automatically after you sign in."
+                        )
+                        Spacer(minLength: 8)
+                        Toggle("", isOn: launchAtLoginBinding)
+                            .accessibilityLabel("Launch at login")
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+
+                    if launchAtLoginNeedsApproval {
+                        HStack(spacing: 4) {
+                            Text("Needs approval in System Settings > General > Login Items.")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Button("Open") {
+                                LaunchAtLogin.openSystemSettings()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.blue)
+                            .pointerOnHover()
+                        }
+                        .padding(.leading, 26)
+                    }
+
+                    if let launchAtLoginError {
+                        Text(launchAtLoginError)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.red)
+                            .padding(.leading, 26)
+                    }
+                }
+                .padding(8)
+                .settingsCard()
+
+                menuBarCard
+
+                // Sits directly under the menu bar picker: it decides where the readout lives,
+                // so it belongs with the other placement settings rather than below the
+                // notification thresholds it had nothing to do with.
+                if NotchWindowController.isSupported {
+                    notchModeRow
+                }
+
+                railModeRow
+
+                if pinnableProviders.contains(where: { !quotaWindowLabels(for: $0).isEmpty }) {
+                    quotaWindowCard
+                }
+
+                sectionHeader("Layout")
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "sparkles",
+                            iconColor: .purple,
+                            title: "Show AI insight",
+                            subtitle: "Show the insight card at the top of the main panel."
+                        )
+                        Spacer(minLength: 8)
+                        Button {
+                            isEditingPrompt.toggle()
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(isEditingPrompt ? Color.purple : Color.secondary)
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit the AI prompt")
+                        .accessibilityLabel("Edit the AI prompt")
+                        .pointerOnHover()
+                        Toggle("", isOn: binding(\.aiInsightEnabled))
+                            .accessibilityLabel("Show AI insight")
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+                    .padding(8)
+
+                    if isEditingPrompt {
+                        AIInstructionsEditor(store: store)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
+                    }
+                }
+                .settingsCard()
+
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "bolt.ring.closed",
+                        iconColor: .blue,
+                        title: "Show quota rings",
+                        subtitle: "Display provider availability rings in the Accounts panel."
+                    )
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: binding(\.quotaRingsEnabled))
+                        .accessibilityLabel("Show quota rings")
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                .padding(8)
+                .settingsCard()
+
+                sectionHeader("Notifications")
+
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "bell",
+                        iconColor: .secondary,
+                        title: "Notifications",
+                        subtitle: "Show low-quota and session warnings."
+                    )
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: binding(\.notificationsEnabled))
+                        .accessibilityLabel("Notifications")
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                .padding(8)
+                .settingsCard()
+
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "moon",
+                        iconColor: .secondary,
+                        title: "Do not disturb",
+                        subtitle: "Silence notifications until you turn it back off."
+                    )
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: Binding(
+                        get: { store.preferences.dndEnabled },
+                        set: { store.setDND($0) }
+                    ))
+                    .accessibilityLabel("Do not disturb")
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+                .padding(8)
+                .settingsCard()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "speedometer",
+                            iconColor: .secondary,
+                            title: "Low quota threshold",
+                            subtitle: "Warn when a provider's remaining quota falls below this."
+                        )
+                        Spacer(minLength: 8)
+                        Text(percentText(store.preferences.lowQuotaThreshold))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    }
+                    Slider(value: binding(\.lowQuotaThreshold), in: 0.05...0.50, step: 0.05)
+                }
+                .padding(8)
+                .settingsCard()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        cardLabel(
+                            icon: "hourglass",
+                            iconColor: .secondary,
+                            title: "Session warning",
+                            subtitle: "Warn when the active session's quota falls below this."
+                        )
+                        Spacer(minLength: 8)
+                        Text(percentText(store.preferences.sessionWarningThreshold))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    }
+                    Slider(value: binding(\.sessionWarningThreshold), in: 0.05...0.40, step: 0.05)
+                }
+                .padding(8)
+                .settingsCard()
+
+                VStack(spacing: 10) {
+                    steppedSetting(
+                        icon: "timer",
+                        title: "Cooldown",
+                        explanation: "Minimum time between repeat notifications.",
+                        value: "\(store.preferences.notificationCooldownMinutes)m"
+                    ) {
+                        Stepper("", value: intBinding(\.notificationCooldownMinutes), in: 5...360, step: 5)
+                            .labelsHidden()
+                    }
+                    Divider()
+                    steppedSetting(
+                        icon: "clock.arrow.circlepath",
+                        title: "History",
+                        explanation: "Days of usage history kept for the heatmap.",
+                        value: "\(store.preferences.historyRetentionDays)d"
+                    ) {
+                        Stepper("", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
+                            .labelsHidden()
+                    }
+                }
+                .padding(8)
+                .settingsCard()
+
+                sectionHeader("Updates")
+
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "arrow.triangle.2.circlepath",
+                        iconColor: .secondary,
+                        title: "App updates",
+                        subtitle: appUpdatesStatus
+                    )
+                    Spacer(minLength: 8)
+                    Button {
+                        updateChecker.checkNow()
+                    } label: {
+                        ZStack {
+                            Text("Check now")
+                                .opacity(updateChecker.isChecking ? 0 : 1)
+                            if updateChecker.isChecking {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Checking for updates")
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(updateChecker.isChecking)
+                    .pointerOnHover()
+                }
+                .padding(8)
+                .settingsCard()
+
+                HStack(spacing: 8) {
+                    cardLabel(
+                        icon: "hammer",
+                        iconColor: .orange,
+                        title: "Channel",
+                        subtitle: channelSubtitle
+                    )
+                    Spacer(minLength: 8)
+                    Picker("Update channel", selection: Binding(
+                        get: { updateChecker.channel },
+                        set: { updateChecker.setChannel($0) }
+                    )) {
+                        ForEach(UpdateChannel.allCases) { channel in
+                            Text(channel.displayName).tag(channel)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .fixedSize()
+                    .disabled(updateChecker.isSwitchingCask)
+                    .pointerOnHover()
+                }
+                .padding(8)
+                .settingsCard()
+
+                if let update = updateChecker.availableUpdate {
+                    UpdateAvailableBanner(update: update, updateChecker: updateChecker)
+                }
+
+                sectionHeader("Advanced")
+
+                ConfigEditor(store: store)
+
+                HStack(spacing: 8) {
+                    advancedButton("Send debug report", icon: "paperclip") {
+                        DiagnosticsReporter.presentSharePicker()
+                    }
+                    advancedButton("Logs", icon: "folder") {
+                        DiagnosticsReporter.openLogFolder()
+                    }
+                }
             }
-            .scrollTargetLayout()
-            .font(.system(size: 13))
+            .font(.system(size: 12))
+            .padding(8)
         }
-        .scrollPosition(id: $navigation.scrollAnchor, anchor: .top)
+        .frame(maxHeight: .infinity)
+        .onAppear {
+            guard focusRemoteControl else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(SettingsAnchor.remoteControl, anchor: .top)
+            }
+        }
         .onAppear(perform: resyncLaunchAtLoginFromSystem)
+        // SMAppService's status can change out from under this view - e.g. the user
+        // clicks "Open" above, approves the item in System Settings, then switches back
+        // to Toki. Refresh on foreground so the toggle/note don't go stale until the next
+        // manual flip.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             resyncLaunchAtLoginFromSystem()
         }
     }
-
-    private func navigationRow(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 18)
-                Text(title)
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.secondary)
-            }
-            .padding(8)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .contentSurface()
-    }
-
-    @ViewBuilder
-    private var generalContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                cardLabel(
-                    icon: "power",
-                    iconColor: .secondary,
-                    title: "Launch at login",
-                    subtitle: "Start Toki automatically after you sign in."
-                )
-                Spacer(minLength: 8)
-                Toggle("", isOn: launchAtLoginBinding)
-                    .accessibilityLabel("Launch at login")
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-            }
-
-            if launchAtLoginNeedsApproval {
-                HStack(spacing: 4) {
-                    Text("Needs approval in System Settings > General > Login Items.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Button("Open") {
-                        LaunchAtLogin.openSystemSettings()
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.blue)
-                    .pointerOnHover()
-                }
-                .padding(.leading, 26)
-            }
-
-            if let launchAtLoginError {
-                Text(launchAtLoginError)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-                    .padding(.leading, 26)
-            }
-        }
-        .padding(8)
-        .settingsCard()
-        .id("launch-at-login")
-    }
-
-    @ViewBuilder
-    private var appearanceContent: some View {
-        menuBarCard.id("menu-bar")
-
-        if NotchWindowController.isSupported {
-            notchModeRow.id("notch")
-        }
-
-        railModeRow.id("rail")
-
-        if pinnableProviders.contains(where: { !quotaWindowLabels(for: $0).isEmpty }) {
-            quotaWindowCard.id("quota-window")
-        }
-
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                cardLabel(
-                    icon: "sparkles",
-                    iconColor: .purple,
-                    title: "Show AI insight",
-                    subtitle: "Show the insight card at the top of the main panel."
-                )
-                Spacer(minLength: 8)
-                Button {
-                    navigation.openAIEditor()
-                } label: {
-                    Image(systemName: "pencil")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Edit AI instructions")
-                .accessibilityLabel("Edit AI instructions")
-                Toggle("", isOn: binding(\.aiInsightEnabled))
-                    .accessibilityLabel("Show AI insight")
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-            }
-            .padding(8)
-
-        }
-        .settingsCard()
-        .id("ai-insight")
-
-        HStack(spacing: 8) {
-            cardLabel(
-                icon: "bolt.ring.closed",
-                iconColor: .blue,
-                title: "Show quota rings",
-                subtitle: "Display provider availability rings in the Accounts panel."
-            )
-            Spacer(minLength: 8)
-            Toggle("", isOn: binding(\.quotaRingsEnabled))
-                .accessibilityLabel("Show quota rings")
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-        }
-        .padding(8)
-        .settingsCard()
-        .id("quota-rings")
-    }
-
-    @ViewBuilder
-    private var notificationsContent: some View {
-        HStack(spacing: 8) {
-            cardLabel(
-                icon: "bell",
-                iconColor: .secondary,
-                title: "Notifications",
-                subtitle: "Show low-quota and session warnings."
-            )
-            Spacer(minLength: 8)
-            Toggle("", isOn: binding(\.notificationsEnabled))
-                .accessibilityLabel("Notifications")
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-        }
-        .padding(8)
-        .settingsCard()
-        .id("notifications-enabled")
-
-        HStack(spacing: 8) {
-            cardLabel(
-                icon: "moon",
-                iconColor: .secondary,
-                title: "Pause Toki notifications",
-                subtitle: "Silence notifications until you turn it back off."
-            )
-            Spacer(minLength: 8)
-            Toggle("", isOn: Binding(
-                get: { store.preferences.dndEnabled },
-                set: { store.setDND($0) }
-            ))
-            .accessibilityLabel("Pause Toki notifications")
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.small)
-        }
-        .padding(8)
-        .settingsCard()
-        .id("notifications-paused")
-
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                cardLabel(
-                    icon: "speedometer",
-                    iconColor: .secondary,
-                    title: "Low quota threshold",
-                    subtitle: "Warn when a provider's remaining quota falls below this."
-                )
-                Spacer(minLength: 8)
-                Text(percentText(store.preferences.lowQuotaThreshold))
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-            }
-            Slider(value: binding(\.lowQuotaThreshold), in: 0.05...0.50, step: 0.05)
-                .accessibilityLabel("Low quota threshold")
-                .accessibilityValue(percentText(store.preferences.lowQuotaThreshold))
-                .padding(.leading, 26)
-        }
-        .padding(8)
-        .settingsCard()
-        .id("low-quota-threshold")
-
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                cardLabel(
-                    icon: "hourglass",
-                    iconColor: .secondary,
-                    title: "Session warning",
-                    subtitle: "Warn when the active session's quota falls below this."
-                )
-                Spacer(minLength: 8)
-                Text(percentText(store.preferences.sessionWarningThreshold))
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-            }
-            Slider(value: binding(\.sessionWarningThreshold), in: 0.05...0.40, step: 0.05)
-                .accessibilityLabel("Session warning threshold")
-                .accessibilityValue(percentText(store.preferences.sessionWarningThreshold))
-                .padding(.leading, 26)
-        }
-        .padding(8)
-        .settingsCard()
-        .id("session-warning")
-
-        steppedSetting(
-            icon: "timer", title: "Cooldown",
-            explanation: "Minimum time between repeat notifications.",
-            value: "\(store.preferences.notificationCooldownMinutes)m"
-        ) {
-            Stepper("Notification cooldown", value: intBinding(\.notificationCooldownMinutes), in: 5...360, step: 5)
-                .labelsHidden()
-                .accessibilityValue("\(store.preferences.notificationCooldownMinutes) minutes")
-        }
-        .padding(8)
-        .settingsCard()
-        .id("notification-cooldown")
-    }
-
-    @ViewBuilder
-    private var updatesContent: some View {
-        HStack(spacing: 8) {
-            cardLabel(
-                icon: "arrow.triangle.2.circlepath",
-                iconColor: .secondary,
-                title: "App updates",
-                subtitle: appUpdatesStatus
-            )
-            Spacer(minLength: 8)
-            Button {
-                updateChecker.checkNow()
-            } label: {
-                ZStack {
-                    Text("Check now")
-                        .opacity(updateChecker.isChecking ? 0 : 1)
-                    if updateChecker.isChecking {
-                        ProgressView()
-                            .controlSize(.small)
-                            .accessibilityLabel("Checking for updates")
-                    }
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(updateChecker.isChecking)
-            .pointerOnHover()
-        }
-        .padding(8)
-        .settingsCard()
-        .id("check-updates")
-
-        HStack(spacing: 8) {
-            cardLabel(
-                icon: "hammer",
-                iconColor: .orange,
-                title: "Channel",
-                subtitle: channelSubtitle
-            )
-            Spacer(minLength: 8)
-            Picker("Update channel", selection: Binding(
-                get: { updateChecker.channel },
-                set: { updateChecker.setChannel($0) }
-            )) {
-                ForEach(UpdateChannel.allCases) { channel in
-                    Text(channel.displayName).tag(channel)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
-            .disabled(updateChecker.isSwitchingCask)
-            .pointerOnHover()
-        }
-        .padding(8)
-        .settingsCard()
-        .id("update-channel")
-
-        if let error = updateChecker.caskSwitchError {
-            Text(error)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 26)
-                .padding(8)
-                .id("channel-error")
-        }
-        if let update = updateChecker.availableUpdate {
-            UpdateAvailableBanner(update: update, updateChecker: updateChecker)
-                .id("available-update")
-        }
-
-        navigationRow("What's New", icon: "sparkles") { navigation.openChangelog() }
-            .id("changelog")
-    }
-
-    @ViewBuilder
-    private var advancedContent: some View {
-        steppedSetting(
-            icon: "clock.arrow.circlepath", title: "History retention",
-            explanation: "Days of usage history kept for the heatmap.",
-            value: "\(store.preferences.historyRetentionDays)d"
-        ) {
-            Stepper("History retention", value: intBinding(\.historyRetentionDays), in: 1...60, step: 1)
-                .labelsHidden()
-                .accessibilityValue("\(store.preferences.historyRetentionDays) days")
-        }
-        .padding(8)
-        .settingsCard()
-        .id("history-retention")
-        navigationRow("Edit config.json", icon: "curlybraces") { navigation.openConfigEditor() }
-            .id("config-editor")
-        HStack(spacing: 8) {
-            advancedButton("Send debug report", icon: "paperclip") { DiagnosticsReporter.presentSharePicker() }
-            advancedButton("Logs", icon: "folder") { DiagnosticsReporter.openLogFolder() }
-        }
     }
 
     // Status line shown as the App updates card's subtitle.
@@ -504,14 +474,18 @@ struct SettingsPanel: View {
             .padding(8)
 
             if store.preferences.menuBarMode == .pinned {
+                Divider()
+                    .padding(.leading, 34)
                 pinnedProvidersRow
             }
 
             // Logo-only draws no numbers, so there is no density for it to change.
             if store.preferences.menuBarMode != .logoOnly {
+                Divider()
+                    .padding(.leading, 34)
                 HStack(spacing: 8) {
                     Text("Size")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, weight: .semibold))
                         .padding(.leading, 26)
                     Spacer(minLength: 8)
                     // No fixedSize here, unlike the notch row below: three density names are
@@ -528,9 +502,9 @@ struct SettingsPanel: View {
                     .help("Comfortable and Compact fit 3 providers; Compact drops the percent sign. Stacked fits 2, on two rows")
                 }
                 .padding(8)
-                .padding(.bottom, 4)
             }
         }
+        .settingsCard()
     }
 
     private var quotaWindowCard: some View {
@@ -539,7 +513,7 @@ struct SettingsPanel: View {
                 icon: "clock",
                 iconColor: .secondary,
                 title: "Quota window",
-                subtitle: "Menu bar, quota rail, and quota overview."
+                subtitle: "Menu bar, quota rail, and quota overview.\nAuto shows the window with the lowest % remaining."
             )
             .padding(8)
 
@@ -580,6 +554,7 @@ struct SettingsPanel: View {
                 }
             }
         }
+        .settingsCard()
     }
 
     private func quotaWindowLabels(for provider: Provider) -> [String] {
@@ -616,10 +591,10 @@ struct SettingsPanel: View {
         VStack(alignment: .leading, spacing: 6) {
             if pinnableProviders.isEmpty {
                 Text("Connect an account to pick what the menu bar pins.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 9))
                     .foregroundStyle(.secondary)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 6)], alignment: .leading, spacing: 6) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], alignment: .leading, spacing: 6) {
                     ForEach(pinnableProviders, id: \.self) { provider in
                         pinToggle(for: provider)
                     }
@@ -638,13 +613,13 @@ struct SettingsPanel: View {
                     Text(!pinState.canPinMore
                          ? "\(store.preferences.menuBarDensity.label) fits \(pinCap). Unpin one to swap in another."
                          : "Shows up to \(pinCap), in the order you pin them. Pin nothing and Toki falls back to Smart.")
-                        .font(.system(size: 11))
+                        .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
             }
         }
         .padding(8)
-        .padding(.leading, 26)
+        .padding(.leading, 18)
     }
 
     private func pinToggle(for provider: Provider) -> some View {
@@ -669,12 +644,12 @@ struct SettingsPanel: View {
             HStack(spacing: 5) {
                 ProviderLogo(provider: provider, size: 11)
                 Text(provider.displayName)
-                    .font(.system(size: 11, weight: isPinned ? .medium : .regular))
+                    .font(.system(size: 10, weight: isPinned ? .semibold : .regular))
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if isHidden {
                     Image(systemName: "eye.slash")
-                        .font(.system(size: 11))
+                        .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(.orange)
                 }
             }
@@ -723,17 +698,31 @@ struct SettingsPanel: View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "chart.bar.doc.horizontal")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 18, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
                         Text("Quota rail")
-                            .font(.system(size: 13, weight: .medium))
-                        betaBadge
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("BETA")
+                            .font(.system(size: 8, weight: .heavy))
+                            .tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                             Color(red: 0.85, green: 0.35, blue: 0.65)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                in: Capsule()
+                            )
                     }
-                    Text("Quota rings down the screen edge. Details are also available in Accounts.")
-                        .font(.system(size: 11))
+                    Text("Quota rings down the right screen edge. Hover one for its windows.")
+                        .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -756,19 +745,33 @@ struct SettingsPanel: View {
             HStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "macbook")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 18, alignment: .center)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 5) {
                             Text("Live in the notch")
-                                .font(.system(size: 13, weight: .medium))
-                            betaBadge
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("BETA")
+                                .font(.system(size: 8, weight: .heavy))
+                                .tracking(0.4)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.45, green: 0.35, blue: 0.95),
+                                                 Color(red: 0.85, green: 0.35, blue: 0.65)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    in: Capsule()
+                                )
                         }
                         Text(store.preferences.notchModeEnabled
-                             ? "Quota stays beside the notch. Open Accounts for details."
+                             ? "Toki is hanging out up there. Hover it for more."
                              : "Move Toki into the notch, Dynamic Island style.")
-                            .font(.system(size: 11))
+                            .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -786,7 +789,7 @@ struct SettingsPanel: View {
                     .padding(.leading, 34)
                 HStack(spacing: 8) {
                     Text("Rests")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, weight: .semibold))
                         .padding(.leading, 26)
                     Spacer(minLength: 8)
                     Picker("Rests", selection: binding(\.notchPlacement)) {
@@ -809,6 +812,9 @@ struct SettingsPanel: View {
     }
 
     @ViewBuilder
+    // Roomier than the other cards on purpose: it is the tallest one in the panel, stacking a
+    // toggle, two pickers, an explanation, a disclosure, and up to three advisory notes, and
+    // at the shared 8pt rhythm those ran together into a wall.
     private var remoteControlCard: some View {
         VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 8) {
@@ -828,12 +834,15 @@ struct SettingsPanel: View {
                 .accessibilityLabel("Remote Control guide")
                 .pointerOnHover()
                 Spacer(minLength: 8)
-                Text(remoteServer.isRunning ? "Running" : "Off")
-                    .font(.system(size: 11))
-                    .foregroundStyle(remoteServer.isRunning ? Color.green : Color.secondary)
+                Toggle("", isOn: Binding(
+                    get: { remoteServer.isRunning },
+                    set: { $0 ? remoteServer.start() : remoteServer.stop() }
+                ))
+                .accessibilityLabel("Remote Control Server")
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
             }
-
-            sectionHeader("1. Connection method").id("remote-method")
 
             Picker("Reach", selection: reachBinding) {
                 Text("On my network").tag(ReachMode.network)
@@ -842,90 +851,157 @@ struct SettingsPanel: View {
             .labelsHidden()
             .pickerStyle(.segmented)
             .controlSize(.small)
+            .padding(.horizontal, 4)
 
             Text(reachBinding.wrappedValue == .network
                 ? "Your phone connects over Wi-Fi on the same network. No setup."
                 : "Reach this Mac from any network over HTTPS. Tailscale is recommended: it stays off the public internet.")
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
 
-            if reachBinding.wrappedValue == .anywhere || remoteServer.companionAppMode == .hosted {
-                Button("Tailscale setup guide") { navigation.openTailscaleGuide() }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
-            }
-
-            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
-                GridRow {
-                    Text("Host").foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
-                    Picker("Host", selection: $remoteServer.hostMode) {
-                        ForEach(remoteServer.availableHostModes) { mode in
-                            Text(mode.label.replacingOccurrences(of: " (Recommended)", with: "")).tag(mode)
+            VStack(alignment: .leading, spacing: 8) {
+                advancedHeader
+                if advancedExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Host")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Picker("", selection: $remoteServer.hostMode) {
+                            ForEach(remoteServer.availableHostModes) { mode in
+                                Text(mode.label).tag(mode)
+                            }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .fixedSize()
+                        if remoteServer.hostMode == .tailscale || remoteServer.companionAppMode == .hosted {
+                            Button {
+                                showingTailscaleGuide = true
+                            } label: {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("How to set up Tailscale so you can connect from anywhere")
+                            .accessibilityLabel("Tailscale setup guide")
+                            .pointerOnHover()
+                            .popover(isPresented: $showingTailscaleGuide, arrowEdge: .bottom) {
+                                TailscaleSetupGuide(port: remoteServer.port)
+                            }
+                        }
+                        if remoteServer.hostMode == .custom {
+                            // The server is told which custom host to answer to when it launches,
+                            // so editing this while running would hand out a Connect link for a
+                            // name the running server rejects.
+                            TextField("host or IP", text: $remoteServer.customHost)
+                                .textFieldStyle(.roundedBorder)
+                                .controlSize(.small)
+                                .disabled(remoteServer.isRunning)
+                                .help(remoteServer.isRunning
+                                    ? "Stop Remote Control to change the custom host"
+                                    : "The host your phone will use to reach this Mac")
+                        }
+                        Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .help("Tailscale is recommended for access from other networks.")
-                }
-                if remoteServer.hostMode == .custom {
-                    GridRow {
-                        Text("Address").foregroundStyle(.secondary)
-                        // The running server only accepts the host it was launched with.
-                        TextField("host or IP", text: $remoteServer.customHost)
-                            .textFieldStyle(.roundedBorder)
-                            .disabled(remoteServer.isRunning)
-                            .help(remoteServer.isRunning
-                                ? "Stop Remote Control to change the custom host"
-                                : "The host your phone will use to reach this Mac")
-                    }
-                }
-                if remoteServer.hostMode == .tailscale, remoteServer.tailscaleDNSName == nil {
-                    GridRow(alignment: .top) {
-                        Text("Address").foregroundStyle(.secondary)
+
+                    if remoteServer.hostMode == .tailscale, remoteServer.tailscaleDNSName == nil {
                         VStack(alignment: .leading, spacing: 4) {
                             if let diagnostic = remoteServer.tailscaleStatusDiagnostic,
                                !remoteServer.hasUsableTailscaleHost {
                                 Text(diagnostic)
+                                    .font(.system(size: 10))
                                     .foregroundStyle(.orange)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             TextField("your-mac.tailnet.ts.net", text: $remoteServer.manualTailscaleHost)
                                 .textFieldStyle(.roundedBorder)
+                                .controlSize(.small)
                                 .autocorrectionDisabled()
                             Text("Enter your Mac's Tailscale name to build a Connect link.")
+                                .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .padding(.leading, 56)
+                    }
+
+                    HStack(spacing: 8) {
+                        Text("App")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .leading)
+                        Picker("", selection: $remoteServer.companionAppMode) {
+                            ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .fixedSize()
+                        Spacer(minLength: 0)
                     }
                 }
-                GridRow {
-                    Text("App").foregroundStyle(.secondary)
-                    Picker("App", selection: $remoteServer.companionAppMode) {
-                        ForEach(RemoteControlServer.CompanionAppMode.allCases) { mode in
-                            Text(mode.label.replacingOccurrences(of: " (Recommended)", with: "")).tag(mode)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .help("Same as host is recommended: the interface is served by this Mac.")
-                }
-                GridRow {
-                    Text("Session").foregroundStyle(.secondary)
-                    Picker("Session lifetime", selection: $remoteServer.sessionLifetime) {
-                        ForEach(RemoteControlServer.SessionLifetime.allCases) { lifetime in
-                            Text(lifetime.label.replacingOccurrences(of: " (Recommended)", with: "")).tag(lifetime)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .disabled(remoteServer.isRunning)
-                    .help(remoteServer.isRunning
-                        ? "Stop Remote Control to change the session lifetime"
-                        : "How long a verified device stays connected. 12 hours is recommended.")
+                .padding(.top, 6)
                 }
             }
-            .font(.system(size: 11))
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.small)
+            .padding(.horizontal, 4)
+
+            HStack(spacing: 8) {
+                Text("Session")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 48, alignment: .leading)
+                Picker("", selection: $remoteServer.sessionLifetime) {
+                    ForEach(RemoteControlServer.SessionLifetime.allCases) { lifetime in
+                        Text(lifetime.label).tag(lifetime)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(remoteServer.isRunning)
+                .help(remoteServer.isRunning
+                    ? "Stop Remote Control to change the session lifetime"
+                    : "How long a verified device stays connected")
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+
+            if remoteServer.isRunning {
+                HStack(spacing: 8) {
+                    if remoteServer.connectURL != nil {
+                        Button {
+                            showingConnect = true
+                        } label: {
+                            Label("Connect", systemImage: "qrcode")
+                        }
+                        .controlSize(.small)
+                        .fixedSize()
+                        .pointerOnHover()
+                    }
+
+                    Button("Stop", role: .destructive) {
+                        remoteServer.stop()
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("Stop Remote Control and invalidate every connected session")
+                    .pointerOnHover()
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 4)
+            }
+
+            pairedDevicesSection
 
             if remoteServer.hostMode == .tunnel {
                 exposureNote(
@@ -941,18 +1017,6 @@ struct SettingsPanel: View {
                 )
             }
 
-            sectionHeader("2. Readiness").id("remote-readiness")
-            if !remoteServer.isRunning {
-                Text("Start the server to check reachability. No device can connect while it is off.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            } else if remoteServer.connectURL != nil,
-                      remoteServer.hostMode != .tailscale, remoteServer.companionAppMode != .hosted {
-                Label("Ready to connect", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.green)
-            }
-
             // A hand-typed host counts: the Mac App Store build of Tailscale ships no usable CLI,
             // so `tailscale status` reads nothing and the DNS name is entered by hand - which is
             // exactly when someone needs to be told HTTPS isn't up yet.
@@ -965,6 +1029,7 @@ struct SettingsPanel: View {
                 Text(connectHint)
                     .font(.system(size: 11))
                     .foregroundStyle(remoteServer.hostMode == .localNetwork ? .orange : .secondary)
+                    .padding(.horizontal, 4)
             }
 
             if let error = remoteServer.lastError {
@@ -972,21 +1037,15 @@ struct SettingsPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-            remoteConnectionActions.id("remote-connect")
-            pairedDevicesSection
-            if remoteServer.isRunning {
-                Divider()
-                Button("Stop Remote Control", role: .destructive) { remoteServer.stop() }
-                Text("Stopping disconnects every device and invalidates all pairing links.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
             }
         }
-        .scrollTargetLayout()
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 12)
         .settingsCard()
+        .sheet(isPresented: $showingConnect) {
+            RemoteConnectSheet()
+        }
         .onAppear { remoteServer.refreshTailscaleStatus() }
         .onReceive(reachabilityTimer) { _ in
             if remoteServer.isRunning,
@@ -996,32 +1055,12 @@ struct SettingsPanel: View {
         }
     }
 
-    private var remoteConnectionActions: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("3. Connect device")
-            HStack(spacing: 8) {
-                if remoteServer.isRunning {
-                    Button { navigation.openPairing() } label: {
-                        Label("Connect device", systemImage: "qrcode")
-                    }
-                    .disabled(remoteServer.connectURL == nil)
-                    .help(remoteServer.connectURL == nil ? connectHint : "Show the connection link and verification code")
-                    Spacer(minLength: 0)
-                } else {
-                    Button("Start server") { remoteServer.start() }
-                        .buttonStyle(.borderedProminent)
-                }
-            }
-        }
-    }
-
     private func copyCommandButton(_ command: String, label: String) -> some View {
         Button {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(command, forType: .string)
-            copiedCommand = command
         } label: {
-            Label(copiedCommand == command ? "Copied" : label, systemImage: copiedCommand == command ? "checkmark" : "doc.on.doc")
+            Label(label, systemImage: "doc.on.doc")
         }
         .controlSize(.small)
         .fixedSize()
@@ -1075,7 +1114,7 @@ struct SettingsPanel: View {
                     HStack(spacing: 8) {
                         copyCommandButton(remoteServer.tailscaleServeCommand, label: "Copy serve command")
                         Text("Toki can't find the tailscale command, so run this on the Mac yourself.")
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1099,8 +1138,8 @@ struct SettingsPanel: View {
                         .help("Run tailscale serve so your phone can reach this Mac over HTTPS")
                         .pointerOnHover()
 
-                        Text("or set it up by hand with the Tailscale setup guide.")
-                            .font(.system(size: 11))
+                        Text("or set it up by hand with the guide next to Host.")
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -1108,7 +1147,7 @@ struct SettingsPanel: View {
                 // Toki declined to run serve itself; saying so beats a warning that looks like nothing happened.
                 if remoteServer.serveSetupFailure == nil, let skipped = remoteServer.autoServeSkipped {
                     Text(skipped)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1116,13 +1155,13 @@ struct SettingsPanel: View {
                 if let failure = remoteServer.serveSetupFailure {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(failure.message)
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                         if let remedy = failure.remedy {
                             HStack(spacing: 6) {
                                 Text(remedy)
-                                    .font(.system(size: 11).monospaced())
+                                    .font(.system(size: 10).monospaced())
                                     .textSelection(.enabled)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
@@ -1133,6 +1172,7 @@ struct SettingsPanel: View {
                 }
             }
         }
+        .padding(.horizontal, 4)
     }
 
     private var reachBinding: Binding<ReachMode> {
@@ -1165,7 +1205,7 @@ struct SettingsPanel: View {
     private var connectHint: String {
         if remoteServer.token == nil { return "Starting the server…" }
         if remoteServer.companionAppMode == .hosted {
-            return "Toki RC needs a Tailscale DNS host. Use the Tailscale setup guide to turn on MagicDNS and HTTPS Serve."
+            return "Toki RC needs a Tailscale DNS host. Use the setup guide next to Host to turn on MagicDNS and HTTPS Serve."
         }
         if remoteServer.companionAppMode == .localNetwork {
             return "No local network address found. Try Localhost or Same as host."
@@ -1183,16 +1223,15 @@ struct SettingsPanel: View {
     private func cardLabel(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(iconColor)
                 .frame(width: 18, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
                 Text(subtitle)
-                    .font(.system(size: 11))
+                    .font(.system(size: 9))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -1205,13 +1244,14 @@ struct SettingsPanel: View {
     private func exposureNote(_ text: String, level: ExposureLevel) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: level == .warning ? "exclamationmark.triangle.fill" : "info.circle")
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(level == .warning ? Color.orange : Color.secondary)
             Text(text)
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 4)
     }
 
     // Every phone currently holding a session, so a device you no longer recognise can be cut off
@@ -1221,7 +1261,7 @@ struct SettingsPanel: View {
         if remoteServer.isRunning, !remoteServer.pairedDevices.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Paired devices")
-                    .font(.system(size: 11))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
                 ForEach(remoteServer.pairedDevices) { device in
                     HStack(alignment: .top, spacing: 8) {
@@ -1233,7 +1273,7 @@ struct SettingsPanel: View {
                             Text(device.name)
                                 .font(.system(size: 11, weight: .medium))
                             Text(Self.deviceDetail(device))
-                                .font(.system(size: 11))
+                                .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1248,6 +1288,7 @@ struct SettingsPanel: View {
                     }
                 }
             }
+            .padding(.horizontal, 4)
         }
     }
 
@@ -1268,25 +1309,16 @@ struct SettingsPanel: View {
     // The same checklist onboarding shows, kept permanently: a permission can be revoked in
     // System Settings long after setup, and this is where you find out that it was.
     private var permissionsCard: some View {
-        SetupChecklistView(store: store, showsHeader: false)
+        SetupChecklistView(store: store, showsHeader: false, collapsible: true, showsCollapsedTitle: false)
             .padding(8)
             .settingsCard()
     }
 
-    private var betaBadge: some View {
-        Text("Beta")
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(Color.primary.opacity(0.06), in: Capsule())
-    }
-
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .padding(.top, 4)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .padding(.top, 2)
     }
 
     private func steppedSetting<Control: View>(
@@ -1300,7 +1332,7 @@ struct SettingsPanel: View {
             cardLabel(icon: icon, iconColor: .secondary, title: title, subtitle: explanation)
             Spacer(minLength: 8)
             Text(value)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
             control()
         }
     }
@@ -1309,7 +1341,7 @@ struct SettingsPanel: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, weight: .semibold))
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
             }
@@ -1318,6 +1350,26 @@ struct SettingsPanel: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
+        .pointerOnHover()
+    }
+
+    private var advancedHeader: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { advancedExpanded.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(advancedExpanded ? 90 : 0))
+                Text("Advanced")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .pointerOnHover()
     }
 
@@ -1347,7 +1399,6 @@ private extension View {
 // address, so a tailnet HTTPS host is required for the connect-from-anywhere path.
 private struct TailscaleSetupGuide: View {
     let port: Int
-    @State private var copied = false
 
     private var serveCommand: String { "tailscale serve --bg http://127.0.0.1:\(port)" }
 
@@ -1381,7 +1432,7 @@ private struct TailscaleSetupGuide: View {
             Divider()
 
             Text("Your agent data never touches Toki RC. It travels directly between your phone and this Mac over your tailnet.")
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -1391,7 +1442,7 @@ private struct TailscaleSetupGuide: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: 344, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1402,7 +1453,7 @@ private struct TailscaleSetupGuide: View {
     ) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("\(number)")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 17, height: 17)
                 .background(Color.accentColor, in: Circle())
@@ -1418,7 +1469,7 @@ private struct TailscaleSetupGuide: View {
     private var commandRow: some View {
         HStack(spacing: 6) {
             Text(serveCommand)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: 10, design: .monospaced))
                 .textSelection(.enabled)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 7)
@@ -1427,16 +1478,15 @@ private struct TailscaleSetupGuide: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(serveCommand, forType: .string)
-                copied = true
             } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                Image(systemName: "doc.on.doc")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .frame(width: 13, height: 13)
                     .contentShape(Rectangle())
             }
             .functionalControlStyle()
-            .help(copied ? "Copied" : "Copy command")
+            .help("Copy command")
             .accessibilityLabel("Copy the tailscale serve command")
             .pointerOnHover()
         }
@@ -1447,7 +1497,7 @@ private struct TailscaleSetupGuide: View {
             HStack(spacing: 3) {
                 Text(label)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11))
+                    .font(.system(size: 8, weight: .semibold))
             }
             .font(.system(size: 11, weight: .medium))
         }
