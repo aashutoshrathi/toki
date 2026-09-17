@@ -69,7 +69,7 @@ struct MenuBarStatusView: View {
             if let windowLabel = entry.windowLabel {
                 Text(windowLabel)
                     .font(.system(size: max(metrics.textSize - 3, 8), weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
                     .fixedSize()
             }
         }
