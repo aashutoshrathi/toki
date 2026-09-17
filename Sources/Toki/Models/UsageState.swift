@@ -167,6 +167,7 @@ struct AppPreferences: Codable, Equatable {
     /// leaving an empty status item behind.
     var menuBarPinnedProviders: [Provider] = [.claudeCode, .codex]
     var quotaDisplayWindows: [String: String] = [:]
+    var menuBarQuotaWindows: [String: String] = [:]
     // 30 days by default so the usage heatmap can fill its full window; it renders
     // min(30, retention), so a shorter retention silently shortens the chart.
     var historyRetentionDays = 30
@@ -204,6 +205,7 @@ struct AppPreferences: Codable, Equatable {
         case menuBarDensity
         case menuBarPinnedProviders
         case quotaDisplayWindows
+        case menuBarQuotaWindows
         case historyRetentionDays
         case sessionWarningThreshold
         case aiInsightEnabled
@@ -249,6 +251,7 @@ struct AppPreferences: Codable, Equatable {
             .map { $0.compactMap(Provider.init(rawValue:)) }
             ?? (migratedPins.isEmpty ? defaults.menuBarPinnedProviders : migratedPins)
         quotaDisplayWindows = try container.decodeIfPresent([String: String].self, forKey: .quotaDisplayWindows) ?? [:]
+        menuBarQuotaWindows = try container.decodeIfPresent([String: String].self, forKey: .menuBarQuotaWindows) ?? [:]
         historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
         aiInsightEnabled = try container.decodeIfPresent(Bool.self, forKey: .aiInsightEnabled) ?? defaults.aiInsightEnabled

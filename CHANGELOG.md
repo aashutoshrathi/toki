@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.3.6 - 2026-09-17
+
+### Added
+- **Menu bar quota windows can be configured separately.** You can now set the quota window (Auto, 5h, or 7d) specifically for the menu bar display, decoupling it from the quota rail and overview.
+
 ## 3.3.5 - 2026-09-15
 
 ### Fixed

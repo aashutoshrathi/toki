@@ -502,6 +502,40 @@ struct SettingsPanel: View {
                     .help("Comfortable and Compact fit 3 providers; Compact drops the percent sign. Stacked fits 2, on two rows")
                 }
                 .padding(8)
+
+                Divider()
+                    .padding(.leading, 34)
+                
+                ForEach(pinnableProviders, id: \.self) { provider in
+                    let windows = quotaWindowLabels(for: provider)
+                    if windows.count > 1 {
+                        HStack(spacing: 8) {
+                            Text("\(provider.displayName) window")
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.leading, 26)
+                            Spacer(minLength: 8)
+                            Picker("\(provider.displayName) menu bar quota window", selection: Binding(
+                                get: {
+                                    let selected = store.preferences.menuBarQuotaWindows[provider.rawValue] ?? ""
+                                    return windows.contains(selected) ? selected : ""
+                                },
+                                set: { selected in
+                                    var next = store.preferences
+                                    next.menuBarQuotaWindows[provider.rawValue] = selected.isEmpty ? nil : selected
+                                    store.updatePreferences(next)
+                                }
+                            )) {
+                                Text("Auto").tag("")
+                                ForEach(windows, id: \.self) { Text($0).tag($0) }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .controlSize(.small)
+                            .fixedSize()
+                        }
+                        .padding(8)
+                    }
+                }
             }
         }
         .settingsCard()
@@ -513,7 +547,7 @@ struct SettingsPanel: View {
                 icon: "clock",
                 iconColor: .secondary,
                 title: "Quota window",
-                subtitle: "Menu bar, quota rail, and quota overview.\nAuto shows the window with the lowest % remaining."
+                subtitle: "Quota rail and quota overview.\nAuto shows the window with the lowest % remaining."
             )
             .padding(8)
 
