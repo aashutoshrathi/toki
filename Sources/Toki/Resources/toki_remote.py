@@ -389,6 +389,9 @@ def read_control_messages():
         with CANONICAL_AGENTS_LOCK:
             CANONICAL_AGENTS = agents
             CANONICAL_AGENTS_AT = time.time()
+    import os
+    os._exit(0)
+
 
 
 def current_usage():
