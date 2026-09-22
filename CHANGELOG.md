@@ -1,9 +1,9 @@
 # Changelog
 
-## 3.3.7 - 2026-09-22
+## 3.3.7 - 2026-09-23
 
 ### Added
-- **Claude banked resets support.** A banked rate-limit reset for Claude subscription users now shows as a badge on the collapsed Claude Code card, and the badge is itself the redeem control. The reset credit count is also available when more than one is banked.
+- **Claude banked resets support.** A banked rate-limit reset for Claude subscription users now shows as a badge on the collapsed Claude Code card, and the badge is itself the redeem control. The badge only appears for a reset Anthropic would actually honour, shows the count when more than one is banked, and carries the grant's expiry so you can decide whether to spend it now or wait.
 
 ## 3.3.6 - 2026-09-17
 

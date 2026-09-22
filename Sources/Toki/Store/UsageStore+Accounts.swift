@@ -25,11 +25,7 @@ extension UsageStore {
     }
 
     func consumeResetCredit(accountID: String) {
-        guard let account = config?.accounts.first(where: { $0.id == accountID }),
-              !resettingAccountIDs.contains(accountID) else {
-            return
-        }
-        guard account.provider == .codex || account.provider == .claudeCode else {
+        guard !resettingAccountIDs.contains(accountID), let account = resetCapableAccount(for: accountID) else {
             return
         }
         resettingAccountIDs.insert(accountID)
@@ -38,7 +34,7 @@ extension UsageStore {
             let result = await Task.detached { () -> Result<String, Error> in
                 do {
                     if account.provider == .claudeCode {
-                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, creditID: nil))
+                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, recordID: accountID))
                     }
                     return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil))
                 } catch {
@@ -46,21 +42,50 @@ extension UsageStore {
                 }
             }.value
 
-            let title = account.provider == .claudeCode ? "Claude reset" : "Codex reset"
+            let isClaude = account.provider == .claudeCode
+            let title = isClaude ? "Claude reset" : "Codex reset"
             switch result {
             case .success(let outcome):
-                appendEvent(kind: .reset, title: title, detail: resetOutcomeDescription(outcome), deliveredNotification: false)
-                if account.provider == .codex {
+                let detail = isClaude ? claudeResetOutcomeDescription(outcome) : resetOutcomeDescription(outcome)
+                appendEvent(kind: .reset, title: title, detail: detail, deliveredNotification: false)
+                if isClaude {
+                    refreshClaudeAfterReset(accountID: accountID)
+                } else {
                     applyCodexResetOutcome(outcome, accountID: accountID)
                     refreshCodexAfterReset(accountID: accountID)
-                } else {
-                    refresh()
                 }
             case .failure(let error):
                 DiagnosticLogger.shared.record(.error, component: "reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
                 appendEvent(kind: .reset, title: "\(title) failed", detail: error.localizedDescription, deliveredNotification: false)
             }
         }
+    }
+
+    private func resetCapableAccount(for snapshotID: String) -> AccountConfig? {
+        if let exact = config?.accounts.first(where: { $0.id == snapshotID }),
+           exact.provider == .codex || exact.provider == .claudeCode {
+            return exact
+        }
+        guard snapshots.first(where: { $0.id == snapshotID })?.provider == .claudeCode else { return nil }
+        return config?.accounts.first { $0.provider == .claudeCode }
+    }
+
+    private func claudeResetOutcomeDescription(_ outcome: String) -> String {
+        switch outcome {
+        case "reset": return "Rate limit windows were reset."
+        case "already_used": return "That reset was already redeemed."
+        case "not_limited": return "No rate limit window needed a reset."
+        case "cooldown": return "Another reset was redeemed too recently."
+        case "ineligible": return "This account can't redeem a reset right now."
+        default: return "Reset outcome: \(outcome)."
+        }
+    }
+
+    private func refreshClaudeAfterReset(accountID: String) {
+        for account in config?.accounts.filter({ $0.provider == .claudeCode }) ?? [] {
+            usageState.apiLastCalledAt.removeValue(forKey: "\(Provider.claudeCode.rawValue):\(account.id)")
+        }
+        refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
     }
 
     private func applyCodexResetOutcome(_ outcome: String, accountID: String) {
