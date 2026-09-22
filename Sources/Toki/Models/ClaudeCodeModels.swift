@@ -65,6 +65,9 @@ struct ClaudeCodeUsage {
     /// touch the shared one, so folding them together would misreport both.
     var modelWindows: [RateLimitWindow] = []
     var worstUtilization: Double?
+    var resetCreditsAvailable: Int = 0
+    var resetCreditExpiry: Date?
+    var resetGrantID: String?
 
     var hasUsage: Bool {
         !metrics.isEmpty
@@ -83,6 +86,33 @@ struct ClaudeCodeUsage {
             appendExtraUsage(extraUsage)
         }
         appendModelWindows(data["limits"])
+        applyResetGrants(data["cedar_ember"])
+    }
+
+    private mutating func applyResetGrants(_ raw: Any?) {
+        guard let block = raw as? [String: Any], block["eligible"] as? Bool == true else { return }
+        let atLimit = block["at_limit"] as? Bool ?? false
+        let grants = (block["grants"] as? [[String: Any]]) ?? []
+        let usable = grants.filter { grant in
+            guard let left = optionalNumber(grant["resets_left"]), left > 0,
+                  grant["paused"] as? Bool != true,
+                  grant["usable_now"] as? Bool == true else { return false }
+            return atLimit || grant["use_requires_limit"] as? Bool != true
+        }
+        guard !usable.isEmpty else { return }
+
+        resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
+        resetCreditExpiry = usable.compactMap { resetDate($0["ends_at"]) }.min()
+
+        let preferred = block["next_grant_id"] as? String
+        resetGrantID = usable.first { $0["id"] as? String == preferred }?["id"] as? String
+            ?? usable.first?["id"] as? String
+
+        var value = "\(resetCreditsAvailable) available"
+        if let resetCreditExpiry {
+            value += " · expires \(resetDescription(for: resetCreditExpiry))"
+        }
+        metrics.append(MetricLine(label: "Resets", value: value))
     }
 
     // The top-level keys are codenames (seven_day_omelette, seven_day_tangelo) that say nothing

@@ -395,6 +395,12 @@ footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.4
 .u-fill.low{background:#d1544f}
 .u-value{flex:0 0 auto;color:var(--text-2);font-size:12px;font-variant-numeric:tabular-nums}
 .u-row.err .u-value{color:var(--danger)}
+.u-reset{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 0 6px}
+.u-redeem{min-width:0;min-height:32px;padding:0 12px;border-radius:16px;font-size:12px;font-weight:600;
+  background:var(--surface-3);border:1px solid var(--accent-2);color:var(--text)}
+.u-redeem:not(:disabled):hover{background:var(--surface-2)}
+.u-redeem:disabled{opacity:.55}
+.u-redeem-note{color:var(--text-2);font-size:11px}
 .u-stale{padding:4px 0 0;color:var(--warn);font-size:11px}
 #usagetoggle.stale #usagesummary{color:var(--warn)}
 

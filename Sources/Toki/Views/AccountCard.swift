@@ -489,7 +489,7 @@ struct AccountCard: View {
             .lineLimit(1)
             .minimumScaleFactor(0.8)
         } else if !quotaWindows.isEmpty {
-            if snapshot.provider == .codex, snapshot.resetCreditsAvailable > 0 {
+            if snapshot.resetCreditsAvailable > 0 {
                 Button {
                     confirmingReset = true
                 } label: {
@@ -503,7 +503,7 @@ struct AccountCard: View {
                 .help(resetButtonHelp)
                 .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
                     Button("Redeem reset", role: .destructive) {
-                        store.consumeCodexResetCredit(accountID: snapshot.id)
+                        store.consumeResetCredit(accountID: snapshot.id)
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {

@@ -24,9 +24,8 @@ extension UsageStore {
         refresh()
     }
 
-    func consumeCodexResetCredit(accountID: String) {
-        guard let account = config?.accounts.first(where: { $0.id == accountID }), account.provider == .codex,
-              !resettingAccountIDs.contains(accountID) else {
+    func consumeResetCredit(accountID: String) {
+        guard !resettingAccountIDs.contains(accountID), let account = resetCapableAccount(for: accountID) else {
             return
         }
         resettingAccountIDs.insert(accountID)
@@ -34,22 +33,59 @@ extension UsageStore {
             defer { resettingAccountIDs.remove(accountID) }
             let result = await Task.detached { () -> Result<String, Error> in
                 do {
+                    if account.provider == .claudeCode {
+                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, recordID: accountID))
+                    }
                     return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil))
                 } catch {
                     return .failure(error)
                 }
             }.value
 
+            let isClaude = account.provider == .claudeCode
+            let title = isClaude ? "Claude reset" : "Codex reset"
             switch result {
             case .success(let outcome):
-                appendEvent(kind: .reset, title: "Codex reset", detail: resetOutcomeDescription(outcome), deliveredNotification: false)
-                applyCodexResetOutcome(outcome, accountID: accountID)
-                refreshCodexAfterReset(accountID: accountID)
+                let detail = isClaude ? claudeResetOutcomeDescription(outcome) : resetOutcomeDescription(outcome)
+                appendEvent(kind: .reset, title: title, detail: detail, deliveredNotification: false)
+                if isClaude {
+                    refreshClaudeAfterReset(accountID: accountID)
+                } else {
+                    applyCodexResetOutcome(outcome, accountID: accountID)
+                    refreshCodexAfterReset(accountID: accountID)
+                }
             case .failure(let error):
-                DiagnosticLogger.shared.record(.error, component: "codex_reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
-                appendEvent(kind: .reset, title: "Codex reset failed", detail: error.localizedDescription, deliveredNotification: false)
+                DiagnosticLogger.shared.record(.error, component: "reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
+                appendEvent(kind: .reset, title: "\(title) failed", detail: error.localizedDescription, deliveredNotification: false)
             }
         }
+    }
+
+    private func resetCapableAccount(for snapshotID: String) -> AccountConfig? {
+        if let exact = config?.accounts.first(where: { $0.id == snapshotID }),
+           exact.provider == .codex || exact.provider == .claudeCode {
+            return exact
+        }
+        guard snapshots.first(where: { $0.id == snapshotID })?.provider == .claudeCode else { return nil }
+        return config?.accounts.first { $0.provider == .claudeCode }
+    }
+
+    private func claudeResetOutcomeDescription(_ outcome: String) -> String {
+        switch outcome {
+        case "reset": return "Rate limit windows were reset."
+        case "already_used": return "That reset was already redeemed."
+        case "not_limited": return "No rate limit window needed a reset."
+        case "cooldown": return "Another reset was redeemed too recently."
+        case "ineligible": return "This account can't redeem a reset right now."
+        default: return "Reset outcome: \(outcome)."
+        }
+    }
+
+    private func refreshClaudeAfterReset(accountID: String) {
+        for account in config?.accounts.filter({ $0.provider == .claudeCode }) ?? [] {
+            usageState.apiLastCalledAt.removeValue(forKey: "\(Provider.claudeCode.rawValue):\(account.id)")
+        }
+        refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
     }
 
     private func applyCodexResetOutcome(_ outcome: String, accountID: String) {

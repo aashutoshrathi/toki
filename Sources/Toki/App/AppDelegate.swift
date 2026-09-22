@@ -123,6 +123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
+        RemoteControlServer.shared.onResetRequest = { [weak store] accountID in
+            store?.consumeResetCredit(accountID: accountID)
+        }
+
         // The phone gets the same readings from the same publisher, so the two can't drift apart.
         Task { @MainActor in
             for await snapshots in store.$snapshots.values {

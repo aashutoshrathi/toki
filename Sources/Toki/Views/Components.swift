@@ -325,6 +325,7 @@ struct ResetCreditBadge: View {
         Label(count > 1 ? "\(count) resets" : "1 reset", systemImage: "arrow.counterclockwise")
             .labelStyle(.titleAndIcon)
             .fixedSize()
+            .padding(.vertical, 3)
             .help(badgeHelp)
             .accessibilityLabel(count > 1 ? "\(count) resets available" : "1 reset available")
     }

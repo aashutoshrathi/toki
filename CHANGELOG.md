@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.7 - 2026-09-23
+
+### Added
+- **Claude banked resets support.** A banked rate-limit reset for Claude subscription users now shows as a badge on the collapsed Claude Code card, and the badge is itself the redeem control. The badge only appears for a reset Anthropic would actually honour, shows the count when more than one is banked, and carries the grant's expiry so you can decide whether to spend it now or wait.
+- **Redeem a reset from the Remote Control app.** An account holding a banked reset now shows a redeem button in the companion app's usage panel, with the same confirmation step the Mac card uses. Works for Codex resets too.
+
 ## 3.3.6 - 2026-09-17
 
 ### Added

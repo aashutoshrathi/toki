@@ -102,11 +102,8 @@ struct ClaudeCodeUsageClient {
             accessToken = token
         }
         let json = try await requestJSON(
-            url: URL(string: "https://api.anthropic.com/api/oauth/usage")!,
-            headers: [
-                "Authorization": "Bearer \(accessToken)",
-                "anthropic-beta": "oauth-2025-04-20"
-            ]
+            url: URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!,
+            headers: Self.oauthHeaders(accessToken: accessToken)
         )
         let usage = ClaudeCodeUsage(json: json)
         guard usage.hasUsage else {
@@ -128,6 +125,8 @@ struct ClaudeCodeUsageClient {
             subtitle: email ?? "Claude Code OAuth usage",
             remainingRatio: remainingRatio,
             progressRatio: usedRatio,
+            resetCreditsAvailable: usage.resetCreditsAvailable,
+            resetCreditExpiry: usage.resetCreditExpiry,
             metrics: usage.metrics,
             accountInfo: accountInfoLines(for: record, credentials: record.credentials),
             switchTarget: switchTarget(for: record),
@@ -138,6 +137,67 @@ struct ClaudeCodeUsageClient {
             secondaryWindow: usage.rateLimitWindows.dropFirst().first,
             modelWindows: usage.modelWindows
         )
+    }
+
+    static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!
+
+    static func oauthHeaders(accessToken: String) -> [String: String] {
+        [
+            "Authorization": "Bearer \(accessToken)",
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": claudeCodeSurfaceUserAgent
+        ]
+    }
+
+    static func consumeRateLimitResetCredit(account: AccountConfig, recordID: String? = nil, creditID: String? = nil) async throws -> String {
+        let records = ClaudeCodeAccountDiscovery.discover(config: account, labels: [])
+        guard let record = records.first(where: { $0.id == recordID })
+            ?? records.first(where: { $0.isActive })
+            ?? records.first else {
+            throw LocalizedErrorMessage("No Claude account found")
+        }
+        let accessToken: String
+        switch try disposition(for: record) {
+        case .expired(let expiry): throw expiry
+        case .useToken(let token): accessToken = token
+        }
+        guard let organizationUUID = record.organizationUUID
+            ?? record.credentials.flatMap(ClaudeCodeCredentialReader.organizationUUID) else {
+            throw LocalizedErrorMessage("No Claude organization found for this account")
+        }
+
+        let headers = oauthHeaders(accessToken: accessToken)
+        let grantID: String
+        if let creditID {
+            grantID = creditID
+        } else {
+            let json = try await requestJSON(url: usageURL, headers: headers)
+            guard let discovered = ClaudeCodeUsage(json: json).resetGrantID else {
+                throw LocalizedErrorMessage("No reset is available to redeem right now.")
+            }
+            grantID = discovered
+        }
+
+        let url = URL(string: "https://api.anthropic.com/api/organizations/\(organizationUUID)/reset_rate_limits")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "program": "cedar_ember",
+            "grant_id": grantID,
+            "request_id": UUID().uuidString
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            throw LocalizedErrorMessage("Failed to redeem reset. \(body)")
+        }
+        let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        return payload?["result"] as? String ?? "unavailable"
     }
 
     private func switchTarget(for record: ClaudeCodeAccountRecord) -> String? {

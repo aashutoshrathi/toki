@@ -294,7 +294,7 @@ assert.match(html, /id="usage"/);
 assert.match(app, /setInterval\(pollUsage/);
 assert.match(css, /#usagetoggle/);
 
-const usageSources = ["usageClass", "renderUsage"].map(name => {
+const usageSources = ["usageClass", "resetExpiryLabel", "resetRow", "renderUsage"].map(name => {
   const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
   assert.ok(found, name + " must be a top-level function in app.js");
   return found[0];
@@ -324,8 +324,7 @@ const render = vm.createContext({
   esc: t => t,
   usageOpen: true,
 });
-vm.runInContext(usageSources[0], render);
-vm.runInContext(usageSources[1], render);
+usageSources.forEach(source => vm.runInContext(source, render));
 vm.runInContext(`renderUsage({accounts:[
   {id:"a",name:"Claude Code",remaining:0.62},
   {id:"b",name:"Codex",remaining:0.11},
@@ -342,6 +341,29 @@ assert.match(nodes["#usage"].innerHTML, /11% left/);
 assert.match(nodes["#usage"].innerHTML, /out of date/);
 assert.match(nodes["#usagesummary"].textContent, /out of date/);
 assert.equal(nodes["#usagetoggle"].classes.stale, true);
+
+// A banked reset is redeemable from the phone, but only for the account that actually has one.
+assert.doesNotMatch(nodes["#usage"].innerHTML, /u-redeem/);
+const expiry = new Date(Date.now() + 3 * 86400000).toISOString();
+vm.runInContext(`renderUsage({accounts:[
+  {id:"a",name:"Claude Code",remaining:0.62,resets:1,resetExpiry:"${expiry}"},
+  {id:"b",name:"Codex",remaining:0.11}
+],stale:false})`, render);
+const redeemButtons = nodes["#usage"].innerHTML.match(/data-account="([^"]+)"/g) || [];
+assert.equal(redeemButtons.length, 1);
+assert.equal(redeemButtons[0], 'data-account="a"');
+assert.match(nodes["#usage"].innerHTML, /Redeem reset</);
+assert.match(nodes["#usage"].innerHTML, /expires in 3 days/);
+
+// More than one banked reset says how many, so spending one is an informed choice.
+vm.runInContext(`renderUsage({accounts:[{id:"a",name:"Claude Code",remaining:0.4,resets:2}],stale:false})`, render);
+assert.match(nodes["#usage"].innerHTML, /Redeem reset \(2 available\)/);
+// No expiry must not render a dangling separator.
+assert.doesNotMatch(nodes["#usage"].innerHTML, /expires/);
+
+// A redeem is a spend, so it confirms first and never fires straight from the click.
+assert.match(app, /confirm\(["'][^"']*reset/i);
+assert.match(app, /api\("\/api\/reset"/);
 
 // A fresh reading clears the stale marker from both the summary and the strip class.
 vm.runInContext(`renderUsage({accounts:[{id:"a",name:"Codex",remaining:0.5}],stale:false})`, render);

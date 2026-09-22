@@ -1,7 +1,9 @@
 import Foundation
 
-let appVersion = "3.3.6"
+let appVersion = "3.3.7"
 let appUserAgent = "Toki/\(appVersion)"
+
+let claudeCodeSurfaceUserAgent = "claude-cli/2.1.280 (external, cli)"
 
 /// Display label for the prerelease part of a release identity, or nil for a stable build.
 ///
