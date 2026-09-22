@@ -521,6 +521,42 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertEqual(payload[0]["value"] as? String, "$1.20")
     }
 
+    // A banked reset reaches the phone, so it can be spent from there as well as from the card.
+    func testUsagePayloadCarriesABankedReset() {
+        let expiry = Date(timeIntervalSince1970: 1_792_000_000)
+        var snapshot = AccountSnapshot(
+            id: "claude-1-me@example.com", name: "Claude Code", provider: .claudeCode,
+            primary: "62%", subtitle: "resets in 2h", remainingRatio: 0.62, metrics: []
+        )
+        snapshot.resetCreditsAvailable = 2
+        snapshot.resetCreditExpiry = expiry
+
+        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+
+        XCTAssertEqual(payload[0]["resets"] as? Int, 2)
+        XCTAssertEqual(payload[0]["resetExpiry"] as? String, ISO8601DateFormatter().string(from: expiry))
+    }
+
+    // Absent rather than zero, so the phone never draws a redeem control for a reset nobody holds.
+    func testUsagePayloadOmitsResetsWhenThereAreNone() {
+        let snapshot = AccountSnapshot(
+            id: "codex", name: "Codex", provider: .codex,
+            primary: "90%", subtitle: "", remainingRatio: 0.9, metrics: []
+        )
+        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+
+        XCTAssertNil(payload[0]["resets"])
+        XCTAssertNil(payload[0]["resetExpiry"])
+    }
+
+    func testParseResetLineReadsOnlyARedeemRequest() {
+        XCTAssertEqual(RemoteControlServer.parseResetLine("reset=claude-1-me@example.com"), "claude-1-me@example.com")
+        XCTAssertEqual(RemoteControlServer.parseResetLine("reset=codex  "), "codex")
+        XCTAssertNil(RemoteControlServer.parseResetLine("reset="))
+        XCTAssertNil(RemoteControlServer.parseResetLine("token=abc123"))
+        XCTAssertNil(RemoteControlServer.parseResetLine("devices=[]"))
+    }
+
     func testParseTunnelHostFromCloudflaredOutput() {
         let text = """
         2026-07-29T10:00:00Z INF +----------------------------------------------------+

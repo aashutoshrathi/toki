@@ -391,6 +391,21 @@ def read_control_messages():
             CANONICAL_AGENTS_AT = time.time()
 
 
+def reset_is_redeemable(account_id):
+    """True only for an account Toki has published as holding a banked reset. The id also has to be
+    safe to write on the line-based channel back to Toki, which a forged line could otherwise abuse."""
+    if not isinstance(account_id, str) or not account_id or len(account_id) > 256:
+        return False
+    if any(c in account_id for c in "\r\n"):
+        return False
+    with USAGE_LOCK:
+        accounts = list(USAGE_SNAPSHOT)
+    return any(
+        isinstance(a, dict) and a.get("id") == account_id and (a.get("resets") or 0) > 0
+        for a in accounts
+    )
+
+
 def current_usage():
     """The last usage Toki published, and whether it is old enough to distrust."""
     with USAGE_LOCK:
@@ -2527,6 +2542,22 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json({"error": "not found"}, 404)
 
+    def _reset(self):
+        """Ask Toki to redeem a banked rate-limit reset. Only an account Toki has published as
+        having one is accepted, so a stale or invented id can never spend a credit."""
+        raw = self._read_body()
+        if raw is None:
+            return self._json({"error": "request too large"}, 413)
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            return self._json({"error": "bad json"}, 400)
+        account_id = body.get("id") if isinstance(body, dict) else None
+        if not reset_is_redeemable(account_id):
+            return self._json({"error": "no reset available for that account"}, 409)
+        print("reset=" + account_id, flush=True)
+        self._json({"ok": True})
+
     def _upload(self):
         """Save an attached image on the Mac and hand its path back, for a reply to reference so the
         agent can read the picture. Only a paired device reaches here, and only bytes that sniff as a
@@ -2565,13 +2596,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._pair(q)
         if not self._authed(q):
             return self._json({"error": "bad token"}, 403)
-        if url.path not in ("/api/send", "/api/upload"):
+        if url.path not in ("/api/send", "/api/upload", "/api/reset"):
             return self._json({"error": "not found"}, 404)
         # Simple POSTs skip CORS preflight; still bind state changes to an allowed origin.
         if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host")):
             return self._json({"error": "cross-origin request not allowed"}, 403)
         if url.path == "/api/upload":
             return self._upload()
+        if url.path == "/api/reset":
+            return self._reset()
         raw = self._read_body()
         if raw is None:
             return self._json({"error": "request too large"}, 413)

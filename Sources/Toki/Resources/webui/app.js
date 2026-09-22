@@ -246,12 +246,51 @@ function setConnected(ok) {
 
 let usageOpen = false;
 let lastUsage = null;
+let redeeming = false;
 
 // Match Toki's default 20% low-quota alert threshold.
 function usageClass(remaining) {
   if (remaining <= 0.2) return "low";
   if (remaining <= 0.35) return "warn";
   return "";
+}
+
+function resetExpiryLabel(iso) {
+  const when = Date.parse(iso || "");
+  if (!when) return "";
+  const days = Math.round((when - Date.now()) / 86400000);
+  if (days < 0) return "";
+  if (days === 0) return " · expires today";
+  return " · expires in " + days + (days === 1 ? " day" : " days");
+}
+
+function resetRow(a) {
+  const count = a.resets || 0;
+  if (count < 1) return "";
+  const label = count > 1 ? "Redeem reset (" + count + " available)" : "Redeem reset";
+  return '<div class="u-reset"><button type="button" class="u-redeem" data-account="' +
+    esc(a.id) + '">' + esc(label) + '</button><span class="u-redeem-note">' +
+    esc("Resets this window now" + resetExpiryLabel(a.resetExpiry)) + "</span></div>";
+}
+
+async function redeemReset(accountID, button) {
+  if (redeeming) return;
+  if (!confirm("Spend a banked reset now? This discards whatever quota is left in this window.")) return;
+  redeeming = true;
+  button.disabled = true;
+  button.textContent = "Redeeming…";
+  setStatus("Redeeming reset…", "sending");
+  try {
+    await api("/api/reset", { method: "POST", body: JSON.stringify({ id: accountID }) });
+    setStatus("Reset redeemed ✓", "success");
+    setTimeout(refreshUsage, 2500);
+  } catch (e) {
+    button.disabled = false;
+    setStatus("Couldn’t redeem: " + e.message, "error");
+  } finally {
+    redeeming = false;
+    statusTimer = setTimeout(() => setStatus("", ""), 4000);
+  }
 }
 
 function renderUsage(data) {
@@ -287,13 +326,13 @@ function renderUsage(data) {
     if (typeof a.remaining != "number") {
       return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
         '<span class="u-track"></span><span class="u-value">' +
-        esc(a.value || a.primary || "") + "</span></div>";
+        esc(a.value || a.primary || "") + "</span></div>" + resetRow(a);
     }
     const pct = Math.max(0, Math.min(100, Math.round(a.remaining * 100)));
     return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
       '<span class="u-track"><span class="u-fill ' + usageClass(a.remaining) +
       '" style="width:' + pct + '%"></span></span>' +
-      '<span class="u-value">' + pct + "% left</span></div>";
+      '<span class="u-value">' + pct + "% left</span></div>" + resetRow(a);
   }).join("") + (data.stale
     ? '<div class="u-stale">Toki stopped sending updates, so this may be out of date.</div>'
     : "");
@@ -333,6 +372,13 @@ $("#usagetoggle").addEventListener("click", () => {
   feedback();
   if (lastUsage) renderUsage(lastUsage);
   pollUsage();
+});
+
+$("#usage").addEventListener("click", e => {
+  const button = e.target.closest(".u-redeem");
+  if (!button || button.disabled) return;
+  feedback();
+  redeemReset(button.dataset.account, button);
 });
 
 // Backgrounded tabs throttle timers; refresh immediately on return.

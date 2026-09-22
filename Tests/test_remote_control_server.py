@@ -652,6 +652,46 @@ class UsageSnapshotTests(unittest.TestCase):
         self.assertTrue(toki_remote.current_usage()["stale"])
 
 
+class ResetRedemptionTests(unittest.TestCase):
+    """A reset is a limited credit, so the phone may only spend one Toki has actually published."""
+
+    def setUp(self):
+        toki_remote.USAGE_SNAPSHOT = [
+            {"id": "claude-1-me@example.com", "name": "Claude Code", "remaining": 0.4, "resets": 1},
+            {"id": "codex", "name": "Codex", "remaining": 0.9},
+        ]
+        toki_remote.USAGE_SNAPSHOT_AT = time.time()
+
+    def test_an_account_holding_a_reset_is_redeemable(self):
+        self.assertTrue(toki_remote.reset_is_redeemable("claude-1-me@example.com"))
+
+    def test_an_account_without_one_is_refused(self):
+        # Otherwise the phone could spend a credit the Mac never said was there.
+        self.assertFalse(toki_remote.reset_is_redeemable("codex"))
+
+    def test_an_unknown_account_is_refused(self):
+        self.assertFalse(toki_remote.reset_is_redeemable("not-an-account"))
+
+    def test_a_zero_count_is_refused(self):
+        toki_remote.USAGE_SNAPSHOT = [{"id": "claude", "resets": 0}]
+        self.assertFalse(toki_remote.reset_is_redeemable("claude"))
+
+    def test_a_missing_or_malformed_id_is_refused(self):
+        for candidate in (None, "", 7, [], {"id": "claude"}):
+            self.assertFalse(toki_remote.reset_is_redeemable(candidate))
+
+    def test_an_id_carrying_a_newline_cannot_forge_a_line_back_to_toki(self):
+        # The channel to Toki is line-based; a newline would let a request inject its own line.
+        forged = "claude-1-me@example.com\ndevices=[]"
+        toki_remote.USAGE_SNAPSHOT = [{"id": forged, "resets": 1}]
+        self.assertFalse(toki_remote.reset_is_redeemable(forged))
+        self.assertFalse(toki_remote.reset_is_redeemable("claude\rreset=codex"))
+
+    def test_an_absurdly_long_id_is_refused(self):
+        toki_remote.USAGE_SNAPSHOT = [{"id": "x" * 300, "resets": 1}]
+        self.assertFalse(toki_remote.reset_is_redeemable("x" * 300))
+
+
 class InitialTranscriptWindowTests(unittest.TestCase):
     def test_a_call_that_finished_before_the_transcript_opened_carries_its_completion(self):
         # The tool finished before the client opened the transcript, so its `resolved` must ride

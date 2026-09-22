@@ -169,6 +169,7 @@ final class RemoteControlServer: ObservableObject {
     private var activeAgents: [ActiveAgent] = []
     private var usageSnapshots: [AccountSnapshot] = []
     private var tunnelProcess: Process?
+    var onResetRequest: ((String) -> Void)?
 
     private init() {
         hostMode = Self.preferredHostMode(
@@ -483,6 +484,12 @@ final class RemoteControlServer: ObservableObject {
             if let remaining = snapshot.remainingRatio { entry["remaining"] = remaining }
             if !snapshot.subtitle.isEmpty { entry["detail"] = snapshot.subtitle }
             if let value = snapshot.menuBarValue { entry["value"] = value }
+            if snapshot.resetCreditsAvailable > 0 {
+                entry["resets"] = snapshot.resetCreditsAvailable
+                if let expiry = snapshot.resetCreditExpiry {
+                    entry["resetExpiry"] = ISO8601DateFormatter().string(from: expiry)
+                }
+            }
             return entry
         }
     }
@@ -556,6 +563,12 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
+    nonisolated static func parseResetLine(_ text: String) -> String? {
+        guard text.hasPrefix("reset=") else { return nil }
+        let accountID = String(text.dropFirst("reset=".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return accountID.isEmpty ? nil : accountID
+    }
+
     nonisolated static func parseDeviceLine(_ text: String) -> [PairedDevice]? {
         guard text.hasPrefix("devices=") else { return nil }
         let payload = Data(text.dropFirst("devices=".count).utf8)
@@ -581,6 +594,10 @@ final class RemoteControlServer: ObservableObject {
     private func parseOutputLine(_ text: String) {
         if let devices = Self.parseDeviceLine(text) {
             pairedDevices = devices
+            return
+        }
+        if let accountID = Self.parseResetLine(text) {
+            onResetRequest?(accountID)
             return
         }
         if token == nil, let range = text.range(of: "token=") {
