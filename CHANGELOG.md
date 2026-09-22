@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.3.7 - 2026-09-22
+
+### Added
+- **Claude banked resets support.** A banked rate-limit reset for Claude subscription users now shows as a badge on the collapsed Claude Code card, and the badge is itself the redeem control. The reset credit count is also available when more than one is banked.
+
 ## 3.3.6 - 2026-09-17
 
 ### Added

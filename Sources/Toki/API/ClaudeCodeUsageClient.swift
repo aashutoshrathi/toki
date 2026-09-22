@@ -128,6 +128,7 @@ struct ClaudeCodeUsageClient {
             subtitle: email ?? "Claude Code OAuth usage",
             remainingRatio: remainingRatio,
             progressRatio: usedRatio,
+            resetCreditsAvailable: usage.resetCreditsAvailable,
             metrics: usage.metrics,
             accountInfo: accountInfoLines(for: record, credentials: record.credentials),
             switchTarget: switchTarget(for: record),
@@ -138,6 +139,28 @@ struct ClaudeCodeUsageClient {
             secondaryWindow: usage.rateLimitWindows.dropFirst().first,
             modelWindows: usage.modelWindows
         )
+    }
+
+    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String? = nil) async throws -> String {
+        let records = ClaudeCodeAccountDiscovery.discover(config: account, labels: [])
+        guard let record = records.first(where: { $0.isActive }) ?? records.first else {
+            throw LocalizedErrorMessage("No Claude account found")
+        }
+        let accessToken: String
+        switch try disposition(for: record) {
+        case .expired(let expiry): throw expiry
+        case .useToken(let token): accessToken = token
+        }
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage/reset")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            throw LocalizedErrorMessage("Failed to redeem reset credit. \(body)")
+        }
+        return "Success"
     }
 
     private func switchTarget(for record: ClaudeCodeAccountRecord) -> String? {

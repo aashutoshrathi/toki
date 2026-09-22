@@ -24,9 +24,12 @@ extension UsageStore {
         refresh()
     }
 
-    func consumeCodexResetCredit(accountID: String) {
-        guard let account = config?.accounts.first(where: { $0.id == accountID }), account.provider == .codex,
+    func consumeResetCredit(accountID: String) {
+        guard let account = config?.accounts.first(where: { $0.id == accountID }),
               !resettingAccountIDs.contains(accountID) else {
+            return
+        }
+        guard account.provider == .codex || account.provider == .claudeCode else {
             return
         }
         resettingAccountIDs.insert(accountID)
@@ -34,20 +37,28 @@ extension UsageStore {
             defer { resettingAccountIDs.remove(accountID) }
             let result = await Task.detached { () -> Result<String, Error> in
                 do {
+                    if account.provider == .claudeCode {
+                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, creditID: nil))
+                    }
                     return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil))
                 } catch {
                     return .failure(error)
                 }
             }.value
 
+            let title = account.provider == .claudeCode ? "Claude reset" : "Codex reset"
             switch result {
             case .success(let outcome):
-                appendEvent(kind: .reset, title: "Codex reset", detail: resetOutcomeDescription(outcome), deliveredNotification: false)
-                applyCodexResetOutcome(outcome, accountID: accountID)
-                refreshCodexAfterReset(accountID: accountID)
+                appendEvent(kind: .reset, title: title, detail: resetOutcomeDescription(outcome), deliveredNotification: false)
+                if account.provider == .codex {
+                    applyCodexResetOutcome(outcome, accountID: accountID)
+                    refreshCodexAfterReset(accountID: accountID)
+                } else {
+                    refresh()
+                }
             case .failure(let error):
-                DiagnosticLogger.shared.record(.error, component: "codex_reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
-                appendEvent(kind: .reset, title: "Codex reset failed", detail: error.localizedDescription, deliveredNotification: false)
+                DiagnosticLogger.shared.record(.error, component: "reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
+                appendEvent(kind: .reset, title: "\(title) failed", detail: error.localizedDescription, deliveredNotification: false)
             }
         }
     }

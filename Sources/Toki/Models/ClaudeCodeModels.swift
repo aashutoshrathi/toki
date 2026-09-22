@@ -65,6 +65,7 @@ struct ClaudeCodeUsage {
     /// touch the shared one, so folding them together would misreport both.
     var modelWindows: [RateLimitWindow] = []
     var worstUtilization: Double?
+    var resetCreditsAvailable: Int = 0
 
     var hasUsage: Bool {
         !metrics.isEmpty
@@ -72,6 +73,14 @@ struct ClaudeCodeUsage {
 
     init(json: Any) {
         guard let data = json as? [String: Any] else { return }
+
+        if let count = optionalNumber(firstValue(data, keys: ["rate_limit_resets_available", "resets_available", "banked_resets", "available_resets"])) {
+            resetCreditsAvailable = Int(count)
+        } else if let resets = data["resets"] as? [String: Any], let count = optionalNumber(firstValue(resets, keys: ["available", "count", "availableCount"])) {
+            resetCreditsAvailable = Int(count)
+        } else if let rateLimitResets = data["rate_limit_resets"] as? [String: Any], let count = optionalNumber(firstValue(rateLimitResets, keys: ["available", "count", "availableCount"])) {
+            resetCreditsAvailable = Int(count)
+        }
 
         if let fiveHour = data["five_hour"] as? [String: Any] {
             appendWindow("5h", fiveHour, duration: 5 * 3600)
