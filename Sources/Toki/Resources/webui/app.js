@@ -282,7 +282,7 @@ async function redeemReset(accountID, button) {
   setStatus("Redeeming reset…", "sending");
   try {
     await api("/api/reset", { method: "POST", body: JSON.stringify({ id: accountID }) });
-    setStatus("Reset redeemed ✓", "success");
+    setStatus("Reset sent to your Mac ✓", "success");
     setTimeout(refreshUsage, 2500);
   } catch (e) {
     button.disabled = false;
