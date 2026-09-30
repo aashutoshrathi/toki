@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.8 - 2026-09-30
+
+### Fixed
+- **Redeeming a reset now updates the card.** If Toki was already refreshing when a Claude reset was redeemed (opening the popover starts a refresh), the follow-up read was dropped. The card then kept the old limit and the reset badge for up to 7.5 minutes, although the reset was already spent. Toki now waits for the running refresh and reads usage again, for Claude and Codex. It also reads again after a failed redeem, because a request that fails on the Mac can still spend the reset on the server.
+- **The Claude reset badge only shows for a reset that can be redeemed.** Anthropic accepts a claim only on the grant it names as next. When it named no grant, or a grant that was not usable, Toki still showed the badge and sent a claim that Anthropic could only refuse.
+- **The Remote Control app no longer says a reset was redeemed before it was.** The phone showed "Reset redeemed" as soon as it passed the request to the Mac. It now says the reset was sent, and the usage panel shows the result.
+
 ## 3.3.7 - 2026-09-23
 
 ### Added
