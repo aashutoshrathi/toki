@@ -108,9 +108,21 @@ final class ClaudeResetGrantTests: XCTestCase {
         XCTAssertEqual(parsed.resetCreditExpiry, ISO8601DateFormatter().date(from: soonest))
     }
 
-    func testUnknownNextGrantFallsBackToAUsableGrant() {
-        let payload = usage(cedarEmber: block(grants: [grant(id: "grant-a")], nextGrantID: "retired-grant"))
+    func testGrantIsOnlyOfferedWhenItIsTheNamedNextGrant() {
+        for nextGrantID in ["retired-grant", nil] {
+            let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(grants: [grant(id: "grant-a")], nextGrantID: nextGrantID)))
 
-        XCTAssertEqual(ClaudeCodeUsage(json: payload).resetGrantID, "grant-a")
+            XCTAssertEqual(parsed.resetCreditsAvailable, 0)
+            XCTAssertNil(parsed.resetGrantID)
+        }
+    }
+
+    func testNextGrantThatCannotBeUsedNowHidesTheBadge() {
+        let payload = usage(cedarEmber: block(grants: [
+            grant(id: "grant-a"),
+            grant(id: "grant-b", paused: true)
+        ], nextGrantID: "grant-b"))
+
+        XCTAssertEqual(ClaudeCodeUsage(json: payload).resetCreditsAvailable, 0)
     }
 }
