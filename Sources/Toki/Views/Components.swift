@@ -21,9 +21,12 @@ struct UpdateAvailableBanner: View {
                         .font(.system(size: 11, weight: .semibold))
                     Text(updateChecker.isInstalling
                         ? "Downloading and verifying update…"
-                        : (update.isPrerelease ? "Install the latest pre-release from GitHub." : "Install the latest GitHub release."))
+                        : update.whyUpdate ?? (update.isPrerelease ? "Install the latest pre-release from GitHub." : "Install the latest GitHub release."))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(update.whyUpdate ?? "")
                 }
 
                 Spacer()
@@ -34,7 +37,7 @@ struct UpdateAvailableBanner: View {
                     Text("What's New")
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
+                .controlSize(.regular)
                 .help("Open this release's notes on GitHub")
                 .accessibilityLabel("What's new in Toki \(update.version)")
 
@@ -52,7 +55,7 @@ struct UpdateAvailableBanner: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .controlSize(.regular)
                 .disabled(updateChecker.isInstalling)
 
                 // A menu rather than a bare close button. Closing used to mean "skip this

@@ -67,9 +67,11 @@ final class DiagnosticLogger: @unchecked Sendable {
     }
 
     private func rotateIfNeeded() throws {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: currentLogURL.path),
-              let size = attributes[.size] as? UInt64,
-              size >= maximumBytes else { return }
+        pruneExpiredArchives()
+        guard let attributes = try? fileManager.attributesOfItem(atPath: currentLogURL.path) else { return }
+        let size = attributes[.size] as? UInt64 ?? 0
+        let created = attributes[.creationDate] as? Date ?? Date()
+        guard size >= maximumBytes || Date().timeIntervalSince(created) >= Self.retention else { return }
 
         for index in stride(from: 2, through: 1, by: -1) {
             let source = logDirectoryURL.appendingPathComponent("toki.log.\(index)")
@@ -82,6 +84,26 @@ final class DiagnosticLogger: @unchecked Sendable {
         let firstArchive = logDirectoryURL.appendingPathComponent("toki.log.1")
         try? fileManager.removeItem(at: firstArchive)
         try fileManager.moveItem(at: currentLogURL, to: firstArchive)
+    }
+
+    private func pruneExpiredArchives() {
+        let cutoff = Date().addingTimeInterval(-Self.retention)
+        let reportsDirectory = logDirectoryURL.appendingPathComponent("reports", isDirectory: true)
+        let reports = ((try? fileManager.contentsOfDirectory(atPath: reportsDirectory.path)) ?? [])
+            .map { reportsDirectory.appendingPathComponent($0) }
+        for url in archiveURLs + reports {
+            let modified = (try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            if let modified, modified < cutoff {
+                try? fileManager.removeItem(at: url)
+            }
+        }
+    }
+
+    static let retention: TimeInterval = 30 * 86_400
+
+    var archiveURLs: [URL] {
+        (1...3).map { logDirectoryURL.appendingPathComponent("toki.log.\($0)") }
+            .filter { fileManager.fileExists(atPath: $0.path) }
     }
 
     private func safeToken(_ value: String) -> String {
@@ -107,6 +129,25 @@ final class DiagnosticLogger: @unchecked Sendable {
         let range = NSRange(value.startIndex..., in: value)
         return expression.stringByReplacingMatches(in: value, range: range, withTemplate: replacement)
     }
+}
+
+func recordAPIFailure(_ url: URL?, method: String = "GET", error: Error) {
+    DiagnosticLogger.shared.record(
+        .error,
+        component: "api",
+        code: "request_failed",
+        detail: "\(method) \(apiEndpointDescription(url)) \(diagnosticErrorDetail(error))"
+    )
+}
+
+func apiEndpointDescription(_ url: URL?) -> String {
+    guard let url, let host = url.host else { return "<unknown-endpoint>" }
+    let segments = url.path.split(separator: "/").map { segment -> String in
+        let value = String(segment)
+        let isIdentifier = value.count >= 8 && value.allSatisfy { $0.isHexDigit || $0 == "-" } && value.contains(where: \.isNumber)
+        return isIdentifier || value.allSatisfy(\.isNumber) ? ":id" : value
+    }
+    return "\(host)/\(segments.joined(separator: "/"))"
 }
 
 // Every detail here goes through `redacted()` before it is written, so carrying the message
@@ -157,25 +198,81 @@ private func decodingErrorDetail(_ error: DecodingError) -> String {
 }
 
 enum DiagnosticsReporter {
-    @MainActor private static var activePicker: NSSharingServicePicker?
+    static let supportEmail = "toki@aashutosh.dev"
+    static let newIssueURL = "https://github.com/aashutoshrathi/toki/issues/new"
 
     @MainActor
-    static func presentSharePicker() {
+    static func reportBug() {
+        let reportURL: URL
         do {
-            let reportURL = try makeReport()
-            guard let view = NSApp.keyWindow?.contentView ?? NSApp.windows.first?.contentView else {
-                throw LocalizedErrorMessage("No window is available for the share picker.")
-            }
-            let picker = NSSharingServicePicker(items: [reportURL])
-            activePicker = picker
-            picker.show(
-                relativeTo: view.bounds,
-                of: view,
-                preferredEdge: .maxY
-            )
+            reportURL = try makeReport()
         } catch {
             DiagnosticLogger.shared.record(.error, component: "diagnostics", code: "report_failed", detail: diagnosticErrorDetail(error))
+            return
         }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Report a bug"
+        alert.informativeText = """
+        Toki saved a debug report with the last 30 days of logs. Email it to \(supportEmail), or attach it to a new GitHub issue, and describe what went wrong.
+
+        The report leaves out credentials, prompts, file paths and account settings.
+        """
+        alert.addButton(withTitle: "Email Report")
+        alert.addButton(withTitle: "Open GitHub Issue")
+        alert.addButton(withTitle: "Show in Finder")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            emailReport(reportURL)
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.activateFileViewerSelecting([reportURL])
+            if let url = issueURL() { NSWorkspace.shared.open(url) }
+        default:
+            NSWorkspace.shared.activateFileViewerSelecting([reportURL])
+        }
+    }
+
+    @MainActor
+    private static func emailReport(_ reportURL: URL) {
+        let subject = "Toki \(appVersion) bug report"
+        let body = "What happened:\n\nWhat I expected:\n\nSteps to reproduce:\n"
+        if let service = NSSharingService(named: .composeEmail), service.canPerform(withItems: [body, reportURL]) {
+            service.recipients = [supportEmail]
+            service.subject = subject
+            service.perform(withItems: [body, reportURL])
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([reportURL])
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = supportEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: subject),
+            URLQueryItem(name: "body", value: body + "\n(Please attach \(reportURL.lastPathComponent) from the Finder window Toki opened.)\n")
+        ]
+        if let url = components.url { NSWorkspace.shared.open(url) }
+    }
+
+    private static func issueURL() -> URL? {
+        var components = URLComponents(string: newIssueURL)
+        components?.queryItems = [
+            URLQueryItem(name: "title", value: "Bug: "),
+            URLQueryItem(name: "body", value: """
+            **What happened**
+
+
+            **What I expected**
+
+
+            **Steps to reproduce**
+
+
+            Toki \(appVersion), macOS \(ProcessInfo.processInfo.operatingSystemVersionString)
+
+            Debug report: drag the Toki-Bug-Report file from the Finder window Toki opened into this box.
+            """)
+        ]
+        return components?.url
     }
 
     static func openLogFolder() {
@@ -186,10 +283,12 @@ enum DiagnosticsReporter {
         NSWorkspace.shared.open(DiagnosticLogger.shared.logDirectoryURL)
     }
 
-    private static func makeReport() throws -> URL {
+    static func makeReport() throws -> URL {
         DiagnosticLogger.shared.flush()
-        let reportURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Toki-Debug-Report-\(UUID().uuidString).txt")
+        let reportsDirectory = DiagnosticLogger.shared.logDirectoryURL.appendingPathComponent("reports", isDirectory: true)
+        try FileManager.default.createDirectory(at: reportsDirectory, withIntermediateDirectories: true)
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let reportURL = reportsDirectory.appendingPathComponent("Toki-Bug-Report-\(stamp).txt")
         var report = """
         Toki debug report
         App version: \(appVersion)
@@ -201,12 +300,12 @@ enum DiagnosticsReporter {
 
         Logs:
         """
-        if let data = try? Data(contentsOf: DiagnosticLogger.shared.currentLogURL),
-           let logs = String(data: data, encoding: .utf8) {
-            report += "\n\(logs)"
-        } else {
-            report += "\nNo diagnostic entries.\n"
-        }
+        let logFiles = DiagnosticLogger.shared.archiveURLs.reversed() + [DiagnosticLogger.shared.currentLogURL]
+        let logs = logFiles.compactMap { url -> String? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }.joined()
+        report += logs.isEmpty ? "\nNo diagnostic entries.\n" : "\n\(logs)"
         try SecureStore.write(data: Data(report.utf8), to: reportURL)
         return reportURL
     }

@@ -257,6 +257,10 @@ enum ActiveAgentScanner {
         )
     }
 
+    static func isOpenCodeServer(_ subcommand: String?) -> Bool {
+        subcommand == "serve" || subcommand == "web"
+    }
+
     private static func providerForProcess(executable: String, entrypoint: String?, command: String) -> Provider? {
         // Ahead of every other match: an agent server Zed downloaded is Zed's session, whatever
         // CLI is inside it, and Zed is the only place it can be answered. The whole command is
@@ -269,7 +273,7 @@ enum ActiveAgentScanner {
             || entrypoint.contains("/@mariozechner/pi-coding-agent/") {
             return .pi
         }
-        if executable == "opencode" { return .openCode }
+        if executable == "opencode" { return isOpenCodeServer(entrypoint) ? nil : .openCode }
         if executable == "copilot" || (executable == "node" && entrypoint?.contains("/@github/copilot/") == true) { return .copilot }
         if executable == "codex" || executable.hasPrefix("codex-") || (executable == "node" && entrypoint?.contains("/@openai/codex/") == true) { return .codex }
         if executable == "claude" { return .claudeCode }

@@ -157,8 +157,7 @@ struct CursorUsageClient {
         var request = URLRequest(url: URL(string: "https://api2.cursor.sh/auth/full_stripe_profile")!)
         request.timeoutInterval = 15
         request.setValue("Bearer \(credentials.token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try Self.checkStatus(response)
+        let data = try await Self.send(request)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return (object?["membershipType"] as? String, Self.intFrom(object?["teamId"]).nonZero)
     }
@@ -172,9 +171,19 @@ struct CursorUsageClient {
         request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try Self.checkStatus(response)
+        let data = try await Self.send(request)
         return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    private static func send(_ request: URLRequest) async throws -> Data {
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try checkStatus(response)
+            return data
+        } catch {
+            recordAPIFailure(request.url, method: request.httpMethod ?? "GET", error: error)
+            throw error
+        }
     }
 
     private static func checkStatus(_ response: URLResponse) throws {

@@ -107,6 +107,10 @@ enum BrewCask {
     /// download it for the first time with the old app already deleted. Refreshing before
     /// the fetch means both steps resolve against the same revision of the tap, and it
     /// fails, if it fails at all, while the installed app is still there.
+    ///
+    /// `brew update` also fails when any unrelated tap is broken (a deleted GitHub repo is
+    /// enough), so its failure cannot block a switch. The later steps run with auto-update
+    /// off instead, which keeps fetch and install on the same revision either way.
     static func switchCommands(from installed: String, to target: String) -> [[String]] {
         [
             refreshCommand,
@@ -132,12 +136,17 @@ enum BrewCask {
     }
 
     /// Runs off the main actor because brew takes minutes.
-    static func run(_ arguments: [String], brewBinary: String) async -> BrewCaskResult {
+    static let pinnedTapEnvironment = ["HOMEBREW_NO_AUTO_UPDATE": "1"]
+
+    static func run(_ arguments: [String], brewBinary: String, environment: [String: String] = [:]) async -> BrewCaskResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: brewBinary)
                 process.arguments = arguments
+                if !environment.isEmpty {
+                    process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+                }
                 let pipe = Pipe()
                 process.standardOutput = pipe
                 process.standardError = pipe

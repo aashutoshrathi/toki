@@ -47,13 +47,35 @@ enum UsageFetcher {
             for await result in group {
                 byIndex[result.0] = result.1
             }
-            let orderedResults = accounts.indices.compactMap { byIndex[$0] }
+            let orderedResults = accounts.indices.compactMap { index in
+                byIndex[index].map { withLocalActivity($0, account: accounts[index]) }
+            }
             return UsageFetchResponse(
                 snapshots: orderedResults.flatMap(\.snapshots),
                 apiCallKeys: Set(orderedResults.flatMap(\.apiCallKeys)),
                 fetchedAt: fetchedAt
             )
         }
+    }
+
+    private static func withLocalActivity(_ result: AccountFetchResult, account: AccountConfig) -> AccountFetchResult {
+        let activity: Date?
+        switch account.provider {
+        case .claudeCode:
+            activity = LocalAgentActivity.claudeCode()
+        case .codex:
+            activity = LocalAgentActivity.codex(codexHome: CodexAppServerClient.codexHomeDirectory(for: account))
+        default:
+            return result
+        }
+        guard let activity else { return result }
+        var updated = result
+        updated.snapshots = result.snapshots.map { snapshot in
+            var snapshot = snapshot
+            snapshot.lastActivity = [snapshot.lastActivity, activity].compactMap { $0 }.max()
+            return snapshot
+        }
+        return updated
     }
 
     // Appends synthetic local-only accounts when readable history exists. These are never
@@ -177,18 +199,22 @@ enum UsageFetcher {
             }
             return AccountFetchResult(snapshots: snapshots, apiCallKeys: attemptedKeys)
         } catch is ClaudeSignInExpiredError {
+            recordFetchFailure(account, code: "sign_in_expired", detail: "")
             return AccountFetchResult(snapshots: [expiredSnapshot(for: account)], apiCallKeys: [])
         } catch let error as HTTPStatusError where error.statusCode == 429 {
+            recordFetchFailure(account, code: "rate_limited", detail: diagnosticErrorDetail(error))
             if let previous = previousSnapshots(for: account, previousByID: previousByID) {
                 return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
             }
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         } catch where isRateLimit(error) {
+            recordFetchFailure(account, code: "rate_limited", detail: diagnosticErrorDetail(error))
             if let previous = previousSnapshots(for: account, previousByID: previousByID) {
                 return AccountFetchResult(snapshots: previous, apiCallKeys: attemptedKeys)
             }
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         } catch where isConnectivityFailure(error) {
+            recordFetchFailure(account, code: "offline", detail: diagnosticErrorDetail(error))
             // A network transition is not an account failure. Preserve the last successful
             // snapshot and leave the API timestamp untouched so reconnect can retry at once.
             if let previous = previousSnapshots(for: account, previousByID: previousByID) {
@@ -204,6 +230,15 @@ enum UsageFetcher {
             )
             return AccountFetchResult(snapshots: [errorSnapshot(for: account, error: error)], apiCallKeys: attemptedKeys)
         }
+    }
+
+    private static func recordFetchFailure(_ account: AccountConfig, code: String, detail: String) {
+        DiagnosticLogger.shared.record(
+            .warning,
+            component: "usage",
+            code: "provider_fetch_\(code)",
+            detail: "provider=\(account.provider.rawValue) \(detail)"
+        )
     }
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {

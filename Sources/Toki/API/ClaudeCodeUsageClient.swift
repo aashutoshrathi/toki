@@ -191,9 +191,18 @@ struct ClaudeCodeUsageClient {
             "request_id": UUID().uuidString
         ])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            recordAPIFailure(url, method: "POST", error: error)
+            throw error
+        }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let body = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            recordAPIFailure(url, method: "POST", error: HTTPStatusError(statusCode: status, body: body))
             throw LocalizedErrorMessage("Failed to redeem reset. \(body)")
         }
         let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]

@@ -398,8 +398,11 @@ struct MenuContentView: View {
             .filter { $0.provider == snapshot.provider }
             .compactMap { $0.lastActivity }
             .max()
-        return [agentActivity, snapshot.lastActivity].compactMap { $0 }.max()
+        let cutoff = Date().addingTimeInterval(-Self.recentActivityWindow)
+        return [agentActivity, snapshot.lastActivity].compactMap { $0 }.filter { $0 > cutoff }.max()
     }
+
+    private static let recentActivityWindow: TimeInterval = 7 * 86_400
 
     private func accountSortPriority(_ snapshot: AccountSnapshot) -> Int {
         if snapshot.isError { return 2 }

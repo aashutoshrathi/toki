@@ -11,6 +11,8 @@ extension UsageStore {
             return
         }
         isRefreshing = true
+        let minimumRefreshInterval = refreshAfterCurrent ? 0 : minimumRefreshInterval
+        refreshAfterCurrent = false
         logDebug("Refresh started")
         if !keepsExistingSnapshots || snapshots.isEmpty {
             snapshots = config.accounts.map(AccountSnapshot.loading)
@@ -22,11 +24,9 @@ extension UsageStore {
         Task {
             defer {
                 isRefreshing = false
-                if refreshAfterReconnect, isNetworkAvailable {
+                if refreshAfterReconnect || refreshAfterCurrent, isNetworkAvailable {
                     refreshAfterReconnect = false
-                    Task { @MainActor [weak self] in
-                        self?.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
-                    }
+                    refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
                 }
             }
             let response = await UsageFetcher.fetch(

@@ -119,19 +119,44 @@ enum CodexAppServerClient {
 
     static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?) async throws -> String {
         let binary = try await resolvedBinary()
+        let check = try call(account: account, binary: binary, requests: [(id: 2, method: "account/rateLimits/read", params: "null")])
+        guard let rateLimits = check.results[2] else {
+            throw LocalizedErrorMessage(check.errors.first ?? "Couldn't confirm a Codex reset is available, so none was redeemed.")
+        }
+        guard CodexRateLimits(json: rateLimits).resetCreditsAvailable > 0 else {
+            throw LocalizedErrorMessage("Codex reports no reset available right now, so none was redeemed.")
+        }
         var params: [String: Any] = ["idempotencyKey": UUID().uuidString]
         if let creditID {
             params["creditId"] = creditID
         }
         let paramsData = try JSONSerialization.data(withJSONObject: params)
         let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
+        let request = (id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)
 
-        let responses = try call(account: account, binary: binary, requests: [(id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)])
-        guard let result = responses.results[2] as? [String: Any], let outcome = result["outcome"] as? String else {
-            throw LocalizedErrorMessage(responses.errors.first ?? "Codex did not confirm the reset")
+        var lastError: String?
+        for attempt in 1...consumeAttempts {
+            do {
+                let responses = try call(account: account, binary: binary, requests: [request], pollSeconds: consumePollSeconds)
+                if let result = responses.results[2] as? [String: Any], let outcome = result["outcome"] as? String {
+                    return outcome
+                }
+                lastError = responses.errors.first
+            } catch {
+                lastError = error.localizedDescription
+            }
+            DiagnosticLogger.shared.record(
+                .error,
+                component: "reset",
+                code: "codex_consume_unconfirmed",
+                detail: "attempt=\(attempt) error=\(lastError ?? "no response")"
+            )
         }
-        return outcome
+        throw LocalizedErrorMessage("Codex did not confirm the reset. It may still have been redeemed, so Toki is reading your usage again before you retry.")
     }
+
+    private static let consumeAttempts = 2
+    private static let consumePollSeconds = 45
 
     // codex app-server has no per-request account parameter - it always acts on whichever
     // session CODEX_HOME points at (default ~/.codex). Deriving CODEX_HOME from the
@@ -146,15 +171,21 @@ enum CodexAppServerClient {
     // Usage and rate-limit reads each round-trip to OpenAI's backend, so a fixed short
     // sleep would race them - rateLimits can lose that race while usage (often served from a
     // faster path) wins, silently degrading the display to raw tokens. Poll for every expected
-    // response id instead, exiting as soon as they've all arrived (bounded by ~10.4s: a 0.4s
-    // handshake plus up to 100 * 0.1s poll iterations).
+    // response id instead, exiting as soon as they've all arrived (bounded by a 0.4s handshake
+    // plus `pollSeconds`). A reset gets a much longer budget than a read: killing app-server while
+    // the consume is in flight can still spend the credit on OpenAI's side.
     //
     // codex app-server is a single-client stdio transport: it exits as soon as it sees EOF
     // on stdin, regardless of requests still in flight. The subshell feeding stdin must
     // therefore stay alive (via a trailing sleep) for at least as long as we intend to poll,
     // or app-server tears itself down mid-round-trip and every response after initialize goes
     // missing - the app-server process itself is still killed explicitly below once we're done.
-    private static func call(account: AccountConfig, binary: CodexBinary, requests: [(id: Int, method: String, params: String)]) throws -> (results: [Int: Any], errors: [String]) {
+    private static func call(
+        account: AccountConfig,
+        binary: CodexBinary,
+        requests: [(id: Int, method: String, params: String)],
+        pollSeconds: Int = 10
+    ) throws -> (results: [Int: Any], errors: [String]) {
         let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"Toki","version":"\#(appVersion)"},"capabilities":{"experimentalApi":true}}}"#
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
         let requestLines = requests.map { #"{"jsonrpc":"2.0","id":\#($0.id),"method":"\#($0.method)","params":\#($0.params)}"# }
@@ -173,9 +204,9 @@ enum CodexAppServerClient {
         printf '%s\\n' '\(shellEscaped(initialized))'; \
         sleep 0.2; \
         printf '%s\\n' \(printfArgs); \
-        sleep 11 ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" '\(shellEscaped(binary.executablePath))' app-server --stdio > "$__toki_out" 2>&1 & \
+        sleep \(pollSeconds + 1) ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" '\(shellEscaped(binary.executablePath))' app-server --stdio > "$__toki_out" 2>&1 & \
         __toki_pid=$!; \
-        for ((__toki_i = 1; __toki_i <= 100; __toki_i++)); do \
+        for ((__toki_i = 1; __toki_i <= \(pollSeconds * 10); __toki_i++)); do \
         sleep 0.1; \
         if \(idChecks); then break; fi; \
         kill -0 $__toki_pid 2>/dev/null || break; \
@@ -186,7 +217,7 @@ enum CodexAppServerClient {
         rm -f "$__toki_out"
         """
 
-        let output = try SecretResolver.runShell(command)
+        let output = try SecretResolver.runShell(command, timeout: TimeInterval(pollSeconds * 2))
         var results: [Int: Any] = [:]
         var errors: [String] = []
         var unparsedLines: [String] = []

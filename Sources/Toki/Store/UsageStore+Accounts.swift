@@ -48,15 +48,17 @@ extension UsageStore {
             case .success(let outcome):
                 let detail = isClaude ? claudeResetOutcomeDescription(outcome) : resetOutcomeDescription(outcome)
                 appendEvent(kind: .reset, title: title, detail: detail, deliveredNotification: false)
-                if isClaude {
-                    refreshClaudeAfterReset(accountID: accountID)
-                } else {
+                if !isClaude {
                     applyCodexResetOutcome(outcome, accountID: accountID)
-                    refreshCodexAfterReset(accountID: accountID)
                 }
             case .failure(let error):
                 DiagnosticLogger.shared.record(.error, component: "reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
                 appendEvent(kind: .reset, title: "\(title) failed", detail: error.localizedDescription, deliveredNotification: false)
+            }
+            if isClaude {
+                refreshClaudeAfterReset()
+            } else {
+                refreshCodexAfterReset(accountID: accountID)
             }
         }
     }
@@ -81,11 +83,11 @@ extension UsageStore {
         }
     }
 
-    private func refreshClaudeAfterReset(accountID: String) {
+    private func refreshClaudeAfterReset() {
         for account in config?.accounts.filter({ $0.provider == .claudeCode }) ?? [] {
             usageState.apiLastCalledAt.removeValue(forKey: "\(Provider.claudeCode.rawValue):\(account.id)")
         }
-        refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
+        refreshOnceIdle()
     }
 
     private func applyCodexResetOutcome(_ outcome: String, accountID: String) {
@@ -104,21 +106,15 @@ extension UsageStore {
         // A normal refresh is allowed to reuse Codex data for five minutes. Redemption is a
         // mutation, so that cache is known-stale and must not survive the confirming read.
         usageState.apiLastCalledAt.removeValue(forKey: "codex:\(accountID)")
-        if !isRefreshing {
-            refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
+        refreshOnceIdle()
+    }
+
+    private func refreshOnceIdle() {
+        if isRefreshing {
+            refreshAfterCurrent = true
             return
         }
-
-        Task { [weak self] in
-            for _ in 0..<100 {
-                guard let self else { return }
-                if !self.isRefreshing {
-                    self.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
+        refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
     }
 
     private func resetOutcomeDescription(_ outcome: String) -> String {

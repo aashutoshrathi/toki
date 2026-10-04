@@ -99,14 +99,12 @@ struct ClaudeCodeUsage {
                   grant["usable_now"] as? Bool == true else { return false }
             return atLimit || grant["use_requires_limit"] as? Bool != true
         }
-        guard !usable.isEmpty else { return }
+        guard let nextGrantID = block["next_grant_id"] as? String,
+              usable.contains(where: { $0["id"] as? String == nextGrantID }) else { return }
 
         resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
         resetCreditExpiry = usable.compactMap { resetDate($0["ends_at"]) }.min()
-
-        let preferred = block["next_grant_id"] as? String
-        resetGrantID = usable.first { $0["id"] as? String == preferred }?["id"] as? String
-            ?? usable.first?["id"] as? String
+        resetGrantID = nextGrantID
 
         var value = "\(resetCreditsAvailable) available"
         if let resetCreditExpiry {

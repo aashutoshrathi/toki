@@ -332,6 +332,11 @@ class RemoteControlAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(toki_remote.provider_of("/Users/me/.local/bin/sarvam-code"), "sarvam")
         self.assertIsNone(toki_remote.provider_of("node /tmp/sarvam-helper.js"))
 
+    def test_opencode_server_is_not_an_agent(self):
+        self.assertIsNone(toki_remote.provider_of("/Users/me/.opencode/bin/opencode serve --service"))
+        self.assertIsNone(toki_remote.provider_of("opencode web"))
+        self.assertEqual(toki_remote.provider_of("/Users/me/.opencode/bin/opencode"), "opencode")
+
     def test_sarvam_session_resolves_from_its_own_home(self):
         with tempfile.TemporaryDirectory() as sarvam_home:
             session = os.path.join(sarvam_home, "rollout-1.jsonl")
