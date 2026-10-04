@@ -176,7 +176,17 @@ final class UpdateChecker: ObservableObject {
 
         var uninstalled = false
         for command in BrewCask.switchCommands(from: install.cask, to: target) {
-            let result = await BrewCask.run(command, brewBinary: install.brewBinary)
+            if command == BrewCask.refreshCommand {
+                let refresh = await BrewCask.run(command, brewBinary: install.brewBinary)
+                if !refresh.succeeded {
+                    DiagnosticLogger.shared.record(
+                        .warning, component: "updater", code: "brew_update_failed",
+                        detail: "reason=\(BrewCask.failureReason(refresh.output) ?? "unknown")"
+                    )
+                }
+                continue
+            }
+            let result = await BrewCask.run(command, brewBinary: install.brewBinary, environment: BrewCask.pinnedTapEnvironment)
             guard result.succeeded else {
                 await recoverFromFailedCaskSwitch(
                     install: install, target: target, uninstalled: uninstalled, failure: result
