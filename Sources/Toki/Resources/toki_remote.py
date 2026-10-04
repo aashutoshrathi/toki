@@ -266,7 +266,7 @@ def provider_of(command):
     if exe == "codex" or exe.startswith("codex-") or (exe in ("node", "bun") and "/@openai/codex/" in entry):
         return "codex"
     if exe == "opencode":
-        return "opencode"
+        return None if entry in ("serve", "web") else "opencode"
     if exe == "sarvam-code":
         return "sarvam"
     if exe == "fx":
