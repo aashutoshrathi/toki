@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.3.8 - 2026-10-04
+## 3.3.8 - 2026-10-05
 
 One Line: Resets can no longer be lost to a slow confirmation, and provider cards follow what you actually use.
 
