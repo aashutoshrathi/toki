@@ -65,6 +65,7 @@ final class UsageStore: ObservableObject {
     let connectivityMonitor = ConnectivityMonitor()
     var connectivityGeneration = 0
     var refreshAfterReconnect = false
+    var refreshAfterCurrent = false
     var serviceStatusCheckedAt: Date?
     var isCheckingServiceStatus = false
 

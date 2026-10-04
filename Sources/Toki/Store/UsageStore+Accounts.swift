@@ -110,21 +110,11 @@ extension UsageStore {
     }
 
     private func refreshOnceIdle() {
-        if !isRefreshing {
-            refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
+        if isRefreshing {
+            refreshAfterCurrent = true
             return
         }
-
-        Task { [weak self] in
-            for _ in 0..<100 {
-                guard let self else { return }
-                if !self.isRefreshing {
-                    self.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
+        refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
     }
 
     private func resetOutcomeDescription(_ outcome: String) -> String {

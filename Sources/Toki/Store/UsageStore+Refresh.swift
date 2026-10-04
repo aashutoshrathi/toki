@@ -22,8 +22,9 @@ extension UsageStore {
         Task {
             defer {
                 isRefreshing = false
-                if refreshAfterReconnect, isNetworkAvailable {
+                if refreshAfterReconnect || refreshAfterCurrent, isNetworkAvailable {
                     refreshAfterReconnect = false
+                    refreshAfterCurrent = false
                     Task { @MainActor [weak self] in
                         self?.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 0)
                     }
