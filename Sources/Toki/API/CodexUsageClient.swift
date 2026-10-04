@@ -217,7 +217,7 @@ enum CodexAppServerClient {
         rm -f "$__toki_out"
         """
 
-        let output = try SecretResolver.runShell(command, timeout: TimeInterval(pollSeconds + 15))
+        let output = try SecretResolver.runShell(command, timeout: TimeInterval(pollSeconds * 2))
         var results: [Int: Any] = [:]
         var errors: [String] = []
         var unparsedLines: [String] = []
