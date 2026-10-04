@@ -369,8 +369,8 @@ struct SettingsPanel: View {
                 ConfigEditor(store: store)
 
                 HStack(spacing: 8) {
-                    advancedButton("Send debug report", icon: "paperclip") {
-                        DiagnosticsReporter.presentSharePicker()
+                    advancedButton("Report a bug", icon: "ladybug") {
+                        DiagnosticsReporter.reportBug()
                     }
                     advancedButton("Logs", icon: "folder") {
                         DiagnosticsReporter.openLogFolder()
