@@ -37,7 +37,7 @@ struct UpdateAvailableBanner: View {
                     Text("What's New")
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
+                .controlSize(.regular)
                 .help("Open this release's notes on GitHub")
                 .accessibilityLabel("What's new in Toki \(update.version)")
 
@@ -55,7 +55,7 @@ struct UpdateAvailableBanner: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .controlSize(.regular)
                 .disabled(updateChecker.isInstalling)
 
                 // A menu rather than a bare close button. Closing used to mean "skip this

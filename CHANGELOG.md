@@ -15,7 +15,7 @@ One Line: Resets can no longer be lost to a slow confirmation, and provider card
 
 ### Added
 - **Report a bug** in Settings. Toki saves a debug report with the last 30 days of logs, then offers to email it to toki@aashutosh.dev or open a GitHub issue. The report leaves out credentials, prompts, file paths and account settings.
-- **The update banner says why to update.** It shows the release's one-line summary instead of a generic "Install the latest GitHub release".
+- **The update banner says why to update.** It shows the release's one-line summary instead of a generic "Install the latest GitHub release". Its What's New and Update buttons are also slightly taller and easier to hit.
 - **Every failed API request is now written to the local log** (`~/.toki/logs`), along with rate-limited, offline and signed-out usage reads. Logs and saved reports older than 30 days are deleted automatically.
 
 ## 3.3.7 - 2026-09-23
