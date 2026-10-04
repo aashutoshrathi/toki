@@ -102,4 +102,19 @@ final class UpdateChannelTests: XCTestCase {
         XCTAssertEqual(UpdateChannel(rawValue: "stable"), .stable)
         XCTAssertNil(UpdateChannel(rawValue: "nightly"))
     }
+
+    func testWhyUpdateReadsTheOneLineFromReleaseNotes() {
+        let notes = """
+        ## 3.3.8 - 2026-10-04
+
+        One Line: Resets can no longer be **lost**.
+
+        ### Fixed
+        - Something
+        """
+        XCTAssertEqual(UpdateChecker.whyUpdateLine(fromNotes: notes), "Resets can no longer be lost.")
+        XCTAssertEqual(UpdateChecker.whyUpdateLine(fromNotes: "one line:   Faster `refresh`"), "Faster refresh")
+        XCTAssertNil(UpdateChecker.whyUpdateLine(fromNotes: "## 3.3.7\n- Added things"))
+        XCTAssertNil(UpdateChecker.whyUpdateLine(fromNotes: "One Line:   "))
+    }
 }

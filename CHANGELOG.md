@@ -2,6 +2,8 @@
 
 ## 3.3.8 - 2026-10-04
 
+One Line: Resets can no longer be lost to a slow confirmation, and provider cards follow what you actually use.
+
 ### Fixed
 - **A Codex reset can no longer be spent without Toki noticing.** Toki gave Codex about 10 seconds to confirm a redeem, then stopped the request and reported a failure. A slow confirmation could still spend the reset on OpenAI's side. Toki now waits up to 45 seconds, and if it gets no answer it retries once with the same request key. Codex then reports the first attempt's result instead of spending a second reset.
 - **Toki checks that a Codex reset is available before redeeming.** It reads the live reset count from Codex first and stops if none is left, instead of relying on the card's last refresh.
@@ -13,6 +15,7 @@
 
 ### Added
 - **Report a bug** in Settings. Toki saves a debug report with the last 30 days of logs, then offers to email it to toki@aashutosh.dev or open a GitHub issue. The report leaves out credentials, prompts, file paths and account settings.
+- **The update banner says why to update.** It shows the release's one-line summary instead of a generic "Install the latest GitHub release".
 - **Every failed API request is now written to the local log** (`~/.toki/logs`), along with rate-limited, offline and signed-out usage reads. Logs and saved reports older than 30 days are deleted automatically.
 
 ## 3.3.7 - 2026-09-23

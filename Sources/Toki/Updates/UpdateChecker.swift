@@ -25,6 +25,7 @@ struct AvailableUpdate: Equatable {
     let releaseURL: URL
     let downloadURL: URL
     let isPrerelease: Bool
+    var whyUpdate: String? = nil
 }
 
 private struct GitHubRelease: Decodable {
@@ -43,6 +44,7 @@ private struct GitHubRelease: Decodable {
     let prerelease: Bool
     let draft: Bool
     let assets: [Asset]
+    let body: String?
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
@@ -50,6 +52,7 @@ private struct GitHubRelease: Decodable {
         case prerelease
         case draft
         case assets
+        case body
     }
 }
 
@@ -446,7 +449,8 @@ final class UpdateChecker: ObservableObject {
                 version: version,
                 releaseURL: url,
                 downloadURL: downloadURL,
-                isPrerelease: version.contains("-")
+                isPrerelease: version.contains("-"),
+                whyUpdate: ProcessInfo.processInfo.environment["TOKI_MOCK_UPDATE_NOTES"].flatMap(Self.whyUpdateLine(fromNotes:))
             )
             checkMessage = nil
             return
@@ -492,7 +496,8 @@ final class UpdateChecker: ObservableObject {
                 version: releaseVersion,
                 releaseURL: release.htmlURL,
                 downloadURL: asset.browserDownloadURL,
-                isPrerelease: release.prerelease
+                isPrerelease: release.prerelease,
+                whyUpdate: release.body.flatMap(Self.whyUpdateLine(fromNotes:))
             )
             checkMessage = nil
         } catch {
@@ -540,6 +545,20 @@ final class UpdateChecker: ObservableObject {
             return nil
         }
         return data
+    }
+
+    nonisolated static func whyUpdateLine(fromNotes notes: String) -> String? {
+        let prefix = "one line:"
+        for rawLine in notes.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard line.lowercased().hasPrefix(prefix) else { continue }
+            let value = line.dropFirst(prefix.count)
+                .replacingOccurrences(of: "**", with: "")
+                .replacingOccurrences(of: "`", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            return value.isEmpty ? nil : String(value.prefix(160))
+        }
+        return nil
     }
 
     nonisolated static func normalizedVersion(_ value: String) -> String {
