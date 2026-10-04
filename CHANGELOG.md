@@ -1,11 +1,19 @@
 # Changelog
 
-## 3.3.8 - 2026-09-30
+## 3.3.8 - 2026-10-04
 
 ### Fixed
-- **Redeeming a reset now updates the card.** If Toki was already refreshing when a Claude reset was redeemed (opening the popover starts a refresh), the follow-up read was dropped. The card then kept the old limit and the reset badge for up to 7.5 minutes, although the reset was already spent. Toki now waits for the running refresh and reads usage again, for Claude and Codex. It also reads again after a failed redeem, because a request that fails on the Mac can still spend the reset on the server.
+- **A Codex reset can no longer be spent without Toki noticing.** Toki gave Codex about 10 seconds to confirm a redeem, then stopped the request and reported a failure. A slow confirmation could still spend the reset on OpenAI's side. Toki now waits up to 45 seconds, and if it gets no answer it retries once with the same request key. Codex then reports the first attempt's result instead of spending a second reset.
+- **Toki checks that a Codex reset is available before redeeming.** It reads the live reset count from Codex first and stops if none is left, instead of relying on the card's last refresh.
+- **Redeeming a reset now updates the card.** If Toki was already refreshing when a reset was redeemed (opening the popover starts a refresh), the follow-up read was dropped or given up on after 10 seconds. The card then kept the old limit and the reset badge, although the reset was already spent. The read now always runs as soon as the current refresh ends, for Claude and Codex. It also runs after a failed redeem, because a request that fails on the Mac can still spend the reset on the server.
 - **The Claude reset badge only shows for a reset that can be redeemed.** Anthropic accepts a claim only on the grant it names as next. When it named no grant, or a grant that was not usable, Toki still showed the badge and sent a claim that Anthropic could only refuse.
 - **The Remote Control app no longer says a reset was redeemed before it was.** The phone showed "Reset redeemed" as soon as it passed the request to the Mac. It now says the reset was sent, and the usage panel shows the result.
+- **Provider cards are ordered by what you actually used last.** Codex never had a last-used time, and Claude only had one while a `claude` process was running. Any provider with an old timestamp, such as fx or OpenCode, sorted above them. Claude and Codex now read their last activity from local session files, and activity older than 7 days no longer affects the order.
+- **A background `opencode serve` or `opencode web` process no longer counts as an active OpenCode agent.** It kept OpenCode marked active and pushed it up the list.
+
+### Added
+- **Report a bug** in Settings. Toki saves a debug report with the last 30 days of logs, then offers to email it to toki@aashutosh.dev or open a GitHub issue. The report leaves out credentials, prompts, file paths and account settings.
+- **Every failed API request is now written to the local log** (`~/.toki/logs`), along with rate-limited, offline and signed-out usage reads. Logs and saved reports older than 30 days are deleted automatically.
 
 ## 3.3.7 - 2026-09-23
 
