@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.9 - 2026-10-21
+
+One Line: Claude agents no longer show "Allow Bash?" when they are not waiting on you.
+
+### Fixed
+- **Claude agents no longer ask for permission they do not need.** Claude Code 2.1.306 and later repeat each tool call in the session file after the call has finished. Toki read the copy as a new call that was still waiting, so idle agents showed "Allow Bash?" with a red dot. Toki now skips these copies.
+- **Agents in bypass-permissions mode never show a permission alert.** Tools in that mode run without a prompt, the same as auto mode. T3 Code starts its Claude threads in this mode, so a long-running command there showed "Allow Bash?" too. Questions and plan approvals still show.
+
 ## 3.3.8 - 2026-10-05
 
 One Line: Resets can no longer be lost to a slow confirmation, and provider cards follow what you actually use.
