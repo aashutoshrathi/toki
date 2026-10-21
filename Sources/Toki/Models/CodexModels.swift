@@ -97,6 +97,8 @@ struct CodexRateLimits {
     // only availableCount is known (the credits detail array is absent). Surfaced so the user
     // can decide whether to redeem now or wait — see issue #130.
     var resetCreditExpiry: Date?
+    // Redeemed first, as the Codex TUI does, so a credit about to lapse is not left to expire.
+    var soonestExpiringCreditID: String?
     var primaryWindow: RateLimitWindow?
     var secondaryWindow: RateLimitWindow?
     // The soonest reset across all windows, tracked as a unix timestamp so the earliest wins
@@ -128,7 +130,9 @@ struct CodexRateLimits {
         if let resetCredits = data["rateLimitResetCredits"] as? [String: Any],
            let count = optionalNumber(firstValue(resetCredits, keys: ["availableCount"])) {
             resetCreditsAvailable = Int(count)
-            resetCreditExpiry = soonestCreditExpiry(in: resetCredits)
+            let soonest = soonestExpiringCredit(in: resetCredits)
+            resetCreditExpiry = soonest?.expiry
+            soonestExpiringCreditID = soonest?.id
             if resetCreditsAvailable > 0 {
                 var value = "\(resetCreditsAvailable) available"
                 if let expiry = resetCreditExpiry {
@@ -157,16 +161,16 @@ struct CodexRateLimits {
     // When it is present, each credit carries an expiresAt unix timestamp (seconds) or null
     // for credits that never expire. We surface the soonest non-null expiry so the user knows
     // the deadline for redeeming before the credit lapses.
-    private func soonestCreditExpiry(in resetCredits: [String: Any]) -> Date? {
+    private func soonestExpiringCredit(in resetCredits: [String: Any]) -> (expiry: Date, id: String?)? {
         guard let credits = resetCredits["credits"] as? [[String: Any]] else { return nil }
-        var earliest: Date?
+        var earliest: (expiry: Date, id: String?)?
         for credit in credits {
             guard let expiresAt = optionalNumber(firstValue(credit, keys: ["expiresAt"])) else {
                 continue
             }
             let date = Date(timeIntervalSince1970: expiresAt)
-            if earliest == nil || date < earliest! {
-                earliest = date
+            if earliest == nil || date < earliest!.expiry {
+                earliest = (date, credit["id"] as? String)
             }
         }
         return earliest

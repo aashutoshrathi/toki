@@ -123,11 +123,12 @@ enum CodexAppServerClient {
         guard let rateLimits = check.results[2] else {
             throw LocalizedErrorMessage(check.errors.first ?? "Couldn't confirm a Codex reset is available, so none was redeemed.")
         }
-        guard CodexRateLimits(json: rateLimits).resetCreditsAvailable > 0 else {
+        let live = CodexRateLimits(json: rateLimits)
+        guard live.resetCreditsAvailable > 0 else {
             throw LocalizedErrorMessage("Codex reports no reset available right now, so none was redeemed.")
         }
         var params: [String: Any] = ["idempotencyKey": UUID().uuidString]
-        if let creditID {
+        if let creditID = creditID ?? live.soonestExpiringCreditID {
             params["creditId"] = creditID
         }
         let paramsData = try JSONSerialization.data(withJSONObject: params)

@@ -52,6 +52,7 @@ final class CodexResetCreditExpiryTests: XCTestCase {
 
         XCTAssertEqual(parsed.resetCreditsAvailable, 1)
         XCTAssertNil(parsed.resetCreditExpiry)
+        XCTAssertNil(parsed.soonestExpiringCreditID)
     }
 
     func testCreditExpiryAbsentWhenOnlyCountKnown() {
@@ -101,6 +102,7 @@ final class CodexResetCreditExpiryTests: XCTestCase {
 
         XCTAssertEqual(parsed.resetCreditsAvailable, 2)
         XCTAssertEqual(parsed.resetCreditExpiry?.timeIntervalSince1970 ?? 0, soon, accuracy: 1)
+        XCTAssertEqual(parsed.soonestExpiringCreditID, "credit-monthly")
     }
 
     func testNoCreditsMeansNoExpiryOrMetric() {
