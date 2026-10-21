@@ -63,4 +63,7 @@ assert.match(draw({ label: "5h", left: 70, deviation: 0 }), /On track/);
 assert.match(draw({ label: "5h", left: 70 }), /u-w-fill warm" style="width:30%"/);
 assert.match(draw({ label: "<b>", left: 50 }), /&lt;b&gt;/);
 
+// Several accounts with three bars each outgrow the screen; the panel scrolls instead of clipping.
+assert.match(css, /#usage\{[^}]*max-height:45dvh;overflow-y:auto/);
+
 console.log("remote usage window tests passed");

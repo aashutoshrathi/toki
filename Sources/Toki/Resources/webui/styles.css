@@ -395,7 +395,8 @@ footer button:disabled,footer input:disabled,footer textarea:disabled{opacity:.4
 #usagetoggle .chev{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;
   border-top:5px solid currentColor;opacity:.6;transition:transform .15s ease}
 #usagetoggle[aria-expanded="true"] .chev{transform:rotate(180deg)}
-#usage{padding:4px 12px 10px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+#usage{padding:4px 12px 10px;background:var(--surface-2);border-bottom:1px solid var(--line);
+       max-height:45dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .u-row{display:flex;align-items:center;gap:8px;padding:5px 0}
 .u-name{flex:0 0 34%;color:var(--text-2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .u-track{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
