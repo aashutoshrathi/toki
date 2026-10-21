@@ -29,6 +29,10 @@ final class T3CodeThreadTests: XCTestCase {
         INSERT INTO orchestration_v2_projection_provider_threads VALUES
             ('thread-1', '2026-10-21T15:22:35Z', '{"nativeThreadRef":{"nativeId":"\(sessionID)"}}'),
             ('thread-2', '2026-10-21T15:30:00Z', '{"nativeThreadRef":{"nativeId":"9138ab42-981b-4916-ab19-195dc78eb528"}}');
+        CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT, title TEXT);
+        INSERT INTO orchestration_v2_projection_threads VALUES
+            ('thread-1', 'Flag for Multiple Bundles per Country'),
+            ('thread-2', 'Investigate' || char(10) || 'Production Sentry Error');
         """)
     }
 
@@ -53,6 +57,17 @@ final class T3CodeThreadTests: XCTestCase {
 
     func testNoDatabaseMeansNoThread() {
         XCTAssertNil(threadURL("/Users/me/.claude/projects/-app/\(sessionID).jsonl"))
+    }
+
+    func testTitleIsTheOneT3CodeShows() throws {
+        try writeThreads()
+        let first = "/Users/me/.claude/projects/-app/\(sessionID).jsonl"
+        let second = "/Users/me/.claude/projects/-app/9138ab42-981b-4916-ab19-195dc78eb528.jsonl"
+        let unknown = "/Users/me/.claude/projects/-app/aaaaaaaa-1111-2222-3333-444444444444.jsonl"
+        let threads = T3CodeThreadStore.threads(forSessionPaths: [first, second, unknown], userData: userData)
+        XCTAssertEqual(threads[first]?.title, "Flag for Multiple Bundles per Country")
+        XCTAssertEqual(threads[second]?.title, "Investigate Production Sentry Error")
+        XCTAssertNil(threads[unknown])
     }
 
     func testT3CodeIsTheHostOfItsAgents() {

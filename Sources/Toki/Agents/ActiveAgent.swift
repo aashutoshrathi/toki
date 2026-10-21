@@ -199,7 +199,13 @@ enum ActiveAgentScanner {
                     )
                 }
             )
-            let processAgents = contexts.map { buildAgent($0, session: sessions[$0.candidate.pid]) }
+            let t3Threads = T3CodeThreadStore.threads(forSessionPaths: contexts.compactMap { context in
+                context.hostApp == .t3Code ? sessions[context.candidate.pid]?.path : nil
+            })
+            let processAgents = contexts.map { context in
+                let session = sessions[context.candidate.pid]
+                return buildAgent(context, session: session, t3Title: session.flatMap { t3Threads[$0.path]?.title })
+            }
             let agents = disambiguate(processAgents + zedThreadAgents(alongside: processAgents, psOutput: output))
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
@@ -469,7 +475,7 @@ enum ActiveAgentScanner {
 
     // `session` is Claude's assigned transcript; every field it backs is read from that one file
     // rather than re-resolved four times, which also keeps them describing the same conversation.
-    private static func buildAgent(_ context: ProcessContext, session: AgentSessionResolver.ResolvedSession?) -> ActiveAgent {
+    private static func buildAgent(_ context: ProcessContext, session: AgentSessionResolver.ResolvedSession?, t3Title: String?) -> ActiveAgent {
         let c = context.candidate
         let cwd = context.directory
         let isClaude = isClaudeFamily(c.provider)
@@ -479,7 +485,7 @@ enum ActiveAgentScanner {
             provider: c.provider,
             directory: cwd,
             chatTitle: isClaude
-                ? session.flatMap(AgentSessionResolver.claudeTitle(of:))
+                ? t3Title ?? session.flatMap(AgentSessionResolver.claudeTitle(of:))
                 : AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
             hostApp: context.hostApp,
             hostProcessID: context.hostProcessID,
