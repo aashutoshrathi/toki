@@ -538,8 +538,13 @@ enum ActiveAgentNavigator {
         }
         let resolvedDevice = device
         let resolvedHostBundleID = agent.hostApp?.bundleID
+        let t3SessionPath = agent.hostApp == .t3Code ? agent.sessionPath : nil
 
         Task.detached(priority: .userInitiated) {
+            if let t3SessionPath, let thread = T3CodeThreadStore.threadURL(forSessionPath: t3SessionPath) {
+                await MainActor.run { _ = NSWorkspace.shared.open(thread) }
+                return
+            }
             if let device = resolvedDevice,
                terminalScripts(tty: device, hostBundleID: resolvedHostBundleID).contains(where: runAppleScript) {
                 return

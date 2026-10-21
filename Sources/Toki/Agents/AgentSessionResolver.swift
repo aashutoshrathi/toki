@@ -903,12 +903,16 @@ struct HostApp: Hashable, Sendable {
     static let zed = HostApp(
         displayName: "Zed", bundleID: "dev.zed.Zed", matchers: [".app/contents/macos/zed"]
     )
+    static let t3Code = HostApp(
+        displayName: "T3 Code", bundleID: "com.t3tools.t3code", matchers: [".app/contents/macos/t3 code"]
+    )
 
     private static let all: [HostApp] = [
         HostApp(displayName: "VS Code Insiders", bundleID: "com.microsoft.VSCodeInsiders", matchers: ["code - insiders"]),
         HostApp(displayName: "VS Code", bundleID: "com.microsoft.VSCode", matchers: ["code helper", "visual studio code"]),
         HostApp(displayName: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92", matchers: ["cursor"]),
         zed,
+        t3Code,
         HostApp(displayName: "ChatGPT", bundleID: codexAppBundleIdentifier, matchers: ["chatgpt"]),
         iTerm,
         HostApp(displayName: "WezTerm", bundleID: "com.github.wez.wezterm", matchers: ["wezterm"]),

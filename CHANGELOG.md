@@ -9,6 +9,8 @@ One Line: Toki can redeem a banked reset for you, and Claude agents no longer sh
 
 ### Fixed
 - **Claude agents no longer ask for permission they do not need.** Claude Code 2.1.306 and later repeat each tool call in the session file after the call has finished. Toki read the copy as a new call that was still waiting, so idle agents showed "Allow Bash?" with a red dot. Toki now skips these copies.
+- **A click on a T3 Code agent opens its chat in T3 Code.** Toki did not know T3 Code, so the click brought iTerm to the front. Toki now opens the thread in T3 Code. If it cannot find the thread, it brings T3 Code to the front.
+- **T3 Code agents show their own title and usage.** T3 Code starts Claude with `--session-id=<id>`, and Toki read only `--session-id <id>`. Toki then guessed the session from the project folder, so a T3 thread could show the title of another agent, or give its own title to an iTerm agent in the same folder.
 - **Agents in bypass-permissions mode never show a permission alert.** Tools in that mode run without a prompt, the same as auto mode. T3 Code starts its Claude threads in this mode, so a long-running command there showed "Allow Bash?" too. Questions and plan approvals still show.
 
 ## 3.3.8 - 2026-10-05
