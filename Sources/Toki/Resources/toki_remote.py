@@ -702,7 +702,7 @@ def claude_attention(path):
         return question_attention(qs)
     if name in ("ExitPlanMode", "EnterPlanMode"):
         return {"kind": "question", "prompt": "Waiting on plan approval", "options": []}
-    if mode == "auto":
+    if mode in ("auto", "bypassPermissions"):
         return None
     if mode == "acceptEdits" and name in AUTO_ACCEPTED_EDITS:
         return None

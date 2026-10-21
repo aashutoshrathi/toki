@@ -391,7 +391,7 @@ enum AgentSessionResolver {
             // Auto mode runs every tool without a prompt, and acceptEdits does the same for
             // file edits, so a lingering tool_use there is a command still executing - not one
             // waiting on you. Only a mode that would actually prompt yields a permission alert.
-            if parsed.permissionMode == "auto" { return nil }
+            if parsed.permissionMode == "auto" || parsed.permissionMode == "bypassPermissions" { return nil }
             if parsed.permissionMode == "acceptEdits", isAutoAcceptedEdit(pending.name) { return nil }
             return AgentAttention(kind: .permission, prompt: "Allow \(pending.name)?")
         }
@@ -445,7 +445,10 @@ enum AgentSessionResolver {
                 }
             }
 
-            guard let blocks = message["content"] as? [[String: Any]] else { continue }
+            // `api-request-blob` records re-echo tool_use blocks that were already answered.
+            let recordType = json["type"] as? String
+            guard recordType == "assistant" || recordType == "user",
+                  let blocks = message["content"] as? [[String: Any]] else { continue }
             for block in blocks {
                 switch block["type"] as? String {
                 case "tool_use":

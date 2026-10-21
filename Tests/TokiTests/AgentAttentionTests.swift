@@ -14,7 +14,7 @@ final class AgentAttentionTests: XCTestCase {
 
     func testUnansweredQuestionSurfacesTheQuestionText() {
         let jsonl = """
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"Which database?"}]}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"Which database?"}]}}]}}
         """
         let result = attention(jsonl, modified: quiet)
         XCTAssertEqual(result?.kind, .question)
@@ -23,7 +23,7 @@ final class AgentAttentionTests: XCTestCase {
 
     func testUnansweredToolCallIsAPermissionPrompt() {
         let jsonl = """
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
         """
         let result = attention(jsonl, modified: quiet)
         XCTAssertEqual(result?.kind, .permission)
@@ -32,8 +32,8 @@ final class AgentAttentionTests: XCTestCase {
 
     func testResolvedToolCallIsNotBlocking() {
         let jsonl = """
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
-        {"message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}
         """
         XCTAssertNil(attention(jsonl, modified: quiet))
     }
@@ -42,14 +42,14 @@ final class AgentAttentionTests: XCTestCase {
     // to one awaiting permission. Only elapsed quiet time distinguishes them.
     func testRecentlyWrittenSessionIsTreatedAsWorkingNotBlocked() {
         let jsonl = """
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
         """
         XCTAssertNil(attention(jsonl, modified: busy))
     }
 
     func testMissingModificationDateIsNotBlocking() {
         let jsonl = """
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
         """
         XCTAssertNil(attention(jsonl, modified: nil))
     }
@@ -58,7 +58,24 @@ final class AgentAttentionTests: XCTestCase {
         // In auto mode Bash runs without asking, so a lingering tool_use is executing.
         let jsonl = """
         {"type":"permission-mode","permissionMode":"auto"}
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        """
+        XCTAssertNil(attention(jsonl, modified: quiet))
+    }
+
+    func testBypassModeSuppressesPermissionPrompt() {
+        let jsonl = """
+        {"type":"user","permissionMode":"bypassPermissions","message":{"content":"hi"}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        """
+        XCTAssertNil(attention(jsonl, modified: quiet))
+    }
+
+    func testRequestBlobEchoDoesNotReopenAResolvedToolCall() {
+        let jsonl = """
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}
+        {"type":"api-request-blob","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
         """
         XCTAssertNil(attention(jsonl, modified: quiet))
     }
@@ -67,7 +84,7 @@ final class AgentAttentionTests: XCTestCase {
         // A question waits on the user regardless of permission mode.
         let jsonl = """
         {"type":"permission-mode","permissionMode":"auto"}
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"Which one?"}]}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"Which one?"}]}}]}}
         """
         XCTAssertEqual(attention(jsonl, modified: quiet)?.kind, .question)
     }
@@ -75,29 +92,29 @@ final class AgentAttentionTests: XCTestCase {
     func testAcceptEditsSuppressesEditsButNotBash() {
         let edit = """
         {"type":"permission-mode","permissionMode":"acceptEdits"}
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{}}]}}
         """
         XCTAssertNil(attention(edit, modified: quiet))
 
         let bash = """
         {"type":"permission-mode","permissionMode":"acceptEdits"}
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
         """
         XCTAssertEqual(attention(bash, modified: quiet)?.kind, .permission)
     }
 
     func testPlanApprovalIsAQuestion() {
         let jsonl = """
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"ExitPlanMode","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"ExitPlanMode","input":{}}]}}
         """
         XCTAssertEqual(attention(jsonl, modified: quiet)?.kind, .question)
     }
 
     func testFullyResolvedSessionIsNotBlocking() {
         let jsonl = """
-        {"message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}]}}
-        {"message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}
-        {"message":{"content":[{"type":"text","text":"Done."}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}]}}
+        {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}
+        {"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}
         """
         XCTAssertNil(attention(jsonl, modified: quiet))
     }

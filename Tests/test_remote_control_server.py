@@ -504,6 +504,33 @@ class RemoteControlCodexAttentionTests(unittest.TestCase):
         self.assertEqual(summary, "cell_id=190 yield_time_ms=25000 max_tokens=100")
 
 
+class RemoteControlClaudeAttentionTests(unittest.TestCase):
+    def _transcript(self, records):
+        f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        self.addCleanup(os.unlink, f.name)
+        for record in records:
+            f.write(json.dumps(record) + "\n")
+        f.close()
+        quiet = time.time() - 60
+        os.utime(f.name, (quiet, quiet))
+        return f.name
+
+    BASH_CALL = {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+    ]}}
+
+    def test_pending_bash_asks_for_permission_in_default_mode(self):
+        path = self._transcript([self.BASH_CALL])
+        self.assertEqual(toki_remote.claude_attention(path)["prompt"], "Allow Bash?")
+
+    def test_bypass_mode_never_asks_for_permission(self):
+        path = self._transcript([
+            {"type": "user", "permissionMode": "bypassPermissions", "message": {"content": "hi"}},
+            self.BASH_CALL,
+        ])
+        self.assertIsNone(toki_remote.claude_attention(path))
+
+
 class RemoteControlAgentOrderTests(unittest.TestCase):
     def order(self, agents):
         with mock.patch.object(toki_remote, "agent_recency", lambda a: a["recency"]):
