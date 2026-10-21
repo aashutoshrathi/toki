@@ -311,8 +311,33 @@ func autoRedeemRetryAfter(for claim: AutoRedeemClaim, now: Date) -> Date {
     case .weekly:
         return regularRetry
     case .expiry:
-        return max(now.addingTimeInterval(60), min(regularRetry, claim.guardDate.addingTimeInterval(-60)))
+        let minuteBeforeExpiry = min(regularRetry, claim.guardDate.addingTimeInterval(-60))
+        if minuteBeforeExpiry >= now.addingTimeInterval(60) {
+            return minuteBeforeExpiry
+        }
+        // Too close for a minute's spacing: halve the time left so the retry still lands before expiry.
+        return now.addingTimeInterval(max(5, claim.guardDate.timeIntervalSince(now) / 2))
     }
+}
+
+// A released weekly claim is blocked too: its cached snapshot still qualifies, and would win again over a due expiry retry.
+func autoRedeemRetries(
+    afterReleasing claim: AutoRedeemClaim,
+    expiryRuleMatches: Bool,
+    now: Date
+) -> [AutoRedeemClaim.Trigger: Date] {
+    var retries: [AutoRedeemClaim.Trigger: Date] = [:]
+    switch claim.trigger {
+    case .weekly:
+        retries[.weekly] = autoRedeemRetryAfter(for: claim, now: now)
+        if expiryRuleMatches {
+            // Not yet tried, so it runs as soon as the account's in-flight redeem has finished.
+            retries[.expiry] = now.addingTimeInterval(1)
+        }
+    case .expiry:
+        retries[.expiry] = autoRedeemRetryAfter(for: claim, now: now)
+    }
+    return retries
 }
 
 func resetOutcomeSpentNothing(_ outcome: String) -> Bool {

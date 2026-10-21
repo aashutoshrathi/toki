@@ -131,16 +131,43 @@ extension UsageStore {
             case .move(let spent):
                 setAutoRedeemGuard(spent, for: claim.trigger, accountID: snapshot.id)
             case .release:
-                releaseAutoRedeemGuard(for: claim, accountID: snapshot.id)
-                let retryKey = autoRedeemRetryKey(for: claim.trigger, accountID: snapshot.id)
-                autoRedeemRetryTimes[retryKey] = autoRedeemRetryAfter(for: claim, now: Date())
-                scheduleExpiringResetCheck(for: snapshots, after: Date())
+                releaseAutoRedeem(claim, for: snapshot)
             }
         case .failure(let error) where error is ResetNotAttempted:
-            releaseAutoRedeemGuard(for: claim, accountID: snapshot.id)
+            releaseAutoRedeem(claim, for: snapshot)
         case .failure:
             break
         }
+    }
+
+    private func releaseAutoRedeem(_ claim: AutoRedeemClaim, for snapshot: AccountSnapshot) {
+        let now = Date()
+        releaseAutoRedeemGuard(for: claim, accountID: snapshot.id)
+        let retries = autoRedeemRetries(
+            afterReleasing: claim,
+            expiryRuleMatches: matchingExpiryClaim(afterReleasing: claim, for: snapshot, now: now) != nil,
+            now: now
+        )
+        for (trigger, retryAt) in retries {
+            autoRedeemRetryTimes[autoRedeemRetryKey(for: trigger, accountID: snapshot.id)] = retryAt
+        }
+        scheduleExpiringResetCheck(for: snapshots, after: now)
+    }
+
+    private func matchingExpiryClaim(afterReleasing claim: AutoRedeemClaim, for snapshot: AccountSnapshot, now: Date) -> AutoRedeemClaim? {
+        guard claim.trigger == .weekly,
+              let expiryClaim = autoRedeemClaim(
+                  for: snapshot,
+                  preferences: preferences,
+                  lastRedeemedWindowEnd: usageState.autoRedeemedWindowEnds[snapshot.id],
+                  lastRedeemedExpiry: usageState.autoRedeemedExpiries[snapshot.id],
+                  blockedTriggers: [.weekly],
+                  now: now
+              ),
+              expiryClaim.trigger == .expiry else {
+            return nil
+        }
+        return expiryClaim
     }
 
     private func autoRedeemRetryKey(for trigger: AutoRedeemClaim.Trigger, accountID: String) -> String {

@@ -471,8 +471,69 @@ final class AutoResetTests: XCTestCase {
         XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(4 * 60))
     }
 
-    func testAnExpiryRetryNeverComesSoonerThanAMinute() {
-        let claim = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(30))
-        XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(60))
+    func testAnExpiryRetryCloseToTheExpiryLandsHalfwayThere() {
+        let soon = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(30))
+        let laterButClose = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(100))
+        XCTAssertEqual(autoRedeemRetryAfter(for: soon, now: now), now.addingTimeInterval(15))
+        XCTAssertEqual(autoRedeemRetryAfter(for: laterButClose, now: now), now.addingTimeInterval(50))
+    }
+
+    func testAnExpiryRetryWithRoomForAMinuteLandsAMinuteBeforeTheExpiry() {
+        let claim = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(150))
+        XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(90))
+    }
+
+    func testAnExpiryRetryNeverComesSoonerThanFiveSeconds() {
+        let claim = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(6))
+        XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(5))
+    }
+
+    func testReleasingAWeeklyClaimBlocksTheWeeklyRuleAndRunsAMatchingExpiryRuleNext() {
+        let weekly = retryClaim(trigger: .weekly, guardDate: weekEnd)
+        let retries = autoRedeemRetries(afterReleasing: weekly, expiryRuleMatches: true, now: now)
+        XCTAssertEqual(retries, [
+            .weekly: autoRedeemRetryAfter(for: weekly, now: now),
+            .expiry: now.addingTimeInterval(1)
+        ])
+    }
+
+    func testReleasingAWeeklyClaimWithoutAnExpiryMatchOnlyBlocksTheWeeklyRule() {
+        let weekly = retryClaim(trigger: .weekly, guardDate: weekEnd)
+        let retries = autoRedeemRetries(afterReleasing: weekly, expiryRuleMatches: false, now: now)
+        XCTAssertEqual(retries, [.weekly: autoRedeemRetryAfter(for: weekly, now: now)])
+    }
+
+    func testReleasingAnExpiryClaimRetriesTheExpiryRule() {
+        let expiry = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(3_600))
+        let retries = autoRedeemRetries(afterReleasing: expiry, expiryRuleMatches: false, now: now)
+        XCTAssertEqual(retries, [.expiry: autoRedeemRetryAfter(for: expiry, now: now)])
+    }
+
+    func testAReleasedWeeklyClaimHandsOverToTheExpiryRuleBeforeTheResetExpires() throws {
+        for (minutes, secondsLeft) in [(1, 30.0), (1, 60.0), (5, 180.0)] {
+            let expiresAt = now.addingTimeInterval(secondsLeft)
+            let account = snapshot(weeklyLeft: 4, expiry: expiresAt)
+            let preferences = claimPreferences(weekly: 10, minutes: minutes)
+            let weekly = try XCTUnwrap(claim(account, preferences: preferences))
+            XCTAssertEqual(weekly.trigger, .weekly)
+            let expiryMatches = claim(account, preferences: preferences, blockedTriggers: [.weekly]) != nil
+
+            let retries = autoRedeemRetries(afterReleasing: weekly, expiryRuleMatches: expiryMatches, now: now)
+            let wakeUp = try XCTUnwrap(retries[.expiry])
+            let blocked = Set(retries.filter { $0.value > wakeUp }.map(\.key))
+            let next = try XCTUnwrap(autoRedeemClaim(
+                for: account,
+                preferences: preferences,
+                lastRedeemedWindowEnd: nil,
+                lastRedeemedExpiry: nil,
+                blockedTriggers: blocked,
+                now: wakeUp
+            ))
+            XCTAssertEqual(next.trigger, .expiry)
+            XCTAssertLessThan(wakeUp, expiresAt)
+
+            let afterFailedExpiry = autoRedeemRetries(afterReleasing: next, expiryRuleMatches: false, now: wakeUp)
+            XCTAssertLessThan(try XCTUnwrap(afterFailedExpiry[.expiry]), expiresAt)
+        }
     }
 }
