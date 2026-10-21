@@ -268,11 +268,11 @@ function resetRow(a) {
   const count = a.resets || 0;
   if (count < 1) return "";
   const label = "Redeem reset (" + count + " available)" + resetExpiryLabel(a.resetExpiry);
-  return '<div class="u-reset"><button type="button" class="u-redeem" data-account="' +
+  return '<button type="button" class="u-redeem" data-account="' +
     esc(a.id) + '" aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6"/></svg>' +
-    '<span aria-hidden="true">' + count + '</span></button></div>';
+    '<span aria-hidden="true">' + count + '</span></button>';
 }
 
 async function redeemReset(accountID, button) {
@@ -371,19 +371,20 @@ function renderUsage(data) {
   panel.innerHTML = '<p class="u-scope">Provider account usage, shared across sessions.</p>' + accounts.map(a => {
     if (Array.isArray(a.windows) && a.windows.length) {
       return '<div class="u-windows' + (a.error ? " err" : "") + '" data-testid="UsageWindows"><div class="u-w-name">' +
-        dispTitle(a.name) + "</div>" + a.windows.map(usageWindow).join("") + "</div>" + resetRow(a);
+        '<span class="u-provider-title">' + dispTitle(a.name) + "</span>" + resetRow(a) + "</div>" +
+        a.windows.map(usageWindow).join("") + "</div>";
     }
     const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
     if (typeof a.remaining != "number") {
-      return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+      return '<div class="u-row' + (a.error ? " err" : "") + '">' + name + resetRow(a) +
         '<span class="u-track"></span><span class="u-value">' +
-        esc(a.value || a.primary || "") + "</span></div>" + resetRow(a);
+        esc(a.value || a.primary || "") + "</span></div>";
     }
     const pct = Math.max(0, Math.min(100, Math.round(a.remaining * 100)));
-    return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+    return '<div class="u-row' + (a.error ? " err" : "") + '">' + name + resetRow(a) +
       '<span class="u-track"><span class="u-fill ' + usageClass(a.remaining) +
       '" style="width:' + pct + '%"></span></span>' +
-      '<span class="u-value">' + pct + "% left</span></div>" + resetRow(a);
+      '<span class="u-value">' + pct + "% left</span></div>";
   }).join("") + (data.stale
     ? '<div class="u-stale">Toki stopped sending updates, so this may be out of date.</div>'
     : "");
