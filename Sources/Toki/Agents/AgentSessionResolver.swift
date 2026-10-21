@@ -191,7 +191,7 @@ enum AgentSessionResolver {
         if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
             return resume
         }
-        if let sessionID = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)"#),
+        if let sessionID = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)[\s=]+([a-f0-9]{8}-[a-f0-9-]+)"#),
            let cwd, case let path = "\(projectDir(cwd, root: projectsRoot))/\(sessionID).jsonl",
            FileManager.default.fileExists(atPath: path) {
             return path
@@ -391,7 +391,7 @@ enum AgentSessionResolver {
             // Auto mode runs every tool without a prompt, and acceptEdits does the same for
             // file edits, so a lingering tool_use there is a command still executing - not one
             // waiting on you. Only a mode that would actually prompt yields a permission alert.
-            if parsed.permissionMode == "auto" { return nil }
+            if parsed.permissionMode == "auto" || parsed.permissionMode == "bypassPermissions" { return nil }
             if parsed.permissionMode == "acceptEdits", isAutoAcceptedEdit(pending.name) { return nil }
             return AgentAttention(kind: .permission, prompt: "Allow \(pending.name)?")
         }
@@ -445,7 +445,10 @@ enum AgentSessionResolver {
                 }
             }
 
-            guard let blocks = message["content"] as? [[String: Any]] else { continue }
+            // `api-request-blob` records re-echo tool_use blocks that were already answered.
+            let recordType = json["type"] as? String
+            guard recordType == "assistant" || recordType == "user",
+                  let blocks = message["content"] as? [[String: Any]] else { continue }
             for block in blocks {
                 switch block["type"] as? String {
                 case "tool_use":
@@ -900,12 +903,16 @@ struct HostApp: Hashable, Sendable {
     static let zed = HostApp(
         displayName: "Zed", bundleID: "dev.zed.Zed", matchers: [".app/contents/macos/zed"]
     )
+    static let t3Code = HostApp(
+        displayName: "T3 Code", bundleID: "com.t3tools.t3code", matchers: [".app/contents/macos/t3 code"]
+    )
 
     private static let all: [HostApp] = [
         HostApp(displayName: "VS Code Insiders", bundleID: "com.microsoft.VSCodeInsiders", matchers: ["code - insiders"]),
         HostApp(displayName: "VS Code", bundleID: "com.microsoft.VSCode", matchers: ["code helper", "visual studio code"]),
         HostApp(displayName: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92", matchers: ["cursor"]),
         zed,
+        t3Code,
         HostApp(displayName: "ChatGPT", bundleID: codexAppBundleIdentifier, matchers: ["chatgpt"]),
         iTerm,
         HostApp(displayName: "WezTerm", bundleID: "com.github.wez.wezterm", matchers: ["wezterm"]),

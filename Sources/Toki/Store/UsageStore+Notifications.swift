@@ -7,6 +7,7 @@ extension UsageStore {
         usageState.preferences = next
         StateLoader.save(usageState)
         updateDerivedState(for: snapshots)
+        autoRedeemResets(in: snapshots, at: Date())
     }
 
     func setDND(_ isEnabled: Bool) {
@@ -109,7 +110,7 @@ extension UsageStore {
         )
     }
 
-    private func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
+    func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
         let cooldown = TimeInterval(max(preferences.notificationCooldownMinutes, 5) * 60)
         if let last = usageState.eventLastRecordedAt[key],
            date.timeIntervalSince(last) < cooldown {
@@ -181,5 +182,7 @@ extension UsageStore {
             .filter { now.timeIntervalSince($0.timestamp) <= retention }
             .suffix(720))
         usageState.events = Array(usageState.events.suffix(160))
+        usageState.autoRedeemedWindowEnds = usageState.autoRedeemedWindowEnds.filter { now.timeIntervalSince($0.value) <= 86_400 }
+        usageState.autoRedeemedExpiries = usageState.autoRedeemedExpiries.filter { now.timeIntervalSince($0.value) <= 86_400 }
     }
 }

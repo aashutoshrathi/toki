@@ -504,6 +504,49 @@ class RemoteControlCodexAttentionTests(unittest.TestCase):
         self.assertEqual(summary, "cell_id=190 yield_time_ms=25000 max_tokens=100")
 
 
+class RemoteControlClaudeAttentionTests(unittest.TestCase):
+    def _transcript(self, records):
+        f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        self.addCleanup(os.unlink, f.name)
+        for record in records:
+            f.write(json.dumps(record) + "\n")
+        f.close()
+        quiet = time.time() - 60
+        os.utime(f.name, (quiet, quiet))
+        return f.name
+
+    BASH_CALL = {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+    ]}}
+
+    def test_pending_bash_asks_for_permission_in_default_mode(self):
+        path = self._transcript([self.BASH_CALL])
+        self.assertEqual(toki_remote.claude_attention(path)["prompt"], "Allow Bash?")
+
+    def test_bypass_mode_never_asks_for_permission(self):
+        path = self._transcript([
+            {"type": "user", "permissionMode": "bypassPermissions", "message": {"content": "hi"}},
+            self.BASH_CALL,
+        ])
+        self.assertIsNone(toki_remote.claude_attention(path))
+
+
+class RemoteControlClaudeSessionTests(unittest.TestCase):
+    def test_session_id_joined_with_an_equals_sign_names_the_transcript(self):
+        with tempfile.TemporaryDirectory() as home, mock.patch.object(toki_remote, "HOME", home):
+            cwd = "/Users/someone/Code/app"
+            project = toki_remote.claude_project_dir(cwd)
+            os.makedirs(project)
+            session_id = "bbbbbbbb-1111-2222-3333-444444444444"
+            named = os.path.join(project, session_id + ".jsonl")
+            for path in (named, os.path.join(project, "newer.jsonl")):
+                open(path, "w").close()
+            old = time.time() - 3600
+            os.utime(named, (old, old))
+            command = f"claude --input-format stream-json --session-id={session_id}"
+            self.assertEqual(toki_remote.newest_claude_session(command, cwd), named)
+
+
 class RemoteControlAgentOrderTests(unittest.TestCase):
     def order(self, agents):
         with mock.patch.object(toki_remote, "agent_recency", lambda a: a["recency"]):
@@ -655,6 +698,71 @@ class UsageSnapshotTests(unittest.TestCase):
         toki_remote.USAGE_SNAPSHOT = [{"id": "codex", "name": "Codex", "remaining": 0.9}]
         toki_remote.USAGE_SNAPSHOT_AT = time.time() - toki_remote.CANONICAL_MAX_AGE - 1
         self.assertTrue(toki_remote.current_usage()["stale"])
+
+
+class T3OpenTests(unittest.TestCase):
+    """The phone may only ask the Mac to open a chat for an agent Toki says runs in T3 Code."""
+
+    LINK = "t3code://threads/env-1/thread-1"
+
+    def setUp(self):
+        self.original_agents = toki_remote.CANONICAL_AGENTS
+        toki_remote.CANONICAL_AGENTS = [
+            {"pid": 10, "provider": "claude", "t3": {"link": self.LINK, "mobile": ["Android"]}},
+            {"pid": 11, "provider": "claude", "t3": None},
+            {"pid": 12, "provider": "codex"},
+        ]
+
+    def tearDown(self):
+        toki_remote.CANONICAL_AGENTS = self.original_agents
+
+    def snapshot_with(self, t3):
+        processes = [{"pid": 10, "ppid": 1, "provider": "claude", "command": "claude", "tty": None}]
+        snapshot = [{"pid": 10, "provider": "claude", "cwd": None, "title": "t", "tty": None,
+                     "host": None, "session": "/tmp/session.jsonl", "t3": t3}]
+        return toki_remote.agents_from_snapshot(processes, snapshot)[0]
+
+    def test_the_t3_link_and_phone_systems_ride_along_with_the_agent(self):
+        agent = self.snapshot_with({"link": self.LINK, "mobile": ["Android", "iOS"]})
+        self.assertEqual(agent["t3"], {"link": self.LINK, "mobile": ["Android", "iOS"]})
+
+    def test_an_agent_without_t3_data_has_none(self):
+        self.assertIsNone(self.snapshot_with(None)["t3"])
+
+    def test_a_link_that_is_not_a_t3_chat_is_dropped(self):
+        for link in ("https://example.com/", "javascript:alert(1)", "t3code://other/x", 7, None):
+            self.assertIsNone(self.snapshot_with({"link": link, "mobile": []})["t3"])
+
+    def test_an_oversized_link_is_dropped(self):
+        link = toki_remote.T3_LINK_PREFIX + "x" * toki_remote.T3_LINK_MAX_CHARS
+        self.assertIsNone(self.snapshot_with({"link": link, "mobile": []})["t3"])
+
+    def test_malformed_t3_payloads_are_dropped(self):
+        for raw in ("t3code://threads/a/b", ["link"], 5, {"link": self.LINK}, {"link": self.LINK, "mobile": "iOS"}):
+            self.assertIsNone(self.snapshot_with(raw)["t3"])
+
+    def test_phone_systems_keep_only_short_strings_and_at_most_eight(self):
+        mobile = ["Android", 5, None, "x" * 100] + ["iOS"] * 10
+        agent = self.snapshot_with({"link": self.LINK, "mobile": mobile})
+        self.assertEqual(agent["t3"]["mobile"], ["Android"] + ["iOS"] * 7)
+
+    def test_a_published_t3_agent_can_be_opened(self):
+        self.assertTrue(toki_remote.open_is_allowed(10))
+
+    def test_an_agent_without_t3_cannot_be_opened(self):
+        self.assertFalse(toki_remote.open_is_allowed(11))
+        self.assertFalse(toki_remote.open_is_allowed(12))
+
+    def test_an_unknown_process_cannot_be_opened(self):
+        self.assertFalse(toki_remote.open_is_allowed(999))
+
+    def test_only_a_real_integer_pid_is_accepted(self):
+        for candidate in (None, "10", 10.0, True, [10], {"pid": 10}):
+            self.assertFalse(toki_remote.open_is_allowed(candidate))
+
+    def test_nothing_can_be_opened_before_toki_has_published_agents(self):
+        toki_remote.CANONICAL_AGENTS = None
+        self.assertFalse(toki_remote.open_is_allowed(10))
 
 
 class ResetRedemptionTests(unittest.TestCase):

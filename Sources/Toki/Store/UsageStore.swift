@@ -66,6 +66,8 @@ final class UsageStore: ObservableObject {
     var connectivityGeneration = 0
     var refreshAfterReconnect = false
     var refreshAfterCurrent = false
+    var expiringResetTimer: Timer?
+    var autoRedeemRetryTimes: [String: Date] = [:]
     var serviceStatusCheckedAt: Date?
     var isCheckingServiceStatus = false
 

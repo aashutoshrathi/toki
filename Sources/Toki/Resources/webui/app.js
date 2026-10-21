@@ -267,10 +267,12 @@ function resetExpiryLabel(iso) {
 function resetRow(a) {
   const count = a.resets || 0;
   if (count < 1) return "";
-  const label = count > 1 ? "Redeem reset (" + count + " available)" : "Redeem reset";
-  return '<div class="u-reset"><button type="button" class="u-redeem" data-account="' +
-    esc(a.id) + '">' + esc(label) + '</button><span class="u-redeem-note">' +
-    esc("Resets this window now" + resetExpiryLabel(a.resetExpiry)) + "</span></div>";
+  const label = "Redeem reset (" + count + " available)" + resetExpiryLabel(a.resetExpiry);
+  return '<button type="button" class="u-redeem" data-account="' +
+    escAttr(a.id) + '" aria-label="' + escAttr(label) + '" title="' + escAttr(label) + '">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6"/></svg>' +
+    '<span aria-hidden="true">' + count + '</span></button>';
 }
 
 async function redeemReset(accountID, button) {
@@ -278,7 +280,7 @@ async function redeemReset(accountID, button) {
   if (!confirm("Spend a banked reset now? This discards whatever quota is left in this window.")) return;
   redeeming = true;
   button.disabled = true;
-  button.textContent = "Redeeming…";
+  button.setAttribute("aria-busy", "true");
   setStatus("Redeeming reset…", "sending");
   try {
     await api("/api/reset", { method: "POST", body: JSON.stringify({ id: accountID }) });
@@ -288,9 +290,57 @@ async function redeemReset(accountID, button) {
     button.disabled = false;
     setStatus("Couldn’t redeem: " + e.message, "error");
   } finally {
+    button.removeAttribute("aria-busy");
     redeeming = false;
     statusTimer = setTimeout(() => setStatus("", ""), 4000);
   }
+}
+
+function usageWindowTint(used) {
+  if (used >= 0.58) {
+    return "hot";
+  }
+  if (used >= 0.25) {
+    return "warm";
+  }
+  return "ok";
+}
+
+function usagePaceText(deviation) {
+  if (deviation == 0) {
+    return "On track";
+  }
+  if (deviation > 0) {
+    return "Using quota too fast · " + deviation + "% overutilized";
+  }
+  return "Room to use more · " + Math.abs(deviation) + "% underutilized";
+}
+
+function usageMarkerAt(ratio) {
+  return Math.max(0, Math.min(100, ratio * 100)) + "%";
+}
+
+function usageWindow(w) {
+  const left = Math.max(0, Math.min(100, Math.round(w.left)));
+  const used = (100 - left) / 100;
+  let markers = "";
+  if (typeof w.pace == "number") {
+    markers += '<span class="u-w-pace" style="--at:' + usageMarkerAt(w.pace) + '"></span>';
+  }
+  if (typeof w.autoReset == "number") {
+    const percent = 100 - Math.round(w.autoReset * 100);
+    const help = typeof w.autoResetMinHoursRemaining == "number"
+      ? "Auto-resets at or below " + percent + "% left, more than " + w.autoResetMinHoursRemaining + "h before the natural weekly reset, if a banked reset is available."
+      : "Auto-resets at " + percent + "% left if a banked reset is available.";
+    markers += '<span class="u-w-auto" style="--at:' + usageMarkerAt(w.autoReset) + '" title="' + escAttr(help) +
+      '" aria-label="' + escAttr(help) + '"></span>';
+  }
+  const pace = typeof w.deviation == "number" ? usagePaceText(w.deviation) : "";
+  const detail = [w.label, left + "% left", pace, w.reset].filter(Boolean).join(" · ");
+  return '<div class="u-w" title="' + escAttr(detail) + '" aria-label="' + escAttr(detail) + '">' +
+    '<div class="u-w-track"><span class="u-w-fill ' + usageWindowTint(used) + '" style="width:' + (100 - left) + '%"></span>' +
+    markers + '</div><span class="u-w-label">' + esc(w.label) + '</span><span class="u-w-value">' +
+    left + '% left</span></div>';
 }
 
 function renderUsage(data) {
@@ -322,17 +372,22 @@ function renderUsage(data) {
   if (!usageOpen) return;
 
   panel.innerHTML = '<p class="u-scope">Provider account usage, shared across sessions.</p>' + accounts.map(a => {
+    if (Array.isArray(a.windows) && a.windows.length) {
+      return '<div class="u-windows' + (a.error ? " err" : "") + '" data-testid="UsageWindows"><div class="u-w-name">' +
+        '<span class="u-provider-title">' + dispTitle(a.name) + "</span>" + resetRow(a) + "</div>" +
+        a.windows.map(usageWindow).join("") + "</div>";
+    }
     const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
     if (typeof a.remaining != "number") {
-      return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+      return '<div class="u-row' + (a.error ? " err" : "") + '">' + name + resetRow(a) +
         '<span class="u-track"></span><span class="u-value">' +
-        esc(a.value || a.primary || "") + "</span></div>" + resetRow(a);
+        esc(a.value || a.primary || "") + "</span></div>";
     }
     const pct = Math.max(0, Math.min(100, Math.round(a.remaining * 100)));
-    return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +
+    return '<div class="u-row' + (a.error ? " err" : "") + '">' + name + resetRow(a) +
       '<span class="u-track"><span class="u-fill ' + usageClass(a.remaining) +
       '" style="width:' + pct + '%"></span></span>' +
-      '<span class="u-value">' + pct + "% left</span></div>" + resetRow(a);
+      '<span class="u-value">' + pct + "% left</span></div>";
   }).join("") + (data.stale
     ? '<div class="u-stale">Toki stopped sending updates, so this may be out of date.</div>'
     : "");
@@ -444,6 +499,10 @@ function esc(s) {
   const d = document.createElement("div");
   d.textContent = s;
   return d.innerHTML;
+}
+
+function escAttr(s) {
+  return esc(s).replace(/"/g, "&quot;");
 }
 
 const md = renderMarkdown;
@@ -630,10 +689,67 @@ function renderAgents() {
   }
 }
 
+const T3_ICON_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const T3_DESKTOP_ICON = "<svg " + T3_ICON_ATTRS + '><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
+const T3_PHONE_ICON = "<svg " + T3_ICON_ATTRS + '><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>';
+let t3Markup = "";
+
+function deviceOS() {
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) {
+    return "android";
+  }
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {
+    return "ios";
+  }
+  return "";
+}
+
+function isThisDevice(mobileOS) {
+  const name = String(mobileOS).toLowerCase();
+  const os = deviceOS();
+  return os != "" && (name == "ipados" ? "ios" : name) == os;
+}
+
+async function openT3OnMac(pid) {
+  setStatus("Opening on your Mac\u2026", "sending");
+  try {
+    await api("/api/open", { method: "POST", body: JSON.stringify({ pid }) });
+    setStatus("Opened on your Mac \u2713", "success");
+  } catch (e) {
+    setStatus("Couldn\u2019t open: " + e.message, "error");
+  }
+  statusTimer = setTimeout(() => setStatus("", ""), 4000);
+}
+
+function renderT3Open(agent) {
+  const box = $("#t3open");
+  let markup = "";
+  if (agent && agent.t3) {
+    const phone = (agent.t3.mobile || []).some(isThisDevice)
+      ? '<a id="t3phone" href="' + escAttr(agent.t3.link) + '">' + T3_PHONE_ICON + "Open in T3 Code</a>"
+      : "";
+    markup = "<span>Running in T3 Code. Reply there:</span>" +
+      '<button type="button" id="t3mac" data-pid="' + escAttr(agent.pid) + '">' + T3_DESKTOP_ICON + "Open on Mac</button>" + phone;
+  }
+  if (markup == t3Markup) {
+    return;
+  }
+  t3Markup = markup;
+  box.innerHTML = markup;
+  box.hidden = !markup;
+  const mac = box.querySelector("#t3mac");
+  if (mac) {
+    mac.onclick = () => openT3OnMac(Number(mac.dataset.pid));
+  }
+}
+
 function updateComposer(agent) {
   const writable = !!(agent && agent.writable);
   const enabled = writable && !sending && !uploading;
   $("#readonly").style.display = agent && !writable ? "block" : "none";
+  renderT3Open(agent);
   // Hosted UI versions can be newer than the server; gate uploads on its capability flag.
   $("#attach").hidden = !(agent && agent.uploads);
   // agent.screen gates the buttons off for older servers that lack /api/screen. The Model button

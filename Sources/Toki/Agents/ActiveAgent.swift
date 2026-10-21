@@ -83,6 +83,7 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     var branch: String? = nil
     var worktree: String? = nil
     var origin: AgentOrigin = .process
+    var t3Thread: T3CodeThreadStore.Thread? = nil
     // A short marker (the terminal tty) appended to the title only when another agent would
     // otherwise show the same one - several agents in one project can resolve to the same
     // session, and identical rows can't be told apart. Set by a post-scan pass.
@@ -199,7 +200,13 @@ enum ActiveAgentScanner {
                     )
                 }
             )
-            let processAgents = contexts.map { buildAgent($0, session: sessions[$0.candidate.pid]) }
+            let t3Threads = T3CodeThreadStore.threads(forSessionPaths: contexts.compactMap { context in
+                context.hostApp == .t3Code ? sessions[context.candidate.pid]?.path : nil
+            })
+            let processAgents = contexts.map { context in
+                let session = sessions[context.candidate.pid]
+                return buildAgent(context, session: session, t3Thread: session.flatMap { t3Threads[$0.path] })
+            }
             let agents = disambiguate(processAgents + zedThreadAgents(alongside: processAgents, psOutput: output))
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
@@ -469,7 +476,7 @@ enum ActiveAgentScanner {
 
     // `session` is Claude's assigned transcript; every field it backs is read from that one file
     // rather than re-resolved four times, which also keeps them describing the same conversation.
-    private static func buildAgent(_ context: ProcessContext, session: AgentSessionResolver.ResolvedSession?) -> ActiveAgent {
+    private static func buildAgent(_ context: ProcessContext, session: AgentSessionResolver.ResolvedSession?, t3Thread: T3CodeThreadStore.Thread?) -> ActiveAgent {
         let c = context.candidate
         let cwd = context.directory
         let isClaude = isClaudeFamily(c.provider)
@@ -479,7 +486,7 @@ enum ActiveAgentScanner {
             provider: c.provider,
             directory: cwd,
             chatTitle: isClaude
-                ? session.flatMap(AgentSessionResolver.claudeTitle(of:))
+                ? t3Thread?.title ?? session.flatMap(AgentSessionResolver.claudeTitle(of:))
                 : AgentSessionResolver.chatTitle(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
             hostApp: context.hostApp,
             hostProcessID: context.hostProcessID,
@@ -501,7 +508,8 @@ enum ActiveAgentScanner {
                 ? session?.path
                 : AgentSessionResolver.sessionPath(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
             branch: context.branch,
-            worktree: context.worktree
+            worktree: context.worktree,
+            t3Thread: t3Thread
         )
     }
 }
@@ -532,6 +540,10 @@ enum ActiveAgentNavigator {
     // Off the main actor: osascript can hang on an app-chooser dialog or an unresponsive
     // terminal, and waiting on it synchronously froze the app.
     static func navigate(to agent: ActiveAgent) {
+        if let url = agent.t3Thread?.url {
+            NSWorkspace.shared.open(url)
+            return
+        }
         var device: String?
         if let tty = agent.terminalTTY, isSafeTTY(tty) {
             device = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"

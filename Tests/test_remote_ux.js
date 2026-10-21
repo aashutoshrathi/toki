@@ -231,7 +231,7 @@ const context = vm.createContext({
   MODEL_COMMANDS: { codex: "/model" },
   agentRow: a => a.title, plainTitle: t => t,
   providerLogo: () => "logo", providerLabel: p => p,
-  setDocTitle() {}, sizeAgentList() {}, refreshLog() {}, refreshModelMirror() {},
+  setDocTitle() {}, sizeAgentList() {}, refreshLog() {}, refreshModelMirror() {}, renderT3Open() {},
   resetTranscript() { resetCount++; }, clearPendingImage() { attachmentClearCount++; },
   setTimeout() { return 1; }, clearTimeout() {},
 });

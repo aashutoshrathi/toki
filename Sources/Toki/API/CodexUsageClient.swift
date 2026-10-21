@@ -117,29 +117,56 @@ enum CodexAppServerClient {
         return account
     }
 
-    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?) async throws -> String {
+    private static func consumeRequest(
+        account: AccountConfig,
+        creditID: String?,
+        condition: AutoRedeemCondition?
+    ) async throws -> (binary: CodexBinary, request: (id: Int, method: String, params: String), creditExpiry: Date?) {
         let binary = try await resolvedBinary()
         let check = try call(account: account, binary: binary, requests: [(id: 2, method: "account/rateLimits/read", params: "null")])
         guard let rateLimits = check.results[2] else {
             throw LocalizedErrorMessage(check.errors.first ?? "Couldn't confirm a Codex reset is available, so none was redeemed.")
         }
-        guard CodexRateLimits(json: rateLimits).resetCreditsAvailable > 0 else {
+        let live = CodexRateLimits(json: rateLimits)
+        guard live.resetCreditsAvailable > 0 else {
             throw LocalizedErrorMessage("Codex reports no reset available right now, so none was redeemed.")
         }
+        if let condition,
+           !autoRedeemConditionHolds(
+               condition,
+               weeklyWindow: weeklyQuotaWindow(among: [live.primaryWindow, live.secondaryWindow].compactMap { $0 }),
+               soonestExpiry: live.resetCreditExpiry,
+               now: Date()
+           ) {
+            throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+        }
         var params: [String: Any] = ["idempotencyKey": UUID().uuidString]
-        if let creditID {
+        if let creditID = creditID ?? live.soonestExpiringCreditID {
             params["creditId"] = creditID
         }
         let paramsData = try JSONSerialization.data(withJSONObject: params)
         let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
         let request = (id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)
+        let creditExpiry = creditID == nil ? live.resetCreditExpiry : nil
+        return (binary, request, creditExpiry)
+    }
+
+    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?, condition: AutoRedeemCondition?) async throws -> RedeemedReset {
+        let binary: CodexBinary
+        let request: (id: Int, method: String, params: String)
+        let creditExpiry: Date?
+        do {
+            (binary, request, creditExpiry) = try await consumeRequest(account: account, creditID: creditID, condition: condition)
+        } catch {
+            throw ResetNotAttempted(reason: error.localizedDescription)
+        }
 
         var lastError: String?
         for attempt in 1...consumeAttempts {
             do {
                 let responses = try call(account: account, binary: binary, requests: [request], pollSeconds: consumePollSeconds)
                 if let result = responses.results[2] as? [String: Any], let outcome = result["outcome"] as? String {
-                    return outcome
+                    return RedeemedReset(outcome: outcome, creditExpiry: creditExpiry)
                 }
                 lastError = responses.errors.first
             } catch {

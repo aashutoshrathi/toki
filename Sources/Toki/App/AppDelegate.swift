@@ -127,11 +127,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             store?.consumeResetCredit(accountID: accountID)
         }
 
+        RemoteControlServer.shared.onOpenRequest = { [weak store] pid in
+            guard let agent = store?.activeAgents.first(where: { $0.processID == pid }) else { return }
+            ActiveAgentNavigator.navigate(to: agent)
+        }
+
         // The phone gets the same readings from the same publisher, so the two can't drift apart.
         Task { @MainActor in
             for await snapshots in store.$snapshots.values {
                 RemoteControlServer.shared.updateUsage(snapshots)
                 railController?.update(snapshots: snapshots, quotaWindows: store.preferences.quotaDisplayWindows)
+            }
+        }
+
+        Task { @MainActor in
+            for await preferences in store.$preferences.values {
+                RemoteControlServer.shared.updatePreferences(preferences)
             }
         }
 

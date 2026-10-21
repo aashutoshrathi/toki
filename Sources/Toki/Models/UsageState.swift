@@ -8,6 +8,8 @@ struct UsageState: Codable {
     var events: [TokiEvent] = []
     var history: [UsageHistoryEntry] = []
     var session: SessionState?
+    var autoRedeemedWindowEnds: [String: Date] = [:]
+    var autoRedeemedExpiries: [String: Date] = [:]
 
     enum CodingKeys: String, CodingKey {
         case accounts
@@ -17,6 +19,8 @@ struct UsageState: Codable {
         case events
         case history
         case session
+        case autoRedeemedWindowEnds
+        case autoRedeemedExpiries
     }
 
     init(
@@ -26,7 +30,9 @@ struct UsageState: Codable {
         preferences: AppPreferences = AppPreferences(),
         events: [TokiEvent] = [],
         history: [UsageHistoryEntry] = [],
-        session: SessionState? = nil
+        session: SessionState? = nil,
+        autoRedeemedWindowEnds: [String: Date] = [:],
+        autoRedeemedExpiries: [String: Date] = [:]
     ) {
         self.accounts = accounts
         self.apiLastCalledAt = apiLastCalledAt
@@ -35,6 +41,8 @@ struct UsageState: Codable {
         self.events = events
         self.history = history
         self.session = session
+        self.autoRedeemedWindowEnds = autoRedeemedWindowEnds
+        self.autoRedeemedExpiries = autoRedeemedExpiries
     }
 
     init(from decoder: Decoder) throws {
@@ -46,6 +54,8 @@ struct UsageState: Codable {
         events = try container.decodeIfPresent([TokiEvent].self, forKey: .events) ?? []
         history = try container.decodeIfPresent([UsageHistoryEntry].self, forKey: .history) ?? []
         session = try container.decodeIfPresent(SessionState.self, forKey: .session)
+        autoRedeemedWindowEnds = try container.decodeIfPresent([String: Date].self, forKey: .autoRedeemedWindowEnds) ?? [:]
+        autoRedeemedExpiries = try container.decodeIfPresent([String: Date].self, forKey: .autoRedeemedExpiries) ?? [:]
     }
 }
 
@@ -172,6 +182,12 @@ struct AppPreferences: Codable, Equatable {
     // min(30, retention), so a shorter retention silently shortens the chart.
     var historyRetentionDays = 30
     var sessionWarningThreshold = 0.15
+    /// Redeems a banked Claude or Codex reset once the weekly window has this many percent left,
+    /// or once a banked reset is this many minutes from expiring.
+    var autoResetEnabled = false
+    var autoResetWeeklyPercentLeft: Int?
+    var autoResetWeeklyMinHoursRemaining = 12
+    var autoResetMinutesBeforeExpiry: Int?
     /// Shows the recommendation/AI summary card at the top of the main panel.
     var aiInsightEnabled = true
     /// Shows the provider availability rings in the Accounts panel. The standalone macOS
@@ -208,6 +224,10 @@ struct AppPreferences: Codable, Equatable {
         case menuBarQuotaWindows
         case historyRetentionDays
         case sessionWarningThreshold
+        case autoResetEnabled
+        case autoResetWeeklyPercentLeft
+        case autoResetWeeklyMinHoursRemaining
+        case autoResetMinutesBeforeExpiry
         case aiInsightEnabled
         case quotaRingsEnabled
         case notchModeEnabled
@@ -254,6 +274,10 @@ struct AppPreferences: Codable, Equatable {
         menuBarQuotaWindows = try container.decodeIfPresent([String: String].self, forKey: .menuBarQuotaWindows) ?? [:]
         historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
+        autoResetEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoResetEnabled) ?? defaults.autoResetEnabled
+        autoResetWeeklyPercentLeft = try container.decodeIfPresent(Int.self, forKey: .autoResetWeeklyPercentLeft)
+        autoResetWeeklyMinHoursRemaining = try container.decodeIfPresent(Int.self, forKey: .autoResetWeeklyMinHoursRemaining) ?? defaults.autoResetWeeklyMinHoursRemaining
+        autoResetMinutesBeforeExpiry = try container.decodeIfPresent(Int.self, forKey: .autoResetMinutesBeforeExpiry)
         aiInsightEnabled = try container.decodeIfPresent(Bool.self, forKey: .aiInsightEnabled) ?? defaults.aiInsightEnabled
         quotaRingsEnabled = try container.decodeIfPresent(Bool.self, forKey: .quotaRingsEnabled) ?? defaults.quotaRingsEnabled
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled

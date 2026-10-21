@@ -103,7 +103,8 @@ struct ClaudeCodeUsage {
               usable.contains(where: { $0["id"] as? String == nextGrantID }) else { return }
 
         resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
-        resetCreditExpiry = usable.compactMap { resetDate($0["ends_at"]) }.min()
+        // Anthropic only accepts the named next grant, so its expiry is the one a redeem can beat.
+        resetCreditExpiry = usable.first { $0["id"] as? String == nextGrantID }.flatMap { resetDate($0["ends_at"]) }
         resetGrantID = nextGrantID
 
         var value = "\(resetCreditsAvailable) available"

@@ -56,6 +56,8 @@ struct SettingsPanel: View {
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     @State private var launchAtLoginError: String?
     @State private var isEditingPrompt = false
+    @State private var autoResetWeeklyHoursText = ""
+    @FocusState private var isEditingAutoResetWeeklyHours: Bool
 
     @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var showingConnect = false
@@ -303,6 +305,10 @@ struct SettingsPanel: View {
                 .padding(8)
                 .settingsCard()
 
+                sectionHeader("Resets")
+
+                autoResetCard
+
                 sectionHeader("Updates")
 
                 HStack(spacing: 8) {
@@ -442,6 +448,177 @@ struct SettingsPanel: View {
             set: { value in
                 var next = store.preferences
                 next[keyPath: keyPath] = value
+                store.updatePreferences(next)
+            }
+        )
+    }
+
+    private var autoResetCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                cardLabel(
+                    icon: "arrow.counterclockwise.circle",
+                    iconColor: .secondary,
+                    title: "Auto-redeem resets",
+                    subtitle: "Use a banked Claude or Codex reset when either rule below matches."
+                )
+                Spacer(minLength: 8)
+                Toggle("", isOn: binding(\.autoResetEnabled))
+                    .accessibilityLabel("Auto-redeem resets")
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            .padding(8)
+
+            if store.preferences.autoResetEnabled {
+                Divider()
+                    .padding(.leading, 34)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        Text("Weekly quota left is at or below")
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.leading, 26)
+                        Spacer(minLength: 8)
+                        TextField("0-99", value: autoResetPercentBinding, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 48)
+                            .accessibilityLabel("Weekly percent left")
+                        Text("%")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, alignment: .leading)
+                    }
+                    .padding(8)
+
+                    Text("AND")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 34)
+                        .padding(.bottom, 4)
+
+                    HStack(spacing: 8) {
+                        Text("Natural weekly reset is more than")
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.leading, 26)
+                        Spacer(minLength: 8)
+                        TextField("1-168", text: $autoResetWeeklyHoursText)
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 48)
+                            .accessibilityLabel("Minimum hours before the natural weekly reset")
+                            .focused($isEditingAutoResetWeeklyHours)
+                            .onSubmit { commitAutoResetWeeklyHours() }
+                            .onAppear {
+                                autoResetWeeklyHoursText = String(store.preferences.autoResetWeeklyMinHoursRemaining)
+                            }
+                            .onChange(of: isEditingAutoResetWeeklyHours) { _, focused in
+                                if !focused {
+                                    commitAutoResetWeeklyHours()
+                                }
+                            }
+                            .onChange(of: store.preferences.autoResetWeeklyMinHoursRemaining) { _, value in
+                                if !isEditingAutoResetWeeklyHours {
+                                    autoResetWeeklyHoursText = String(value)
+                                }
+                            }
+                            .onDisappear {
+                                if isEditingAutoResetWeeklyHours {
+                                    commitAutoResetWeeklyHours()
+                                }
+                            }
+                        Text("h away")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 42, alignment: .leading)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Weekly quota rule. Both conditions must match.")
+
+                HStack(spacing: 8) {
+                    Rectangle().fill(.secondary.opacity(0.2)).frame(height: 1)
+                    Text("OR")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Rectangle().fill(.secondary.opacity(0.2)).frame(height: 1)
+                }
+                .padding(.horizontal, 34)
+                .padding(.vertical, 8)
+
+                HStack(spacing: 8) {
+                    Text("A banked reset expires within")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.leading, 26)
+                    Spacer(minLength: 8)
+                    TextField("1-60", value: autoResetMinutesBinding, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 48)
+                        .accessibilityLabel("Minutes before a banked reset expires")
+                    Text("min")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, alignment: .leading)
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+
+                Text("The expiry rule is sufficient on its own, even if the weekly rule does not match.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 34)
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 8)
+
+                if store.preferences.autoResetWeeklyPercentLeft == nil {
+                    Text("Enter a percentage to enable the weekly rule.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                        .padding(.leading, 34)
+                        .padding(.bottom, 8)
+                }
+            }
+        }
+        .settingsCard()
+        .accessibilityIdentifier("AutoResetCard")
+    }
+
+    // 100 would spend a reset the moment one is banked.
+    private var autoResetPercentBinding: Binding<Int?> {
+        Binding(
+            get: { store.preferences.autoResetWeeklyPercentLeft },
+            set: { value in
+                var next = store.preferences
+                next.autoResetWeeklyPercentLeft = value.map { min(max($0, 0), 99) }
+                store.updatePreferences(next)
+            }
+        )
+    }
+
+    private func commitAutoResetWeeklyHours() {
+        let value = Int(autoResetWeeklyHoursText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let hours = value.map { min(max($0, 1), 168) } ?? store.preferences.autoResetWeeklyMinHoursRemaining
+        autoResetWeeklyHoursText = String(hours)
+        guard hours != store.preferences.autoResetWeeklyMinHoursRemaining else {
+            return
+        }
+        var next = store.preferences
+        next.autoResetWeeklyMinHoursRemaining = hours
+        store.updatePreferences(next)
+    }
+
+    // Longer than an hour stops meaning "about to expire" and starts spending resets early.
+    private var autoResetMinutesBinding: Binding<Int?> {
+        Binding(
+            get: { store.preferences.autoResetMinutesBeforeExpiry },
+            set: { value in
+                var next = store.preferences
+                next.autoResetMinutesBeforeExpiry = value.map { min(max($0, 1), 60) }
                 store.updatePreferences(next)
             }
         )

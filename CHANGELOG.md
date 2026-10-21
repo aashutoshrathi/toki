@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.3.9 - 2026-10-22
+
+One Line: Toki can redeem a banked reset for you, the phone shows every quota bar and opens T3 Code chats, and Claude agents no longer show "Allow Bash?" when they are not waiting on you.
+
+### Added
+- **Auto-redeem resets.** Turn on "Auto-redeem resets" in Settings › Resets. The weekly rule requires both a percentage left and a minimum number of hours (1-168) before the natural weekly reset. Toki redeems only when weekly quota is at or below the percentage **and** the natural weekly reset is more than that many hours away, so it does not spend a banked reset just before the quota refreshes. The hours setting starts at 12 for new and existing rules; change it in Settings. The weekly rule stays off until you enter a percentage. Separately, you can redeem a banked reset that expires within 1-60 minutes, even when the weekly rule does not match. Auto-redeem is off by default. Before spending, Toki checks the full rule again on live Claude or Codex data and stops if it no longer holds. The weekly rule redeems at most once per weekly window, and the expiry rule at most once per expiring reset; Toki remembers these guards across restarts. A failure before spending can retry on a later refresh. Toki schedules the expiry check for the exact trigger time. When both weekly fields are set, the weekly bar has a purple marker at the percentage threshold. Its tooltip explains the percentage and hours conditions.
+- **Model weekly limits show as bars on the Claude card.** When Anthropic reports a weekly limit for one model, such as Fable 5, the card shows it as a bar under the 5h and 7d bars, with the same pace marker and reset time. Before, it was only a line in the card's details.
+- **The phone shows every quota bar the Mac card shows.** In Remote Control, each Claude and Codex account now has its 5h, 7d and model bars (such as Fable), with the pace marker, the pace text, the reset time and the auto-reset marker. A phone page from an older Toki still shows one bar per account.
+- **Open a T3 Code chat from the phone.** You can follow a T3 Code agent on the phone, but you cannot reply from Toki, because it has no terminal. Its read-only view now has **Open on Mac**, which opens the chat in T3 Code on your Mac. If your phone is signed in to T3 Code on the same system (Android or iOS), it also has **Open in T3 Code**, which opens the chat in the T3 app on the phone.
+
+### Fixed
+- **Claude agents no longer ask for permission they do not need.** Claude Code 2.1.306 and later repeat each tool call in the session file after the call has finished. Toki read the copy as a new call that was still waiting, so idle agents showed "Allow Bash?" with a red dot. Toki now skips these copies.
+- **A Codex redeem spends the reset that expires first.** Toki let Codex choose which banked reset to spend, so a reset that was about to expire could stay unused and expire. Toki now names the reset that expires first, as the Codex app does.
+- **A click on a T3 Code agent opens its chat in T3 Code.** Toki did not know T3 Code, so the click brought iTerm to the front. Toki now opens the thread in T3 Code. If it cannot find the thread, it brings T3 Code to the front.
+- **T3 Code agents show the chat title from T3 Code, and their own usage.** Toki showed the title Claude wrote into its transcript, which is often an old or different one, such as "Sentry issue 7804915414" for the T3 chat "Investigate Production Sentry Error". Toki now reads the title from T3 Code. Also, T3 Code starts Claude with `--session-id=<id>`, and Toki read only `--session-id <id>`. Toki then guessed the session from the project folder, so a T3 thread could show the title or usage of another agent in the same folder.
+- **Agents in bypass-permissions mode never show a permission alert.** Tools in that mode run without a prompt, the same as auto mode. T3 Code starts its Claude threads in this mode, so a long-running command there showed "Allow Bash?" too. Questions and plan approvals still show.
+
 ## 3.3.8 - 2026-10-05
 
 One Line: Resets can no longer be lost to a slow confirmation, and provider cards follow what you actually use.

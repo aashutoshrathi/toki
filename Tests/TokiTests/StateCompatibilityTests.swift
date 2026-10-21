@@ -38,18 +38,35 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertTrue(state.preferences.aiInsightEnabled, "a missing field must keep the insight visible")
         XCTAssertTrue(state.preferences.quotaRingsEnabled, "a missing field adopts the current default — rings are now on by default")
         XCTAssertTrue(state.preferences.quotaDisplayWindows.isEmpty)
+        XCTAssertEqual(state.preferences.autoResetWeeklyMinHoursRemaining, 12)
     }
 
     // The general rule, not just the one field: any subset of preferences must decode.
     func testPreferencesDecodeFromAnEmptyObject() throws {
         let state = try decodeState(#"{"preferences":{}}"#)
         XCTAssertEqual(state.preferences, AppPreferences())
+        XCTAssertEqual(AppPreferences().autoResetWeeklyMinHoursRemaining, 12)
+        XCTAssertEqual(state.preferences.autoResetWeeklyMinHoursRemaining, 12)
     }
 
     func testPreferencesDecodeFromASingleKnownField() throws {
         let state = try decodeState(#"{"preferences":{"dndEnabled":true}}"#)
         XCTAssertTrue(state.preferences.dndEnabled)
         XCTAssertEqual(state.preferences.historyRetentionDays, AppPreferences().historyRetentionDays)
+    }
+
+    func testStateBeforeWeeklyHoursPreservesAutoResetFields() throws {
+        let state = try decodeState(#"{"preferences":{"autoResetEnabled":true,"autoResetWeeklyPercentLeft":15,"autoResetMinutesBeforeExpiry":5},"history":[{"id":"6C7E4C8E-0000-0000-0000-000000000001","timestamp":"2026-07-01T10:00:00Z","accountID":"a","accountName":"A","provider":"claudeCode","remainingRatio":0.5,"primary":"x"}]}"#)
+        XCTAssertTrue(state.preferences.autoResetEnabled)
+        XCTAssertEqual(state.preferences.autoResetWeeklyPercentLeft, 15)
+        XCTAssertEqual(state.preferences.autoResetMinutesBeforeExpiry, 5)
+        XCTAssertEqual(state.preferences.autoResetWeeklyMinHoursRemaining, 12)
+        XCTAssertEqual(state.history.count, 1)
+    }
+
+    func testNullWeeklyHoursUseTheDefault12() throws {
+        let state = try decodeState(#"{"preferences":{"autoResetWeeklyMinHoursRemaining":null}}"#)
+        XCTAssertEqual(state.preferences.autoResetWeeklyMinHoursRemaining, 12)
     }
 
     func testUnknownFutureFieldsAreIgnored() throws {
@@ -64,8 +81,29 @@ final class StateCompatibilityTests: XCTestCase {
         preferences.aiInsightEnabled = false
         preferences.quotaRingsEnabled = true
         preferences.quotaDisplayWindows = ["claudeCode": "5h", "codex": "7d"]
+        preferences.autoResetEnabled = true
+        preferences.autoResetWeeklyPercentLeft = 15
+        preferences.autoResetWeeklyMinHoursRemaining = 24
+        preferences.autoResetMinutesBeforeExpiry = 5
         let data = try JSONEncoder.toki.encode(preferences)
         XCTAssertEqual(try JSONDecoder.toki.decode(AppPreferences.self, from: data), preferences)
+    }
+
+    func testAutoRedeemGuardsSurviveARoundTrip() throws {
+        var state = UsageState()
+        state.autoRedeemedWindowEnds = ["claude": Date(timeIntervalSince1970: 1_800_000_000)]
+        state.autoRedeemedExpiries = ["codex": Date(timeIntervalSince1970: 1_800_086_400)]
+        let data = try JSONEncoder.toki.encode(state)
+        let decoded = try JSONDecoder.toki.decode(UsageState.self, from: data)
+        XCTAssertEqual(decoded.autoRedeemedWindowEnds, state.autoRedeemedWindowEnds)
+        XCTAssertEqual(decoded.autoRedeemedExpiries, state.autoRedeemedExpiries)
+    }
+
+    func testStateFromBeforeAutoRedeemGuardsDecodesWithNone() throws {
+        let state = try decodeState(#"{"preferences":{"autoResetEnabled":true}}"#)
+        XCTAssertTrue(state.preferences.autoResetEnabled)
+        XCTAssertTrue(state.autoRedeemedWindowEnds.isEmpty)
+        XCTAssertTrue(state.autoRedeemedExpiries.isEmpty)
     }
 
     func testUnknownQuotaChoicesPreserveTheRestOfTheState() throws {

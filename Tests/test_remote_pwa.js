@@ -294,7 +294,7 @@ assert.match(html, /id="usage"/);
 assert.match(app, /setInterval\(pollUsage/);
 assert.match(css, /#usagetoggle/);
 
-const usageSources = ["usageClass", "resetExpiryLabel", "resetRow", "renderUsage"].map(name => {
+const usageSources = ["usageClass", "resetExpiryLabel", "resetRow", "renderUsage", "escAttr"].map(name => {
   const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
   assert.ok(found, name + " must be a top-level function in app.js");
   return found[0];
@@ -352,7 +352,10 @@ vm.runInContext(`renderUsage({accounts:[
 const redeemButtons = nodes["#usage"].innerHTML.match(/data-account="([^"]+)"/g) || [];
 assert.equal(redeemButtons.length, 1);
 assert.equal(redeemButtons[0], 'data-account="a"');
-assert.match(nodes["#usage"].innerHTML, /Redeem reset</);
+assert.match(nodes["#usage"].innerHTML, /aria-label="Redeem reset \(1 available\)/);
+assert.match(nodes["#usage"].innerHTML, /<svg[^>]*aria-hidden="true"/);
+assert.match(nodes["#usage"].innerHTML, /<span aria-hidden="true">1<\/span><\/button>/);
+assert.doesNotMatch(nodes["#usage"].innerHTML, />Redeem|u-redeem-note/);
 assert.match(nodes["#usage"].innerHTML, /expires in 3 days/);
 
 // More than one banked reset says how many, so spending one is an informed choice.

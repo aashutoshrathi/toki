@@ -149,9 +149,18 @@ struct ClaudeCodeUsageClient {
         ]
     }
 
-    static func consumeRateLimitResetCredit(account: AccountConfig, recordID: String? = nil, creditID: String? = nil) async throws -> String {
+    private static func resetGrantRequest(
+        account: AccountConfig,
+        recordID: String?,
+        creditID: String?,
+        condition: AutoRedeemCondition?
+    ) async throws -> (organizationUUID: String, headers: [String: String], grantID: String, creditExpiry: Date?) {
         let records = ClaudeCodeAccountDiscovery.discover(config: account, labels: [])
-        guard let record = records.first(where: { $0.id == recordID })
+        let named = records.first(where: { $0.id == recordID })
+        if condition != nil, named == nil {
+            throw LocalizedErrorMessage("That Claude account is no longer signed in, so no reset was redeemed.")
+        }
+        guard let record = named
             ?? records.first(where: { $0.isActive })
             ?? records.first else {
             throw LocalizedErrorMessage("No Claude account found")
@@ -167,15 +176,48 @@ struct ClaudeCodeUsageClient {
         }
 
         let headers = oauthHeaders(accessToken: accessToken)
-        let grantID: String
-        if let creditID {
-            grantID = creditID
+        let liveUsage: ClaudeCodeUsage?
+        if condition != nil || creditID == nil {
+            liveUsage = ClaudeCodeUsage(json: try await requestJSON(url: usageURL, headers: headers))
         } else {
-            let json = try await requestJSON(url: usageURL, headers: headers)
-            guard let discovered = ClaudeCodeUsage(json: json).resetGrantID else {
-                throw LocalizedErrorMessage("No reset is available to redeem right now.")
-            }
-            grantID = discovered
+            liveUsage = nil
+        }
+        if let condition,
+           let liveUsage,
+           !autoRedeemConditionHolds(
+               condition,
+               weeklyWindow: weeklyQuotaWindow(among: liveUsage.rateLimitWindows),
+               soonestExpiry: liveUsage.resetCreditExpiry,
+               now: Date()
+           ) {
+            throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+        }
+        guard let grantID = creditID ?? liveUsage?.resetGrantID else {
+            throw LocalizedErrorMessage("No reset is available to redeem right now.")
+        }
+        let creditExpiry = creditID == nil ? liveUsage?.resetCreditExpiry : nil
+        return (organizationUUID, headers, grantID, creditExpiry)
+    }
+
+    static func consumeRateLimitResetCredit(
+        account: AccountConfig,
+        recordID: String? = nil,
+        creditID: String? = nil,
+        condition: AutoRedeemCondition?
+    ) async throws -> RedeemedReset {
+        let organizationUUID: String
+        let headers: [String: String]
+        let grantID: String
+        let creditExpiry: Date?
+        do {
+            (organizationUUID, headers, grantID, creditExpiry) = try await resetGrantRequest(
+                account: account,
+                recordID: recordID,
+                creditID: creditID,
+                condition: condition
+            )
+        } catch {
+            throw ResetNotAttempted(reason: error.localizedDescription)
         }
 
         let url = URL(string: "https://api.anthropic.com/api/organizations/\(organizationUUID)/reset_rate_limits")!
@@ -206,7 +248,10 @@ struct ClaudeCodeUsageClient {
             throw LocalizedErrorMessage("Failed to redeem reset. \(body)")
         }
         let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        return payload?["result"] as? String ?? "unavailable"
+        guard let result = payload?["result"] as? String, !result.isEmpty else {
+            throw LocalizedErrorMessage("Claude did not confirm the reset. It may still have been redeemed, so Toki is reading your usage again.")
+        }
+        return RedeemedReset(outcome: result, creditExpiry: creditExpiry)
     }
 
     private func switchTarget(for record: ClaudeCodeAccountRecord) -> String? {

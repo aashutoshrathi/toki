@@ -40,6 +40,10 @@ USAGE_SNAPSHOT_AT = 0.0
 USAGE_LOCK = threading.Lock()
 # Toki publishes every 15s; after this, live discovery is safer than a stale canonical snapshot.
 CANONICAL_MAX_AGE = 90.0
+T3_LINK_PREFIX = "t3code://threads/"
+T3_LINK_MAX_CHARS = 512
+T3_OS_MAX_CHARS = 32
+T3_MOBILE_MAX = 8
 
 # Byte-mode QR, EC level L, versions 1–10, mask 0; verified with cv2.QRCodeDetector.
 
@@ -321,6 +325,19 @@ def discover_agents():
     return dedupe_agents(roots)
 
 
+def sanitised_t3(raw):
+    if not isinstance(raw, dict):
+        return None
+    link = raw.get("link")
+    mobile = raw.get("mobile")
+    if not isinstance(link, str) or not link.startswith(T3_LINK_PREFIX) or len(link) > T3_LINK_MAX_CHARS:
+        return None
+    if not isinstance(mobile, list):
+        return None
+    systems = [m for m in mobile if isinstance(m, str) and len(m) <= T3_OS_MAX_CHARS]
+    return {"link": link, "mobile": systems[:T3_MOBILE_MAX]}
+
+
 def agents_from_snapshot(processes, snapshot):
     """Enrich only the agents Toki's canonical scanner says are active."""
     by_pid = {process["pid"]: process for process in processes}
@@ -340,6 +357,7 @@ def agents_from_snapshot(processes, snapshot):
         agent["tty"] = item.get("tty")
         agent["host"] = item.get("host")
         agent["title"] = item.get("title")
+        agent["t3"] = sanitised_t3(item.get("t3"))
         # Toki's start-time match distinguishes co-located agents; cwd fallback cannot.
         provided = item.get("session")
         if provided:
@@ -406,6 +424,15 @@ def reset_is_redeemable(account_id):
     )
 
 
+def open_is_allowed(pid):
+    """The pid is written to the line-based channel back to Toki, so only a real int may reach it."""
+    if not isinstance(pid, int) or isinstance(pid, bool):
+        return False
+    with CANONICAL_AGENTS_LOCK:
+        agents = list(CANONICAL_AGENTS) if CANONICAL_AGENTS is not None else []
+    return any(isinstance(a, dict) and a.get("pid") == pid and a.get("t3") for a in agents)
+
+
 def current_usage():
     """The last usage Toki published, and whether it is old enough to distrust."""
     with USAGE_LOCK:
@@ -463,7 +490,7 @@ def newest_claude_session(command, cwd):
     m = re.search(r"--resume\s+(\S+\.jsonl)", command)
     if m and os.path.exists(m.group(1)):
         return m.group(1)
-    m = re.search(r"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)", command)
+    m = re.search(r"(?:--resume|--session-id|-r)[\s=]+([a-f0-9]{8}-[a-f0-9-]+)", command)
     if m and cwd:
         p = os.path.join(claude_project_dir(cwd), m.group(1) + ".jsonl")
         if os.path.exists(p):
@@ -702,7 +729,7 @@ def claude_attention(path):
         return question_attention(qs)
     if name in ("ExitPlanMode", "EnterPlanMode"):
         return {"kind": "question", "prompt": "Waiting on plan approval", "options": []}
-    if mode == "auto":
+    if mode in ("auto", "bypassPermissions"):
         return None
     if mode == "acceptEdits" and name in AUTO_ACCEPTED_EDITS:
         return None
@@ -2496,6 +2523,7 @@ class Handler(BaseHTTPRequestHandler):
                     "model": model_of(a),
                     "writable": a["_writable"],
                     "machine": machine_name(),
+                    "t3": a.get("t3"),
                     # Lets newer hosted UIs hide uploads when connected to an older server.
                     "uploads": True,
                     # Signals /api/screen support so older servers do not expose model control.
@@ -2558,6 +2586,20 @@ class Handler(BaseHTTPRequestHandler):
         print("reset=" + account_id, flush=True)
         self._json({"ok": True})
 
+    def _open(self):
+        raw = self._read_body()
+        if raw is None:
+            return self._json({"error": "request too large"}, 413)
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            return self._json({"error": "bad json"}, 400)
+        pid = body.get("pid") if isinstance(body, dict) else None
+        if not open_is_allowed(pid):
+            return self._json({"error": "this session cannot be opened"}, 409)
+        print(f"open={pid}", flush=True)
+        self._json({"ok": True})
+
     def _upload(self):
         """Save an attached image on the Mac and hand its path back, for a reply to reference so the
         agent can read the picture. Only a paired device reaches here, and only bytes that sniff as a
@@ -2596,7 +2638,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._pair(q)
         if not self._authed(q):
             return self._json({"error": "bad token"}, 403)
-        if url.path not in ("/api/send", "/api/upload", "/api/reset"):
+        if url.path not in ("/api/send", "/api/upload", "/api/reset", "/api/open"):
             return self._json({"error": "not found"}, 404)
         # Simple POSTs skip CORS preflight; still bind state changes to an allowed origin.
         if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host")):
@@ -2605,6 +2647,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._upload()
         if url.path == "/api/reset":
             return self._reset()
+        if url.path == "/api/open":
+            return self._open()
         raw = self._read_body()
         if raw is None:
             return self._json({"error": "request too large"}, 413)

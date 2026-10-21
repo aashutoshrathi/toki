@@ -108,6 +108,19 @@ final class ClaudeResetGrantTests: XCTestCase {
         XCTAssertEqual(parsed.resetCreditExpiry, ISO8601DateFormatter().date(from: soonest))
     }
 
+    func testExpiryIsTheNextGrantsEvenWhenAnotherEndsSooner() {
+        let nextEnds = "2026-11-20T16:00:00+00:00"
+        let payload = usage(cedarEmber: block(grants: [
+            grant(id: "grant-a", resetsLeft: 1, endsAt: "2026-10-01T16:00:00+00:00"),
+            grant(id: "grant-b", resetsLeft: 1, endsAt: nextEnds)
+        ], nextGrantID: "grant-b"))
+
+        let parsed = ClaudeCodeUsage(json: payload)
+
+        XCTAssertEqual(parsed.resetGrantID, "grant-b")
+        XCTAssertEqual(parsed.resetCreditExpiry, ISO8601DateFormatter().date(from: nextEnds))
+    }
+
     func testGrantIsOnlyOfferedWhenItIsTheNamedNextGrant() {
         for nextGrantID in ["retired-grant", nil] {
             let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(grants: [grant(id: "grant-a")], nextGrantID: nextGrantID)))

@@ -171,6 +171,209 @@ func displayQuotaWindow(for snapshot: AccountSnapshot, preferredWindow: String? 
         }
 }
 
+func weeklyQuotaWindow(among windows: [RateLimitWindow]) -> RateLimitWindow? {
+    windows.first { $0.label == "7d" }
+}
+
+func weeklyQuotaWindow(for snapshot: AccountSnapshot) -> RateLimitWindow? {
+    weeklyQuotaWindow(among: [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 })
+}
+
+func canAutoRedeemReset(_ provider: Provider) -> Bool {
+    provider == .claudeCode || provider == .codex
+}
+
+func shouldAutoRedeemReset(
+    _ snapshot: AccountSnapshot,
+    weeklyPercentLeft threshold: Int,
+    minimumHoursRemaining: Int,
+    lastRedeemedWindowEnd: Date?,
+    now: Date
+) -> Bool {
+    guard canAutoRedeemReset(snapshot.provider),
+          !snapshot.isError,
+          snapshot.resetCreditsAvailable > 0,
+          let weekly = weeklyQuotaWindow(for: snapshot),
+          let windowEnd = weekly.resetAt,
+          autoRedeemConditionHolds(
+              .weeklyAtOrBelow(threshold, minimumHoursRemaining: minimumHoursRemaining),
+              weeklyWindow: weekly,
+              soonestExpiry: nil,
+              now: now
+          ) else {
+        return false
+    }
+    guard let lastRedeemedWindowEnd else {
+        return true
+    }
+    // An hour of slack so a reset time that drifts between reads still counts as the same window.
+    return windowEnd > lastRedeemedWindowEnd.addingTimeInterval(3600)
+}
+
+func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry minutes: Int, lastRedeemedExpiry: Date?, now: Date) -> Bool {
+    guard canAutoRedeemReset(snapshot.provider),
+          !snapshot.isError,
+          snapshot.resetCreditsAvailable > 0,
+          let expiry = snapshot.resetCreditExpiry,
+          expiry > now,
+          expiry.timeIntervalSince(now) <= TimeInterval(minutes * 60) else {
+        return false
+    }
+    guard let lastRedeemedExpiry else {
+        return true
+    }
+    // Saved guards lose sub-second precision, so the same expiry can read back a fraction off.
+    return abs(expiry.timeIntervalSince(lastRedeemedExpiry)) >= 1
+}
+
+enum AutoRedeemCondition: Equatable, Sendable {
+    case weeklyAtOrBelow(Int, minimumHoursRemaining: Int)
+    case expiringBy(Date)
+}
+
+struct AutoRedeemClaim: Equatable {
+    enum Trigger: String, CaseIterable {
+        case weekly
+        case expiry
+    }
+
+    let trigger: Trigger
+    let condition: AutoRedeemCondition
+    let guardDate: Date
+    let detail: String
+}
+
+func autoRedeemConditionHolds(_ condition: AutoRedeemCondition, weeklyWindow: RateLimitWindow?, soonestExpiry: Date?, now: Date) -> Bool {
+    switch condition {
+    case .weeklyAtOrBelow(let threshold, let minimumHoursRemaining):
+        guard (0...99).contains(threshold),
+              (1...168).contains(minimumHoursRemaining),
+              let weeklyWindow,
+              let resetAt = weeklyWindow.resetAt,
+              resetAt > now.addingTimeInterval(TimeInterval(minimumHoursRemaining) * 3600) else {
+            return false
+        }
+        return weeklyWindow.percentLeft <= threshold
+    case .expiringBy(let deadline):
+        guard let soonestExpiry else {
+            return false
+        }
+        return soonestExpiry > now && soonestExpiry <= deadline
+    }
+}
+
+func autoRedeemClaim(
+    for snapshot: AccountSnapshot,
+    preferences: AppPreferences,
+    lastRedeemedWindowEnd: Date?,
+    lastRedeemedExpiry: Date?,
+    blockedTriggers: Set<AutoRedeemClaim.Trigger>,
+    now: Date
+) -> AutoRedeemClaim? {
+    guard preferences.autoResetEnabled else {
+        return nil
+    }
+    if !blockedTriggers.contains(.weekly),
+       let threshold = preferences.autoResetWeeklyPercentLeft,
+       shouldAutoRedeemReset(
+           snapshot,
+           weeklyPercentLeft: threshold,
+           minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining,
+           lastRedeemedWindowEnd: lastRedeemedWindowEnd,
+           now: now
+       ),
+       let weekly = weeklyQuotaWindow(for: snapshot),
+       let windowEnd = weekly.resetAt {
+        return AutoRedeemClaim(
+            trigger: .weekly,
+            condition: .weeklyAtOrBelow(threshold, minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining),
+            guardDate: windowEnd,
+            detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting, with more than \(preferences.autoResetWeeklyMinHoursRemaining)h before the natural weekly reset."
+        )
+    }
+    if !blockedTriggers.contains(.expiry),
+       let minutes = preferences.autoResetMinutesBeforeExpiry,
+       shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: now),
+       let expiry = snapshot.resetCreditExpiry {
+        return AutoRedeemClaim(
+            trigger: .expiry,
+            condition: .expiringBy(now.addingTimeInterval(TimeInterval(minutes * 60))),
+            guardDate: expiry,
+            detail: "A banked reset was about to expire (in \(resetDescription(for: expiry))), within your \(minutes)-minute setting."
+        )
+    }
+    return nil
+}
+
+func autoRedeemRetryAfter(for claim: AutoRedeemClaim, now: Date) -> Date {
+    let regularRetry = now.addingTimeInterval(10 * 60)
+    switch claim.trigger {
+    case .weekly:
+        return regularRetry
+    case .expiry:
+        let minuteBeforeExpiry = min(regularRetry, claim.guardDate.addingTimeInterval(-60))
+        if minuteBeforeExpiry >= now.addingTimeInterval(60) {
+            return minuteBeforeExpiry
+        }
+        // Too close for a minute's spacing: halve the time left so the retry still lands before expiry.
+        return now.addingTimeInterval(max(5, claim.guardDate.timeIntervalSince(now) / 2))
+    }
+}
+
+// A released weekly claim is blocked too: its cached snapshot still qualifies, and would win again over a due expiry retry.
+func autoRedeemRetries(
+    afterReleasing claim: AutoRedeemClaim,
+    expiryRuleMatches: Bool,
+    now: Date
+) -> [AutoRedeemClaim.Trigger: Date] {
+    var retries: [AutoRedeemClaim.Trigger: Date] = [:]
+    switch claim.trigger {
+    case .weekly:
+        retries[.weekly] = autoRedeemRetryAfter(for: claim, now: now)
+        if expiryRuleMatches {
+            // Not yet tried, so it runs as soon as the account's in-flight redeem has finished.
+            retries[.expiry] = now.addingTimeInterval(1)
+        }
+    case .expiry:
+        retries[.expiry] = autoRedeemRetryAfter(for: claim, now: now)
+    }
+    return retries
+}
+
+func resetOutcomeSpentNothing(_ outcome: String) -> Bool {
+    ["nothingToReset", "noCredit", "not_limited", "cooldown", "ineligible", "unavailable"].contains(outcome)
+}
+
+enum AutoRedeemGuardUpdate: Equatable {
+    case keep
+    case move(to: Date)
+    case release
+}
+
+func autoRedeemGuardUpdate(for claim: AutoRedeemClaim, redeemed: RedeemedReset) -> AutoRedeemGuardUpdate {
+    if resetOutcomeSpentNothing(redeemed.outcome) {
+        return .release
+    }
+    guard claim.trigger == .expiry,
+          let spent = redeemed.creditExpiry,
+          abs(spent.timeIntervalSince(claim.guardDate)) >= 1 else {
+        return .keep
+    }
+    return .move(to: spent)
+}
+
+func autoResetMarkerRatio(for window: RateLimitWindow, in snapshot: AccountSnapshot, preferences: AppPreferences) -> Double? {
+    guard preferences.autoResetEnabled,
+          let threshold = preferences.autoResetWeeklyPercentLeft,
+          (0...99).contains(threshold),
+          (1...168).contains(preferences.autoResetWeeklyMinHoursRemaining),
+          canAutoRedeemReset(snapshot.provider),
+          window.id == weeklyQuotaWindow(for: snapshot)?.id else {
+        return nil
+    }
+    return Double(100 - threshold) / 100
+}
+
 func menuBarEntry(for snapshot: AccountSnapshot, preferredWindow: String? = nil) -> MenuBarStatusEntry {
     if let window = displayQuotaWindow(for: snapshot, preferredWindow: preferredWindow) {
         return MenuBarStatusEntry(provider: snapshot.provider, value: "\(window.percentLeft)%", windowLabel: window.label)
