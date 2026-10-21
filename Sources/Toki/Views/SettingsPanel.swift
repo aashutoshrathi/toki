@@ -56,6 +56,8 @@ struct SettingsPanel: View {
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
     @State private var launchAtLoginError: String?
     @State private var isEditingPrompt = false
+    @State private var autoResetWeeklyHoursText = ""
+    @FocusState private var isEditingAutoResetWeeklyHours: Bool
 
     @ObservedObject private var remoteServer = RemoteControlServer.shared
     @State private var showingConnect = false
@@ -490,6 +492,44 @@ struct SettingsPanel: View {
                 .padding(8)
 
                 HStack(spacing: 8) {
+                    Text("And weekly reset is more than")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.leading, 26)
+                    Spacer(minLength: 8)
+                    TextField("1-168", text: $autoResetWeeklyHoursText)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 48)
+                        .accessibilityLabel("Minimum hours before the natural weekly reset")
+                        .focused($isEditingAutoResetWeeklyHours)
+                        .onSubmit { commitAutoResetWeeklyHours() }
+                        .onAppear {
+                            autoResetWeeklyHoursText = String(store.preferences.autoResetWeeklyMinHoursRemaining)
+                        }
+                        .onChange(of: isEditingAutoResetWeeklyHours) { _, focused in
+                            if !focused {
+                                commitAutoResetWeeklyHours()
+                            }
+                        }
+                        .onChange(of: store.preferences.autoResetWeeklyMinHoursRemaining) { _, value in
+                            if !isEditingAutoResetWeeklyHours {
+                                autoResetWeeklyHoursText = String(value)
+                            }
+                        }
+                        .onDisappear {
+                            if isEditingAutoResetWeeklyHours {
+                                commitAutoResetWeeklyHours()
+                            }
+                        }
+                    Text("h away")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 42, alignment: .leading)
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+
+                HStack(spacing: 8) {
                     Text("When a banked reset expires within")
                         .font(.system(size: 11, weight: .semibold))
                         .padding(.leading, 26)
@@ -507,8 +547,8 @@ struct SettingsPanel: View {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
 
-                if store.preferences.autoResetWeeklyPercentLeft == nil, store.preferences.autoResetMinutesBeforeExpiry == nil {
-                    Text("Enter at least one value. Nothing is redeemed until you do.")
+                if store.preferences.autoResetWeeklyPercentLeft == nil {
+                    Text("Set a weekly percentage to enable the weekly rule. Expiry remains a separate rule.")
                         .font(.system(size: 9))
                         .foregroundStyle(.orange)
                         .padding(.leading, 34)
@@ -530,6 +570,18 @@ struct SettingsPanel: View {
                 store.updatePreferences(next)
             }
         )
+    }
+
+    private func commitAutoResetWeeklyHours() {
+        let value = Int(autoResetWeeklyHoursText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let hours = value.map { min(max($0, 1), 168) } ?? store.preferences.autoResetWeeklyMinHoursRemaining
+        autoResetWeeklyHoursText = String(hours)
+        guard hours != store.preferences.autoResetWeeklyMinHoursRemaining else {
+            return
+        }
+        var next = store.preferences
+        next.autoResetWeeklyMinHoursRemaining = hours
+        store.updatePreferences(next)
     }
 
     // Longer than an hour stops meaning "about to expire" and starts spending resets early.

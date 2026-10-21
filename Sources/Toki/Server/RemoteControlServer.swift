@@ -523,6 +523,7 @@ final class RemoteControlServer: ObservableObject {
         }
         if let autoReset = autoResetMarkerRatio(for: window, in: snapshot, preferences: preferences) {
             entry["autoReset"] = autoReset
+            entry["autoResetMinHoursRemaining"] = preferences.autoResetWeeklyMinHoursRemaining
         }
         return entry
     }

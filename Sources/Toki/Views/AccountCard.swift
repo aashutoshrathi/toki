@@ -540,7 +540,7 @@ struct AccountCard: View {
         let resetHint = compactResetDescription(window.resetHint)
         let autoResetRatio = autoResetMarkerRatio(for: window, in: snapshot, preferences: store.preferences)
         let autoResetHelp = autoResetRatio.map {
-            "Auto-resets at \(100 - Int(($0 * 100).rounded()))% left if a banked reset is available."
+            "Auto-resets at or below \(100 - Int(($0 * 100).rounded()))% left, more than \(store.preferences.autoResetWeeklyMinHoursRemaining)h before the natural weekly reset, if a banked reset is available."
         }
         let help = ["\(100 - window.percentLeft)% used · \(window.percentLeft)% left", window.resetHint, paceHelp, autoResetHelp]
             .compactMap { $0 }.joined(separator: "\n")

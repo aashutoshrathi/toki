@@ -328,7 +328,10 @@ function usageWindow(w) {
     markers += '<span class="u-w-pace" style="--at:' + usageMarkerAt(w.pace) + '"></span>';
   }
   if (typeof w.autoReset == "number") {
-    const help = "Auto-resets at " + (100 - Math.round(w.autoReset * 100)) + "% left if a banked reset is available.";
+    const percent = 100 - Math.round(w.autoReset * 100);
+    const help = typeof w.autoResetMinHoursRemaining == "number"
+      ? "Auto-resets at or below " + percent + "% left, more than " + w.autoResetMinHoursRemaining + "h before the natural weekly reset, if a banked reset is available."
+      : "Auto-resets at " + percent + "% left if a banked reset is available.";
     markers += '<span class="u-w-auto" style="--at:' + usageMarkerAt(w.autoReset) + '" title="' + esc(help) +
       '" aria-label="' + esc(help) + '"></span>';
   }

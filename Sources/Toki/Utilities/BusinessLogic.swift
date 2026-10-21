@@ -183,13 +183,24 @@ func canAutoRedeemReset(_ provider: Provider) -> Bool {
     provider == .claudeCode || provider == .codex
 }
 
-func shouldAutoRedeemReset(_ snapshot: AccountSnapshot, weeklyPercentLeft threshold: Int, lastRedeemedWindowEnd: Date?) -> Bool {
+func shouldAutoRedeemReset(
+    _ snapshot: AccountSnapshot,
+    weeklyPercentLeft threshold: Int,
+    minimumHoursRemaining: Int,
+    lastRedeemedWindowEnd: Date?,
+    now: Date
+) -> Bool {
     guard canAutoRedeemReset(snapshot.provider),
           !snapshot.isError,
           snapshot.resetCreditsAvailable > 0,
           let weekly = weeklyQuotaWindow(for: snapshot),
           let windowEnd = weekly.resetAt,
-          weekly.percentLeft <= threshold else {
+          autoRedeemConditionHolds(
+              .weeklyAtOrBelow(threshold, minimumHoursRemaining: minimumHoursRemaining),
+              weeklyWindow: weekly,
+              soonestExpiry: nil,
+              now: now
+          ) else {
         return false
     }
     guard let lastRedeemedWindowEnd else {
@@ -216,7 +227,7 @@ func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry 
 }
 
 enum AutoRedeemCondition: Equatable, Sendable {
-    case weeklyAtOrBelow(Int)
+    case weeklyAtOrBelow(Int, minimumHoursRemaining: Int)
     case expiringBy(Date)
 }
 
@@ -234,8 +245,12 @@ struct AutoRedeemClaim: Equatable {
 
 func autoRedeemConditionHolds(_ condition: AutoRedeemCondition, weeklyWindow: RateLimitWindow?, soonestExpiry: Date?, now: Date) -> Bool {
     switch condition {
-    case .weeklyAtOrBelow(let threshold):
-        guard let weeklyWindow else {
+    case .weeklyAtOrBelow(let threshold, let minimumHoursRemaining):
+        guard (0...99).contains(threshold),
+              (1...168).contains(minimumHoursRemaining),
+              let weeklyWindow,
+              let resetAt = weeklyWindow.resetAt,
+              resetAt > now.addingTimeInterval(TimeInterval(minimumHoursRemaining) * 3600) else {
             return false
         }
         return weeklyWindow.percentLeft <= threshold
@@ -258,14 +273,20 @@ func autoRedeemClaim(
         return nil
     }
     if let threshold = preferences.autoResetWeeklyPercentLeft,
-       shouldAutoRedeemReset(snapshot, weeklyPercentLeft: threshold, lastRedeemedWindowEnd: lastRedeemedWindowEnd),
+       shouldAutoRedeemReset(
+           snapshot,
+           weeklyPercentLeft: threshold,
+           minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining,
+           lastRedeemedWindowEnd: lastRedeemedWindowEnd,
+           now: now
+       ),
        let weekly = weeklyQuotaWindow(for: snapshot),
        let windowEnd = weekly.resetAt {
         return AutoRedeemClaim(
             trigger: .weekly,
-            condition: .weeklyAtOrBelow(threshold),
+            condition: .weeklyAtOrBelow(threshold, minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining),
             guardDate: windowEnd,
-            detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting."
+            detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting, with more than \(preferences.autoResetWeeklyMinHoursRemaining)h before the natural weekly reset."
         )
     }
     if let minutes = preferences.autoResetMinutesBeforeExpiry,
@@ -284,6 +305,8 @@ func autoRedeemClaim(
 func autoResetMarkerRatio(for window: RateLimitWindow, in snapshot: AccountSnapshot, preferences: AppPreferences) -> Double? {
     guard preferences.autoResetEnabled,
           let threshold = preferences.autoResetWeeklyPercentLeft,
+          (0...99).contains(threshold),
+          (1...168).contains(preferences.autoResetWeeklyMinHoursRemaining),
           canAutoRedeemReset(snapshot.provider),
           window.id == weeklyQuotaWindow(for: snapshot)?.id else {
         return nil

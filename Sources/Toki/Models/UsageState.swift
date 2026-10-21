@@ -186,6 +186,7 @@ struct AppPreferences: Codable, Equatable {
     /// or once a banked reset is this many minutes from expiring.
     var autoResetEnabled = false
     var autoResetWeeklyPercentLeft: Int?
+    var autoResetWeeklyMinHoursRemaining = 12
     var autoResetMinutesBeforeExpiry: Int?
     /// Shows the recommendation/AI summary card at the top of the main panel.
     var aiInsightEnabled = true
@@ -225,6 +226,7 @@ struct AppPreferences: Codable, Equatable {
         case sessionWarningThreshold
         case autoResetEnabled
         case autoResetWeeklyPercentLeft
+        case autoResetWeeklyMinHoursRemaining
         case autoResetMinutesBeforeExpiry
         case aiInsightEnabled
         case quotaRingsEnabled
@@ -274,6 +276,7 @@ struct AppPreferences: Codable, Equatable {
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
         autoResetEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoResetEnabled) ?? defaults.autoResetEnabled
         autoResetWeeklyPercentLeft = try container.decodeIfPresent(Int.self, forKey: .autoResetWeeklyPercentLeft)
+        autoResetWeeklyMinHoursRemaining = try container.decodeIfPresent(Int.self, forKey: .autoResetWeeklyMinHoursRemaining) ?? defaults.autoResetWeeklyMinHoursRemaining
         autoResetMinutesBeforeExpiry = try container.decodeIfPresent(Int.self, forKey: .autoResetMinutesBeforeExpiry)
         aiInsightEnabled = try container.decodeIfPresent(Bool.self, forKey: .aiInsightEnabled) ?? defaults.aiInsightEnabled
         quotaRingsEnabled = try container.decodeIfPresent(Bool.self, forKey: .quotaRingsEnabled) ?? defaults.quotaRingsEnabled

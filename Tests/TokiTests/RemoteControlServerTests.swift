@@ -600,12 +600,26 @@ final class RemoteControlServerTests: XCTestCase {
         var preferences = AppPreferences()
         preferences.autoResetEnabled = true
         preferences.autoResetWeeklyPercentLeft = 1
+        preferences.autoResetWeeklyMinHoursRemaining = 12
 
         let payload = RemoteControlServer.usagePayload(from: [codexSnapshot(weeklyLeft: 50)], preferences: preferences, now: usageNow)
         let windows = try XCTUnwrap(payload[0]["windows"] as? [[String: Any]])
 
         XCTAssertNil(windows[0]["autoReset"])
         XCTAssertEqual(try XCTUnwrap(windows[1]["autoReset"] as? Double), 0.99, accuracy: 0.0001)
+        XCTAssertEqual(windows[1]["autoResetMinHoursRemaining"] as? Int, 12)
+    }
+
+    func testUsagePayloadUsesTheDefaultWeeklyHoursWhenHoursAreMissing() throws {
+        var preferences = AppPreferences()
+        preferences.autoResetEnabled = true
+        preferences.autoResetWeeklyPercentLeft = 1
+
+        let payload = RemoteControlServer.usagePayload(from: [codexSnapshot(weeklyLeft: 50)], preferences: preferences, now: usageNow)
+        let windows = try XCTUnwrap(payload[0]["windows"] as? [[String: Any]])
+
+        XCTAssertEqual(try XCTUnwrap(windows[1]["autoReset"] as? Double), 0.99, accuracy: 0.0001)
+        XCTAssertEqual(windows[1]["autoResetMinHoursRemaining"] as? Int, 12)
     }
 
     func testUsagePayloadHasNoAutoResetMarkerWhileAutoResetIsOff() throws {

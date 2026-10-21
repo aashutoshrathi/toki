@@ -26,7 +26,8 @@ assert.match(css, /\.u-w-fill\.hot\{/);
 assert.match(app, /typeof w\.pace == "number"/);
 assert.match(app, /class="u-w-pace"/);
 assert.match(app, /usageMarkerAt\(ratio\)[\s\S]*?ratio \* 100/);
-assert.match(app, /Auto-resets at " \+ \(100 - Math\.round\(w\.autoReset \* 100\)\) \+ "% left if a banked reset is available\./);
+assert.match(app, /Auto-resets at or below " \+ percent \+ "% left, more than " \+ w\.autoResetMinHoursRemaining \+ "h before the natural weekly reset, if a banked reset is available\./);
+assert.match(app, /Auto-resets at " \+ percent \+ "% left if a banked reset is available\./);
 assert.match(app, /title="' \+ esc\(help\)/);
 assert.match(app, /aria-label="' \+ esc\(help\)/);
 assert.match(css, /\.u-w-auto::before\{[^}]*linear-gradient\(#7359f2,#d95aa6\)/);
@@ -45,13 +46,13 @@ const sandbox = vm.createContext({
 vm.runInContext(app.slice(start, end), sandbox);
 const draw = w => vm.runInContext("usageWindow", sandbox)(w);
 
-const weekly = draw({ label: "Fable 5 7d", left: 30, reset: "in 3d", pace: 0.5, deviation: 20, autoReset: 0.99 });
+const weekly = draw({ label: "Fable 5 7d", left: 30, reset: "in 3d", pace: 0.5, deviation: 20, autoReset: 0.99, autoResetMinHoursRemaining: 12 });
 assert.match(weekly, /u-w-label">Fable 5 7d<\/span><span class="u-w-value">30% left/);
 assert.match(weekly, /u-w-fill hot" style="width:70%"/);
 assert.match(weekly, /u-w-pace" style="--at:50%"/);
 assert.match(weekly, /u-w-auto" style="--at:99%"/);
-assert.match(weekly, /title="Auto-resets at 1% left if a banked reset is available\."/);
-assert.match(weekly, /aria-label="Auto-resets at 1% left if a banked reset is available\."/);
+assert.match(weekly, /title="Auto-resets at or below 1% left, more than 12h before the natural weekly reset, if a banked reset is available\."/);
+assert.match(weekly, /aria-label="Auto-resets at or below 1% left, more than 12h before the natural weekly reset, if a banked reset is available\."/);
 assert.match(weekly, /Using quota too fast · 20% overutilized/);
 assert.match(weekly, /title="Fable 5 7d · 30% left · Using quota too fast · 20% overutilized · in 3d"/);
 
@@ -62,6 +63,10 @@ assert.match(calm, /Room to use more · 12% underutilized/);
 assert.match(draw({ label: "5h", left: 70, deviation: 0 }), /On track/);
 assert.match(draw({ label: "5h", left: 70 }), /u-w-fill warm" style="width:30%"/);
 assert.match(draw({ label: "<b>", left: 50 }), /&lt;b&gt;/);
+const legacyWeekly = draw({ label: "7d", left: 30, autoReset: 0.99 });
+assert.match(legacyWeekly, /title="Auto-resets at 1% left if a banked reset is available\."/);
+assert.match(legacyWeekly, /aria-label="Auto-resets at 1% left if a banked reset is available\."/);
+assert.doesNotMatch(legacyWeekly, /natural weekly reset/);
 
 // Several accounts with three bars each outgrow the screen; the panel scrolls instead of clipping.
 assert.match(css, /#usage\{[^}]*max-height:45dvh;overflow-y:auto/);
