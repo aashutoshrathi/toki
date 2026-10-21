@@ -8,6 +8,8 @@ struct UsageState: Codable {
     var events: [TokiEvent] = []
     var history: [UsageHistoryEntry] = []
     var session: SessionState?
+    var autoRedeemedWindowEnds: [String: Date] = [:]
+    var autoRedeemedExpiries: [String: Date] = [:]
 
     enum CodingKeys: String, CodingKey {
         case accounts
@@ -17,6 +19,8 @@ struct UsageState: Codable {
         case events
         case history
         case session
+        case autoRedeemedWindowEnds
+        case autoRedeemedExpiries
     }
 
     init(
@@ -26,7 +30,9 @@ struct UsageState: Codable {
         preferences: AppPreferences = AppPreferences(),
         events: [TokiEvent] = [],
         history: [UsageHistoryEntry] = [],
-        session: SessionState? = nil
+        session: SessionState? = nil,
+        autoRedeemedWindowEnds: [String: Date] = [:],
+        autoRedeemedExpiries: [String: Date] = [:]
     ) {
         self.accounts = accounts
         self.apiLastCalledAt = apiLastCalledAt
@@ -35,6 +41,8 @@ struct UsageState: Codable {
         self.events = events
         self.history = history
         self.session = session
+        self.autoRedeemedWindowEnds = autoRedeemedWindowEnds
+        self.autoRedeemedExpiries = autoRedeemedExpiries
     }
 
     init(from decoder: Decoder) throws {
@@ -46,6 +54,8 @@ struct UsageState: Codable {
         events = try container.decodeIfPresent([TokiEvent].self, forKey: .events) ?? []
         history = try container.decodeIfPresent([UsageHistoryEntry].self, forKey: .history) ?? []
         session = try container.decodeIfPresent(SessionState.self, forKey: .session)
+        autoRedeemedWindowEnds = try container.decodeIfPresent([String: Date].self, forKey: .autoRedeemedWindowEnds) ?? [:]
+        autoRedeemedExpiries = try container.decodeIfPresent([String: Date].self, forKey: .autoRedeemedExpiries) ?? [:]
     }
 }
 

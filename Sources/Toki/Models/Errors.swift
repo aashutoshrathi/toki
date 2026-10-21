@@ -27,3 +27,9 @@ struct HTTPStatusError: LocalizedError {
         "HTTP \(statusCode): \(body.prefix(140))"
     }
 }
+
+struct ResetNotAttempted: LocalizedError {
+    let reason: String
+
+    var errorDescription: String? { reason }
+}

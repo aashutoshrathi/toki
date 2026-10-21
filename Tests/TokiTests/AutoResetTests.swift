@@ -124,4 +124,132 @@ final class AutoResetTests: XCTestCase {
         XCTAssertFalse(shouldAutoRedeemReset(low, weeklyPercentLeft: 10, lastRedeemedWindowEnd: weekEnd.addingTimeInterval(-30)))
         XCTAssertTrue(shouldAutoRedeemReset(low, weeklyPercentLeft: 10, lastRedeemedWindowEnd: weekEnd.addingTimeInterval(-7 * 86_400)))
     }
+
+    func testWeeklyWindowIsPickedFromAnyWindowList() {
+        let session = RateLimitWindow(label: "5h", percentLeft: 90)
+        let weekly = RateLimitWindow(label: "7d", percentLeft: 40, resetAt: weekEnd)
+        XCTAssertEqual(weeklyQuotaWindow(among: [session, weekly]), weekly)
+        XCTAssertEqual(weeklyQuotaWindow(among: [weekly, session]), weekly)
+        XCTAssertNil(weeklyQuotaWindow(among: [session]))
+        XCTAssertNil(weeklyQuotaWindow(among: []))
+    }
+
+    private func holds(_ condition: AutoRedeemCondition, weekly: RateLimitWindow? = nil, expiry: Date? = nil) -> Bool {
+        autoRedeemConditionHolds(condition, weeklyWindow: weekly, soonestExpiry: expiry, now: weekEnd)
+    }
+
+    func testWeeklyConditionHoldsWhileLiveWeeklyIsAtOrBelowTheSetting() {
+        XCTAssertTrue(holds(.weeklyAtOrBelow(10), weekly: RateLimitWindow(label: "7d", percentLeft: 10)))
+        XCTAssertTrue(holds(.weeklyAtOrBelow(10), weekly: RateLimitWindow(label: "7d", percentLeft: 3)))
+    }
+
+    func testWeeklyConditionFailsOnceLiveWeeklyRecovers() {
+        XCTAssertFalse(holds(.weeklyAtOrBelow(10), weekly: RateLimitWindow(label: "7d", percentLeft: 11)))
+    }
+
+    func testWeeklyConditionFailsWithoutAWeeklyWindow() {
+        XCTAssertFalse(holds(.weeklyAtOrBelow(10)))
+    }
+
+    func testExpiryConditionHoldsUntilTheDeadline() {
+        let deadline = weekEnd.addingTimeInterval(5 * 60)
+        XCTAssertTrue(holds(.expiringBy(deadline), expiry: weekEnd.addingTimeInterval(60)))
+        XCTAssertTrue(holds(.expiringBy(deadline), expiry: deadline))
+    }
+
+    func testExpiryConditionFailsWhenTheLiveExpiryMovedPastTheDeadline() {
+        let deadline = weekEnd.addingTimeInterval(5 * 60)
+        XCTAssertFalse(holds(.expiringBy(deadline), expiry: deadline.addingTimeInterval(1)))
+    }
+
+    func testExpiryConditionFailsForAnExpiredReset() {
+        let deadline = weekEnd.addingTimeInterval(5 * 60)
+        XCTAssertFalse(holds(.expiringBy(deadline), expiry: weekEnd))
+        XCTAssertFalse(holds(.expiringBy(deadline), expiry: weekEnd.addingTimeInterval(-60)))
+    }
+
+    func testExpiryConditionFailsWithoutALiveExpiry() {
+        XCTAssertFalse(holds(.expiringBy(weekEnd.addingTimeInterval(5 * 60))))
+    }
+
+    private func claimPreferences(enabled: Bool = true, weekly: Int? = nil, minutes: Int? = nil) -> AppPreferences {
+        var preferences = AppPreferences()
+        preferences.autoResetEnabled = enabled
+        preferences.autoResetWeeklyPercentLeft = weekly
+        preferences.autoResetMinutesBeforeExpiry = minutes
+        return preferences
+    }
+
+    private func claim(
+        _ snapshot: AccountSnapshot,
+        preferences: AppPreferences,
+        lastRedeemedWindowEnd: Date? = nil,
+        lastRedeemedExpiry: Date? = nil
+    ) -> AutoRedeemClaim? {
+        autoRedeemClaim(
+            for: snapshot,
+            preferences: preferences,
+            lastRedeemedWindowEnd: lastRedeemedWindowEnd,
+            lastRedeemedExpiry: lastRedeemedExpiry,
+            now: weekEnd
+        )
+    }
+
+    func testWeeklyClaimCarriesTheConditionTheGuardAndTheReason() throws {
+        let result = try XCTUnwrap(claim(snapshot(weeklyLeft: 4), preferences: claimPreferences(weekly: 10)))
+        XCTAssertEqual(result.trigger, .weekly)
+        XCTAssertEqual(result.condition, .weeklyAtOrBelow(10))
+        XCTAssertEqual(result.guardDate, weekEnd)
+        XCTAssertEqual(result.detail, "Weekly quota was at 4% left, at or below your 10% setting.")
+    }
+
+    func testExpiryClaimCarriesTheDeadlineTheGuardAndTheReason() throws {
+        let expiry = weekEnd.addingTimeInterval(4 * 60)
+        let result = try XCTUnwrap(claim(snapshot(weeklyLeft: 80, expiry: expiry), preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.condition, .expiringBy(weekEnd.addingTimeInterval(5 * 60)))
+        XCTAssertEqual(result.guardDate, expiry)
+        XCTAssertTrue(result.detail.hasPrefix("A banked reset was about to expire (in "))
+        XCTAssertTrue(result.detail.hasSuffix("), within your 5-minute setting."))
+    }
+
+    func testNoClaimWhenAutoResetIsOff() {
+        let preferences = claimPreferences(enabled: false, weekly: 10, minutes: 5)
+        XCTAssertNil(claim(snapshot(weeklyLeft: 4, expiry: weekEnd.addingTimeInterval(60)), preferences: preferences))
+    }
+
+    func testNoClaimWhenNeitherTriggerMatches() {
+        XCTAssertNil(claim(snapshot(weeklyLeft: 80, expiry: weekEnd.addingTimeInterval(3_600)), preferences: claimPreferences(weekly: 10, minutes: 5)))
+        XCTAssertNil(claim(snapshot(weeklyLeft: 4), preferences: claimPreferences()))
+    }
+
+    func testNoClaimWhileTheTriggerIsGuarded() {
+        let expiry = weekEnd.addingTimeInterval(60)
+        let account = snapshot(weeklyLeft: 4, expiry: expiry)
+        XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10), lastRedeemedWindowEnd: weekEnd))
+        XCTAssertNil(claim(account, preferences: claimPreferences(minutes: 5), lastRedeemedExpiry: expiry))
+    }
+
+    func testAGuardedWeeklyTriggerDoesNotBlockTheExpiryTrigger() throws {
+        let expiry = weekEnd.addingTimeInterval(60)
+        let result = try XCTUnwrap(claim(
+            snapshot(weeklyLeft: 4, expiry: expiry),
+            preferences: claimPreferences(weekly: 10, minutes: 5),
+            lastRedeemedWindowEnd: weekEnd
+        ))
+        XCTAssertEqual(result.trigger, .expiry)
+    }
+
+    func testWeeklyWinsWhenBothTriggersMatch() throws {
+        let account = snapshot(weeklyLeft: 4, expiry: weekEnd.addingTimeInterval(60))
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10, minutes: 5)))
+        XCTAssertEqual(result.trigger, .weekly)
+    }
+
+    func testAnExpiryReadBackAFractionOffStillCountsAsGuarded() {
+        let expiry = weekEnd.addingTimeInterval(60.4)
+        let account = snapshot(weeklyLeft: 80, expiry: expiry)
+        XCTAssertFalse(expiring(account, within: 5, lastRedeemedExpiry: weekEnd.addingTimeInterval(60)))
+        XCTAssertTrue(expiring(account, within: 5, lastRedeemedExpiry: weekEnd.addingTimeInterval(58)))
+    }
 }

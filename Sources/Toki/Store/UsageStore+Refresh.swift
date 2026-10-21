@@ -59,7 +59,7 @@ extension UsageStore {
             snapshots = sorted
             lastUpdated = Date()
             updateDerivedState(for: sorted)
-            autoRedeemResets(in: sorted, at: response.fetchedAt)
+            autoRedeemResets(in: sorted, at: Date())
             refreshServiceStatus(for: sorted)
         }
     }

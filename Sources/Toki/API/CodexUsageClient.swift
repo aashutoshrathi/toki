@@ -117,7 +117,11 @@ enum CodexAppServerClient {
         return account
     }
 
-    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?) async throws -> String {
+    private static func consumeRequest(
+        account: AccountConfig,
+        creditID: String?,
+        condition: AutoRedeemCondition?
+    ) async throws -> (binary: CodexBinary, request: (id: Int, method: String, params: String)) {
         let binary = try await resolvedBinary()
         let check = try call(account: account, binary: binary, requests: [(id: 2, method: "account/rateLimits/read", params: "null")])
         guard let rateLimits = check.results[2] else {
@@ -127,6 +131,15 @@ enum CodexAppServerClient {
         guard live.resetCreditsAvailable > 0 else {
             throw LocalizedErrorMessage("Codex reports no reset available right now, so none was redeemed.")
         }
+        if let condition,
+           !autoRedeemConditionHolds(
+               condition,
+               weeklyWindow: weeklyQuotaWindow(among: [live.primaryWindow, live.secondaryWindow].compactMap { $0 }),
+               soonestExpiry: live.resetCreditExpiry,
+               now: Date()
+           ) {
+            throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+        }
         var params: [String: Any] = ["idempotencyKey": UUID().uuidString]
         if let creditID = creditID ?? live.soonestExpiringCreditID {
             params["creditId"] = creditID
@@ -134,6 +147,17 @@ enum CodexAppServerClient {
         let paramsData = try JSONSerialization.data(withJSONObject: params)
         let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
         let request = (id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)
+        return (binary, request)
+    }
+
+    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?, condition: AutoRedeemCondition?) async throws -> String {
+        let binary: CodexBinary
+        let request: (id: Int, method: String, params: String)
+        do {
+            (binary, request) = try await consumeRequest(account: account, creditID: creditID, condition: condition)
+        } catch {
+            throw ResetNotAttempted(reason: error.localizedDescription)
+        }
 
         var lastError: String?
         for attempt in 1...consumeAttempts {

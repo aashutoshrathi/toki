@@ -149,9 +149,18 @@ struct ClaudeCodeUsageClient {
         ]
     }
 
-    static func consumeRateLimitResetCredit(account: AccountConfig, recordID: String? = nil, creditID: String? = nil) async throws -> String {
+    private static func resetGrantRequest(
+        account: AccountConfig,
+        recordID: String?,
+        creditID: String?,
+        condition: AutoRedeemCondition?
+    ) async throws -> (organizationUUID: String, headers: [String: String], grantID: String) {
         let records = ClaudeCodeAccountDiscovery.discover(config: account, labels: [])
-        guard let record = records.first(where: { $0.id == recordID })
+        let named = records.first(where: { $0.id == recordID })
+        if condition != nil, named == nil {
+            throw LocalizedErrorMessage("That Claude account is no longer signed in, so no reset was redeemed.")
+        }
+        guard let record = named
             ?? records.first(where: { $0.isActive })
             ?? records.first else {
             throw LocalizedErrorMessage("No Claude account found")
@@ -167,15 +176,46 @@ struct ClaudeCodeUsageClient {
         }
 
         let headers = oauthHeaders(accessToken: accessToken)
-        let grantID: String
-        if let creditID {
-            grantID = creditID
+        let liveUsage: ClaudeCodeUsage?
+        if condition != nil || creditID == nil {
+            liveUsage = ClaudeCodeUsage(json: try await requestJSON(url: usageURL, headers: headers))
         } else {
-            let json = try await requestJSON(url: usageURL, headers: headers)
-            guard let discovered = ClaudeCodeUsage(json: json).resetGrantID else {
-                throw LocalizedErrorMessage("No reset is available to redeem right now.")
-            }
-            grantID = discovered
+            liveUsage = nil
+        }
+        if let condition,
+           let liveUsage,
+           !autoRedeemConditionHolds(
+               condition,
+               weeklyWindow: weeklyQuotaWindow(among: liveUsage.rateLimitWindows),
+               soonestExpiry: liveUsage.resetCreditExpiry,
+               now: Date()
+           ) {
+            throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+        }
+        guard let grantID = creditID ?? liveUsage?.resetGrantID else {
+            throw LocalizedErrorMessage("No reset is available to redeem right now.")
+        }
+        return (organizationUUID, headers, grantID)
+    }
+
+    static func consumeRateLimitResetCredit(
+        account: AccountConfig,
+        recordID: String? = nil,
+        creditID: String? = nil,
+        condition: AutoRedeemCondition?
+    ) async throws -> String {
+        let organizationUUID: String
+        let headers: [String: String]
+        let grantID: String
+        do {
+            (organizationUUID, headers, grantID) = try await resetGrantRequest(
+                account: account,
+                recordID: recordID,
+                creditID: creditID,
+                condition: condition
+            )
+        } catch {
+            throw ResetNotAttempted(reason: error.localizedDescription)
         }
 
         let url = URL(string: "https://api.anthropic.com/api/organizations/\(organizationUUID)/reset_rate_limits")!

@@ -171,8 +171,12 @@ func displayQuotaWindow(for snapshot: AccountSnapshot, preferredWindow: String? 
         }
 }
 
+func weeklyQuotaWindow(among windows: [RateLimitWindow]) -> RateLimitWindow? {
+    windows.first { $0.label == "7d" }
+}
+
 func weeklyQuotaWindow(for snapshot: AccountSnapshot) -> RateLimitWindow? {
-    [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }.first { $0.label == "7d" }
+    weeklyQuotaWindow(among: [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 })
 }
 
 func canAutoRedeemReset(_ provider: Provider) -> Bool {
@@ -204,7 +208,77 @@ func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry 
           expiry.timeIntervalSince(now) <= TimeInterval(minutes * 60) else {
         return false
     }
-    return expiry != lastRedeemedExpiry
+    guard let lastRedeemedExpiry else {
+        return true
+    }
+    // Saved guards lose sub-second precision, so the same expiry can read back a fraction off.
+    return abs(expiry.timeIntervalSince(lastRedeemedExpiry)) >= 1
+}
+
+enum AutoRedeemCondition: Equatable, Sendable {
+    case weeklyAtOrBelow(Int)
+    case expiringBy(Date)
+}
+
+struct AutoRedeemClaim: Equatable {
+    enum Trigger: String {
+        case weekly
+        case expiry
+    }
+
+    let trigger: Trigger
+    let condition: AutoRedeemCondition
+    let guardDate: Date
+    let detail: String
+}
+
+func autoRedeemConditionHolds(_ condition: AutoRedeemCondition, weeklyWindow: RateLimitWindow?, soonestExpiry: Date?, now: Date) -> Bool {
+    switch condition {
+    case .weeklyAtOrBelow(let threshold):
+        guard let weeklyWindow else {
+            return false
+        }
+        return weeklyWindow.percentLeft <= threshold
+    case .expiringBy(let deadline):
+        guard let soonestExpiry else {
+            return false
+        }
+        return soonestExpiry > now && soonestExpiry <= deadline
+    }
+}
+
+func autoRedeemClaim(
+    for snapshot: AccountSnapshot,
+    preferences: AppPreferences,
+    lastRedeemedWindowEnd: Date?,
+    lastRedeemedExpiry: Date?,
+    now: Date
+) -> AutoRedeemClaim? {
+    guard preferences.autoResetEnabled else {
+        return nil
+    }
+    if let threshold = preferences.autoResetWeeklyPercentLeft,
+       shouldAutoRedeemReset(snapshot, weeklyPercentLeft: threshold, lastRedeemedWindowEnd: lastRedeemedWindowEnd),
+       let weekly = weeklyQuotaWindow(for: snapshot),
+       let windowEnd = weekly.resetAt {
+        return AutoRedeemClaim(
+            trigger: .weekly,
+            condition: .weeklyAtOrBelow(threshold),
+            guardDate: windowEnd,
+            detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting."
+        )
+    }
+    if let minutes = preferences.autoResetMinutesBeforeExpiry,
+       shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: now),
+       let expiry = snapshot.resetCreditExpiry {
+        return AutoRedeemClaim(
+            trigger: .expiry,
+            condition: .expiringBy(now.addingTimeInterval(TimeInterval(minutes * 60))),
+            guardDate: expiry,
+            detail: "A banked reset was about to expire (in \(resetDescription(for: expiry))), within your \(minutes)-minute setting."
+        )
+    }
+    return nil
 }
 
 func autoResetMarkerRatio(for window: RateLimitWindow, in snapshot: AccountSnapshot, preferences: AppPreferences) -> Double? {

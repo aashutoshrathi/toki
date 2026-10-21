@@ -71,6 +71,23 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder.toki.decode(AppPreferences.self, from: data), preferences)
     }
 
+    func testAutoRedeemGuardsSurviveARoundTrip() throws {
+        var state = UsageState()
+        state.autoRedeemedWindowEnds = ["claude": Date(timeIntervalSince1970: 1_800_000_000)]
+        state.autoRedeemedExpiries = ["codex": Date(timeIntervalSince1970: 1_800_086_400)]
+        let data = try JSONEncoder.toki.encode(state)
+        let decoded = try JSONDecoder.toki.decode(UsageState.self, from: data)
+        XCTAssertEqual(decoded.autoRedeemedWindowEnds, state.autoRedeemedWindowEnds)
+        XCTAssertEqual(decoded.autoRedeemedExpiries, state.autoRedeemedExpiries)
+    }
+
+    func testStateFromBeforeAutoRedeemGuardsDecodesWithNone() throws {
+        let state = try decodeState(#"{"preferences":{"autoResetEnabled":true}}"#)
+        XCTAssertTrue(state.preferences.autoResetEnabled)
+        XCTAssertTrue(state.autoRedeemedWindowEnds.isEmpty)
+        XCTAssertTrue(state.autoRedeemedExpiries.isEmpty)
+    }
+
     func testUnknownQuotaChoicesPreserveTheRestOfTheState() throws {
         let state = try decodeState(#"{"preferences":{"quotaDisplayWindows":{"claudeCode":"5h","futureProvider":"14d"},"dndEnabled":true}}"#)
         XCTAssertEqual(state.preferences.quotaDisplayWindows["claudeCode"], "5h")

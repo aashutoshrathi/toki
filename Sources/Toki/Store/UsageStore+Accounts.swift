@@ -25,8 +25,17 @@ extension UsageStore {
     }
 
     func consumeResetCredit(accountID: String) {
+        startResetRedeem(accountID: accountID, condition: nil, completion: nil)
+    }
+
+    @discardableResult
+    private func startResetRedeem(
+        accountID: String,
+        condition: AutoRedeemCondition?,
+        completion: ((Result<String, Error>) -> Void)?
+    ) -> Bool {
         guard !resettingAccountIDs.contains(accountID), let account = resetCapableAccount(for: accountID) else {
-            return
+            return false
         }
         resettingAccountIDs.insert(accountID)
         Task {
@@ -34,9 +43,9 @@ extension UsageStore {
             let result = await Task.detached { () -> Result<String, Error> in
                 do {
                     if account.provider == .claudeCode {
-                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, recordID: accountID))
+                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, recordID: accountID, condition: condition))
                     }
-                    return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil))
+                    return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil, condition: condition))
                 } catch {
                     return .failure(error)
                 }
@@ -55,12 +64,19 @@ extension UsageStore {
                 DiagnosticLogger.shared.record(.error, component: "reset", code: "consume_failed", detail: diagnosticErrorDetail(error))
                 appendEvent(kind: .reset, title: "\(title) failed", detail: error.localizedDescription, deliveredNotification: false)
             }
+            // Nothing was spent, so a forced re-read would only replay a rate-limited snapshot and retry at once.
+            if case .failure(let error) = result, error is ResetNotAttempted {
+                completion?(result)
+                return
+            }
             if isClaude {
                 refreshClaudeAfterReset()
             } else {
                 refreshCodexAfterReset(accountID: accountID)
             }
+            completion?(result)
         }
+        return true
     }
 
     func autoRedeemResets(in snapshots: [AccountSnapshot], at date: Date) {
@@ -69,34 +85,58 @@ extension UsageStore {
             return
         }
         for snapshot in snapshots {
-            guard let (trigger, detail) = claimAutoRedeem(for: snapshot, at: date) else {
+            guard !resettingAccountIDs.contains(snapshot.id),
+                  let claim = autoRedeemClaim(
+                      for: snapshot,
+                      preferences: preferences,
+                      lastRedeemedWindowEnd: usageState.autoRedeemedWindowEnds[snapshot.id],
+                      lastRedeemedExpiry: usageState.autoRedeemedExpiries[snapshot.id],
+                      now: date
+                  ) else {
                 continue
             }
-            notifyOrRecord(
-                key: "autoReset:\(trigger):\(snapshot.id)",
-                kind: .reset,
-                title: "Redeeming a reset for \(snapshot.name)",
-                detail: detail,
-                at: date
-            )
-            consumeResetCredit(accountID: snapshot.id)
+            let started = startResetRedeem(accountID: snapshot.id, condition: claim.condition) { [weak self] result in
+                self?.finishAutoRedeem(claim, for: snapshot, result: result)
+            }
+            if started {
+                setAutoRedeemGuard(claim.guardDate, for: claim.trigger, accountID: snapshot.id)
+            }
         }
     }
 
-    private func claimAutoRedeem(for snapshot: AccountSnapshot, at date: Date) -> (trigger: String, detail: String)? {
-        if let threshold = preferences.autoResetWeeklyPercentLeft,
-           shouldAutoRedeemReset(snapshot, weeklyPercentLeft: threshold, lastRedeemedWindowEnd: autoRedeemedWindowEnds[snapshot.id]),
-           let weekly = weeklyQuotaWindow(for: snapshot) {
-            autoRedeemedWindowEnds[snapshot.id] = weekly.resetAt
-            return ("weekly", "Weekly quota is at \(weekly.percentLeft)% left, at or below your \(threshold)% setting.")
+    private func finishAutoRedeem(_ claim: AutoRedeemClaim, for snapshot: AccountSnapshot, result: Result<String, Error>) {
+        switch result {
+        case .success("reset"):
+            notifyOrRecord(
+                key: "autoReset:\(claim.trigger.rawValue):\(snapshot.id)",
+                kind: .reset,
+                title: "Redeemed a reset for \(snapshot.name)",
+                detail: claim.detail,
+                at: Date()
+            )
+        case .failure(let error) where error is ResetNotAttempted:
+            if let current = autoRedeemGuard(for: claim.trigger, accountID: snapshot.id),
+               abs(current.timeIntervalSince(claim.guardDate)) < 1 {
+                setAutoRedeemGuard(nil, for: claim.trigger, accountID: snapshot.id)
+            }
+        default:
+            break
         }
-        if let minutes = preferences.autoResetMinutesBeforeExpiry,
-           shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: autoRedeemedExpiries[snapshot.id], now: date),
-           let expiry = snapshot.resetCreditExpiry {
-            autoRedeemedExpiries[snapshot.id] = expiry
-            return ("expiry", "A banked reset expires in \(resetDescription(for: expiry)), within your \(minutes)-minute setting.")
+    }
+
+    private func autoRedeemGuard(for trigger: AutoRedeemClaim.Trigger, accountID: String) -> Date? {
+        switch trigger {
+        case .weekly: return usageState.autoRedeemedWindowEnds[accountID]
+        case .expiry: return usageState.autoRedeemedExpiries[accountID]
         }
-        return nil
+    }
+
+    private func setAutoRedeemGuard(_ date: Date?, for trigger: AutoRedeemClaim.Trigger, accountID: String) {
+        switch trigger {
+        case .weekly: usageState.autoRedeemedWindowEnds[accountID] = date
+        case .expiry: usageState.autoRedeemedExpiries[accountID] = date
+        }
+        StateLoader.save(usageState)
     }
 
     // Refreshes run every few minutes, which can land after a short expiry window has passed.
