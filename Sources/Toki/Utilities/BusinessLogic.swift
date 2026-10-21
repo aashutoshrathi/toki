@@ -175,8 +175,12 @@ func weeklyQuotaWindow(for snapshot: AccountSnapshot) -> RateLimitWindow? {
     [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }.first { $0.label == "7d" }
 }
 
+func canAutoRedeemReset(_ provider: Provider) -> Bool {
+    provider == .claudeCode || provider == .codex
+}
+
 func shouldAutoRedeemReset(_ snapshot: AccountSnapshot, weeklyPercentLeft threshold: Int, lastRedeemedWindowEnd: Date?) -> Bool {
-    guard snapshot.provider == .claudeCode || snapshot.provider == .codex,
+    guard canAutoRedeemReset(snapshot.provider),
           !snapshot.isError,
           snapshot.resetCreditsAvailable > 0,
           let weekly = weeklyQuotaWindow(for: snapshot),
@@ -189,6 +193,16 @@ func shouldAutoRedeemReset(_ snapshot: AccountSnapshot, weeklyPercentLeft thresh
     }
     // An hour of slack so a reset time that drifts between reads still counts as the same window.
     return windowEnd > lastRedeemedWindowEnd.addingTimeInterval(3600)
+}
+
+func autoResetMarkerRatio(for window: RateLimitWindow, in snapshot: AccountSnapshot, preferences: AppPreferences) -> Double? {
+    guard preferences.autoResetEnabled,
+          let threshold = preferences.autoResetWeeklyPercentLeft,
+          canAutoRedeemReset(snapshot.provider),
+          window.id == weeklyQuotaWindow(for: snapshot)?.id else {
+        return nil
+    }
+    return Double(100 - threshold) / 100
 }
 
 func menuBarEntry(for snapshot: AccountSnapshot, preferredWindow: String? = nil) -> MenuBarStatusEntry {

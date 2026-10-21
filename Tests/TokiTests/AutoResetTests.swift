@@ -49,6 +49,41 @@ final class AutoResetTests: XCTestCase {
         XCTAssertFalse(shouldAutoRedeemReset(snapshot(provider: .cursor, weeklyLeft: 2), weeklyPercentLeft: 10, lastRedeemedWindowEnd: nil))
     }
 
+    private func preferences(enabled: Bool, percentLeft: Int?) -> AppPreferences {
+        var preferences = AppPreferences()
+        preferences.autoResetEnabled = enabled
+        preferences.autoResetWeeklyPercentLeft = percentLeft
+        return preferences
+    }
+
+    func testMarkerSitsWhereTheSettingLeavesThatMuchLeft() throws {
+        let account = snapshot(weeklyLeft: 60)
+        let weekly = try XCTUnwrap(account.secondaryWindow)
+        XCTAssertEqual(autoResetMarkerRatio(for: weekly, in: account, preferences: preferences(enabled: true, percentLeft: 1)), 0.99)
+        XCTAssertEqual(autoResetMarkerRatio(for: weekly, in: account, preferences: preferences(enabled: true, percentLeft: 0)), 1)
+    }
+
+    func testMarkerOnlyOnTheWeeklyBar() throws {
+        let account = snapshot(weeklyLeft: 60)
+        let session = try XCTUnwrap(account.primaryWindow)
+        let fable = RateLimitWindow(label: "Fable 5 7d", percentLeft: 40, resetAt: weekEnd)
+        XCTAssertNil(autoResetMarkerRatio(for: session, in: account, preferences: preferences(enabled: true, percentLeft: 10)))
+        XCTAssertNil(autoResetMarkerRatio(for: fable, in: account, preferences: preferences(enabled: true, percentLeft: 10)))
+    }
+
+    func testNoMarkerUntilTheSettingIsOnAndFilledIn() throws {
+        let account = snapshot(weeklyLeft: 60)
+        let weekly = try XCTUnwrap(account.secondaryWindow)
+        XCTAssertNil(autoResetMarkerRatio(for: weekly, in: account, preferences: preferences(enabled: false, percentLeft: 10)))
+        XCTAssertNil(autoResetMarkerRatio(for: weekly, in: account, preferences: preferences(enabled: true, percentLeft: nil)))
+    }
+
+    func testNoMarkerForProvidersWithoutResets() throws {
+        let account = snapshot(provider: .cursor, weeklyLeft: 60)
+        let weekly = try XCTUnwrap(account.secondaryWindow)
+        XCTAssertNil(autoResetMarkerRatio(for: weekly, in: account, preferences: preferences(enabled: true, percentLeft: 10)))
+    }
+
     func testRedeemsOncePerWeeklyWindow() {
         let low = snapshot(weeklyLeft: 2)
         XCTAssertFalse(shouldAutoRedeemReset(low, weeklyPercentLeft: 10, lastRedeemedWindowEnd: weekEnd))

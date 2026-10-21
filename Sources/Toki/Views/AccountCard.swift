@@ -538,7 +538,11 @@ struct AccountCard: View {
             return explanation + "\nMarker denotes expected usage by now."
         }
         let resetHint = compactResetDescription(window.resetHint)
-        let help = ["\(100 - window.percentLeft)% used · \(window.percentLeft)% left", window.resetHint, paceHelp]
+        let autoResetRatio = autoResetMarkerRatio(for: window, in: snapshot, preferences: store.preferences)
+        let autoResetHelp = autoResetRatio.map {
+            "Auto-resets at \(100 - Int(($0 * 100).rounded()))% left if a banked reset is available."
+        }
+        let help = ["\(100 - window.percentLeft)% used · \(window.percentLeft)% left", window.resetHint, paceHelp, autoResetHelp]
             .compactMap { $0 }.joined(separator: "\n")
         return VStack(spacing: 4) {
             HStack {
@@ -566,6 +570,13 @@ struct AccountCard: View {
                             )
                             .allowsHitTesting(false)
                     }
+                    if let autoResetRatio, let autoResetHelp {
+                        autoResetMarker(help: autoResetHelp)
+                            .position(
+                                x: min(geometry.size.width - 1, max(1, geometry.size.width * autoResetRatio)),
+                                y: geometry.size.height / 2
+                            )
+                    }
                 }
             }
             .frame(height: 4)
@@ -585,6 +596,21 @@ struct AccountCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(window.label)
         .accessibilityValue(help)
+    }
+
+    private func autoResetMarker(help: String) -> some View {
+        Capsule()
+            .fill(LinearGradient(
+                colors: [Color(red: 0.45, green: 0.35, blue: 0.95), Color(red: 0.85, green: 0.35, blue: 0.65)],
+                startPoint: .top,
+                endPoint: .bottom
+            ))
+            .frame(width: 2, height: 12)
+            .shadow(color: Color(red: 0.85, green: 0.35, blue: 0.65).opacity(0.9), radius: 2)
+            // The line is too thin to hover on its own.
+            .frame(width: 10, height: 14)
+            .contentShape(Rectangle())
+            .help(help)
     }
 
     private var quotaWindows: [RateLimitWindow] {
