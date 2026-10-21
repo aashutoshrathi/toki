@@ -248,7 +248,10 @@ struct ClaudeCodeUsageClient {
             throw LocalizedErrorMessage("Failed to redeem reset. \(body)")
         }
         let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        return RedeemedReset(outcome: payload?["result"] as? String ?? "unavailable", creditExpiry: creditExpiry)
+        guard let result = payload?["result"] as? String, !result.isEmpty else {
+            throw LocalizedErrorMessage("Claude did not confirm the reset. It may still have been redeemed, so Toki is reading your usage again.")
+        }
+        return RedeemedReset(outcome: result, creditExpiry: creditExpiry)
     }
 
     private func switchTarget(for record: ClaudeCodeAccountRecord) -> String? {

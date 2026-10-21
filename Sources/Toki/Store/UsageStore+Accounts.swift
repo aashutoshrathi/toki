@@ -87,12 +87,12 @@ extension UsageStore {
         }
         for snapshot in snapshots {
             guard !resettingAccountIDs.contains(snapshot.id),
-                  (autoRedeemRetryAfter[snapshot.id] ?? .distantPast) <= date,
                   let claim = autoRedeemClaim(
                       for: snapshot,
                       preferences: preferences,
                       lastRedeemedWindowEnd: usageState.autoRedeemedWindowEnds[snapshot.id],
                       lastRedeemedExpiry: usageState.autoRedeemedExpiries[snapshot.id],
+                      blockedTriggers: blockedAutoRedeemTriggers(accountID: snapshot.id, at: date),
                       now: date
                   ) else {
                 continue
@@ -132,13 +132,25 @@ extension UsageStore {
                 setAutoRedeemGuard(spent, for: claim.trigger, accountID: snapshot.id)
             case .release:
                 releaseAutoRedeemGuard(for: claim, accountID: snapshot.id)
-                autoRedeemRetryAfter[snapshot.id] = Date().addingTimeInterval(10 * 60)
+                let retryKey = autoRedeemRetryKey(for: claim.trigger, accountID: snapshot.id)
+                autoRedeemRetryTimes[retryKey] = autoRedeemRetryAfter(for: claim, now: Date())
+                scheduleExpiringResetCheck(for: snapshots, after: Date())
             }
         case .failure(let error) where error is ResetNotAttempted:
             releaseAutoRedeemGuard(for: claim, accountID: snapshot.id)
         case .failure:
             break
         }
+    }
+
+    private func autoRedeemRetryKey(for trigger: AutoRedeemClaim.Trigger, accountID: String) -> String {
+        "\(trigger.rawValue):\(accountID)"
+    }
+
+    private func blockedAutoRedeemTriggers(accountID: String, at date: Date) -> Set<AutoRedeemClaim.Trigger> {
+        Set(AutoRedeemClaim.Trigger.allCases.filter {
+            (autoRedeemRetryTimes[autoRedeemRetryKey(for: $0, accountID: accountID)] ?? .distantPast) > date
+        })
     }
 
     private func releaseAutoRedeemGuard(for claim: AutoRedeemClaim, accountID: String) {
@@ -170,11 +182,10 @@ extension UsageStore {
         guard preferences.autoResetEnabled, let minutes = preferences.autoResetMinutesBeforeExpiry else {
             return
         }
-        let nextCheck = snapshots
-            .filter { canAutoRedeemReset($0.provider) && !$0.isError && $0.resetCreditsAvailable > 0 }
-            .compactMap { $0.resetCreditExpiry?.addingTimeInterval(-TimeInterval(minutes * 60)) }
-            .filter { $0 > date }
-            .min()
+        let eligible = snapshots.filter { canAutoRedeemReset($0.provider) && !$0.isError && $0.resetCreditsAvailable > 0 }
+        let expiryChecks = eligible.compactMap { $0.resetCreditExpiry?.addingTimeInterval(-TimeInterval(minutes * 60)) }
+        let retryChecks = eligible.compactMap { autoRedeemRetryTimes[autoRedeemRetryKey(for: .expiry, accountID: $0.id)] }
+        let nextCheck = (expiryChecks + retryChecks).filter { $0 > date }.min()
         guard let nextCheck else {
             return
         }

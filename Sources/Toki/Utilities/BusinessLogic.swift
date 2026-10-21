@@ -232,7 +232,7 @@ enum AutoRedeemCondition: Equatable, Sendable {
 }
 
 struct AutoRedeemClaim: Equatable {
-    enum Trigger: String {
+    enum Trigger: String, CaseIterable {
         case weekly
         case expiry
     }
@@ -267,12 +267,14 @@ func autoRedeemClaim(
     preferences: AppPreferences,
     lastRedeemedWindowEnd: Date?,
     lastRedeemedExpiry: Date?,
+    blockedTriggers: Set<AutoRedeemClaim.Trigger>,
     now: Date
 ) -> AutoRedeemClaim? {
     guard preferences.autoResetEnabled else {
         return nil
     }
-    if let threshold = preferences.autoResetWeeklyPercentLeft,
+    if !blockedTriggers.contains(.weekly),
+       let threshold = preferences.autoResetWeeklyPercentLeft,
        shouldAutoRedeemReset(
            snapshot,
            weeklyPercentLeft: threshold,
@@ -289,7 +291,8 @@ func autoRedeemClaim(
             detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting, with more than \(preferences.autoResetWeeklyMinHoursRemaining)h before the natural weekly reset."
         )
     }
-    if let minutes = preferences.autoResetMinutesBeforeExpiry,
+    if !blockedTriggers.contains(.expiry),
+       let minutes = preferences.autoResetMinutesBeforeExpiry,
        shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: now),
        let expiry = snapshot.resetCreditExpiry {
         return AutoRedeemClaim(
@@ -300,6 +303,16 @@ func autoRedeemClaim(
         )
     }
     return nil
+}
+
+func autoRedeemRetryAfter(for claim: AutoRedeemClaim, now: Date) -> Date {
+    let regularRetry = now.addingTimeInterval(10 * 60)
+    switch claim.trigger {
+    case .weekly:
+        return regularRetry
+    case .expiry:
+        return max(now.addingTimeInterval(60), min(regularRetry, claim.guardDate.addingTimeInterval(-60)))
+    }
 }
 
 func resetOutcomeSpentNothing(_ outcome: String) -> Bool {

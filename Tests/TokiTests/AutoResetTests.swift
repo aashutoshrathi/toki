@@ -269,6 +269,22 @@ final class AutoResetTests: XCTestCase {
             preferences: preferences,
             lastRedeemedWindowEnd: lastRedeemedWindowEnd,
             lastRedeemedExpiry: lastRedeemedExpiry,
+            blockedTriggers: [],
+            now: now
+        )
+    }
+
+    private func claim(
+        _ snapshot: AccountSnapshot,
+        preferences: AppPreferences,
+        blockedTriggers: Set<AutoRedeemClaim.Trigger>
+    ) -> AutoRedeemClaim? {
+        autoRedeemClaim(
+            for: snapshot,
+            preferences: preferences,
+            lastRedeemedWindowEnd: nil,
+            lastRedeemedExpiry: nil,
+            blockedTriggers: blockedTriggers,
             now: now
         )
     }
@@ -341,6 +357,23 @@ final class AutoResetTests: XCTestCase {
             lastRedeemedWindowEnd: weekEnd
         ))
         XCTAssertEqual(result.trigger, .expiry)
+    }
+
+    func testABlockedWeeklyTriggerStillLetsTheExpiryTriggerClaim() throws {
+        let account = snapshot(weeklyLeft: 4, expiry: now.addingTimeInterval(60))
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10, minutes: 5), blockedTriggers: [.weekly]))
+        XCTAssertEqual(result.trigger, .expiry)
+    }
+
+    func testABlockedExpiryTriggerStillLetsTheWeeklyTriggerClaim() throws {
+        let account = snapshot(weeklyLeft: 4, expiry: now.addingTimeInterval(60))
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10, minutes: 5), blockedTriggers: [.expiry]))
+        XCTAssertEqual(result.trigger, .weekly)
+    }
+
+    func testNoClaimWhenBothTriggersAreBlocked() {
+        let account = snapshot(weeklyLeft: 4, expiry: now.addingTimeInterval(60))
+        XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10, minutes: 5), blockedTriggers: [.weekly, .expiry]))
     }
 
     func testWeeklyWinsWhenBothTriggersMatch() throws {
@@ -417,5 +450,29 @@ final class AutoResetTests: XCTestCase {
 
     func testAWeeklyClaimKeepsItsGuardWhateverCreditWasSpent() {
         XCTAssertEqual(guardUpdate(trigger: .weekly, guardDate: weekEnd, outcome: "reset", spent: now.addingTimeInterval(3_600)), .keep)
+    }
+
+    private func retryClaim(trigger: AutoRedeemClaim.Trigger, guardDate: Date) -> AutoRedeemClaim {
+        AutoRedeemClaim(trigger: trigger, condition: .expiringBy(guardDate), guardDate: guardDate, detail: "")
+    }
+
+    func testAWeeklyRetryWaitsTenMinutes() {
+        let claim = retryClaim(trigger: .weekly, guardDate: weekEnd)
+        XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(10 * 60))
+    }
+
+    func testAnExpiryRetryWaitsTenMinutesWhenTheExpiryIsFarAway() {
+        let claim = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(3_600))
+        XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(10 * 60))
+    }
+
+    func testAnExpiryRetryLandsAMinuteBeforeTheExpiry() {
+        let claim = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(5 * 60))
+        XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(4 * 60))
+    }
+
+    func testAnExpiryRetryNeverComesSoonerThanAMinute() {
+        let claim = retryClaim(trigger: .expiry, guardDate: now.addingTimeInterval(30))
+        XCTAssertEqual(autoRedeemRetryAfter(for: claim, now: now), now.addingTimeInterval(60))
     }
 }
