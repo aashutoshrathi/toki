@@ -714,4 +714,49 @@ final class RemoteControlServerTests: XCTestCase {
         )
         XCTAssertEqual(url, "https://blue-green-fox-123.trycloudflare.com/?token=abc")
     }
+
+    func testParseOpenLineReadsOnlyAPositiveProcessID() {
+        XCTAssertEqual(RemoteControlServer.parseOpenLine("open=4242"), 4242)
+        XCTAssertEqual(RemoteControlServer.parseOpenLine("open=4242  "), 4242)
+        XCTAssertNil(RemoteControlServer.parseOpenLine("open="))
+        XCTAssertNil(RemoteControlServer.parseOpenLine("open=0"))
+        XCTAssertNil(RemoteControlServer.parseOpenLine("open=-7"))
+        XCTAssertNil(RemoteControlServer.parseOpenLine("open=12ab"))
+        XCTAssertNil(RemoteControlServer.parseOpenLine("open=2147483648"))
+        XCTAssertNil(RemoteControlServer.parseOpenLine("reset=codex"))
+        XCTAssertNil(RemoteControlServer.parseOpenLine("token=abc123"))
+    }
+
+    private func claudeAgent(pid: Int32, t3Thread: T3CodeThreadStore.Thread?) -> ActiveAgent {
+        ActiveAgent(
+            id: pid, provider: .claudeCode, directory: "/tmp/app", chatTitle: "Fix the build",
+            hostApp: .t3Code, hostProcessID: nil, lastActivity: nil, processID: pid, runtime: "1:00",
+            terminalTTY: nil, memoryKB: 1000, command: "claude", sessionUsage: nil, attention: nil,
+            t3Thread: t3Thread
+        )
+    }
+
+    func testAgentPayloadCarriesTheT3LinkAndPhonesOnlyForT3Agents() {
+        let thread = T3CodeThreadStore.Thread(
+            id: "thread-1", title: "Fix the build",
+            url: URL(string: "t3code://threads/env-1/thread-1"), mobileOSes: ["Android"]
+        )
+        let payload = RemoteControlServer.agentPayload(from: [
+            claudeAgent(pid: 10, t3Thread: thread),
+            claudeAgent(pid: 11, t3Thread: nil)
+        ])
+
+        let t3 = payload[0]["t3"] as? [String: Any]
+        XCTAssertEqual(t3?["link"] as? String, "t3code://threads/env-1/thread-1")
+        XCTAssertEqual(t3?["mobile"] as? [String], ["Android"])
+        XCTAssertNil(payload[1]["t3"])
+    }
+
+    func testAgentPayloadOmitsT3WhenTheThreadHasNoLink() {
+        let thread = T3CodeThreadStore.Thread(id: "thread-1", title: nil, url: nil, mobileOSes: ["iOS"])
+        let payload = RemoteControlServer.agentPayload(from: [claudeAgent(pid: 10, t3Thread: thread)])
+
+        XCTAssertNil(payload[0]["t3"])
+        XCTAssertEqual(payload[0]["pid"] as? Int32, 10)
+    }
 }

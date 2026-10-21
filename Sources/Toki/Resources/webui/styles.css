@@ -221,6 +221,15 @@ header:has(#dd.open){z-index:6}
 #alert .qq:not(:first-of-type){margin-top:14px;padding-top:12px;border-top:1px solid var(--accent-line)}
 #readonly{display:none;margin:10px 14px;padding:11px 12px;border-radius:var(--r);
           background:var(--warn-surface);border:1px solid var(--warn-line);color:var(--warn-text);font-size:13px}
+#t3open{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:10px 14px;padding:11px 12px;
+        border-radius:var(--r);background:var(--surface-1);border:1px solid var(--accent-line);
+        color:var(--text-2);font-size:13px}
+#t3open[hidden],.locked>#t3open{display:none}
+#t3open>span{flex-basis:100%}
+#t3open button,#t3open a{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;
+        padding:0 14px;border-radius:var(--r-pill);font-size:13px;font-weight:600;text-decoration:none;
+        background:var(--surface-3);border:1px solid var(--accent-2);color:var(--text)}
+#t3open svg{flex:none;width:18px;height:18px}
 #alert .qhdr{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:14px 0 2px;
              font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent-text)}
 #alert .qhdr:first-of-type{margin-top:4px}

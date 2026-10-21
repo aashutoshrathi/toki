@@ -171,6 +171,7 @@ final class RemoteControlServer: ObservableObject {
     private var usagePreferences = AppPreferences()
     private var tunnelProcess: Process?
     var onResetRequest: ((String) -> Void)?
+    var onOpenRequest: ((Int32) -> Void)?
 
     private init() {
         hostMode = Self.preferredHostMode(
@@ -539,7 +540,7 @@ final class RemoteControlServer: ObservableObject {
         try? inputPipe.fileHandleForWriting.write(contentsOf: Data(line.utf8))
     }
 
-    static func remoteProviderName(for provider: Provider) -> String? {
+    nonisolated static func remoteProviderName(for provider: Provider) -> String? {
         switch provider {
         case .codex:
             return "codex"
@@ -560,11 +561,10 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
-    private func sendActiveAgentSnapshot() {
-        guard isRunning, let inputPipe else { return }
-        let agents = activeAgents.compactMap { agent -> [String: Any]? in
-            guard let provider = Self.remoteProviderName(for: agent.provider) else { return nil }
-            return [
+    nonisolated static func agentPayload(from agents: [ActiveAgent]) -> [[String: Any]] {
+        agents.compactMap { agent -> [String: Any]? in
+            guard let provider = remoteProviderName(for: agent.provider) else { return nil }
+            var entry: [String: Any] = [
                 "pid": agent.processID,
                 "provider": provider,
                 "cwd": agent.directory.map { $0 as Any } ?? NSNull(),
@@ -576,7 +576,16 @@ final class RemoteControlServer: ObservableObject {
                 // it says so rather than being dropped as a PID that has gone away.
                 "process": agent.origin == .process
             ]
+            if let thread = agent.t3Thread, let url = thread.url {
+                entry["t3"] = ["link": url.absoluteString, "mobile": thread.mobileOSes]
+            }
+            return entry
         }
+    }
+
+    private func sendActiveAgentSnapshot() {
+        guard isRunning, let inputPipe else { return }
+        let agents = Self.agentPayload(from: activeAgents)
         guard
             let data = try? JSONSerialization.data(withJSONObject: ["agents": agents]),
             var line = String(data: data, encoding: .utf8)
@@ -600,6 +609,15 @@ final class RemoteControlServer: ObservableObject {
         guard text.hasPrefix("reset=") else { return nil }
         let accountID = String(text.dropFirst("reset=".count)).trimmingCharacters(in: .whitespacesAndNewlines)
         return accountID.isEmpty ? nil : accountID
+    }
+
+    nonisolated static func parseOpenLine(_ text: String) -> Int32? {
+        guard text.hasPrefix("open=") else { return nil }
+        let digits = text.dropFirst("open=".count).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }), let pid = Int32(digits), pid > 0 else {
+            return nil
+        }
+        return pid
     }
 
     nonisolated static func parseDeviceLine(_ text: String) -> [PairedDevice]? {
@@ -631,6 +649,10 @@ final class RemoteControlServer: ObservableObject {
         }
         if let accountID = Self.parseResetLine(text) {
             onResetRequest?(accountID)
+            return
+        }
+        if let pid = Self.parseOpenLine(text) {
+            onOpenRequest?(pid)
             return
         }
         if token == nil, let range = text.range(of: "token=") {

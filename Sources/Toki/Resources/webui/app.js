@@ -678,10 +678,67 @@ function renderAgents() {
   }
 }
 
+const T3_ICON_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const T3_DESKTOP_ICON = "<svg " + T3_ICON_ATTRS + '><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
+const T3_PHONE_ICON = "<svg " + T3_ICON_ATTRS + '><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>';
+let t3Markup = "";
+
+function deviceOS() {
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) {
+    return "android";
+  }
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {
+    return "ios";
+  }
+  return "";
+}
+
+function isThisDevice(mobileOS) {
+  const name = String(mobileOS).toLowerCase();
+  const os = deviceOS();
+  return os != "" && (name == "ipados" ? "ios" : name) == os;
+}
+
+async function openT3OnMac(pid) {
+  setStatus("Opening on your Mac\u2026", "sending");
+  try {
+    await api("/api/open", { method: "POST", body: JSON.stringify({ pid }) });
+    setStatus("Opened on your Mac \u2713", "success");
+  } catch (e) {
+    setStatus("Couldn\u2019t open: " + e.message, "error");
+  }
+  statusTimer = setTimeout(() => setStatus("", ""), 4000);
+}
+
+function renderT3Open(agent) {
+  const box = $("#t3open");
+  let markup = "";
+  if (agent && agent.t3) {
+    const phone = (agent.t3.mobile || []).some(isThisDevice)
+      ? '<a id="t3phone" href="' + esc(agent.t3.link).replace(/"/g, "&quot;") + '">' + T3_PHONE_ICON + "Open in T3 Code</a>"
+      : "";
+    markup = "<span>Running in T3 Code. Reply there:</span>" +
+      '<button type="button" id="t3mac" data-pid="' + esc(agent.pid) + '">' + T3_DESKTOP_ICON + "Open on Mac</button>" + phone;
+  }
+  if (markup == t3Markup) {
+    return;
+  }
+  t3Markup = markup;
+  box.innerHTML = markup;
+  box.hidden = !markup;
+  const mac = box.querySelector("#t3mac");
+  if (mac) {
+    mac.onclick = () => openT3OnMac(Number(mac.dataset.pid));
+  }
+}
+
 function updateComposer(agent) {
   const writable = !!(agent && agent.writable);
   const enabled = writable && !sending && !uploading;
   $("#readonly").style.display = agent && !writable ? "block" : "none";
+  renderT3Open(agent);
   // Hosted UI versions can be newer than the server; gate uploads on its capability flag.
   $("#attach").hidden = !(agent && agent.uploads);
   // agent.screen gates the buttons off for older servers that lack /api/screen. The Model button

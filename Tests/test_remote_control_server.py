@@ -700,6 +700,71 @@ class UsageSnapshotTests(unittest.TestCase):
         self.assertTrue(toki_remote.current_usage()["stale"])
 
 
+class T3OpenTests(unittest.TestCase):
+    """The phone may only ask the Mac to open a chat for an agent Toki says runs in T3 Code."""
+
+    LINK = "t3code://threads/env-1/thread-1"
+
+    def setUp(self):
+        self.original_agents = toki_remote.CANONICAL_AGENTS
+        toki_remote.CANONICAL_AGENTS = [
+            {"pid": 10, "provider": "claude", "t3": {"link": self.LINK, "mobile": ["Android"]}},
+            {"pid": 11, "provider": "claude", "t3": None},
+            {"pid": 12, "provider": "codex"},
+        ]
+
+    def tearDown(self):
+        toki_remote.CANONICAL_AGENTS = self.original_agents
+
+    def snapshot_with(self, t3):
+        processes = [{"pid": 10, "ppid": 1, "provider": "claude", "command": "claude", "tty": None}]
+        snapshot = [{"pid": 10, "provider": "claude", "cwd": None, "title": "t", "tty": None,
+                     "host": None, "session": "/tmp/session.jsonl", "t3": t3}]
+        return toki_remote.agents_from_snapshot(processes, snapshot)[0]
+
+    def test_the_t3_link_and_phone_systems_ride_along_with_the_agent(self):
+        agent = self.snapshot_with({"link": self.LINK, "mobile": ["Android", "iOS"]})
+        self.assertEqual(agent["t3"], {"link": self.LINK, "mobile": ["Android", "iOS"]})
+
+    def test_an_agent_without_t3_data_has_none(self):
+        self.assertIsNone(self.snapshot_with(None)["t3"])
+
+    def test_a_link_that_is_not_a_t3_chat_is_dropped(self):
+        for link in ("https://example.com/", "javascript:alert(1)", "t3code://other/x", 7, None):
+            self.assertIsNone(self.snapshot_with({"link": link, "mobile": []})["t3"])
+
+    def test_an_oversized_link_is_dropped(self):
+        link = toki_remote.T3_LINK_PREFIX + "x" * toki_remote.T3_LINK_MAX_CHARS
+        self.assertIsNone(self.snapshot_with({"link": link, "mobile": []})["t3"])
+
+    def test_malformed_t3_payloads_are_dropped(self):
+        for raw in ("t3code://threads/a/b", ["link"], 5, {"link": self.LINK}, {"link": self.LINK, "mobile": "iOS"}):
+            self.assertIsNone(self.snapshot_with(raw)["t3"])
+
+    def test_phone_systems_keep_only_short_strings_and_at_most_eight(self):
+        mobile = ["Android", 5, None, "x" * 100] + ["iOS"] * 10
+        agent = self.snapshot_with({"link": self.LINK, "mobile": mobile})
+        self.assertEqual(agent["t3"]["mobile"], ["Android"] + ["iOS"] * 7)
+
+    def test_a_published_t3_agent_can_be_opened(self):
+        self.assertTrue(toki_remote.open_is_allowed(10))
+
+    def test_an_agent_without_t3_cannot_be_opened(self):
+        self.assertFalse(toki_remote.open_is_allowed(11))
+        self.assertFalse(toki_remote.open_is_allowed(12))
+
+    def test_an_unknown_process_cannot_be_opened(self):
+        self.assertFalse(toki_remote.open_is_allowed(999))
+
+    def test_only_a_real_integer_pid_is_accepted(self):
+        for candidate in (None, "10", 10.0, True, [10], {"pid": 10}):
+            self.assertFalse(toki_remote.open_is_allowed(candidate))
+
+    def test_nothing_can_be_opened_before_toki_has_published_agents(self):
+        toki_remote.CANONICAL_AGENTS = None
+        self.assertFalse(toki_remote.open_is_allowed(10))
+
+
 class ResetRedemptionTests(unittest.TestCase):
     """A reset is a limited credit, so the phone may only spend one Toki has actually published."""
 

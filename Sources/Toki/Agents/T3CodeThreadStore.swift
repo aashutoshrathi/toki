@@ -3,9 +3,11 @@ import Foundation
 // T3 Code starts `claude` itself, and its own database is the only record of which chat a
 // Claude session belongs to and what that chat is called.
 enum T3CodeThreadStore {
-    struct Thread: Equatable, Sendable {
+    struct Thread: Hashable, Sendable {
         let id: String
         let title: String?
+        let url: URL?
+        let mobileOSes: [String]
     }
 
     private static var installedUserData: String {
@@ -14,10 +16,6 @@ enum T3CodeThreadStore {
 
     static func threads(forSessionPaths sessionPaths: [String]) -> [String: Thread] {
         threads(forSessionPaths: sessionPaths, userData: installedUserData)
-    }
-
-    static func threadURL(forSessionPath sessionPath: String) -> URL? {
-        threadURL(forSessionPath: sessionPath, userData: installedUserData)
     }
 
     /// Keyed by the transcript path each thread was looked up with.
@@ -37,24 +35,40 @@ enum T3CodeThreadStore {
               ) else {
             return [:]
         }
-        var threads: [String: Thread] = [:]
+        var found: [String: (id: String, title: String?)] = [:]
         for row in raw.split(separator: "\n") {
             let fields = row.components(separatedBy: "\u{1f}")
             guard fields.count == 3, let path = pathsBySessionID[fields[0]], !fields[1].isEmpty else { continue }
             let title = fields[2].trimmingCharacters(in: .whitespaces)
-            threads[path] = Thread(id: fields[1], title: title.isEmpty ? nil : title)
+            found[path] = (fields[1], title.isEmpty ? nil : title)
         }
-        return threads
+        guard !found.isEmpty else { return [:] }
+        let environmentID = readEnvironmentID(userData: userData)
+        let mobileOSes = readMobileOSes(userData: userData)
+        return found.mapValues { thread in
+            Thread(
+                id: thread.id,
+                title: thread.title,
+                url: environmentID.flatMap { URL(string: "t3code://threads/\($0)/\(thread.id)") },
+                mobileOSes: mobileOSes
+            )
+        }
     }
 
-    static func threadURL(forSessionPath sessionPath: String, userData: String) -> URL? {
-        guard let thread = threads(forSessionPaths: [sessionPath], userData: userData)[sessionPath],
-              let environmentID = try? String(contentsOfFile: "\(userData)/environment-id", encoding: .utf8)
+    private static func readEnvironmentID(userData: String) -> String? {
+        guard let id = (try? String(contentsOfFile: "\(userData)/environment-id", encoding: .utf8))?
                   .trimmingCharacters(in: .whitespacesAndNewlines),
-              !environmentID.isEmpty else {
+              !id.isEmpty else {
             return nil
         }
-        return URL(string: "t3code://threads/\(environmentID)/\(thread.id)")
+        return id
+    }
+
+    private static func readMobileOSes(userData: String) -> [String] {
+        guard let raw = Shell.output("/usr/bin/sqlite3", ["-readonly", "\(userData)/statev2.sqlite", mobileOSQuery]) else {
+            return []
+        }
+        return raw.split(separator: "\n").map(String.init)
     }
 
     private static func sessionID(of sessionPath: String) -> String {
@@ -74,4 +88,13 @@ enum T3CodeThreadStore {
         ORDER BY p.updated_at;
         """
     }
+
+    private static let mobileOSQuery = """
+    SELECT DISTINCT client_os
+    FROM auth_sessions
+    WHERE client_surface = 'mobile'
+      AND client_os IS NOT NULL
+      AND revoked_at IS NULL
+      AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+    """
 }

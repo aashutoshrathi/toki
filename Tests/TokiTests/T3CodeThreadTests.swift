@@ -37,7 +37,24 @@ final class T3CodeThreadTests: XCTestCase {
     }
 
     private func threadURL(_ sessionPath: String) -> String? {
-        T3CodeThreadStore.threadURL(forSessionPath: sessionPath, userData: userData)?.absoluteString
+        T3CodeThreadStore.threads(forSessionPaths: [sessionPath], userData: userData)[sessionPath]?.url?.absoluteString
+    }
+
+    private func writeAuthSessions() throws {
+        try sqlite("""
+        CREATE TABLE auth_sessions (client_surface TEXT, client_os TEXT, expires_at TEXT, revoked_at TEXT);
+        INSERT INTO auth_sessions VALUES
+            ('mobile', 'Android', '2999-01-01T00:00:00.000Z', NULL),
+            ('mobile', 'Android', '2999-01-01T00:00:00.000Z', NULL),
+            ('mobile', 'iOS', '2999-01-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z'),
+            ('mobile', 'iPadOS', '2020-01-01T00:00:00.000Z', NULL),
+            ('desktop', 'macOS', '2999-01-01T00:00:00.000Z', NULL);
+        """)
+    }
+
+    private func mobileOSes() -> [String]? {
+        let path = "/Users/me/.claude/projects/-app/\(sessionID).jsonl"
+        return T3CodeThreadStore.threads(forSessionPaths: [path], userData: userData)[path]?.mobileOSes
     }
 
     func testClaudeSessionOpensItsOwnT3Thread() throws {
@@ -68,6 +85,24 @@ final class T3CodeThreadTests: XCTestCase {
         XCTAssertEqual(threads[first]?.title, "Flag for Multiple Bundles per Country")
         XCTAssertEqual(threads[second]?.title, "Investigate Production Sentry Error")
         XCTAssertNil(threads[unknown])
+    }
+
+    func testThreadHasNoLinkWithoutAnEnvironmentID() throws {
+        try writeThreads()
+        try "\n".write(toFile: "\(userData)/environment-id", atomically: true, encoding: .utf8)
+        XCTAssertNil(threadURL("/Users/me/.claude/projects/-app/\(sessionID).jsonl"))
+        XCTAssertEqual(mobileOSes(), [])
+    }
+
+    func testOnlyAnActiveMobileSignInCountsAsAPhone() throws {
+        try writeThreads()
+        try writeAuthSessions()
+        XCTAssertEqual(mobileOSes(), ["Android"])
+    }
+
+    func testNoPhonesWithoutAnAuthSessionsTable() throws {
+        try writeThreads()
+        XCTAssertEqual(mobileOSes(), [])
     }
 
     func testT3CodeIsTheHostOfItsAgents() {
