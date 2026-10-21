@@ -267,10 +267,12 @@ function resetExpiryLabel(iso) {
 function resetRow(a) {
   const count = a.resets || 0;
   if (count < 1) return "";
-  const label = count > 1 ? "Redeem reset (" + count + " available)" : "Redeem reset";
+  const label = "Redeem reset (" + count + " available)" + resetExpiryLabel(a.resetExpiry);
   return '<div class="u-reset"><button type="button" class="u-redeem" data-account="' +
-    esc(a.id) + '">' + esc(label) + '</button><span class="u-redeem-note">' +
-    esc("Resets this window now" + resetExpiryLabel(a.resetExpiry)) + "</span></div>";
+    esc(a.id) + '" aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6"/></svg>' +
+    '<span aria-hidden="true">' + count + '</span></button></div>';
 }
 
 async function redeemReset(accountID, button) {
@@ -278,7 +280,7 @@ async function redeemReset(accountID, button) {
   if (!confirm("Spend a banked reset now? This discards whatever quota is left in this window.")) return;
   redeeming = true;
   button.disabled = true;
-  button.textContent = "Redeeming…";
+  button.setAttribute("aria-busy", "true");
   setStatus("Redeeming reset…", "sending");
   try {
     await api("/api/reset", { method: "POST", body: JSON.stringify({ id: accountID }) });
@@ -288,6 +290,7 @@ async function redeemReset(accountID, button) {
     button.disabled = false;
     setStatus("Couldn’t redeem: " + e.message, "error");
   } finally {
+    button.removeAttribute("aria-busy");
     redeeming = false;
     statusTimer = setTimeout(() => setStatus("", ""), 4000);
   }
