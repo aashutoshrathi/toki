@@ -28,10 +28,18 @@ assert.match(app, /class="u-w-pace"/);
 assert.match(app, /usageMarkerAt\(ratio\)[\s\S]*?ratio \* 100/);
 assert.match(app, /Auto-resets at or below " \+ percent \+ "% left, more than " \+ w\.autoResetMinHoursRemaining \+ "h before the natural weekly reset, if a banked reset is available\./);
 assert.match(app, /Auto-resets at " \+ percent \+ "% left if a banked reset is available\./);
-assert.match(app, /title="' \+ esc\(help\)/);
-assert.match(app, /aria-label="' \+ esc\(help\)/);
+assert.match(app, /title="' \+ escAttr\(help\)/);
+assert.match(app, /aria-label="' \+ escAttr\(help\)/);
+assert.match(app, /title="' \+ escAttr\(detail\)/);
+assert.match(app, /aria-label="' \+ escAttr\(detail\)/);
 assert.match(css, /\.u-w-auto::before\{[^}]*linear-gradient\(#7359f2,#d95aa6\)/);
 assert.match(css, /\.u-w-pace\{/);
+
+// Dynamic values inside quoted attributes go through escAttr, which also escapes the double quote.
+assert.match(app, /function escAttr\(s\) \{\s*return esc\(s\)\.replace\(\/"\/g, "&quot;"\);\s*\}/);
+assert.match(app, /data-account="' \+\s*escAttr\(a\.id\)/);
+assert.match(app, /aria-label="' \+ escAttr\(label\)/);
+assert.match(app, /title="' \+ escAttr\(label\)/);
 
 // Accounts that send no windows keep the single bar.
 assert.match(app, /class="u-row' \+ \(a\.error/);
@@ -41,9 +49,14 @@ const start = app.indexOf("function usageWindowTint");
 const end = app.indexOf("function renderUsage");
 assert.ok(start > 0 && end > start, "usage window helpers went missing");
 const sandbox = vm.createContext({
-  esc: s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"),
+  esc: s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
 });
-vm.runInContext(app.slice(start, end), sandbox);
+vm.runInContext([
+  app.match(/function escAttr\([\s\S]*?\n\}\n/)[0],
+  app.match(/function resetExpiryLabel\([\s\S]*?\n\}\n/)[0],
+  app.match(/function resetRow\([\s\S]*?\n\}\n/)[0],
+  app.slice(start, end),
+].join("\n"), sandbox);
 const draw = w => vm.runInContext("usageWindow", sandbox)(w);
 
 const weekly = draw({ label: "Fable 5 7d", left: 30, reset: "in 3d", pace: 0.5, deviation: 20, autoReset: 0.99, autoResetMinHoursRemaining: 12 });
@@ -67,6 +80,24 @@ const legacyWeekly = draw({ label: "7d", left: 30, autoReset: 0.99 });
 assert.match(legacyWeekly, /title="Auto-resets at 1% left if a banked reset is available\."/);
 assert.match(legacyWeekly, /aria-label="Auto-resets at 1% left if a banked reset is available\."/);
 assert.doesNotMatch(legacyWeekly, /natural weekly reset/);
+
+const quoted = draw({ label: 'Fable "Preview" 7d', left: 30, reset: "in 3d", autoReset: 0.99 });
+const quotedDetail = "Fable &quot;Preview&quot; 7d · 30% left · in 3d";
+const autoHelp = "Auto-resets at 1% left if a banked reset is available.";
+assert.match(quoted, /u-w-label">Fable "Preview" 7d<\/span>/);
+assert.deepStrictEqual(
+  [...quoted.matchAll(/ (title|aria-label)="([^"]*)"/g)].map(m => [m[1], m[2]]),
+  [["title", quotedDetail], ["aria-label", quotedDetail], ["title", autoHelp], ["aria-label", autoHelp]],
+);
+assert.match(quoted, new RegExp(' title="' + quotedDetail + '" aria-label="' + quotedDetail + '">'));
+const mixed = draw({ label: 'A&B <i> "x"', left: 30 });
+assert.match(mixed, / title="A&amp;B &lt;i&gt; &quot;x&quot; · 30% left"/);
+assert.match(mixed, /u-w-label">A&amp;B &lt;i&gt; "x"<\/span>/);
+
+const redeem = vm.runInContext("resetRow", sandbox)({ id: 'acct"onclick="x', resets: 2 });
+assert.match(redeem, /data-account="acct&quot;onclick=&quot;x"/);
+assert.ok(!redeem.includes('"onclick='), "a raw quote from the account id reached the markup");
+assert.match(redeem, /aria-label="Redeem reset \(2 available\)" title="Redeem reset \(2 available\)"/);
 
 // Several accounts with three bars each outgrow the screen; the panel scrolls instead of clipping.
 assert.match(css, /#usage\{[^}]*max-height:45dvh;overflow-y:auto/);

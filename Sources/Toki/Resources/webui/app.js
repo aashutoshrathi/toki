@@ -269,7 +269,7 @@ function resetRow(a) {
   if (count < 1) return "";
   const label = "Redeem reset (" + count + " available)" + resetExpiryLabel(a.resetExpiry);
   return '<button type="button" class="u-redeem" data-account="' +
-    esc(a.id) + '" aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
+    escAttr(a.id) + '" aria-label="' + escAttr(label) + '" title="' + escAttr(label) + '">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6"/></svg>' +
     '<span aria-hidden="true">' + count + '</span></button>';
@@ -332,12 +332,12 @@ function usageWindow(w) {
     const help = typeof w.autoResetMinHoursRemaining == "number"
       ? "Auto-resets at or below " + percent + "% left, more than " + w.autoResetMinHoursRemaining + "h before the natural weekly reset, if a banked reset is available."
       : "Auto-resets at " + percent + "% left if a banked reset is available.";
-    markers += '<span class="u-w-auto" style="--at:' + usageMarkerAt(w.autoReset) + '" title="' + esc(help) +
-      '" aria-label="' + esc(help) + '"></span>';
+    markers += '<span class="u-w-auto" style="--at:' + usageMarkerAt(w.autoReset) + '" title="' + escAttr(help) +
+      '" aria-label="' + escAttr(help) + '"></span>';
   }
   const pace = typeof w.deviation == "number" ? usagePaceText(w.deviation) : "";
   const detail = [w.label, left + "% left", pace, w.reset].filter(Boolean).join(" · ");
-  return '<div class="u-w" title="' + esc(detail) + '" aria-label="' + esc(detail) + '">' +
+  return '<div class="u-w" title="' + escAttr(detail) + '" aria-label="' + escAttr(detail) + '">' +
     '<div class="u-w-track"><span class="u-w-fill ' + usageWindowTint(used) + '" style="width:' + (100 - left) + '%"></span>' +
     markers + '</div><span class="u-w-label">' + esc(w.label) + '</span><span class="u-w-value">' +
     left + '% left</span></div>';
@@ -499,6 +499,10 @@ function esc(s) {
   const d = document.createElement("div");
   d.textContent = s;
   return d.innerHTML;
+}
+
+function escAttr(s) {
+  return esc(s).replace(/"/g, "&quot;");
 }
 
 const md = renderMarkdown;
@@ -724,10 +728,10 @@ function renderT3Open(agent) {
   let markup = "";
   if (agent && agent.t3) {
     const phone = (agent.t3.mobile || []).some(isThisDevice)
-      ? '<a id="t3phone" href="' + esc(agent.t3.link).replace(/"/g, "&quot;") + '">' + T3_PHONE_ICON + "Open in T3 Code</a>"
+      ? '<a id="t3phone" href="' + escAttr(agent.t3.link) + '">' + T3_PHONE_ICON + "Open in T3 Code</a>"
       : "";
     markup = "<span>Running in T3 Code. Reply there:</span>" +
-      '<button type="button" id="t3mac" data-pid="' + esc(agent.pid) + '">' + T3_DESKTOP_ICON + "Open on Mac</button>" + phone;
+      '<button type="button" id="t3mac" data-pid="' + escAttr(agent.pid) + '">' + T3_DESKTOP_ICON + "Open on Mac</button>" + phone;
   }
   if (markup == t3Markup) {
     return;

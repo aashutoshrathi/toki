@@ -294,7 +294,7 @@ assert.match(html, /id="usage"/);
 assert.match(app, /setInterval\(pollUsage/);
 assert.match(css, /#usagetoggle/);
 
-const usageSources = ["usageClass", "resetExpiryLabel", "resetRow", "renderUsage"].map(name => {
+const usageSources = ["usageClass", "resetExpiryLabel", "resetRow", "renderUsage", "escAttr"].map(name => {
   const found = app.match(new RegExp("^function " + name + "\\([\\s\\S]*?^}", "m"));
   assert.ok(found, name + " must be a top-level function in app.js");
   return found[0];
