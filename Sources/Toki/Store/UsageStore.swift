@@ -66,6 +66,7 @@ final class UsageStore: ObservableObject {
     var connectivityGeneration = 0
     var refreshAfterReconnect = false
     var refreshAfterCurrent = false
+    var autoRedeemedWindowEnds: [String: Date] = [:]
     var serviceStatusCheckedAt: Date?
     var isCheckingServiceStatus = false
 

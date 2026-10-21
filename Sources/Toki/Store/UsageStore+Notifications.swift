@@ -109,7 +109,7 @@ extension UsageStore {
         )
     }
 
-    private func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
+    func notifyOrRecord(key: String, kind: TokiEventKind, title: String, detail: String, at date: Date) {
         let cooldown = TimeInterval(max(preferences.notificationCooldownMinutes, 5) * 60)
         if let last = usageState.eventLastRecordedAt[key],
            date.timeIntervalSince(last) < cooldown {

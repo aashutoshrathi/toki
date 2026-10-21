@@ -303,6 +303,10 @@ struct SettingsPanel: View {
                 .padding(8)
                 .settingsCard()
 
+                sectionHeader("Resets")
+
+                autoResetCard
+
                 sectionHeader("Updates")
 
                 HStack(spacing: 8) {
@@ -442,6 +446,68 @@ struct SettingsPanel: View {
             set: { value in
                 var next = store.preferences
                 next[keyPath: keyPath] = value
+                store.updatePreferences(next)
+            }
+        )
+    }
+
+    private var autoResetCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                cardLabel(
+                    icon: "arrow.counterclockwise.circle",
+                    iconColor: .secondary,
+                    title: "Auto-redeem resets",
+                    subtitle: "Use a banked Claude or Codex reset when the weekly quota runs low."
+                )
+                Spacer(minLength: 8)
+                Toggle("", isOn: binding(\.autoResetEnabled))
+                    .accessibilityLabel("Auto-redeem resets")
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            .padding(8)
+
+            if store.preferences.autoResetEnabled {
+                Divider()
+                    .padding(.leading, 34)
+                HStack(spacing: 8) {
+                    Text("When weekly left is at or below")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.leading, 26)
+                    Spacer(minLength: 8)
+                    TextField("0-99", value: autoResetPercentBinding, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 48)
+                        .accessibilityLabel("Weekly percent left")
+                    Text("%")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .padding(8)
+
+                if store.preferences.autoResetWeeklyPercentLeft == nil {
+                    Text("Enter a percentage. Nothing is redeemed until you do.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                        .padding(.leading, 34)
+                        .padding(.bottom, 8)
+                }
+            }
+        }
+        .settingsCard()
+        .accessibilityIdentifier("AutoResetCard")
+    }
+
+    // 100 would spend a reset the moment one is banked.
+    private var autoResetPercentBinding: Binding<Int?> {
+        Binding(
+            get: { store.preferences.autoResetWeeklyPercentLeft },
+            set: { value in
+                var next = store.preferences
+                next.autoResetWeeklyPercentLeft = value.map { min(max($0, 0), 99) }
                 store.updatePreferences(next)
             }
         )

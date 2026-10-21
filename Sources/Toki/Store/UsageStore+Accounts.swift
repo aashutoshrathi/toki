@@ -63,6 +63,30 @@ extension UsageStore {
         }
     }
 
+    func autoRedeemResets(in snapshots: [AccountSnapshot], at date: Date) {
+        guard preferences.autoResetEnabled, let threshold = preferences.autoResetWeeklyPercentLeft else {
+            return
+        }
+        for snapshot in snapshots {
+            guard shouldAutoRedeemReset(
+                snapshot,
+                weeklyPercentLeft: threshold,
+                lastRedeemedWindowEnd: autoRedeemedWindowEnds[snapshot.id]
+            ), let weekly = weeklyQuotaWindow(for: snapshot) else {
+                continue
+            }
+            autoRedeemedWindowEnds[snapshot.id] = weekly.resetAt
+            notifyOrRecord(
+                key: "autoReset:\(snapshot.id)",
+                kind: .reset,
+                title: "Redeeming a reset for \(snapshot.name)",
+                detail: "Weekly quota is at \(weekly.percentLeft)% left, at or below your \(threshold)% setting.",
+                at: date
+            )
+            consumeResetCredit(accountID: snapshot.id)
+        }
+    }
+
     private func resetCapableAccount(for snapshotID: String) -> AccountConfig? {
         if let exact = config?.accounts.first(where: { $0.id == snapshotID }),
            exact.provider == .codex || exact.provider == .claudeCode {

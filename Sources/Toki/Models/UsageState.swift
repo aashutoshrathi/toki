@@ -172,6 +172,9 @@ struct AppPreferences: Codable, Equatable {
     // min(30, retention), so a shorter retention silently shortens the chart.
     var historyRetentionDays = 30
     var sessionWarningThreshold = 0.15
+    /// Redeems a banked Claude or Codex reset once the weekly window has this many percent left.
+    var autoResetEnabled = false
+    var autoResetWeeklyPercentLeft: Int?
     /// Shows the recommendation/AI summary card at the top of the main panel.
     var aiInsightEnabled = true
     /// Shows the provider availability rings in the Accounts panel. The standalone macOS
@@ -208,6 +211,8 @@ struct AppPreferences: Codable, Equatable {
         case menuBarQuotaWindows
         case historyRetentionDays
         case sessionWarningThreshold
+        case autoResetEnabled
+        case autoResetWeeklyPercentLeft
         case aiInsightEnabled
         case quotaRingsEnabled
         case notchModeEnabled
@@ -254,6 +259,8 @@ struct AppPreferences: Codable, Equatable {
         menuBarQuotaWindows = try container.decodeIfPresent([String: String].self, forKey: .menuBarQuotaWindows) ?? [:]
         historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
+        autoResetEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoResetEnabled) ?? defaults.autoResetEnabled
+        autoResetWeeklyPercentLeft = try container.decodeIfPresent(Int.self, forKey: .autoResetWeeklyPercentLeft)
         aiInsightEnabled = try container.decodeIfPresent(Bool.self, forKey: .aiInsightEnabled) ?? defaults.aiInsightEnabled
         quotaRingsEnabled = try container.decodeIfPresent(Bool.self, forKey: .quotaRingsEnabled) ?? defaults.quotaRingsEnabled
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled

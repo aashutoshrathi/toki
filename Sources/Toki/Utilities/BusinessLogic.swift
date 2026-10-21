@@ -171,6 +171,26 @@ func displayQuotaWindow(for snapshot: AccountSnapshot, preferredWindow: String? 
         }
 }
 
+func weeklyQuotaWindow(for snapshot: AccountSnapshot) -> RateLimitWindow? {
+    [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }.first { $0.label == "7d" }
+}
+
+func shouldAutoRedeemReset(_ snapshot: AccountSnapshot, weeklyPercentLeft threshold: Int, lastRedeemedWindowEnd: Date?) -> Bool {
+    guard snapshot.provider == .claudeCode || snapshot.provider == .codex,
+          !snapshot.isError,
+          snapshot.resetCreditsAvailable > 0,
+          let weekly = weeklyQuotaWindow(for: snapshot),
+          let windowEnd = weekly.resetAt,
+          weekly.percentLeft <= threshold else {
+        return false
+    }
+    guard let lastRedeemedWindowEnd else {
+        return true
+    }
+    // An hour of slack so a reset time that drifts between reads still counts as the same window.
+    return windowEnd > lastRedeemedWindowEnd.addingTimeInterval(3600)
+}
+
 func menuBarEntry(for snapshot: AccountSnapshot, preferredWindow: String? = nil) -> MenuBarStatusEntry {
     if let window = displayQuotaWindow(for: snapshot, preferredWindow: preferredWindow) {
         return MenuBarStatusEntry(provider: snapshot.provider, value: "\(window.percentLeft)%", windowLabel: window.label)
