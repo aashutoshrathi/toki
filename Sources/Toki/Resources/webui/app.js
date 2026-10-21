@@ -330,11 +330,11 @@ function usageWindow(w) {
       '" aria-label="' + esc(help) + '"></span>';
   }
   const pace = typeof w.deviation == "number" ? usagePaceText(w.deviation) : "";
-  return '<div class="u-w"><div class="u-w-top"><span>' + esc(w.label) + "</span><span>" + left + "% left</span></div>" +
+  const detail = [w.label, left + "% left", pace, w.reset].filter(Boolean).join(" · ");
+  return '<div class="u-w" title="' + esc(detail) + '" aria-label="' + esc(detail) + '">' +
     '<div class="u-w-track"><span class="u-w-fill ' + usageWindowTint(used) + '" style="width:' + (100 - left) + '%"></span>' +
-    markers + "</div>" +
-    '<div class="u-w-cap"><span class="u-w-pacetext">' + esc(pace) + '</span><span class="u-w-reset">' +
-    esc(w.reset || "") + "</span></div></div>";
+    markers + '</div><span class="u-w-label">' + esc(w.label) + '</span><span class="u-w-value">' +
+    left + '% left</span></div>';
 }
 
 function renderUsage(data) {

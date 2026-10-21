@@ -46,14 +46,14 @@ vm.runInContext(app.slice(start, end), sandbox);
 const draw = w => vm.runInContext("usageWindow", sandbox)(w);
 
 const weekly = draw({ label: "Fable 5 7d", left: 30, reset: "in 3d", pace: 0.5, deviation: 20, autoReset: 0.99 });
-assert.match(weekly, /Fable 5 7d<\/span><span>30% left/);
+assert.match(weekly, /u-w-label">Fable 5 7d<\/span><span class="u-w-value">30% left/);
 assert.match(weekly, /u-w-fill hot" style="width:70%"/);
 assert.match(weekly, /u-w-pace" style="--at:50%"/);
 assert.match(weekly, /u-w-auto" style="--at:99%"/);
 assert.match(weekly, /title="Auto-resets at 1% left if a banked reset is available\."/);
 assert.match(weekly, /aria-label="Auto-resets at 1% left if a banked reset is available\."/);
 assert.match(weekly, /Using quota too fast · 20% overutilized/);
-assert.match(weekly, /u-w-reset">in 3d</);
+assert.match(weekly, /title="Fable 5 7d · 30% left · Using quota too fast · 20% overutilized · in 3d"/);
 
 const calm = draw({ label: "5h", left: 90, deviation: -12 });
 assert.match(calm, /u-w-fill ok" style="width:10%"/);
