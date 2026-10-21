@@ -168,6 +168,7 @@ final class RemoteControlServer: ObservableObject {
     private var outputBuffer = ""
     private var activeAgents: [ActiveAgent] = []
     private var usageSnapshots: [AccountSnapshot] = []
+    private var usagePreferences = AppPreferences()
     private var tunnelProcess: Process?
     var onResetRequest: ((String) -> Void)?
 
@@ -470,8 +471,13 @@ final class RemoteControlServer: ObservableObject {
         sendUsageSnapshot()
     }
 
+    func updatePreferences(_ preferences: AppPreferences) {
+        usagePreferences = preferences
+        sendUsageSnapshot()
+    }
+
     /// The phone gets the same numbers the menu bar shows, not a second source of truth.
-    nonisolated static func usagePayload(from snapshots: [AccountSnapshot]) -> [[String: Any]] {
+    nonisolated static func usagePayload(from snapshots: [AccountSnapshot], preferences: AppPreferences, now: Date) -> [[String: Any]] {
         snapshots.filter { !$0.isAgentDetectionOnly }.map { snapshot in
             var entry: [String: Any] = [
                 "id": snapshot.id,
@@ -490,14 +496,41 @@ final class RemoteControlServer: ObservableObject {
                     entry["resetExpiry"] = ISO8601DateFormatter().string(from: expiry)
                 }
             }
+            let windows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 } + snapshot.modelWindows
+            if !windows.isEmpty {
+                entry["windows"] = windows.map { windowPayload($0, in: snapshot, preferences: preferences, now: now) }
+            }
             return entry
         }
     }
 
+    nonisolated private static func windowPayload(
+        _ window: RateLimitWindow,
+        in snapshot: AccountSnapshot,
+        preferences: AppPreferences,
+        now: Date
+    ) -> [String: Any] {
+        var entry: [String: Any] = ["label": window.label, "left": window.percentLeft]
+        if let reset = compactResetDescription(window.resetHint) {
+            entry["reset"] = reset
+        }
+        if let expectedRemaining = window.expectedRemainingRatio(at: now) {
+            entry["pace"] = 1 - expectedRemaining
+        }
+        if let deviation = window.paceDeviation(at: now) {
+            entry["deviation"] = deviation
+        }
+        if let autoReset = autoResetMarkerRatio(for: window, in: snapshot, preferences: preferences) {
+            entry["autoReset"] = autoReset
+        }
+        return entry
+    }
+
     private func sendUsageSnapshot() {
         guard isRunning, let inputPipe else { return }
+        let usage = Self.usagePayload(from: usageSnapshots, preferences: usagePreferences, now: Date())
         guard
-            let data = try? JSONSerialization.data(withJSONObject: ["usage": Self.usagePayload(from: usageSnapshots)]),
+            let data = try? JSONSerialization.data(withJSONObject: ["usage": usage]),
             var line = String(data: data, encoding: .utf8)
         else {
             return

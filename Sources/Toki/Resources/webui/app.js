@@ -293,6 +293,50 @@ async function redeemReset(accountID, button) {
   }
 }
 
+function usageWindowTint(used) {
+  if (used >= 0.58) {
+    return "hot";
+  }
+  if (used >= 0.25) {
+    return "warm";
+  }
+  return "ok";
+}
+
+function usagePaceText(deviation) {
+  if (deviation == 0) {
+    return "On track";
+  }
+  if (deviation > 0) {
+    return "Using quota too fast · " + deviation + "% overutilized";
+  }
+  return "Room to use more · " + Math.abs(deviation) + "% underutilized";
+}
+
+function usageMarkerAt(ratio) {
+  return Math.max(0, Math.min(100, ratio * 100)) + "%";
+}
+
+function usageWindow(w) {
+  const left = Math.max(0, Math.min(100, Math.round(w.left)));
+  const used = (100 - left) / 100;
+  let markers = "";
+  if (typeof w.pace == "number") {
+    markers += '<span class="u-w-pace" style="--at:' + usageMarkerAt(w.pace) + '"></span>';
+  }
+  if (typeof w.autoReset == "number") {
+    const help = "Auto-resets at " + (100 - Math.round(w.autoReset * 100)) + "% left if a banked reset is available.";
+    markers += '<span class="u-w-auto" style="--at:' + usageMarkerAt(w.autoReset) + '" title="' + esc(help) +
+      '" aria-label="' + esc(help) + '"></span>';
+  }
+  const pace = typeof w.deviation == "number" ? usagePaceText(w.deviation) : "";
+  return '<div class="u-w"><div class="u-w-top"><span>' + esc(w.label) + "</span><span>" + left + "% left</span></div>" +
+    '<div class="u-w-track"><span class="u-w-fill ' + usageWindowTint(used) + '" style="width:' + (100 - left) + '%"></span>' +
+    markers + "</div>" +
+    '<div class="u-w-cap"><span class="u-w-pacetext">' + esc(pace) + '</span><span class="u-w-reset">' +
+    esc(w.reset || "") + "</span></div></div>";
+}
+
 function renderUsage(data) {
   lastUsage = data;
   const toggle = $("#usagetoggle");
@@ -322,6 +366,10 @@ function renderUsage(data) {
   if (!usageOpen) return;
 
   panel.innerHTML = '<p class="u-scope">Provider account usage, shared across sessions.</p>' + accounts.map(a => {
+    if (Array.isArray(a.windows) && a.windows.length) {
+      return '<div class="u-windows' + (a.error ? " err" : "") + '" data-testid="UsageWindows"><div class="u-w-name">' +
+        dispTitle(a.name) + "</div>" + a.windows.map(usageWindow).join("") + "</div>" + resetRow(a);
+    }
     const name = '<span class="u-name">' + dispTitle(a.name) + "</span>";
     if (typeof a.remaining != "number") {
       return '<div class="u-row' + (a.error ? " err" : "") + '">' + name +

@@ -493,6 +493,9 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(RemoteControlServer.servedTailscaleHost(from: nil))
     }
 
+    private let usageNow = Date(timeIntervalSince1970: 1_800_000_000)
+    private let usageWeek: TimeInterval = 7 * 86_400
+
     // The payload is built from the snapshots, so the phone shows the same reading as the menu bar.
     func testUsagePayloadCarriesTheReadingTheMenuBarShows() {
         var snapshot = AccountSnapshot(
@@ -500,7 +503,7 @@ final class RemoteControlServerTests: XCTestCase {
             primary: "62%", subtitle: "resets in 2h", remainingRatio: 0.62, metrics: []
         )
         snapshot.menuBarValue = nil
-        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: usageNow)
         XCTAssertEqual(payload.count, 1)
         XCTAssertEqual(payload[0]["id"] as? String, "claude-code")
         XCTAssertEqual(payload[0]["remaining"] as? Double, 0.62)
@@ -515,7 +518,7 @@ final class RemoteControlServerTests: XCTestCase {
             primary: "active", subtitle: "", remainingRatio: nil, metrics: []
         )
         snapshot.menuBarValue = "$1.20"
-        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: usageNow)
         XCTAssertNil(payload[0]["remaining"])
         XCTAssertNil(payload[0]["detail"])
         XCTAssertEqual(payload[0]["value"] as? String, "$1.20")
@@ -531,7 +534,7 @@ final class RemoteControlServerTests: XCTestCase {
         snapshot.resetCreditsAvailable = 2
         snapshot.resetCreditExpiry = expiry
 
-        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: usageNow)
 
         XCTAssertEqual(payload[0]["resets"] as? Int, 2)
         XCTAssertEqual(payload[0]["resetExpiry"] as? String, ISO8601DateFormatter().string(from: expiry))
@@ -543,10 +546,85 @@ final class RemoteControlServerTests: XCTestCase {
             id: "codex", name: "Codex", provider: .codex,
             primary: "90%", subtitle: "", remainingRatio: 0.9, metrics: []
         )
-        let payload = RemoteControlServer.usagePayload(from: [snapshot])
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: usageNow)
 
         XCTAssertNil(payload[0]["resets"])
         XCTAssertNil(payload[0]["resetExpiry"])
+    }
+
+    private func codexSnapshot(weeklyLeft: Int) -> AccountSnapshot {
+        var snapshot = AccountSnapshot(
+            id: "codex", name: "Codex", provider: .codex,
+            primary: "90%", subtitle: "", remainingRatio: 0.9, metrics: []
+        )
+        snapshot.primaryWindow = RateLimitWindow(label: "5h", percentLeft: 90, resetHint: nil)
+        snapshot.secondaryWindow = RateLimitWindow(label: "7d", percentLeft: weeklyLeft, resetHint: nil)
+        return snapshot
+    }
+
+    // The phone draws the same bars as the card, so it needs the same windows in the same order.
+    func testUsagePayloadListsEachQuotaWindowInCardOrder() throws {
+        var snapshot = AccountSnapshot(
+            id: "claude-code", name: "Claude Code", provider: .claudeCode,
+            primary: "62%", subtitle: "", remainingRatio: 0.62, metrics: []
+        )
+        snapshot.primaryWindow = RateLimitWindow(label: "5h", percentLeft: 62, resetHint: "resets in 2h (3:00 PM)")
+        snapshot.secondaryWindow = RateLimitWindow(label: "7d", percentLeft: 40, resetHint: nil)
+        snapshot.modelWindows = [RateLimitWindow(label: "Fable 5 7d", percentLeft: 70, resetHint: "resets in 3d")]
+
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: usageNow)
+        let windows = try XCTUnwrap(payload[0]["windows"] as? [[String: Any]])
+
+        XCTAssertEqual(windows.map { $0["label"] as? String }, ["5h", "7d", "Fable 5 7d"])
+        XCTAssertEqual(windows.map { $0["left"] as? Int }, [62, 40, 70])
+        XCTAssertEqual(windows.map { $0["reset"] as? String }, ["in 2h", nil, "in 3d"])
+    }
+
+    func testUsagePayloadCarriesPaceOnlyWhenTheWindowKnowsItsLength() throws {
+        var snapshot = codexSnapshot(weeklyLeft: 30)
+        snapshot.secondaryWindow = RateLimitWindow(
+            label: "7d", percentLeft: 30, resetHint: nil,
+            resetAt: usageNow.addingTimeInterval(usageWeek / 2), duration: usageWeek
+        )
+
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: usageNow)
+        let windows = try XCTUnwrap(payload[0]["windows"] as? [[String: Any]])
+
+        XCTAssertNil(windows[0]["pace"])
+        XCTAssertNil(windows[0]["deviation"])
+        XCTAssertEqual(try XCTUnwrap(windows[1]["pace"] as? Double), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(windows[1]["deviation"] as? Int, 20)
+    }
+
+    func testUsagePayloadMarksWhereTheWeeklyAutoResetFires() throws {
+        var preferences = AppPreferences()
+        preferences.autoResetEnabled = true
+        preferences.autoResetWeeklyPercentLeft = 1
+
+        let payload = RemoteControlServer.usagePayload(from: [codexSnapshot(weeklyLeft: 50)], preferences: preferences, now: usageNow)
+        let windows = try XCTUnwrap(payload[0]["windows"] as? [[String: Any]])
+
+        XCTAssertNil(windows[0]["autoReset"])
+        XCTAssertEqual(try XCTUnwrap(windows[1]["autoReset"] as? Double), 0.99, accuracy: 0.0001)
+    }
+
+    func testUsagePayloadHasNoAutoResetMarkerWhileAutoResetIsOff() throws {
+        let payload = RemoteControlServer.usagePayload(from: [codexSnapshot(weeklyLeft: 50)], preferences: AppPreferences(), now: usageNow)
+        let windows = try XCTUnwrap(payload[0]["windows"] as? [[String: Any]])
+
+        XCTAssertNil(windows[0]["autoReset"])
+        XCTAssertNil(windows[1]["autoReset"])
+    }
+
+    // Older phone UIs and cost-only accounts keep the single bar, so there is no empty list to misread.
+    func testUsagePayloadOmitsWindowsWhenAnAccountHasNone() {
+        let snapshot = AccountSnapshot(
+            id: "codex", name: "Codex", provider: .codex,
+            primary: "90%", subtitle: "", remainingRatio: 0.9, metrics: []
+        )
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: usageNow)
+
+        XCTAssertNil(payload[0]["windows"])
     }
 
     func testParseResetLineReadsOnlyARedeemRequest() {

@@ -1,0 +1,66 @@
+"use strict";
+
+const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const root = path.join(__dirname, "..", "Sources", "Toki", "Resources", "webui");
+const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+
+// Each quota window is its own block, drawn from the windows the Mac sends.
+assert.match(app, /Array\.isArray\(a\.windows\)\s*&&\s*a\.windows\.length/);
+assert.match(app, /a\.windows\.map\(usageWindow\)/);
+assert.match(app, /data-testid="UsageWindows"/);
+
+// The fill is the used share, tinted the way the Mac card tints it.
+assert.match(app, /const used = \(100 - left\) \/ 100/);
+assert.match(app, /style="width:' \+ \(100 - left\) \+ '%"/);
+assert.match(app, /used >= 0\.58[\s\S]*?"hot"[\s\S]*?used >= 0\.25[\s\S]*?"warm"[\s\S]*?"ok"/);
+assert.match(css, /\.u-w-fill\.ok\{/);
+assert.match(css, /\.u-w-fill\.warm\{/);
+assert.match(css, /\.u-w-fill\.hot\{/);
+
+// Pace and auto-reset markers sit on the track at the ratio the Mac computed.
+assert.match(app, /typeof w\.pace == "number"/);
+assert.match(app, /class="u-w-pace"/);
+assert.match(app, /usageMarkerAt\(ratio\)[\s\S]*?ratio \* 100/);
+assert.match(app, /Auto-resets at " \+ \(100 - Math\.round\(w\.autoReset \* 100\)\) \+ "% left if a banked reset is available\./);
+assert.match(app, /title="' \+ esc\(help\)/);
+assert.match(app, /aria-label="' \+ esc\(help\)/);
+assert.match(css, /\.u-w-auto::before\{[^}]*linear-gradient\(#7359f2,#d95aa6\)/);
+assert.match(css, /\.u-w-pace\{/);
+
+// Accounts that send no windows keep the single bar.
+assert.match(app, /class="u-row' \+ \(a\.error/);
+assert.match(app, /class="u-fill ' \+ usageClass\(a\.remaining\)/);
+
+const start = app.indexOf("function usageWindowTint");
+const end = app.indexOf("function renderUsage");
+assert.ok(start > 0 && end > start, "usage window helpers went missing");
+const sandbox = vm.createContext({
+  esc: s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"),
+});
+vm.runInContext(app.slice(start, end), sandbox);
+const draw = w => vm.runInContext("usageWindow", sandbox)(w);
+
+const weekly = draw({ label: "Fable 5 7d", left: 30, reset: "in 3d", pace: 0.5, deviation: 20, autoReset: 0.99 });
+assert.match(weekly, /Fable 5 7d<\/span><span>30% left/);
+assert.match(weekly, /u-w-fill hot" style="width:70%"/);
+assert.match(weekly, /u-w-pace" style="--at:50%"/);
+assert.match(weekly, /u-w-auto" style="--at:99%"/);
+assert.match(weekly, /title="Auto-resets at 1% left if a banked reset is available\."/);
+assert.match(weekly, /aria-label="Auto-resets at 1% left if a banked reset is available\."/);
+assert.match(weekly, /Using quota too fast · 20% overutilized/);
+assert.match(weekly, /u-w-reset">in 3d</);
+
+const calm = draw({ label: "5h", left: 90, deviation: -12 });
+assert.match(calm, /u-w-fill ok" style="width:10%"/);
+assert.doesNotMatch(calm, /u-w-pace"|u-w-auto"/);
+assert.match(calm, /Room to use more · 12% underutilized/);
+assert.match(draw({ label: "5h", left: 70, deviation: 0 }), /On track/);
+assert.match(draw({ label: "5h", left: 70 }), /u-w-fill warm" style="width:30%"/);
+assert.match(draw({ label: "<b>", left: 50 }), /&lt;b&gt;/);
+
+console.log("remote usage window tests passed");
