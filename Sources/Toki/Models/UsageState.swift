@@ -172,9 +172,11 @@ struct AppPreferences: Codable, Equatable {
     // min(30, retention), so a shorter retention silently shortens the chart.
     var historyRetentionDays = 30
     var sessionWarningThreshold = 0.15
-    /// Redeems a banked Claude or Codex reset once the weekly window has this many percent left.
+    /// Redeems a banked Claude or Codex reset once the weekly window has this many percent left,
+    /// or once a banked reset is this many minutes from expiring.
     var autoResetEnabled = false
     var autoResetWeeklyPercentLeft: Int?
+    var autoResetMinutesBeforeExpiry: Int?
     /// Shows the recommendation/AI summary card at the top of the main panel.
     var aiInsightEnabled = true
     /// Shows the provider availability rings in the Accounts panel. The standalone macOS
@@ -213,6 +215,7 @@ struct AppPreferences: Codable, Equatable {
         case sessionWarningThreshold
         case autoResetEnabled
         case autoResetWeeklyPercentLeft
+        case autoResetMinutesBeforeExpiry
         case aiInsightEnabled
         case quotaRingsEnabled
         case notchModeEnabled
@@ -261,6 +264,7 @@ struct AppPreferences: Codable, Equatable {
         sessionWarningThreshold = try container.decodeIfPresent(Double.self, forKey: .sessionWarningThreshold) ?? defaults.sessionWarningThreshold
         autoResetEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoResetEnabled) ?? defaults.autoResetEnabled
         autoResetWeeklyPercentLeft = try container.decodeIfPresent(Int.self, forKey: .autoResetWeeklyPercentLeft)
+        autoResetMinutesBeforeExpiry = try container.decodeIfPresent(Int.self, forKey: .autoResetMinutesBeforeExpiry)
         aiInsightEnabled = try container.decodeIfPresent(Bool.self, forKey: .aiInsightEnabled) ?? defaults.aiInsightEnabled
         quotaRingsEnabled = try container.decodeIfPresent(Bool.self, forKey: .quotaRingsEnabled) ?? defaults.quotaRingsEnabled
         notchModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .notchModeEnabled) ?? defaults.notchModeEnabled

@@ -458,7 +458,7 @@ struct SettingsPanel: View {
                     icon: "arrow.counterclockwise.circle",
                     iconColor: .secondary,
                     title: "Auto-redeem resets",
-                    subtitle: "Use a banked Claude or Codex reset when the weekly quota runs low."
+                    subtitle: "Use a banked Claude or Codex reset when the weekly quota runs low or the reset is about to expire."
                 )
                 Spacer(minLength: 8)
                 Toggle("", isOn: binding(\.autoResetEnabled))
@@ -485,11 +485,30 @@ struct SettingsPanel: View {
                         .accessibilityLabel("Weekly percent left")
                     Text("%")
                         .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, alignment: .leading)
                 }
                 .padding(8)
 
-                if store.preferences.autoResetWeeklyPercentLeft == nil {
-                    Text("Enter a percentage. Nothing is redeemed until you do.")
+                HStack(spacing: 8) {
+                    Text("When a banked reset expires within")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.leading, 26)
+                    Spacer(minLength: 8)
+                    TextField("1-60", value: autoResetMinutesBinding, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 48)
+                        .accessibilityLabel("Minutes before a banked reset expires")
+                    Text("min")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, alignment: .leading)
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+
+                if store.preferences.autoResetWeeklyPercentLeft == nil, store.preferences.autoResetMinutesBeforeExpiry == nil {
+                    Text("Enter at least one value. Nothing is redeemed until you do.")
                         .font(.system(size: 9))
                         .foregroundStyle(.orange)
                         .padding(.leading, 34)
@@ -508,6 +527,18 @@ struct SettingsPanel: View {
             set: { value in
                 var next = store.preferences
                 next.autoResetWeeklyPercentLeft = value.map { min(max($0, 0), 99) }
+                store.updatePreferences(next)
+            }
+        )
+    }
+
+    // Longer than an hour stops meaning "about to expire" and starts spending resets early.
+    private var autoResetMinutesBinding: Binding<Int?> {
+        Binding(
+            get: { store.preferences.autoResetMinutesBeforeExpiry },
+            set: { value in
+                var next = store.preferences
+                next.autoResetMinutesBeforeExpiry = value.map { min(max($0, 1), 60) }
                 store.updatePreferences(next)
             }
         )

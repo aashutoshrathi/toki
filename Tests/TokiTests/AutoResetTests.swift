@@ -8,6 +8,7 @@ final class AutoResetTests: XCTestCase {
         provider: Provider = .codex,
         weeklyLeft: Int,
         credits: Int = 1,
+        expiry: Date? = nil,
         isError: Bool = false
     ) -> AccountSnapshot {
         AccountSnapshot(
@@ -18,6 +19,7 @@ final class AutoResetTests: XCTestCase {
             subtitle: "",
             remainingRatio: nil,
             resetCreditsAvailable: credits,
+            resetCreditExpiry: expiry,
             metrics: [],
             isError: isError,
             primaryWindow: RateLimitWindow(label: "5h", percentLeft: 90, resetAt: weekEnd.addingTimeInterval(-86_400)),
@@ -47,6 +49,38 @@ final class AutoResetTests: XCTestCase {
     func testSkipsErroredAndUnsupportedProviders() {
         XCTAssertFalse(shouldAutoRedeemReset(snapshot(weeklyLeft: 2, isError: true), weeklyPercentLeft: 10, lastRedeemedWindowEnd: nil))
         XCTAssertFalse(shouldAutoRedeemReset(snapshot(provider: .cursor, weeklyLeft: 2), weeklyPercentLeft: 10, lastRedeemedWindowEnd: nil))
+    }
+
+    private func expiring(_ snapshot: AccountSnapshot, within minutes: Int, lastRedeemedExpiry: Date? = nil) -> Bool {
+        shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: weekEnd)
+    }
+
+    func testRedeemsAResetAboutToExpire() {
+        XCTAssertTrue(expiring(snapshot(weeklyLeft: 80, expiry: weekEnd.addingTimeInterval(4 * 60)), within: 5))
+        XCTAssertTrue(expiring(snapshot(weeklyLeft: 80, expiry: weekEnd.addingTimeInterval(5 * 60)), within: 5))
+    }
+
+    func testLeavesAResetThatIsNotAboutToExpire() {
+        XCTAssertFalse(expiring(snapshot(weeklyLeft: 80, expiry: weekEnd.addingTimeInterval(6 * 60)), within: 5))
+        XCTAssertFalse(expiring(snapshot(weeklyLeft: 80, expiry: nil), within: 5))
+    }
+
+    func testIgnoresAResetThatHasAlreadyExpired() {
+        XCTAssertFalse(expiring(snapshot(weeklyLeft: 80, expiry: weekEnd.addingTimeInterval(-1)), within: 5))
+    }
+
+    func testExpiryNeedsABankedResetOnASupportedProvider() {
+        let soon = weekEnd.addingTimeInterval(60)
+        XCTAssertFalse(expiring(snapshot(weeklyLeft: 80, credits: 0, expiry: soon), within: 5))
+        XCTAssertFalse(expiring(snapshot(provider: .cursor, weeklyLeft: 80, expiry: soon), within: 5))
+        XCTAssertFalse(expiring(snapshot(weeklyLeft: 80, expiry: soon, isError: true), within: 5))
+    }
+
+    func testRedeemsEachExpiringResetOnce() {
+        let soon = weekEnd.addingTimeInterval(60)
+        let account = snapshot(weeklyLeft: 80, expiry: soon)
+        XCTAssertFalse(expiring(account, within: 5, lastRedeemedExpiry: soon))
+        XCTAssertTrue(expiring(account, within: 5, lastRedeemedExpiry: soon.addingTimeInterval(-86_400)))
     }
 
     private func preferences(enabled: Bool, percentLeft: Int?) -> AppPreferences {

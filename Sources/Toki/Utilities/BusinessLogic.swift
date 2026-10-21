@@ -195,6 +195,18 @@ func shouldAutoRedeemReset(_ snapshot: AccountSnapshot, weeklyPercentLeft thresh
     return windowEnd > lastRedeemedWindowEnd.addingTimeInterval(3600)
 }
 
+func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry minutes: Int, lastRedeemedExpiry: Date?, now: Date) -> Bool {
+    guard canAutoRedeemReset(snapshot.provider),
+          !snapshot.isError,
+          snapshot.resetCreditsAvailable > 0,
+          let expiry = snapshot.resetCreditExpiry,
+          expiry > now,
+          expiry.timeIntervalSince(now) <= TimeInterval(minutes * 60) else {
+        return false
+    }
+    return expiry != lastRedeemedExpiry
+}
+
 func autoResetMarkerRatio(for window: RateLimitWindow, in snapshot: AccountSnapshot, preferences: AppPreferences) -> Double? {
     guard preferences.autoResetEnabled,
           let threshold = preferences.autoResetWeeklyPercentLeft,

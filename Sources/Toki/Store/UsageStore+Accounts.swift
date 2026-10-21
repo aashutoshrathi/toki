@@ -64,26 +64,61 @@ extension UsageStore {
     }
 
     func autoRedeemResets(in snapshots: [AccountSnapshot], at date: Date) {
-        guard preferences.autoResetEnabled, let threshold = preferences.autoResetWeeklyPercentLeft else {
+        scheduleExpiringResetCheck(for: snapshots, after: date)
+        guard preferences.autoResetEnabled else {
             return
         }
         for snapshot in snapshots {
-            guard shouldAutoRedeemReset(
-                snapshot,
-                weeklyPercentLeft: threshold,
-                lastRedeemedWindowEnd: autoRedeemedWindowEnds[snapshot.id]
-            ), let weekly = weeklyQuotaWindow(for: snapshot) else {
+            guard let (trigger, detail) = claimAutoRedeem(for: snapshot, at: date) else {
                 continue
             }
-            autoRedeemedWindowEnds[snapshot.id] = weekly.resetAt
             notifyOrRecord(
-                key: "autoReset:\(snapshot.id)",
+                key: "autoReset:\(trigger):\(snapshot.id)",
                 kind: .reset,
                 title: "Redeeming a reset for \(snapshot.name)",
-                detail: "Weekly quota is at \(weekly.percentLeft)% left, at or below your \(threshold)% setting.",
+                detail: detail,
                 at: date
             )
             consumeResetCredit(accountID: snapshot.id)
+        }
+    }
+
+    private func claimAutoRedeem(for snapshot: AccountSnapshot, at date: Date) -> (trigger: String, detail: String)? {
+        if let threshold = preferences.autoResetWeeklyPercentLeft,
+           shouldAutoRedeemReset(snapshot, weeklyPercentLeft: threshold, lastRedeemedWindowEnd: autoRedeemedWindowEnds[snapshot.id]),
+           let weekly = weeklyQuotaWindow(for: snapshot) {
+            autoRedeemedWindowEnds[snapshot.id] = weekly.resetAt
+            return ("weekly", "Weekly quota is at \(weekly.percentLeft)% left, at or below your \(threshold)% setting.")
+        }
+        if let minutes = preferences.autoResetMinutesBeforeExpiry,
+           shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: autoRedeemedExpiries[snapshot.id], now: date),
+           let expiry = snapshot.resetCreditExpiry {
+            autoRedeemedExpiries[snapshot.id] = expiry
+            return ("expiry", "A banked reset expires in \(resetDescription(for: expiry)), within your \(minutes)-minute setting.")
+        }
+        return nil
+    }
+
+    // Refreshes run every few minutes, which can land after a short expiry window has passed.
+    private func scheduleExpiringResetCheck(for snapshots: [AccountSnapshot], after date: Date) {
+        expiringResetTimer?.invalidate()
+        expiringResetTimer = nil
+        guard preferences.autoResetEnabled, let minutes = preferences.autoResetMinutesBeforeExpiry else {
+            return
+        }
+        let nextCheck = snapshots
+            .filter { canAutoRedeemReset($0.provider) && !$0.isError && $0.resetCreditsAvailable > 0 }
+            .compactMap { $0.resetCreditExpiry?.addingTimeInterval(-TimeInterval(minutes * 60)) }
+            .filter { $0 > date }
+            .min()
+        guard let nextCheck else {
+            return
+        }
+        expiringResetTimer = Timer.scheduledTimer(withTimeInterval: nextCheck.timeIntervalSince(date), repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.autoRedeemResets(in: self.snapshots, at: Date())
+            }
         }
     }
 

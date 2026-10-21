@@ -7,6 +7,7 @@ extension UsageStore {
         usageState.preferences = next
         StateLoader.save(usageState)
         updateDerivedState(for: snapshots)
+        autoRedeemResets(in: snapshots, at: Date())
     }
 
     func setDND(_ isEnabled: Bool) {

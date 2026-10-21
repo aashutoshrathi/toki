@@ -66,6 +66,7 @@ final class StateCompatibilityTests: XCTestCase {
         preferences.quotaDisplayWindows = ["claudeCode": "5h", "codex": "7d"]
         preferences.autoResetEnabled = true
         preferences.autoResetWeeklyPercentLeft = 15
+        preferences.autoResetMinutesBeforeExpiry = 5
         let data = try JSONEncoder.toki.encode(preferences)
         XCTAssertEqual(try JSONDecoder.toki.decode(AppPreferences.self, from: data), preferences)
     }
