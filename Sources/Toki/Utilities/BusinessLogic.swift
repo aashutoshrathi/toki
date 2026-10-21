@@ -302,6 +302,28 @@ func autoRedeemClaim(
     return nil
 }
 
+func resetOutcomeSpentNothing(_ outcome: String) -> Bool {
+    ["nothingToReset", "noCredit", "not_limited", "cooldown", "ineligible", "unavailable"].contains(outcome)
+}
+
+enum AutoRedeemGuardUpdate: Equatable {
+    case keep
+    case move(to: Date)
+    case release
+}
+
+func autoRedeemGuardUpdate(for claim: AutoRedeemClaim, redeemed: RedeemedReset) -> AutoRedeemGuardUpdate {
+    if resetOutcomeSpentNothing(redeemed.outcome) {
+        return .release
+    }
+    guard claim.trigger == .expiry,
+          let spent = redeemed.creditExpiry,
+          abs(spent.timeIntervalSince(claim.guardDate)) >= 1 else {
+        return .keep
+    }
+    return .move(to: spent)
+}
+
 func autoResetMarkerRatio(for window: RateLimitWindow, in snapshot: AccountSnapshot, preferences: AppPreferences) -> Double? {
     guard preferences.autoResetEnabled,
           let threshold = preferences.autoResetWeeklyPercentLeft,

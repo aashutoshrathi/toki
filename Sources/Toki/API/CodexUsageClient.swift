@@ -121,7 +121,7 @@ enum CodexAppServerClient {
         account: AccountConfig,
         creditID: String?,
         condition: AutoRedeemCondition?
-    ) async throws -> (binary: CodexBinary, request: (id: Int, method: String, params: String)) {
+    ) async throws -> (binary: CodexBinary, request: (id: Int, method: String, params: String), creditExpiry: Date?) {
         let binary = try await resolvedBinary()
         let check = try call(account: account, binary: binary, requests: [(id: 2, method: "account/rateLimits/read", params: "null")])
         guard let rateLimits = check.results[2] else {
@@ -147,14 +147,16 @@ enum CodexAppServerClient {
         let paramsData = try JSONSerialization.data(withJSONObject: params)
         let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
         let request = (id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)
-        return (binary, request)
+        let creditExpiry = creditID == nil ? live.resetCreditExpiry : nil
+        return (binary, request, creditExpiry)
     }
 
-    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?, condition: AutoRedeemCondition?) async throws -> String {
+    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?, condition: AutoRedeemCondition?) async throws -> RedeemedReset {
         let binary: CodexBinary
         let request: (id: Int, method: String, params: String)
+        let creditExpiry: Date?
         do {
-            (binary, request) = try await consumeRequest(account: account, creditID: creditID, condition: condition)
+            (binary, request, creditExpiry) = try await consumeRequest(account: account, creditID: creditID, condition: condition)
         } catch {
             throw ResetNotAttempted(reason: error.localizedDescription)
         }
@@ -164,7 +166,7 @@ enum CodexAppServerClient {
             do {
                 let responses = try call(account: account, binary: binary, requests: [request], pollSeconds: consumePollSeconds)
                 if let result = responses.results[2] as? [String: Any], let outcome = result["outcome"] as? String {
-                    return outcome
+                    return RedeemedReset(outcome: outcome, creditExpiry: creditExpiry)
                 }
                 lastError = responses.errors.first
             } catch {

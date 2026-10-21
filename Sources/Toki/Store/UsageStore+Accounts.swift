@@ -32,7 +32,7 @@ extension UsageStore {
     private func startResetRedeem(
         accountID: String,
         condition: AutoRedeemCondition?,
-        completion: ((Result<String, Error>) -> Void)?
+        completion: ((Result<RedeemedReset, Error>) -> Void)?
     ) -> Bool {
         guard !resettingAccountIDs.contains(accountID), let account = resetCapableAccount(for: accountID) else {
             return false
@@ -40,7 +40,7 @@ extension UsageStore {
         resettingAccountIDs.insert(accountID)
         Task {
             defer { resettingAccountIDs.remove(accountID) }
-            let result = await Task.detached { () -> Result<String, Error> in
+            let result = await Task.detached { () -> Result<RedeemedReset, Error> in
                 do {
                     if account.provider == .claudeCode {
                         return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, recordID: accountID, condition: condition))
@@ -54,7 +54,8 @@ extension UsageStore {
             let isClaude = account.provider == .claudeCode
             let title = isClaude ? "Claude reset" : "Codex reset"
             switch result {
-            case .success(let outcome):
+            case .success(let redeemed):
+                let outcome = redeemed.outcome
                 let detail = isClaude ? claudeResetOutcomeDescription(outcome) : resetOutcomeDescription(outcome)
                 appendEvent(kind: .reset, title: title, detail: detail, deliveredNotification: false)
                 if !isClaude {
@@ -65,7 +66,7 @@ extension UsageStore {
                 appendEvent(kind: .reset, title: "\(title) failed", detail: error.localizedDescription, deliveredNotification: false)
             }
             // Nothing was spent, so a forced re-read would only replay a rate-limited snapshot and retry at once.
-            if case .failure(let error) = result, error is ResetNotAttempted {
+            if redeemSpentNothing(result) {
                 completion?(result)
                 return
             }
@@ -86,6 +87,7 @@ extension UsageStore {
         }
         for snapshot in snapshots {
             guard !resettingAccountIDs.contains(snapshot.id),
+                  (autoRedeemRetryAfter[snapshot.id] ?? .distantPast) <= date,
                   let claim = autoRedeemClaim(
                       for: snapshot,
                       preferences: preferences,
@@ -104,23 +106,45 @@ extension UsageStore {
         }
     }
 
-    private func finishAutoRedeem(_ claim: AutoRedeemClaim, for snapshot: AccountSnapshot, result: Result<String, Error>) {
+    private func redeemSpentNothing(_ result: Result<RedeemedReset, Error>) -> Bool {
         switch result {
-        case .success("reset"):
-            notifyOrRecord(
-                key: "autoReset:\(claim.trigger.rawValue):\(snapshot.id)",
-                kind: .reset,
-                title: "Redeemed a reset for \(snapshot.name)",
-                detail: claim.detail,
-                at: Date()
-            )
-        case .failure(let error) where error is ResetNotAttempted:
-            if let current = autoRedeemGuard(for: claim.trigger, accountID: snapshot.id),
-               abs(current.timeIntervalSince(claim.guardDate)) < 1 {
-                setAutoRedeemGuard(nil, for: claim.trigger, accountID: snapshot.id)
+        case .success(let redeemed): return resetOutcomeSpentNothing(redeemed.outcome)
+        case .failure(let error): return error is ResetNotAttempted
+        }
+    }
+
+    private func finishAutoRedeem(_ claim: AutoRedeemClaim, for snapshot: AccountSnapshot, result: Result<RedeemedReset, Error>) {
+        switch result {
+        case .success(let redeemed):
+            if redeemed.outcome == "reset" {
+                notifyOrRecord(
+                    key: "autoReset:\(claim.trigger.rawValue):\(snapshot.id)",
+                    kind: .reset,
+                    title: "Redeemed a reset for \(snapshot.name)",
+                    detail: claim.detail,
+                    at: Date()
+                )
             }
-        default:
+            switch autoRedeemGuardUpdate(for: claim, redeemed: redeemed) {
+            case .keep:
+                break
+            case .move(let spent):
+                setAutoRedeemGuard(spent, for: claim.trigger, accountID: snapshot.id)
+            case .release:
+                releaseAutoRedeemGuard(for: claim, accountID: snapshot.id)
+                autoRedeemRetryAfter[snapshot.id] = Date().addingTimeInterval(10 * 60)
+            }
+        case .failure(let error) where error is ResetNotAttempted:
+            releaseAutoRedeemGuard(for: claim, accountID: snapshot.id)
+        case .failure:
             break
+        }
+    }
+
+    private func releaseAutoRedeemGuard(for claim: AutoRedeemClaim, accountID: String) {
+        if let current = autoRedeemGuard(for: claim.trigger, accountID: accountID),
+           abs(current.timeIntervalSince(claim.guardDate)) < 1 {
+            setAutoRedeemGuard(nil, for: claim.trigger, accountID: accountID)
         }
     }
 

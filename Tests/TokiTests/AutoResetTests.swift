@@ -372,4 +372,50 @@ final class AutoResetTests: XCTestCase {
         XCTAssertFalse(expiring(account, within: 5, lastRedeemedExpiry: now.addingTimeInterval(60)))
         XCTAssertTrue(expiring(account, within: 5, lastRedeemedExpiry: now.addingTimeInterval(58)))
     }
+
+    func testOutcomesThatSpendNothingAreRecognised() {
+        for outcome in ["nothingToReset", "noCredit", "not_limited", "cooldown", "ineligible", "unavailable"] {
+            XCTAssertTrue(resetOutcomeSpentNothing(outcome), outcome)
+        }
+        for outcome in ["reset", "already_used", "alreadyRedeemed", "somethingNew"] {
+            XCTAssertFalse(resetOutcomeSpentNothing(outcome), outcome)
+        }
+    }
+
+    private func guardUpdate(trigger: AutoRedeemClaim.Trigger, guardDate: Date, outcome: String, spent: Date?) -> AutoRedeemGuardUpdate {
+        let claim = AutoRedeemClaim(
+            trigger: trigger,
+            condition: .expiringBy(guardDate),
+            guardDate: guardDate,
+            detail: ""
+        )
+        return autoRedeemGuardUpdate(for: claim, redeemed: RedeemedReset(outcome: outcome, creditExpiry: spent))
+    }
+
+    func testAnOutcomeThatSpentNothingReleasesTheGuard() {
+        let expiry = now.addingTimeInterval(60)
+        XCTAssertEqual(guardUpdate(trigger: .expiry, guardDate: expiry, outcome: "cooldown", spent: expiry), .release)
+        XCTAssertEqual(guardUpdate(trigger: .weekly, guardDate: weekEnd, outcome: "nothingToReset", spent: nil), .release)
+    }
+
+    func testAnExpiryClaimMovesTheGuardToTheCreditThatWasSpent() {
+        let expiry = now.addingTimeInterval(60)
+        let spent = now.addingTimeInterval(3_600)
+        XCTAssertEqual(guardUpdate(trigger: .expiry, guardDate: expiry, outcome: "reset", spent: spent), .move(to: spent))
+        XCTAssertEqual(guardUpdate(trigger: .expiry, guardDate: expiry, outcome: "already_used", spent: spent), .move(to: spent))
+    }
+
+    func testTheGuardStaysWhenTheSameCreditWasSpent() {
+        let expiry = now.addingTimeInterval(60)
+        XCTAssertEqual(guardUpdate(trigger: .expiry, guardDate: expiry, outcome: "reset", spent: expiry.addingTimeInterval(0.4)), .keep)
+        XCTAssertEqual(guardUpdate(trigger: .expiry, guardDate: expiry, outcome: "reset", spent: expiry.addingTimeInterval(1)), .move(to: expiry.addingTimeInterval(1)))
+    }
+
+    func testTheGuardStaysWhenTheSpentCreditIsUnknown() {
+        XCTAssertEqual(guardUpdate(trigger: .expiry, guardDate: now.addingTimeInterval(60), outcome: "reset", spent: nil), .keep)
+    }
+
+    func testAWeeklyClaimKeepsItsGuardWhateverCreditWasSpent() {
+        XCTAssertEqual(guardUpdate(trigger: .weekly, guardDate: weekEnd, outcome: "reset", spent: now.addingTimeInterval(3_600)), .keep)
+    }
 }

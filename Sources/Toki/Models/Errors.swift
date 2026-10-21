@@ -33,3 +33,8 @@ struct ResetNotAttempted: LocalizedError {
 
     var errorDescription: String? { reason }
 }
+
+struct RedeemedReset: Equatable, Sendable {
+    let outcome: String
+    let creditExpiry: Date?
+}

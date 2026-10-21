@@ -154,7 +154,7 @@ struct ClaudeCodeUsageClient {
         recordID: String?,
         creditID: String?,
         condition: AutoRedeemCondition?
-    ) async throws -> (organizationUUID: String, headers: [String: String], grantID: String) {
+    ) async throws -> (organizationUUID: String, headers: [String: String], grantID: String, creditExpiry: Date?) {
         let records = ClaudeCodeAccountDiscovery.discover(config: account, labels: [])
         let named = records.first(where: { $0.id == recordID })
         if condition != nil, named == nil {
@@ -195,7 +195,8 @@ struct ClaudeCodeUsageClient {
         guard let grantID = creditID ?? liveUsage?.resetGrantID else {
             throw LocalizedErrorMessage("No reset is available to redeem right now.")
         }
-        return (organizationUUID, headers, grantID)
+        let creditExpiry = creditID == nil ? liveUsage?.resetCreditExpiry : nil
+        return (organizationUUID, headers, grantID, creditExpiry)
     }
 
     static func consumeRateLimitResetCredit(
@@ -203,12 +204,13 @@ struct ClaudeCodeUsageClient {
         recordID: String? = nil,
         creditID: String? = nil,
         condition: AutoRedeemCondition?
-    ) async throws -> String {
+    ) async throws -> RedeemedReset {
         let organizationUUID: String
         let headers: [String: String]
         let grantID: String
+        let creditExpiry: Date?
         do {
-            (organizationUUID, headers, grantID) = try await resetGrantRequest(
+            (organizationUUID, headers, grantID, creditExpiry) = try await resetGrantRequest(
                 account: account,
                 recordID: recordID,
                 creditID: creditID,
@@ -246,7 +248,7 @@ struct ClaudeCodeUsageClient {
             throw LocalizedErrorMessage("Failed to redeem reset. \(body)")
         }
         let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        return payload?["result"] as? String ?? "unavailable"
+        return RedeemedReset(outcome: payload?["result"] as? String ?? "unavailable", creditExpiry: creditExpiry)
     }
 
     private func switchTarget(for record: ClaudeCodeAccountRecord) -> String? {
