@@ -6,6 +6,7 @@ One Line: Toki can redeem a banked reset for you, and Claude agents no longer sh
 
 ### Added
 - **Auto-redeem resets.** Turn on "Auto-redeem resets" in Settings › Resets and enter a percentage. When the weekly quota of a Claude or Codex account is at or below that value and the account has a banked reset, Toki redeems it and tells you. It is off by default, and nothing is redeemed until you enter a value. Toki redeems at most one reset per weekly window automatically, so a failed redeem is not tried again on every refresh.
+- **Model weekly limits show as bars on the Claude card.** When Anthropic reports a weekly limit for one model, such as Fable 5, the card shows it as a bar under the 5h and 7d bars, with the same pace marker and reset time. Before, it was only a line in the card's details.
 
 ### Fixed
 - **Claude agents no longer ask for permission they do not need.** Claude Code 2.1.306 and later repeat each tool call in the session file after the call has finished. Toki read the copy as a new call that was still waiting, so idle agents showed "Allow Bash?" with a red dot. Toki now skips these copies.
