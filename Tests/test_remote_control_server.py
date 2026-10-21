@@ -531,6 +531,22 @@ class RemoteControlClaudeAttentionTests(unittest.TestCase):
         self.assertIsNone(toki_remote.claude_attention(path))
 
 
+class RemoteControlClaudeSessionTests(unittest.TestCase):
+    def test_session_id_joined_with_an_equals_sign_names_the_transcript(self):
+        with tempfile.TemporaryDirectory() as home, mock.patch.object(toki_remote, "HOME", home):
+            cwd = "/Users/someone/Code/app"
+            project = toki_remote.claude_project_dir(cwd)
+            os.makedirs(project)
+            session_id = "bbbbbbbb-1111-2222-3333-444444444444"
+            named = os.path.join(project, session_id + ".jsonl")
+            for path in (named, os.path.join(project, "newer.jsonl")):
+                open(path, "w").close()
+            old = time.time() - 3600
+            os.utime(named, (old, old))
+            command = f"claude --input-format stream-json --session-id={session_id}"
+            self.assertEqual(toki_remote.newest_claude_session(command, cwd), named)
+
+
 class RemoteControlAgentOrderTests(unittest.TestCase):
     def order(self, agents):
         with mock.patch.object(toki_remote, "agent_recency", lambda a: a["recency"]):

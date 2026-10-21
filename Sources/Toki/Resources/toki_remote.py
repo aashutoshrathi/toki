@@ -463,7 +463,7 @@ def newest_claude_session(command, cwd):
     m = re.search(r"--resume\s+(\S+\.jsonl)", command)
     if m and os.path.exists(m.group(1)):
         return m.group(1)
-    m = re.search(r"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)", command)
+    m = re.search(r"(?:--resume|--session-id|-r)[\s=]+([a-f0-9]{8}-[a-f0-9-]+)", command)
     if m and cwd:
         p = os.path.join(claude_project_dir(cwd), m.group(1) + ".jsonl")
         if os.path.exists(p):

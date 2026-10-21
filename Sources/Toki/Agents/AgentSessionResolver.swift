@@ -191,7 +191,7 @@ enum AgentSessionResolver {
         if let resume = firstMatch(in: command, pattern: #"--resume\s+([^\s]+\.jsonl)"#) {
             return resume
         }
-        if let sessionID = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)\s+([a-f0-9]{8}-[a-f0-9-]+)"#),
+        if let sessionID = firstMatch(in: command, pattern: #"(?:--resume|--session-id|-r)[\s=]+([a-f0-9]{8}-[a-f0-9-]+)"#),
            let cwd, case let path = "\(projectDir(cwd, root: projectsRoot))/\(sessionID).jsonl",
            FileManager.default.fileExists(atPath: path) {
             return path

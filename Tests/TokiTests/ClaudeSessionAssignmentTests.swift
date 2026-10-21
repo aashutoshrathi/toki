@@ -116,6 +116,15 @@ final class ClaudeSessionAssignmentTests: XCTestCase {
         XCTAssertEqual(assign([resumed])[1], "\(sessionID).jsonl")
     }
 
+    func testSessionIDJoinedWithAnEqualsSignWins() throws {
+        let sessionID = "bbbbbbbb-1111-2222-3333-444444444444"
+        try writeSession("\(sessionID).jsonl", createdMinutesAgo: 2000, modifiedMinutesAgo: 90)
+        try writeSession("newer.jsonl", createdMinutesAgo: 5, modifiedMinutesAgo: 1)
+
+        let sdk = agent(1, startedMinutesAgo: 5, command: "claude --input-format stream-json --session-id=\(sessionID)")
+        XCTAssertEqual(assign([sdk])[1], "\(sessionID).jsonl")
+    }
+
     func testTranscriptPathOnTheCommandLineWins() throws {
         let path = try writeSession("explicit.jsonl", createdMinutesAgo: 2000, modifiedMinutesAgo: 90)
         try writeSession("newer.jsonl", createdMinutesAgo: 5, modifiedMinutesAgo: 1)
