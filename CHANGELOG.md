@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.3.9 - 2026-10-21
+## 3.3.9 - 2026-10-22
 
 One Line: Toki can redeem a banked reset for you, the phone shows every quota bar and opens T3 Code chats, and Claude agents no longer show "Allow Bash?" when they are not waiting on you.
 
