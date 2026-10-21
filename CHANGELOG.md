@@ -2,11 +2,13 @@
 
 ## 3.3.9 - 2026-10-21
 
-One Line: Toki can redeem a banked reset for you, and Claude agents no longer show "Allow Bash?" when they are not waiting on you.
+One Line: Toki can redeem a banked reset for you, the phone shows every quota bar and opens T3 Code chats, and Claude agents no longer show "Allow Bash?" when they are not waiting on you.
 
 ### Added
 - **Auto-redeem resets.** Turn on "Auto-redeem resets" in Settings › Resets and enter one or both values: a weekly percentage left, and a number of minutes (1-60) before a banked reset expires. When the weekly quota of a Claude or Codex account is at or below the percentage, or one of its banked resets expires within the minutes, Toki tells you and redeems a reset. It is off by default, and nothing is redeemed until you enter a value. The weekly trigger redeems at most once per weekly window, and the expiry trigger at most once per expiring reset, so a failed redeem is not tried again on every refresh. Toki schedules the expiry check for that exact moment, so it does not wait for the next refresh. While a percentage is set, the weekly bar on the Claude and Codex cards has a purple marker where the reset happens. For example, at 1% the marker is at 99% usage. Hover over it to see the value.
 - **Model weekly limits show as bars on the Claude card.** When Anthropic reports a weekly limit for one model, such as Fable 5, the card shows it as a bar under the 5h and 7d bars, with the same pace marker and reset time. Before, it was only a line in the card's details.
+- **The phone shows every quota bar the Mac card shows.** In Remote Control, each Claude and Codex account now has its 5h, 7d and model bars (such as Fable), with the pace marker, the pace text, the reset time and the auto-reset marker. A phone page from an older Toki still shows one bar per account.
+- **Open a T3 Code chat from the phone.** You can follow a T3 Code agent on the phone, but you cannot reply from Toki, because it has no terminal. Its read-only view now has **Open on Mac**, which opens the chat in T3 Code on your Mac. If your phone is signed in to T3 Code on the same system (Android or iOS), it also has **Open in T3 Code**, which opens the chat in the T3 app on the phone.
 
 ### Fixed
 - **Claude agents no longer ask for permission they do not need.** Claude Code 2.1.306 and later repeat each tool call in the session file after the call has finished. Toki read the copy as a new call that was still waiting, so idle agents showed "Allow Bash?" with a red dot. Toki now skips these copies.
