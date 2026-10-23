@@ -1,0 +1,18 @@
+title: Toki
+tagline: One menu bar app for every AI coding agent you run
+description: A native macOS menu bar app that tracks usage and spend across Claude Code, Codex, Cursor, and more, and lets you answer a waiting agent from your phone.
+url: https://toki.aashutosh.dev
+logo: /Sources/Toki/Resources/webui/icon-512.png
+defaults:
+  - scope:
+      path: ""
+    values:
+      image:
+        path: /docs/og.png
+        width: 1200
+        height: 630
+        alt: The Toki menu bar popover with quota bars for Claude Code, Cursor, Codex, and OpenCode
+  - scope:
+      path: README.md
+    values:
+      title: Toki
