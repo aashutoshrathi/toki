@@ -75,7 +75,7 @@ The channel picker and the installed cask are kept in agreement in both directio
 
 ## Website
 
-GitHub Pages builds [toki.aashutosh.dev](https://toki.aashutosh.dev) from `README.md` with the settings in `_config.yml`. `docs/og.png` is the link preview image. It uses the menu bar screenshot from the README, so run `scripts/build-og-image.sh` again after that screenshot changes. The script needs Google Chrome.
+GitHub Pages builds [toki.aashutosh.dev](https://toki.aashutosh.dev) from `README.md` with the settings in `_config.yml`. `docs/og.png` is the link preview image, and `docs/og-dark.png` is its dark variant. They use `docs/screenshot.png` and `docs/screenshot-dark.png`, the light and dark screenshots in the README, so run `scripts/build-og-image.sh` again after either screenshot changes. The script needs Google Chrome.
 
 ## Concurrency checking
 
