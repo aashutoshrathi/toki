@@ -73,6 +73,10 @@ Naming the tap is load-bearing, not decoration. Homebrew refreshes a third-party
 
 The channel picker and the installed cask are kept in agreement in both directions. Picking a channel moves a brew install onto the matching cask (`fetch`, then `uninstall`, then `install` — `conflicts_with` rules out installing over the top, and fetching first means a network failure cannot strand the uninstall with nothing to reinstall). Swapping casks with brew directly moves the channel instead: the cask decides what brew will install, so the preference follows it on the next check. A failed switch reinstalls the cask that was there and puts the preference back.
 
+## Website
+
+GitHub Pages builds [toki.aashutosh.dev](https://toki.aashutosh.dev) from `README.md` with the settings in `_config.yml`. `docs/og.png` is the link preview image. It uses the menu bar screenshot from the README, so run `scripts/build-og-image.sh` again after that screenshot changes. The script needs Google Chrome.
+
 ## Concurrency checking
 
 CI builds with stricter concurrency than a plain `swift build`, and the difference has broken this project's CI more than once — a pure static helper on a `@MainActor` type needs `nonisolated`, which only the stricter mode catches. Reproduce it locally before pushing:
