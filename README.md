@@ -18,9 +18,16 @@
   <a href="https://github.com/aashutoshrathi/toki"><img alt="Contribute on GitHub" src="https://img.shields.io/badge/contribute-GitHub-24292e?logo=github"></a>
 </p>
 
-| Menu bar | Widget |
-|:---:|:---:|
-| ![Toki menu bar popover preview](https://files.aashutosh.dev/toki-preview.png) | ![Toki macOS widgets preview](https://files.aashutosh.dev/toki-widgets.png) |
+<p align="center">
+  <a href="https://github.com/aashutoshrathi/toki/releases/latest"><img alt="Download for macOS" src="https://img.shields.io/badge/Download_for_macOS-24292e?style=for-the-badge&logo=apple&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+    <img src="docs/screenshot.png" alt="Toki menu bar popover with quota bars for Claude Code, Codex, Cursor, and OpenCode" width="420">
+  </picture>
+</p>
 
 ## What Toki does
 

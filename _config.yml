@@ -11,7 +11,7 @@ defaults:
         path: /docs/og.png
         width: 1200
         height: 630
-        alt: The Toki menu bar popover with quota bars for Claude Code, Cursor, Codex, and OpenCode
+        alt: The Toki menu bar popover with quota bars for Claude Code, Codex, Cursor, and OpenCode
   - scope:
       path: README.md
     values:
