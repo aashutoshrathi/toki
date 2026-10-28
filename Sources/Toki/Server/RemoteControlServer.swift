@@ -614,11 +614,13 @@ final class RemoteControlServer: ObservableObject {
 
     nonisolated static func parseOpenLine(_ text: String) -> Int32? {
         guard text.hasPrefix("open=") else { return nil }
-        let digits = text.dropFirst("open=".count).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }), let pid = Int32(digits), pid > 0 else {
+        let value = text.dropFirst("open=".count).trimmingCharacters(in: .whitespacesAndNewlines)
+        // A processless row (T3 Code, Zed) carries a negative synthetic id.
+        let digits = value.hasPrefix("-") ? String(value.dropFirst()) : value
+        guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }), let id = Int32(value), id != 0 else {
             return nil
         }
-        return pid
+        return id
     }
 
     nonisolated static func parseDeviceLine(_ text: String) -> [PairedDevice]? {

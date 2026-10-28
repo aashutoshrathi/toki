@@ -362,6 +362,9 @@ def agents_from_snapshot(processes, snapshot):
         provided = item.get("session")
         if provided:
             agent["session"] = provided
+        elif item.get("process") is False:
+            # A processless row names one conversation; the newest in its folder may be another.
+            agent["session"] = None
         elif agent["provider"] == "claude":
             agent["session"] = newest_claude_session(agent["command"], agent["cwd"])
         elif agent["provider"] == "codex":

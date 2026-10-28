@@ -156,7 +156,7 @@ final class T3CodeThreadTests: XCTestCase {
     }
 
     func testIdleT3ChatIsARowWithNoProcessBehindIt() {
-        let agents = ActiveAgentScanner.t3ThreadAgents(alongside: [], psOutput: psOutput, threads: [openThread()])
+        let agents = ActiveAgentScanner.withT3Threads([], psOutput: psOutput, threads: [openThread()])
         XCTAssertEqual(agents.count, 1)
         XCTAssertEqual(agents[0].provider, .codex)
         XCTAssertEqual(agents[0].chatTitle, "Quota pauses")
@@ -175,12 +175,27 @@ final class T3CodeThreadTests: XCTestCase {
             terminalTTY: nil, memoryKB: 41_000, command: "claude", sessionUsage: nil, attention: nil
         )
         running.t3Thread = openThread().thread
-        XCTAssertTrue(ActiveAgentScanner.t3ThreadAgents(alongside: [running], psOutput: psOutput, threads: [openThread()]).isEmpty)
+        let agents = ActiveAgentScanner.withT3Threads([running], psOutput: psOutput, threads: [openThread()])
+        XCTAssertEqual(agents.map(\.processID), [900])
+    }
+
+    func testLiveT3CodexProcessTakesTheNewestOpenChatInItsFolder() {
+        let running = ActiveAgent(
+            id: 901, provider: .codex, directory: "/tmp/project", chatTitle: "project",
+            hostApp: HostApp.t3Code, hostProcessID: 502, lastActivity: Date(), processID: 901, runtime: "00:12",
+            terminalTTY: nil, memoryKB: 30_000, command: "codex app-server", sessionUsage: nil, attention: nil
+        )
+        let agents = ActiveAgentScanner.withT3Threads(
+            [running], psOutput: psOutput, threads: [openThread(id: "newest"), openThread(id: "older")]
+        )
+        XCTAssertEqual(agents.map(\.processID).first, 901)
+        XCTAssertEqual(agents.first?.t3Thread?.id, "newest")
+        XCTAssertEqual(agents.dropFirst().map(\.t3Thread?.id), ["older"])
     }
 
     func testT3ChatsAreHiddenWhenUnknownOrT3IsClosed() {
-        XCTAssertTrue(ActiveAgentScanner.t3ThreadAgents(alongside: [], psOutput: psOutput, threads: [openThread(driver: "mystery")]).isEmpty)
-        XCTAssertTrue(ActiveAgentScanner.t3ThreadAgents(alongside: [], psOutput: "", threads: [openThread()]).isEmpty)
+        XCTAssertTrue(ActiveAgentScanner.withT3Threads([], psOutput: psOutput, threads: [openThread(driver: "mystery")]).isEmpty)
+        XCTAssertTrue(ActiveAgentScanner.withT3Threads([], psOutput: "", threads: [openThread()]).isEmpty)
     }
 
     func testT3CodeIsTheHostOfItsAgents() {

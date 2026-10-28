@@ -399,6 +399,14 @@ class ZedAgentTests(unittest.TestCase):
         self.assertEqual(result[0]["title"], "Fix the parser")
         self.assertIsNone(result[0]["session"])
 
+    def test_processless_row_never_borrows_the_newest_transcript_in_its_folder(self):
+        snapshot = [{"pid": -7, "provider": "codex", "cwd": "/Users/me/app", "title": "Older chat",
+                     "tty": None, "host": "com.t3tools.t3code", "process": False}]
+        with mock.patch.object(toki_remote, "newest_codex_session", return_value="/tmp/newer.jsonl") as guess:
+            result = toki_remote.agents_from_snapshot([], snapshot)
+        self.assertIsNone(result[0]["session"])
+        guess.assert_not_called()
+
     def test_thread_rows_are_read_from_every_installed_channel(self):
         rows = "\x1f".join(["Claude Code", "Fix the parser", "2026-09-08T10:00:00Z", "/Users/me/git/toki"])
         with mock.patch.object(toki_remote, "zed_databases", return_value=["/tmp/db.sqlite"]), \

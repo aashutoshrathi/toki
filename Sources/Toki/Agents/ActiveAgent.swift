@@ -208,9 +208,8 @@ enum ActiveAgentScanner {
                 return buildAgent(context, session: session, t3Thread: session.flatMap { t3Threads[$0.path] })
             }
             let agents = disambiguate(
-                processAgents
+                withT3Threads(processAgents, psOutput: output)
                     + zedThreadAgents(alongside: processAgents, psOutput: output)
-                    + t3ThreadAgents(alongside: processAgents, psOutput: output)
             )
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
@@ -378,17 +377,32 @@ enum ActiveAgentScanner {
         }
     }
 
-    static func t3ThreadAgents(
-        alongside processAgents: [ActiveAgent],
+    static func withT3Threads(
+        _ processAgents: [ActiveAgent],
         psOutput: String,
         threads: [T3CodeThreadStore.OpenThread]? = nil,
         t3PID: Int32? = nil
     ) -> [ActiveAgent] {
         guard let hostPID = t3PID ?? t3ApplicationPID(psOutput: psOutput) else {
-            return []
+            return processAgents
         }
-        let covered = Set(processAgents.compactMap(\.t3Thread?.id))
-        return (threads ?? T3CodeThreadStore.openThreads()).compactMap { open in
+        let openThreads = threads ?? T3CodeThreadStore.openThreads()
+        var linked = processAgents
+        var covered = Set(processAgents.compactMap(\.t3Thread?.id))
+        // Only a Claude process names its session; any other is the newest open chat in its folder.
+        for index in linked.indices where linked[index].hostApp == .t3Code && linked[index].t3Thread == nil {
+            guard let directory = linked[index].directory.map(resolvedPath),
+                  let match = openThreads.first(where: { open in
+                      !covered.contains(open.thread.id)
+                          && provider(forT3Driver: open.driver) == linked[index].provider
+                          && open.directory.map(resolvedPath) == directory
+                  }) else {
+                continue
+            }
+            linked[index].t3Thread = match.thread
+            covered.insert(match.thread.id)
+        }
+        return linked + openThreads.compactMap { open in
             guard !covered.contains(open.thread.id), let provider = provider(forT3Driver: open.driver) else {
                 return nil
             }
@@ -418,6 +432,10 @@ enum ActiveAgentScanner {
             agent.t3Thread = open.thread
             return agent
         }
+    }
+
+    private static func resolvedPath(_ path: String) -> String {
+        (path as NSString).resolvingSymlinksInPath
     }
 
     private static func provider(forT3Driver driver: String) -> Provider? {

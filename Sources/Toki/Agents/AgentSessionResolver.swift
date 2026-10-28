@@ -241,20 +241,25 @@ enum AgentSessionResolver {
     private struct ClaudeCacheEntry {
         let modified: Date?
         let size: Int
+        let fileNumber: Int?
         let offset: UInt64
         let accumulator: ClaudeSessionAccumulator
     }
     private nonisolated(unsafe) static var claudeCache: [String: ClaudeCacheEntry] = [:]
+    private static let claudeCacheLimit = 64
 
     static func claudeSession(at path: String, modified: Date?) -> ParsedClaudeSession? {
-        let size = ((try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? Int) ?? 0
+        let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+        let size = (attributes?[.size] as? Int) ?? 0
+        let fileNumber = attributes?[.systemFileNumber] as? Int
         let cached = claudeCache[path]
-        if let cached, cached.modified == modified, cached.size == size {
+        if let cached, cached.modified == modified, cached.size == size, cached.fileNumber == fileNumber {
             return cached.accumulator.parsed
         }
         var accumulator = ClaudeSessionAccumulator()
         var offset: UInt64 = 0
-        if let cached, UInt64(size) >= cached.offset {
+        // Claude only appends, so anything other than the same file grown longer is parsed afresh.
+        if let cached, cached.fileNumber == fileNumber, size > cached.size {
             accumulator = cached.accumulator
             offset = cached.offset
         }
@@ -262,10 +267,15 @@ enum AgentSessionResolver {
             return nil
         }
         let parsed = accumulator.parsed
-        claudeCache[path] = ClaudeCacheEntry(modified: modified, size: size, offset: end, accumulator: accumulator)
-        // Drop entries whose session file no longer exists.
-        if claudeCache.count > 64 {
-            claudeCache = claudeCache.filter { FileManager.default.fileExists(atPath: $0.key) }
+        claudeCache[path] = ClaudeCacheEntry(
+            modified: modified, size: size, fileNumber: fileNumber, offset: end, accumulator: accumulator
+        )
+        if claudeCache.count > claudeCacheLimit {
+            let newest = claudeCache
+                .filter { FileManager.default.fileExists(atPath: $0.key) }
+                .sorted { ($0.value.modified ?? .distantPast) > ($1.value.modified ?? .distantPast) }
+                .prefix(claudeCacheLimit)
+            claudeCache = Dictionary(uniqueKeysWithValues: newest.map { ($0.key, $0.value) })
         }
         return parsed
     }
@@ -431,8 +441,8 @@ enum AgentSessionResolver {
         var totalInput = 0
         var totalOutput = 0
         var totalCost: Double?
-        var pending: [String: (name: String, question: String?)] = [:]
-        var pendingOrder: [String] = []
+        var pending: [String: (name: String, question: String?, sequence: Int)] = [:]
+        var toolUseCount = 0
         // One turn spans several content-block lines that repeat the same cumulative usage;
         // counting each inflated totals ~78%.
         var seenMessages: Set<String> = []
@@ -487,8 +497,8 @@ enum AgentSessionResolver {
                     guard let id = block["id"] as? String, let name = block["name"] as? String else { continue }
                     let input = (block["input"] as? [String: Any]) ?? [:]
                     let question = (input["questions"] as? [[String: Any]])?.first?["question"] as? String
-                    pending[id] = (name, question)
-                    pendingOrder.append(id)
+                    toolUseCount += 1
+                    pending[id] = (name, question, toolUseCount)
                 case "tool_result":
                     // Resolved - drop it from the pending set.
                     if let id = block["tool_use_id"] as? String { pending.removeValue(forKey: id) }
@@ -506,8 +516,8 @@ enum AgentSessionResolver {
                 session.usage = AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
             }
 
-            if let id = pendingOrder.last(where: { pending[$0] != nil }) {
-                session.pendingTool = pending[id]
+            if let latest = pending.values.max(by: { $0.sequence < $1.sequence }) {
+                session.pendingTool = (latest.name, latest.question)
             }
             return session
         }

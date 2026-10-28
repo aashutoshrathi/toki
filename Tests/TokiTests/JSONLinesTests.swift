@@ -66,6 +66,33 @@ final class JSONLinesTests: XCTestCase {
         XCTAssertEqual(second?.title, "Renamed")
     }
 
+    func testClaudeSessionStartsOverWhenTheFileIsReplacedWithOneAsLong() throws {
+        append(#"{"type":"ai-title","aiTitle":"Old"}"# + "\n")
+        XCTAssertEqual(AgentSessionResolver.claudeSession(at: path, modified: Date(timeIntervalSince1970: 1))?.title, "Old")
+
+        let replacement = NSTemporaryDirectory() + "toki-jsonl-\(UUID().uuidString).jsonl"
+        try Data((#"{"type":"ai-title","aiTitle":"New"}"# + "\n").utf8).write(to: URL(fileURLWithPath: replacement))
+        _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: path), withItemAt: URL(fileURLWithPath: replacement))
+        XCTAssertEqual(AgentSessionResolver.claudeSession(at: path, modified: Date(timeIntervalSince1970: 2))?.title, "New")
+    }
+
+    func testClaudeSessionStartsOverWhenAPartialLineIsCutAway() throws {
+        append(#"{"type":"ai-title","aiTitle":"Old"}"# + "\n" + #"{"type":"ai-ti"#)
+        _ = AgentSessionResolver.claudeSession(at: path, modified: Date(timeIntervalSince1970: 1))
+
+        try Data((#"{"type":"ai-title","aiTitle":"Newer"}"# + "\n").utf8).write(to: URL(fileURLWithPath: path))
+        XCTAssertEqual(AgentSessionResolver.claudeSession(at: path, modified: Date(timeIntervalSince1970: 2))?.title, "Newer")
+    }
+
+    func testAnsweredToolCallsDoNotHideTheLatestPendingOne() {
+        let jsonl = """
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}
+        {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Edit","input":{}}]}}
+        {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2"}]}}
+        """
+        XCTAssertEqual(AgentSessionResolver.parseClaudeSession(data: Data(jsonl.utf8)).pendingTool?.name, "Bash")
+    }
+
     func testClaudeSessionStartsOverWhenTheFileShrinks() throws {
         append(#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5}}}"# + "\n")
         _ = AgentSessionResolver.claudeSession(at: path, modified: Date(timeIntervalSince1970: 1))
