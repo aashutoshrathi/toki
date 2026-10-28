@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.10 - 2026-10-28
+
+One Line: Toki no longer uses gigabytes of memory when a Claude session gets very large.
+
+### Fixed
+- **Toki stays small when a Claude session file is very large.** Toki loaded the full transcript of each active Claude agent again on each scan, to find its title, usage and pending tool. A 760 MB session made Toki use more than 4 GB of memory. Toki now reads a transcript one line at a time, keeps its place, and reads only the new lines when the file grows. A refresh of the same 760 MB session now takes milliseconds.
+- **The usage chart scan uses less memory and time.** The daily activity scan read each recent Claude transcript into memory whole. It now reads one line at a time and skips lines that have no usage before it parses them. On a 3.4 GB history, peak memory went from 975 MB to 416 MB.
+
 ## 3.3.9 - 2026-10-22
 
 One Line: Toki can redeem a banked reset for you, the phone shows every quota bar and opens T3 Code chats, and Claude agents no longer show "Allow Bash?" when they are not waiting on you.
