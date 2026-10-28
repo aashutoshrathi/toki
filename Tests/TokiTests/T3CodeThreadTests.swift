@@ -105,6 +105,84 @@ final class T3CodeThreadTests: XCTestCase {
         XCTAssertEqual(mobileOSes(), [])
     }
 
+    private func writeOpenThreads() throws {
+        try sqlite("""
+        CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT, title TEXT, updated_at TEXT, archived_at TEXT, deleted_at TEXT);
+        INSERT INTO orchestration_v2_projection_threads VALUES
+            ('idle', 'Explain' || char(10) || 'Quota Pauses', '2026-10-28T07:26:53.942Z', NULL, NULL),
+            ('closed', 'Old chat', '2026-10-28T07:30:00.000Z', NULL, NULL),
+            ('archived', 'Archived chat', '2026-10-28T07:31:00.000Z', '2026-10-28T07:32:00.000Z', NULL);
+        CREATE TABLE orchestration_v2_projection_provider_sessions (thread_id TEXT, provider TEXT, driver TEXT, status TEXT, payload_json TEXT);
+        INSERT INTO orchestration_v2_projection_provider_sessions VALUES
+            ('idle', 'claudeAgent', 'claudeAgent', 'ready', '{"cwd":"/Users/me/app"}'),
+            ('closed', 'codex', 'codex', 'stopped', '{"cwd":"/Users/me/app"}'),
+            ('archived', 'codex', 'codex', 'ready', '{"cwd":"/Users/me/app"}');
+        CREATE TABLE orchestration_v2_projection_provider_threads (thread_id TEXT, updated_at TEXT, payload_json TEXT);
+        INSERT INTO orchestration_v2_projection_provider_threads VALUES
+            ('idle', '2026-10-28T06:00:00Z', '{"nativeThreadRef":{"nativeId":"old-native"}}'),
+            ('idle', '2026-10-28T07:00:00Z', '{"nativeThreadRef":{"nativeId":"\(sessionID)"}}');
+        """)
+    }
+
+    func testOpenThreadsAreTheReadyOnesT3StillShows() throws {
+        try writeOpenThreads()
+        let threads = T3CodeThreadStore.openThreads(userData: userData)
+        XCTAssertEqual(threads.map(\.thread.id), ["idle"])
+        XCTAssertEqual(threads.first?.thread.title, "Explain Quota Pauses")
+        XCTAssertEqual(threads.first?.thread.url?.absoluteString, "t3code://threads/env-1/idle")
+        XCTAssertEqual(threads.first?.driver, "claudeAgent")
+        XCTAssertEqual(threads.first?.directory, "/Users/me/app")
+        XCTAssertEqual(threads.first?.nativeID, sessionID)
+        XCTAssertEqual(threads.first?.updated, Date(timeIntervalSince1970: 1_793_172_413.942))
+    }
+
+    func testNoDatabaseMeansNoOpenThreads() {
+        XCTAssertTrue(T3CodeThreadStore.openThreads(userData: userData).isEmpty)
+    }
+
+    private let psOutput = """
+      501     1 ??       01-00:20:11 300000 /Applications/T3 Code (Beta).app/Contents/MacOS/T3 Code (Beta)
+      502   501 ??       01-00:20:10 200000 /Applications/T3 Code (Beta).app/Contents/MacOS/T3 Code (Beta)
+    """
+
+    private func openThread(id: String = "thread-1", driver: String = "codex") -> T3CodeThreadStore.OpenThread {
+        T3CodeThreadStore.OpenThread(
+            thread: T3CodeThreadStore.Thread(id: id, title: "Quota pauses", url: nil, mobileOSes: []),
+            driver: driver,
+            directory: "/tmp/project",
+            nativeID: nil,
+            updated: Date()
+        )
+    }
+
+    func testIdleT3ChatIsARowWithNoProcessBehindIt() {
+        let agents = ActiveAgentScanner.t3ThreadAgents(alongside: [], psOutput: psOutput, threads: [openThread()])
+        XCTAssertEqual(agents.count, 1)
+        XCTAssertEqual(agents[0].provider, .codex)
+        XCTAssertEqual(agents[0].chatTitle, "Quota pauses")
+        XCTAssertEqual(agents[0].hostApp, HostApp.t3Code)
+        XCTAssertEqual(agents[0].hostProcessID, 501)
+        XCTAssertEqual(agents[0].t3Thread?.id, "thread-1")
+        XCTAssertEqual(agents[0].origin, .threadStore)
+        XCTAssertFalse(agents[0].canTerminate)
+        XCTAssertLessThan(agents[0].processID, 0)
+    }
+
+    func testT3ChatWithARunningProcessIsLeftToThatProcess() {
+        var running = ActiveAgent(
+            id: 900, provider: .claudeCode, directory: "/tmp/project", chatTitle: "Quota pauses",
+            hostApp: HostApp.t3Code, hostProcessID: 502, lastActivity: Date(), processID: 900, runtime: "00:31",
+            terminalTTY: nil, memoryKB: 41_000, command: "claude", sessionUsage: nil, attention: nil
+        )
+        running.t3Thread = openThread().thread
+        XCTAssertTrue(ActiveAgentScanner.t3ThreadAgents(alongside: [running], psOutput: psOutput, threads: [openThread()]).isEmpty)
+    }
+
+    func testT3ChatsAreHiddenWhenUnknownOrT3IsClosed() {
+        XCTAssertTrue(ActiveAgentScanner.t3ThreadAgents(alongside: [], psOutput: psOutput, threads: [openThread(driver: "mystery")]).isEmpty)
+        XCTAssertTrue(ActiveAgentScanner.t3ThreadAgents(alongside: [], psOutput: "", threads: [openThread()]).isEmpty)
+    }
+
     func testT3CodeIsTheHostOfItsAgents() {
         XCTAssertEqual(HostApp.match(comm: "/applications/t3 code (beta).app/contents/macos/t3 code (beta)"), .t3Code)
         XCTAssertEqual(HostApp.match(comm: "/applications/t3 code.app/contents/macos/t3 code"), .t3Code)

@@ -185,6 +185,14 @@ enum AgentSessionResolver {
         }
     }
 
+    static func claudeSession(id: String, cwd: String) -> ResolvedSession? {
+        let path = "\(projectDir(cwd))/\(id).jsonl"
+        guard FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        return ResolvedSession(path: path, modified: modifiedDate(path))
+    }
+
     // A session named on the command line: a full transcript path, or an id that resolves to one
     // inside the project folder.
     private static func explicitClaudeSessionPath(command: String, cwd: String?, projectsRoot: String? = nil) -> String? {

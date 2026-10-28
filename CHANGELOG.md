@@ -2,9 +2,10 @@
 
 ## 3.3.10 - 2026-10-28
 
-One Line: Toki no longer uses gigabytes of memory when a Claude session gets very large.
+One Line: T3 Code chats show again, and Toki no longer uses gigabytes of memory when a Claude session gets very large.
 
 ### Fixed
+- **T3 Code chats show in the Agents list again.** The latest T3 Code stops a chat's Claude or Codex process when the chat goes idle. Toki found agents only by their process, so idle T3 chats disappeared from the list. Toki now also reads the chats T3 Code has open from its database. An idle chat shows with its T3 title and usage, and a click opens it in T3 Code. Archived chats do not show.
 - **Toki stays small when a Claude session file is very large.** Toki loaded the full transcript of each active Claude agent again on each scan, to find its title, usage and pending tool. A 760 MB session made Toki use more than 4 GB of memory. Toki now reads a transcript one line at a time, keeps its place, and reads only the new lines when the file grows. A refresh of the same 760 MB session now takes milliseconds.
 - **The usage chart scan uses less memory and time.** The daily activity scan read each recent Claude transcript into memory whole. It now reads one line at a time and skips lines that have no usage before it parses them. On a 3.4 GB history, peak memory went from 975 MB to 416 MB.
 
