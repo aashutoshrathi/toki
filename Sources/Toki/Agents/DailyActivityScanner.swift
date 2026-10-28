@@ -86,8 +86,9 @@ enum DailyActivityScanner {
                    modified < earliest {
                     continue
                 }
-                guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { continue }
-                accumulateClaude(data: data, since: earliest, calendar: calendar, seen: &seen, into: &byDay)
+                JSONLines.forEachLine(inFileAt: path) { line in
+                    accumulateClaude(line: line, since: earliest, calendar: calendar, seen: &seen, into: &byDay)
+                }
             }
         }
         return byDay.map { DailyActivity(day: $0.key, provider: .claudeCode, tokens: $0.value.tokens, cost: $0.value.cost) }
@@ -101,40 +102,54 @@ enum DailyActivityScanner {
         seen: inout Set<String>,
         into byDay: inout [Date: (tokens: Int, cost: Double)]
     ) {
-        for lineBytes in data.split(separator: 0x0A) {
-            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any],
-                  json["type"] as? String == "assistant",
-                  let timestamp = (json["timestamp"] as? String).flatMap(parseISO8601),
-                  timestamp >= earliest,
-                  let message = json["message"] as? [String: Any],
-                  let usage = message["usage"] as? [String: Any] else { continue }
-
-            // One turn is written as several lines, one per content block, each repeating the
-            // same id and the same cumulative usage. Counting every line inflated totals ~78%.
-            if let identity = Self.messageIdentity(json: json, message: message) {
-                guard seen.insert(identity).inserted else { continue }
-            }
-
-            let input = (usage["input_tokens"] as? Int) ?? 0
-            let output = (usage["output_tokens"] as? Int) ?? 0
-            let cacheWrite = (usage["cache_creation_input_tokens"] as? Int) ?? 0
-            let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
-
-            let day = calendar.startOfDay(for: timestamp)
-            var entry = byDay[day] ?? (0, 0)
-            entry.tokens += input + output + cacheWrite + cacheRead
-            if let model = message["model"] as? String,
-               let cost = ModelPricing.costUSD(
-                   model: model,
-                   inputTokens: input,
-                   outputTokens: output,
-                   cacheWriteTokens: cacheWrite,
-                   cacheReadTokens: cacheRead
-               ) {
-                entry.cost += cost
-            }
-            byDay[day] = entry
+        for line in data.split(separator: 0x0A) {
+            accumulateClaude(line: Data(line), since: earliest, calendar: calendar, seen: &seen, into: &byDay)
         }
+    }
+
+    private static let usageKey = Data(#""usage""#.utf8)
+
+    private static func accumulateClaude(
+        line: Data,
+        since earliest: Date,
+        calendar: Calendar,
+        seen: inout Set<String>,
+        into byDay: inout [Date: (tokens: Int, cost: Double)]
+    ) {
+        // Tool results make up most of a transcript; skipping them unparsed saves most of the work.
+        guard line.range(of: usageKey) != nil,
+              let json = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              json["type"] as? String == "assistant",
+              let timestamp = (json["timestamp"] as? String).flatMap(parseISO8601),
+              timestamp >= earliest,
+              let message = json["message"] as? [String: Any],
+              let usage = message["usage"] as? [String: Any] else { return }
+
+        // One turn is written as several lines, one per content block, each repeating the
+        // same id and the same cumulative usage. Counting every line inflated totals ~78%.
+        if let identity = Self.messageIdentity(json: json, message: message) {
+            guard seen.insert(identity).inserted else { return }
+        }
+
+        let input = (usage["input_tokens"] as? Int) ?? 0
+        let output = (usage["output_tokens"] as? Int) ?? 0
+        let cacheWrite = (usage["cache_creation_input_tokens"] as? Int) ?? 0
+        let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
+
+        let day = calendar.startOfDay(for: timestamp)
+        var entry = byDay[day] ?? (0, 0)
+        entry.tokens += input + output + cacheWrite + cacheRead
+        if let model = message["model"] as? String,
+           let cost = ModelPricing.costUSD(
+               model: model,
+               inputTokens: input,
+               outputTokens: output,
+               cacheWriteTokens: cacheWrite,
+               cacheReadTokens: cacheRead
+           ) {
+            entry.cost += cost
+        }
+        byDay[day] = entry
     }
 
     // MARK: - OpenCode
