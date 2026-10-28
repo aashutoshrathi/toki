@@ -185,6 +185,14 @@ enum AgentSessionResolver {
         }
     }
 
+    static func claudeSession(id: String, cwd: String) -> ResolvedSession? {
+        let path = "\(projectDir(cwd))/\(id).jsonl"
+        guard FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        return ResolvedSession(path: path, modified: modifiedDate(path))
+    }
+
     // A session named on the command line: a full transcript path, or an id that resolves to one
     // inside the project folder.
     private static func explicitClaudeSessionPath(command: String, cwd: String?, projectsRoot: String? = nil) -> String? {
@@ -201,8 +209,7 @@ enum AgentSessionResolver {
 
     /// The conversation title recorded in an already-resolved transcript.
     static func claudeTitle(of session: ResolvedSession) -> String? {
-        guard let contents = try? String(contentsOfFile: session.path, encoding: .utf8) else { return nil }
-        return claudeTitle(fromSessionContents: contents)
+        claudeSession(at: session.path, modified: session.modified)?.title
     }
 
     /// Cost and tokens from an already-resolved transcript.
@@ -226,28 +233,49 @@ enum AgentSessionResolver {
         /// executing rather than waiting - the caller uses this to avoid a false permission
         /// attention.
         var permissionMode: String?
+        var title: String?
     }
 
-    // Session files reach tens of megabytes and both usage and attention need the same parse.
-    // Cached on path, mtime and size, so an unchanged file is never re-read.
+    // Session files reach hundreds of megabytes and grow while the agent works. The cache keeps
+    // the running parse and the byte offset it reached, so a grown file only reads its new lines.
     private struct ClaudeCacheEntry {
         let modified: Date?
         let size: Int
-        let parsed: ParsedClaudeSession
+        let fileNumber: Int?
+        let offset: UInt64
+        let accumulator: ClaudeSessionAccumulator
     }
     private nonisolated(unsafe) static var claudeCache: [String: ClaudeCacheEntry] = [:]
+    private static let claudeCacheLimit = 64
 
     static func claudeSession(at path: String, modified: Date?) -> ParsedClaudeSession? {
-        let size = ((try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? Int) ?? 0
-        if let cached = claudeCache[path], cached.modified == modified, cached.size == size {
-            return cached.parsed
+        let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+        let size = (attributes?[.size] as? Int) ?? 0
+        let fileNumber = attributes?[.systemFileNumber] as? Int
+        let cached = claudeCache[path]
+        if let cached, cached.modified == modified, cached.size == size, cached.fileNumber == fileNumber {
+            return cached.accumulator.parsed
         }
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
-        let parsed = parseClaudeSession(data: data)
-        claudeCache[path] = ClaudeCacheEntry(modified: modified, size: size, parsed: parsed)
-        // Drop entries whose session file no longer exists.
-        if claudeCache.count > 64 {
-            claudeCache = claudeCache.filter { FileManager.default.fileExists(atPath: $0.key) }
+        var accumulator = ClaudeSessionAccumulator()
+        var offset: UInt64 = 0
+        // Claude only appends, so anything other than the same file grown longer is parsed afresh.
+        if let cached, cached.fileNumber == fileNumber, size > cached.size {
+            accumulator = cached.accumulator
+            offset = cached.offset
+        }
+        guard let end = JSONLines.forEachLine(inFileAt: path, from: offset, { accumulator.consume($0) }) else {
+            return nil
+        }
+        let parsed = accumulator.parsed
+        claudeCache[path] = ClaudeCacheEntry(
+            modified: modified, size: size, fileNumber: fileNumber, offset: end, accumulator: accumulator
+        )
+        if claudeCache.count > claudeCacheLimit {
+            let newest = claudeCache
+                .filter { FileManager.default.fileExists(atPath: $0.key) }
+                .sorted { ($0.value.modified ?? .distantPast) > ($1.value.modified ?? .distantPast) }
+                .prefix(claudeCacheLimit)
+            claudeCache = Dictionary(uniqueKeysWithValues: newest.map { ($0.key, $0.value) })
         }
         return parsed
     }
@@ -402,22 +430,36 @@ enum AgentSessionResolver {
     }
 
     static func parseClaudeSession(data: Data) -> ParsedClaudeSession {
+        var accumulator = ClaudeSessionAccumulator()
+        for line in data.split(separator: 0x0A) {
+            accumulator.consume(Data(line))
+        }
+        return accumulator.parsed
+    }
+
+    struct ClaudeSessionAccumulator {
         var totalInput = 0
         var totalOutput = 0
         var totalCost: Double?
-        var pending: [String: (name: String, question: String?)] = [:]
-        var pendingOrder: [String] = []
+        var pending: [String: (name: String, question: String?, sequence: Int)] = [:]
+        var toolUseCount = 0
         // One turn spans several content-block lines that repeat the same cumulative usage;
         // counting each inflated totals ~78%.
         var seenMessages: Set<String> = []
         var permissionMode: String?
+        // An explicit /rename (customTitle) wins over the inferred aiTitle; both are rewritten as
+        // the conversation evolves, so the last of each is current.
+        var customTitle: String?
+        var aiTitle: String?
 
-        for lineBytes in data.split(separator: 0x0A) {
-            guard let json = try? JSONSerialization.jsonObject(with: Data(lineBytes)) as? [String: Any] else { continue }
+        mutating func consume(_ line: Data) {
+            guard let json = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return }
+            if let title = json["customTitle"] as? String, !title.isEmpty { customTitle = title }
+            if let title = json["aiTitle"] as? String, !title.isEmpty { aiTitle = title }
             // Mode-change events and user lines both carry this, and neither has a `message`,
             // so read it before the guard below skips them.
             if let mode = json["permissionMode"] as? String { permissionMode = mode }
-            guard let message = json["message"] as? [String: Any] else { continue }
+            guard let message = json["message"] as? [String: Any] else { return }
 
             if json["type"] as? String == "assistant",
                let usage = message["usage"] as? [String: Any],
@@ -448,15 +490,15 @@ enum AgentSessionResolver {
             // `api-request-blob` records re-echo tool_use blocks that were already answered.
             let recordType = json["type"] as? String
             guard recordType == "assistant" || recordType == "user",
-                  let blocks = message["content"] as? [[String: Any]] else { continue }
+                  let blocks = message["content"] as? [[String: Any]] else { return }
             for block in blocks {
                 switch block["type"] as? String {
                 case "tool_use":
                     guard let id = block["id"] as? String, let name = block["name"] as? String else { continue }
                     let input = (block["input"] as? [String: Any]) ?? [:]
                     let question = (input["questions"] as? [[String: Any]])?.first?["question"] as? String
-                    pending[id] = (name, question)
-                    pendingOrder.append(id)
+                    toolUseCount += 1
+                    pending[id] = (name, question, toolUseCount)
                 case "tool_result":
                     // Resolved - drop it from the pending set.
                     if let id = block["tool_use_id"] as? String { pending.removeValue(forKey: id) }
@@ -466,16 +508,19 @@ enum AgentSessionResolver {
             }
         }
 
-        var session = ParsedClaudeSession()
-        session.permissionMode = permissionMode
-        if totalInput > 0 || totalOutput > 0 {
-            session.usage = AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
-        }
+        var parsed: ParsedClaudeSession {
+            var session = ParsedClaudeSession()
+            session.permissionMode = permissionMode
+            session.title = customTitle ?? aiTitle
+            if totalInput > 0 || totalOutput > 0 {
+                session.usage = AgentSessionUsage(cost: totalCost, tokensInput: totalInput, tokensOutput: totalOutput)
+            }
 
-        if let id = pendingOrder.last(where: { pending[$0] != nil }) {
-            session.pendingTool = pending[id]
+            if let latest = pending.values.max(by: { $0.sequence < $1.sequence }) {
+                session.pendingTool = (latest.name, latest.question)
+            }
+            return session
         }
-        return session
     }
 
     // When the agent's session was last written - used to sort most-recent first.
@@ -587,28 +632,11 @@ enum AgentSessionResolver {
     }
 
     private static func claudeChatTitle(command: String, cwd: String?, startTime: Date? = nil) -> String? {
-        guard let file = newestClaudeSession(command: command, cwd: cwd, nearStart: startTime)?.path,
-              let contents = try? String(contentsOfFile: file, encoding: .utf8) else {
-            return nil
-        }
-        return claudeTitle(fromSessionContents: contents)
+        newestClaudeSession(command: command, cwd: cwd, nearStart: startTime).flatMap(claudeTitle(of:))
     }
 
-    // An explicit /rename (customTitle) wins over the inferred aiTitle; both are rewritten as
-    // the conversation evolves, so the last of each is current.
     static func claudeTitle(fromSessionContents contents: String) -> String? {
-        var latestAI: String?
-        var latestCustom: String?
-        for line in contents.split(separator: "\n") {
-            let text = String(line)
-            if let custom = firstMatch(in: text, pattern: #""customTitle"\s*:\s*"([^"]+)""#) {
-                latestCustom = custom
-            }
-            if let ai = firstMatch(in: text, pattern: #""aiTitle"\s*:\s*"([^"]+)""#) {
-                latestAI = ai
-            }
-        }
-        return latestCustom ?? latestAI
+        parseClaudeSession(data: Data(contents.utf8)).title
     }
 
     // One agent resolved on its own, for the callers that have no sibling context. The scanner

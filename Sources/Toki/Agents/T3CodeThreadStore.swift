@@ -55,6 +55,56 @@ enum T3CodeThreadStore {
         }
     }
 
+    struct OpenThread: Sendable, Equatable {
+        let thread: Thread
+        let driver: String
+        let directory: String?
+        let nativeID: String?
+        let updated: Date?
+    }
+
+    static func openThreads(limit: Int = 40) -> [OpenThread] {
+        openThreads(userData: installedUserData, limit: limit)
+    }
+
+    /// T3 Code stops a chat's provider process once the chat goes idle, so the chats it still has
+    /// open are read from its database, newest first.
+    static func openThreads(userData: String, limit: Int = 40) -> [OpenThread] {
+        guard let raw = Shell.output(
+            "/usr/bin/sqlite3",
+            ["-readonly", "-separator", "\u{1f}", "\(userData)/statev2.sqlite", openThreadsQuery(limit: limit)]
+        ) else {
+            return []
+        }
+        let rows = raw.split(separator: "\n").map { $0.components(separatedBy: "\u{1f}") }.filter { $0.count == 6 }
+        guard !rows.isEmpty else {
+            return []
+        }
+        let environmentID = readEnvironmentID(userData: userData)
+        let mobileOSes = readMobileOSes(userData: userData)
+        return rows.map { fields in
+            let title = fields[5].trimmingCharacters(in: .whitespaces)
+            return OpenThread(
+                thread: Thread(
+                    id: fields[0],
+                    title: title.isEmpty ? nil : title,
+                    url: environmentID.flatMap { URL(string: "t3code://threads/\($0)/\(fields[0])") },
+                    mobileOSes: mobileOSes
+                ),
+                driver: fields[1],
+                directory: fields[3].isEmpty ? nil : fields[3],
+                nativeID: fields[4].isEmpty ? nil : fields[4],
+                updated: parseTimestamp(fields[2])
+            )
+        }
+    }
+
+    private static func parseTimestamp(_ raw: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+    }
+
     private static func readEnvironmentID(userData: String) -> String? {
         guard let id = (try? String(contentsOfFile: "\(userData)/environment-id", encoding: .utf8))?
                   .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -86,6 +136,26 @@ enum T3CodeThreadStore {
         LEFT JOIN orchestration_v2_projection_threads t ON t.thread_id = p.thread_id
         WHERE json_extract(p.payload_json, '$.nativeThreadRef.nativeId') IN (\(list))
         ORDER BY p.updated_at;
+        """
+    }
+
+    private static func openThreadsQuery(limit: Int) -> String {
+        """
+        SELECT t.thread_id,
+               ifnull(s.driver, s.provider),
+               t.updated_at,
+               ifnull(json_extract(s.payload_json, '$.cwd'), ''),
+               ifnull((SELECT json_extract(p.payload_json, '$.nativeThreadRef.nativeId')
+                       FROM orchestration_v2_projection_provider_threads p
+                       WHERE p.thread_id = t.thread_id
+                       ORDER BY p.updated_at DESC LIMIT 1), ''),
+               replace(replace(t.title, char(10), ' '), char(13), ' ')
+        FROM orchestration_v2_projection_threads t
+        JOIN orchestration_v2_projection_provider_sessions s ON s.thread_id = t.thread_id
+        WHERE s.status = 'ready' AND t.archived_at IS NULL AND t.deleted_at IS NULL
+        GROUP BY t.thread_id
+        ORDER BY t.updated_at DESC
+        LIMIT \(max(1, limit));
         """
     }
 

@@ -207,7 +207,10 @@ enum ActiveAgentScanner {
                 let session = sessions[context.candidate.pid]
                 return buildAgent(context, session: session, t3Thread: session.flatMap { t3Threads[$0.path] })
             }
-            let agents = disambiguate(processAgents + zedThreadAgents(alongside: processAgents, psOutput: output))
+            let agents = disambiguate(
+                withT3Threads(processAgents, psOutput: output)
+                    + zedThreadAgents(alongside: processAgents, psOutput: output)
+            )
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
             cache = cache.filter { alive.contains($0.key) }
@@ -372,6 +375,95 @@ enum ActiveAgentScanner {
                 origin: .threadStore
             )
         }
+    }
+
+    static func withT3Threads(
+        _ processAgents: [ActiveAgent],
+        psOutput: String,
+        threads: [T3CodeThreadStore.OpenThread]? = nil,
+        t3PID: Int32? = nil
+    ) -> [ActiveAgent] {
+        guard let hostPID = t3PID ?? t3ApplicationPID(psOutput: psOutput) else {
+            return processAgents
+        }
+        let openThreads = threads ?? T3CodeThreadStore.openThreads()
+        var linked = processAgents
+        var covered = Set(processAgents.compactMap(\.t3Thread?.id))
+        // Only a Claude process names its session; any other is the newest open chat in its folder.
+        for index in linked.indices where linked[index].hostApp == .t3Code && linked[index].t3Thread == nil {
+            guard let directory = linked[index].directory.map(resolvedPath),
+                  let match = openThreads.first(where: { open in
+                      !covered.contains(open.thread.id)
+                          && provider(forT3Driver: open.driver) == linked[index].provider
+                          && open.directory.map(resolvedPath) == directory
+                  }) else {
+                continue
+            }
+            linked[index].t3Thread = match.thread
+            covered.insert(match.thread.id)
+        }
+        return linked + openThreads.compactMap { open in
+            guard !covered.contains(open.thread.id), let provider = provider(forT3Driver: open.driver) else {
+                return nil
+            }
+            var session: AgentSessionResolver.ResolvedSession?
+            if provider == .claudeCode, let nativeID = open.nativeID, let directory = open.directory {
+                session = AgentSessionResolver.claudeSession(id: nativeID, cwd: directory)
+            }
+            let identifier = syntheticID(for: "t3:\(open.thread.id)")
+            var agent = ActiveAgent(
+                id: identifier,
+                provider: provider,
+                directory: open.directory,
+                chatTitle: open.thread.title,
+                hostApp: HostApp.t3Code,
+                hostProcessID: hostPID,
+                lastActivity: open.updated,
+                processID: identifier,
+                runtime: "",
+                terminalTTY: nil,
+                memoryKB: 0,
+                command: "",
+                sessionUsage: session.flatMap(AgentSessionResolver.claudeUsage(of:)),
+                attention: nil,
+                sessionPath: session?.path,
+                origin: .threadStore
+            )
+            agent.t3Thread = open.thread
+            return agent
+        }
+    }
+
+    private static func resolvedPath(_ path: String) -> String {
+        (path as NSString).resolvingSymlinksInPath
+    }
+
+    private static func provider(forT3Driver driver: String) -> Provider? {
+        switch driver {
+        case "claudeAgent":
+            return .claudeCode
+        case "codex":
+            return .codex
+        case "cursor":
+            return .cursor
+        case "opencode":
+            return .openCode
+        default:
+            return nil
+        }
+    }
+
+    // The main app process, not its server child or helpers, so activation finds the running app.
+    static func t3ApplicationPID(psOutput: String) -> Int32? {
+        for line in psOutput.split(separator: "\n") {
+            let parts = line.split(maxSplits: 5, whereSeparator: { $0.isWhitespace })
+            guard parts.count == 6, let pid = Int32(parts[0]), parts[1] == "1",
+                  HostApp.match(comm: String(parts[5]).lowercased()) == .t3Code else {
+                continue
+            }
+            return pid
+        }
+        return nil
     }
 
     // Negative and stable, so a processless row keeps its identity across scans and can never be
