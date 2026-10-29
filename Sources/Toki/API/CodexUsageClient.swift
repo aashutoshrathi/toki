@@ -217,11 +217,9 @@ enum CodexAppServerClient {
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
         let requestLines = requests.map { #"{"jsonrpc":"2.0","id":\#($0.id),"method":"\#($0.method)","params":\#($0.params)}"# }
         let printfArgs = requestLines.map { "'\(shellEscaped($0))'" }.joined(separator: " ")
-        // Grep against the whole line, not just the id substring, so a coincidental "id"
-        // field nested inside a result payload (e.g. a future OpenAI response containing an
-        // integer id) can't be mistaken for the JSON-RPC envelope's own id and end the poll
-        // before that request's real response has actually arrived.
-        let idChecks = requests.map { #"grep '"jsonrpc":"2.0"' "$__toki_out" | grep -qE '"id"[[:space:]]*:[[:space:]]*\#($0.id)[,}]'"# }.joined(separator: " && ")
+        // Anchor the envelope id to the line start so an "id" nested in a result payload can't end
+        // the poll early. app-server 0.165 omits "jsonrpc" from replies, so it is optional.
+        let idChecks = requests.map { #"grep -qE '^\{("jsonrpc":"2.0",)?"id":\#($0.id)[,}]' "$__toki_out""# }.joined(separator: " && ")
         let codexHome = codexHomeDirectory(for: account)
 
         let command = """
