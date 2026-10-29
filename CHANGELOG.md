@@ -1,5 +1,7 @@
 # Changelog
 
+## 3.3.11 - Unreleased
+
 ## 3.3.10 - 2026-10-28
 
 One Line: T3 Code chats show again, and Toki no longer uses gigabytes of memory when a Claude session gets very large.
