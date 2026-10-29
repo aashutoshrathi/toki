@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.3.11 - 2026-10-29
+
+One Line: The phone page is safe from hostile links, T3 Code chats find their Claude transcript, and Codex and OpenCode usage load correctly.
+
+### Security
+- **The Remote Control phone page no longer runs code sent by a hostile server.** The page accepts any Tailscale (`*.ts.net`) address from a link, and anyone can own one. A server at such an address could put script into an agent ID or a reset count, and the page ran it. That script could read your saved connection and type into your agents. The page now escapes these values, and it opens the T3 Code phone link only when it is a real `t3code://` link.
+- **A link can no longer send your saved token to another address.** A link that named only an address used it together with your saved token, so the token went to that address. A saved connection now always uses the address it was saved with.
+
+### Fixed
+- **T3 Code chats find their Claude transcript.** Claude Code names a project folder by changing every character that is not a letter or digit to a dash. Toki changed only `/`, so for any folder with a dot in its path (all of `~/.t3`, and `.claude/worktrees`) it looked in the wrong place. Those chats had no usage, no "waiting on you" state, and no T3 link. Toki now uses Claude Code's exact rule, including emoji and paths longer than 200 characters.
+- **Codex usage loads about 4 times faster.** Toki waited for a field that current Codex versions no longer send, so each usage check waited the full 10 second limit and each reset redeem waited 45 seconds. Toki now stops when the reply arrives.
+- **OpenCode "Today" starts at your local midnight.** It started at midnight UTC read as local time: 5:30 AM in India, and the evening before in California.
+
 ## 3.3.10 - 2026-10-28
 
 One Line: T3 Code chats show again, and Toki no longer uses gigabytes of memory when a Claude session gets very large.

@@ -185,6 +185,30 @@ assert.match(sw, /addEventListener\("notificationclick"/);
 assert.match(app, /const CONN_KEY\s*=\s*"toki-conn"/);
 assert.match(app, /function savedConn/);
 assert.match(app, /const REVIVE\s*=\s*PARAMS\.get\("token"\)\s*\?\s*null\s*:\s*savedConn\(\)/);
+
+function connectionFor(hash, saved) {
+  const boot = vm.createContext({
+    URLSearchParams,
+    location: { hash, search: "" },
+    localStorage: { getItem: () => (saved ? JSON.stringify(saved) : null) },
+  });
+  vm.runInContext(app.slice(0, app.indexOf("let API_BASE")), boot);
+  return vm.runInContext("({ host: REMOTE_HOST, token: LINK_TOKEN })", boot);
+}
+const savedMac = { host: "mine.tail1234.ts.net", token: "saved-token" };
+assert.deepEqual(connectionFor("#host=evil.tail9999.ts.net", savedMac), savedMac);
+assert.deepEqual(connectionFor("", savedMac), savedMac);
+assert.deepEqual(
+  connectionFor("#host=evil.tail9999.ts.net", { host: "", token: "saved-token" }),
+  { host: "", token: "saved-token" },
+  "a saved direct connection must stay direct"
+);
+assert.deepEqual(
+  connectionFor("#host=other.tail1234.ts.net&token=link-token", savedMac),
+  { host: "other.tail1234.ts.net", token: "link-token" }
+);
+assert.deepEqual(connectionFor("#token=link-token", savedMac), { host: "", token: "link-token" });
+assert.deepEqual(connectionFor("#host=evil.tail9999.ts.net", null), { host: "evil.tail9999.ts.net", token: "" });
 assert.match(app, /localStorage\.setItem\(CONN_KEY/);
 assert.match(app, /localStorage\.removeItem\(CONN_KEY\)/);
 

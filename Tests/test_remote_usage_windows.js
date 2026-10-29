@@ -99,6 +99,11 @@ assert.match(redeem, /data-account="acct&quot;onclick=&quot;x"/);
 assert.ok(!redeem.includes('"onclick='), "a raw quote from the account id reached the markup");
 assert.match(redeem, /aria-label="Redeem reset \(2 available\)" title="Redeem reset \(2 available\)"/);
 
+const drawReset = resets => vm.runInContext("resetRow", sandbox)({ id: "acct", resets });
+assert.equal(drawReset("<img src=x onerror=alert(1)>"), "", "a hostile reset count must not reach the markup");
+assert.equal(drawReset("2<img src=x onerror=alert(1)>"), "");
+assert.match(drawReset("3"), /Redeem reset \(3 available\)[\s\S]*<span aria-hidden="true">3<\/span>/);
+
 // Several accounts with three bars each outgrow the screen; the panel scrolls instead of clipping.
 assert.match(css, /#usage\{[^}]*max-height:45dvh;overflow-y:auto/);
 

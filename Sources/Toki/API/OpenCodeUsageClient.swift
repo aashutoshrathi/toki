@@ -26,7 +26,7 @@ struct OpenCodeUsageClient {
         }
 
         // One DB open: today's figures via conditional SUMs alongside all-time totals.
-        let startOfDay = "time_updated/1000 >= CAST(strftime('%s','now','localtime','start of day') AS INTEGER)"
+        let startOfDay = "time_updated/1000 >= CAST(strftime('%s','now','localtime','start of day','utc') AS INTEGER)"
         let row = try query(
             db: dbPath,
             sql: """
