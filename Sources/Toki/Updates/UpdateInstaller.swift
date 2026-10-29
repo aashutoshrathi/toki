@@ -135,29 +135,39 @@ enum UpdateInstaller {
             throw LocalizedErrorMessage("The downloaded app identity or version does not match the release.")
         }
         _ = try run("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", app.path])
-        guard signerAllowed(current: teamIdentifier(of: Bundle.main.bundleURL), candidate: teamIdentifier(of: app)) else {
-            throw LocalizedErrorMessage("The downloaded app is not signed by the same team as the running Toki.")
+        if let requirement = try runningAppRequirement(), !meets(requirement, app: app) {
+            throw LocalizedErrorMessage("The downloaded app is not signed by the same developer as the running Toki.")
         }
     }
 
-    static func signerAllowed(current: String?, candidate: String?) -> Bool {
-        guard let current else {
-            return true
-        }
-        return candidate == current
-    }
-
-    private static func teamIdentifier(of app: URL) -> String? {
+    // nil for an ad-hoc signed Toki, whose cdhash-only requirement no other build can meet.
+    private static func runningAppRequirement() throws -> SecRequirement? {
+        var code: SecCode?
         var staticCode: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(app as CFURL, [], &staticCode) == errSecSuccess, let staticCode else {
-            return nil
-        }
         var information: CFDictionary?
-        guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
               let values = information as? [String: Any] else {
+            throw LocalizedErrorMessage("Toki could not read its own code signature.")
+        }
+        guard let certificates = values[kSecCodeInfoCertificates as String] as? [Any], !certificates.isEmpty else {
             return nil
         }
-        return values[kSecCodeInfoTeamIdentifier as String] as? String
+        var requirement: SecRequirement?
+        guard SecCodeCopyDesignatedRequirement(staticCode, [], &requirement) == errSecSuccess, let requirement else {
+            throw LocalizedErrorMessage("Toki could not read its own code signature.")
+        }
+        return requirement
+    }
+
+    static func meets(_ requirement: SecRequirement, app: URL) -> Bool {
+        var staticCode: SecStaticCode?
+        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode)
+        guard SecStaticCodeCreateWithPath(app as CFURL, [], &staticCode) == errSecSuccess, let staticCode else {
+            return false
+        }
+        return SecStaticCodeCheckValidity(staticCode, flags, requirement) == errSecSuccess
     }
 
     // A prerelease tag (`2.5.0-beta.1`) carries a suffix the app's `CFBundleShortVersionString`

@@ -1,4 +1,5 @@
 import XCTest
+import Security
 @testable import Toki
 
 // Guards against the failure mode where adding a preference silently wipes user data.
@@ -227,20 +228,29 @@ final class UpdateVerifyVersionTests: XCTestCase {
 }
 
 final class UpdateSignerTests: XCTestCase {
-    func testSameTeamIsAllowed() {
-        XCTAssertTrue(UpdateInstaller.signerAllowed(current: "ABCDE12345", candidate: "ABCDE12345"))
+    private let calculator = URL(fileURLWithPath: "/System/Applications/Calculator.app")
+
+    private func requirement(_ text: String) throws -> SecRequirement {
+        var requirement: SecRequirement?
+        XCTAssertEqual(SecRequirementCreateWithString(text as CFString, [], &requirement), errSecSuccess)
+        return try XCTUnwrap(requirement)
     }
 
-    func testDifferentTeamIsRejected() {
-        XCTAssertFalse(UpdateInstaller.signerAllowed(current: "ABCDE12345", candidate: "ZZZZZ99999"))
+    func testAppMeetingTheRequirementIsAccepted() throws {
+        XCTAssertTrue(UpdateInstaller.meets(try requirement("anchor apple"), app: calculator))
     }
 
-    func testUnsignedUpdateCannotReplaceASignedInstall() {
-        XCTAssertFalse(UpdateInstaller.signerAllowed(current: "ABCDE12345", candidate: nil))
+    func testAppFromAnotherSignerIsRejected() throws {
+        let otherTeam = #"anchor apple generic and certificate leaf[subject.OU] = "ZZZZZZZZZZ""#
+        XCTAssertFalse(UpdateInstaller.meets(try requirement(otherTeam), app: calculator))
     }
 
-    func testRunningAppWithoutATeamKeepsTheCurrentBehaviour() {
-        XCTAssertTrue(UpdateInstaller.signerAllowed(current: nil, candidate: nil))
-        XCTAssertTrue(UpdateInstaller.signerAllowed(current: nil, candidate: "ABCDE12345"))
+    func testUnsignedFolderIsRejected() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+        }
+        XCTAssertFalse(UpdateInstaller.meets(try requirement("anchor apple"), app: folder))
     }
 }
