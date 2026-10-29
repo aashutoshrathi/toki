@@ -829,12 +829,23 @@ enum AgentSessionResolver {
         return nil
     }
 
-    // ~/.claude/projects/<encoded-cwd>, where every non-alphanumeric cwd character becomes a dash.
     // `root` is only passed by tests, which cannot write into the real projects folder.
     private static func projectDir(_ cwd: String, root: String? = nil) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let encoded = cwd.replacingOccurrences(of: "[^a-zA-Z0-9]", with: "-", options: .regularExpression)
-        return "\(root ?? "\(home)/.claude/projects")/\(encoded)"
+        return "\(root ?? "\(home)/.claude/projects")/\(projectFolderName(cwd))"
+    }
+
+    // Mirrors Claude Code's own naming: one dash per non-alphanumeric UTF-16 unit, and names over
+    // 200 units are cut and suffixed with its 32-bit string hash in base 36.
+    static func projectFolderName(_ cwd: String) -> String {
+        let encoded = cwd.unicodeScalars.map { scalar in
+            scalar.isASCII && CharacterSet.alphanumerics.contains(scalar) ? String(scalar) : String(repeating: "-", count: scalar.utf16.count)
+        }.joined()
+        guard encoded.count > 200 else {
+            return encoded
+        }
+        let hash = cwd.utf16.reduce(Int32(0)) { $0 &* 31 &+ Int32($1) }
+        return "\(encoded.prefix(200))-\(String(Int64(hash).magnitude, radix: 36))"
     }
 
     private static func modifiedDate(_ path: String) -> Date? {

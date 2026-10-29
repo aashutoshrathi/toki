@@ -551,6 +551,12 @@ class RemoteControlClaudeSessionTests(unittest.TestCase):
                 "/home/.claude/projects/-Users-x--t3-worktrees-go-main",
             )
 
+    def test_project_folder_name_matches_claude_code_for_emoji_and_long_paths(self):
+        self.assertEqual(toki_remote.claude_project_folder_name("/tmp/\U0001F680"), "-tmp---")
+        self.assertEqual(toki_remote.claude_project_folder_name("/tmp/" + "a" * 195), "-tmp-" + "a" * 195)
+        self.assertEqual(toki_remote.claude_project_folder_name("/tmp/" + "a" * 196), "-tmp-" + "a" * 195 + "-r0traf")
+        self.assertTrue(toki_remote.claude_project_folder_name("/Users/x/" + "b" * 300 + "/\u00e9\U0001F680").endswith("bbbbbb-sz4ru"))
+
     def test_session_id_joined_with_an_equals_sign_names_the_transcript(self):
         with tempfile.TemporaryDirectory() as home, mock.patch.object(toki_remote, "HOME", home):
             cwd = "/Users/someone/Code/app"

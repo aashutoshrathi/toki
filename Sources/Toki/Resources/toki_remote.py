@@ -485,8 +485,26 @@ def cwd_of_pid(pid):
 
 
 def claude_project_dir(cwd):
-    encoded = re.sub(r"[^a-zA-Z0-9]", "-", cwd)
-    return os.path.join(HOME, ".claude", "projects", encoded)
+    return os.path.join(HOME, ".claude", "projects", claude_project_folder_name(cwd))
+
+
+# Mirrors Claude Code's own naming: one dash per non-alphanumeric UTF-16 unit, and names over
+# 200 units are cut and suffixed with its 32-bit string hash in base 36.
+def claude_project_folder_name(cwd):
+    encoded = re.sub(r"[^a-zA-Z0-9]", lambda m: "-" * (2 if ord(m.group()) > 0xFFFF else 1), cwd)
+    if len(encoded) <= 200:
+        return encoded
+    units = cwd.encode("utf-16-le")
+    value = 0
+    for i in range(0, len(units), 2):
+        value = (value * 31 + int.from_bytes(units[i:i + 2], "little")) & 0xFFFFFFFF
+    value = abs(value - (1 << 32)) if value >> 31 else value
+    digits = ""
+    while True:
+        value, digit = divmod(value, 36)
+        digits = "0123456789abcdefghijklmnopqrstuvwxyz"[digit] + digits
+        if not value:
+            return encoded[:200] + "-" + digits
 
 
 def newest_claude_session(command, cwd):
