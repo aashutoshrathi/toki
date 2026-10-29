@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Security
 
 struct PreparedUpdate {
     let stagedAppURL: URL
@@ -134,6 +135,29 @@ enum UpdateInstaller {
             throw LocalizedErrorMessage("The downloaded app identity or version does not match the release.")
         }
         _ = try run("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", app.path])
+        guard signerAllowed(current: teamIdentifier(of: Bundle.main.bundleURL), candidate: teamIdentifier(of: app)) else {
+            throw LocalizedErrorMessage("The downloaded app is not signed by the same team as the running Toki.")
+        }
+    }
+
+    static func signerAllowed(current: String?, candidate: String?) -> Bool {
+        guard let current else {
+            return true
+        }
+        return candidate == current
+    }
+
+    private static func teamIdentifier(of app: URL) -> String? {
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(app as CFURL, [], &staticCode) == errSecSuccess, let staticCode else {
+            return nil
+        }
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
+              let values = information as? [String: Any] else {
+            return nil
+        }
+        return values[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
     // A prerelease tag (`2.5.0-beta.1`) carries a suffix the app's `CFBundleShortVersionString`

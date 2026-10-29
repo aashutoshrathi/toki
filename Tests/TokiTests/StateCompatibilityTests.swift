@@ -225,3 +225,22 @@ final class UpdateVerifyVersionTests: XCTestCase {
         XCTAssertFalse(UpdateInstaller.versionMatchesRelease(bundleVersion: "2.5.1", releaseVersion: "2.5.0"))
     }
 }
+
+final class UpdateSignerTests: XCTestCase {
+    func testSameTeamIsAllowed() {
+        XCTAssertTrue(UpdateInstaller.signerAllowed(current: "ABCDE12345", candidate: "ABCDE12345"))
+    }
+
+    func testDifferentTeamIsRejected() {
+        XCTAssertFalse(UpdateInstaller.signerAllowed(current: "ABCDE12345", candidate: "ZZZZZ99999"))
+    }
+
+    func testUnsignedUpdateCannotReplaceASignedInstall() {
+        XCTAssertFalse(UpdateInstaller.signerAllowed(current: "ABCDE12345", candidate: nil))
+    }
+
+    func testRunningAppWithoutATeamKeepsTheCurrentBehaviour() {
+        XCTAssertTrue(UpdateInstaller.signerAllowed(current: nil, candidate: nil))
+        XCTAssertTrue(UpdateInstaller.signerAllowed(current: nil, candidate: "ABCDE12345"))
+    }
+}
