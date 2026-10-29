@@ -39,6 +39,24 @@ function matcherFor(userAgent, maxTouchPoints) {
   return context.isThisDevice;
 }
 
+function phoneLinkFor(link) {
+  const box = { hidden: true, innerHTML: "", querySelector: () => null };
+  const context = vm.createContext({
+    $: () => box,
+    t3Markup: "",
+    T3_PHONE_ICON: "",
+    T3_DESKTOP_ICON: "",
+    isThisDevice: () => true,
+    escAttr: s => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;"),
+  });
+  vm.runInContext(app.match(/function renderT3Open\([\s\S]*?\n\}\n/)[0], context);
+  vm.runInContext('renderT3Open({ pid: 7, t3: { mobile: ["iOS"], link: ' + JSON.stringify(link) + " } })", context);
+  return box.innerHTML;
+}
+assert.match(phoneLinkFor("t3code://threads/abc"), /<a id="t3phone" href="t3code:\/\/threads\/abc">/);
+assert.doesNotMatch(phoneLinkFor("javascript:alert(1)"), /t3phone|javascript:/);
+assert.match(phoneLinkFor("javascript:alert(1)"), /id="t3mac"/);
+
 const android = matcherFor("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36", 5);
 assert.ok(android("Android"));
 assert.ok(android("android"));

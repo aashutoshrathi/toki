@@ -14,7 +14,7 @@ function savedConn() {
 
 const REVIVE = PARAMS.get("token") ? null : savedConn();
 const LINK_TOKEN = PARAMS.get("token") || (REVIVE && REVIVE.token) || "";
-const REMOTE_HOST = PARAMS.get("host") || (REVIVE && REVIVE.host) || "";
+const REMOTE_HOST = REVIVE ? (REVIVE.host || "") : (PARAMS.get("host") || "");
 
 let API_BASE = "";
 let CONFIG_ERROR = "";
@@ -265,7 +265,7 @@ function resetExpiryLabel(iso) {
 }
 
 function resetRow(a) {
-  const count = a.resets || 0;
+  const count = Number(a.resets) || 0;
   if (count < 1) return "";
   const label = "Redeem reset (" + count + " available)" + resetExpiryLabel(a.resetExpiry);
   return '<button type="button" class="u-redeem" data-account="' +
@@ -663,7 +663,7 @@ function renderAgents() {
     const startsReadOnly = !a.writable && (i == 0 || agents[i - 1].writable);
     return (startsReadOnly ? '<div class="ddgroup">Read-only</div>' : "") +
       '<button type="button" role="option" tabindex="-1" aria-selected="' + (a.pid == current) +
-      '" class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + a.pid + '">' + agentRow(a) + "</button>";
+      '" class="dditem' + (a.pid == current ? " sel" : "") + '" data-pid="' + escAttr(a.pid) + '">' + agentRow(a) + "</button>";
   }).join("");
   list.querySelectorAll(".dditem").forEach(el => el.onclick = ev => {
     ev.stopPropagation();
@@ -727,7 +727,7 @@ function renderT3Open(agent) {
   const box = $("#t3open");
   let markup = "";
   if (agent && agent.t3) {
-    const phone = (agent.t3.mobile || []).some(isThisDevice)
+    const phone = (agent.t3.mobile || []).some(isThisDevice) && /^t3code:\/\//.test(agent.t3.link)
       ? '<a id="t3phone" href="' + escAttr(agent.t3.link) + '">' + T3_PHONE_ICON + "Open in T3 Code</a>"
       : "";
     markup = "<span>Running in T3 Code. Reply there:</span>" +

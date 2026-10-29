@@ -209,6 +209,7 @@ const footerControls = [...inputIDs, ...navigationIDs].map(id => nodes["#" + id]
 document.querySelectorAll = () => footerControls;
 Object.defineProperty(nodes["#ddlist"], "innerHTML", {
   set(value) {
+    this.markup = value;
     this.children = [...value.matchAll(/<button[^>]*aria-selected="([^"]+)"[^>]*data-pid="([^"]+)"/g)]
       .map(([, selected, pid]) => {
         const item = node("", { pid });
@@ -222,6 +223,7 @@ let resetCount = 0;
 let attachmentClearCount = 0;
 const context = vm.createContext({
   document, $: id => nodes[id],
+  escAttr: s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"),
   agents: [
     { pid: 11, title: "One", provider: "codex", writable: true, screen: true, uploads: true },
     { pid: 22, title: "Two", provider: "claude", writable: true },
@@ -287,6 +289,11 @@ press("ArrowDown");
 run("agents = []; renderAgents()");
 assert.equal(document.activeElement, nodes["#ddbtn"]);
 assert.equal(nodes["#ddbtn"].attrs["aria-expanded"], "false");
+
+run(`agents = [{ pid: '1" onfocus="alert(1)', title: "Hostile", provider: "codex", writable: true }]; renderAgents()`);
+assert.match(nodes["#ddlist"].markup, /data-pid="1&quot; onfocus=&quot;alert\(1\)"/);
+assert.ok(!nodes["#ddlist"].markup.includes('" onfocus="'), "a raw quote from the agent pid reached the markup");
+run("agents = []");
 
 // A send/upload blocks every terminal-input route, while layout and dismissal remain operable.
 for (const state of ["sending = true; uploading = false", "sending = false; uploading = true"]) {
