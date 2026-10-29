@@ -133,6 +133,20 @@ final class ClaudeSessionAssignmentTests: XCTestCase {
         XCTAssertEqual(assign([resumed])[1], "explicit.jsonl")
     }
 
+    func testDottedPathsAreEncodedTheWayClaudeCodeNamesProjectFolders() throws {
+        let dottedDirectory = "\(root!)/-Users-x--t3-worktrees-go-main"
+        try FileManager.default.createDirectory(atPath: dottedDirectory, withIntermediateDirectories: true)
+        try "{}".write(toFile: "\(dottedDirectory)/dotted.jsonl", atomically: true, encoding: .utf8)
+
+        let dotted = AgentSessionResolver.ClaudeAgentIdentity(
+            id: 1,
+            command: "claude",
+            cwd: "/Users/x/.t3/worktrees/go/main",
+            startTime: nil
+        )
+        XCTAssertEqual(assign([dotted])[1], "dotted.jsonl")
+    }
+
     func testNoTranscriptsYieldsNoAssignment() {
         XCTAssertTrue(assign([agent(1, startedMinutesAgo: 5)]).isEmpty)
     }
