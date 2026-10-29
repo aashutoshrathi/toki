@@ -829,11 +829,11 @@ enum AgentSessionResolver {
         return nil
     }
 
-    // ~/.claude/projects/<encoded-cwd>, where cwd path separators become dashes. `root` is only
-    // passed by tests, which cannot write into the real projects folder.
+    // ~/.claude/projects/<encoded-cwd>, where every non-alphanumeric cwd character becomes a dash.
+    // `root` is only passed by tests, which cannot write into the real projects folder.
     private static func projectDir(_ cwd: String, root: String? = nil) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let encoded = "-" + cwd.split(separator: "/").joined(separator: "-")
+        let encoded = cwd.replacingOccurrences(of: "[^a-zA-Z0-9]", with: "-", options: .regularExpression)
         return "\(root ?? "\(home)/.claude/projects")/\(encoded)"
     }
 

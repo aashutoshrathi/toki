@@ -540,6 +540,17 @@ class RemoteControlClaudeAttentionTests(unittest.TestCase):
 
 
 class RemoteControlClaudeSessionTests(unittest.TestCase):
+    def test_project_dir_turns_every_non_alphanumeric_character_into_a_dash(self):
+        with mock.patch.object(toki_remote, "HOME", "/home"):
+            self.assertEqual(
+                toki_remote.claude_project_dir("/Users/x/proj"),
+                "/home/.claude/projects/-Users-x-proj",
+            )
+            self.assertEqual(
+                toki_remote.claude_project_dir("/Users/x/.t3/worktrees/go/main"),
+                "/home/.claude/projects/-Users-x--t3-worktrees-go-main",
+            )
+
     def test_session_id_joined_with_an_equals_sign_names_the_transcript(self):
         with tempfile.TemporaryDirectory() as home, mock.patch.object(toki_remote, "HOME", home):
             cwd = "/Users/someone/Code/app"

@@ -485,7 +485,7 @@ def cwd_of_pid(pid):
 
 
 def claude_project_dir(cwd):
-    encoded = "-" + "-".join(p for p in cwd.split("/") if p)
+    encoded = re.sub(r"[^a-zA-Z0-9]", "-", cwd)
     return os.path.join(HOME, ".claude", "projects", encoded)
 
 
