@@ -35,9 +35,27 @@ enum ClaudeCodeCredentialReader {
     // as a side effect of opening the menu. A file-based sign-in is still found either way.
     static func readSignedInCredentials(allowsKeychain: Bool = true) throws -> CredentialBundle {
         var attempts: [String] = []
+        let custom = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
+        let customPath = custom.flatMap { isUsableConfigDirectory($0) ? "\($0.hasSuffix("/") ? String($0.dropLast()) : $0)/.credentials.json" : nil }
+        if let customPath {
+            do {
+                return try readCredentialsFile(at: customPath)
+            } catch {
+                throw LocalizedErrorMessage("Toki could not read the custom Claude credential file (\(shortReason(error))). Directory-specific Keychain lookup is unsupported; set an explicit credential source for this account.")
+            }
+        }
         for account in keychainAccountCandidates() where allowsKeychain {
             do {
-                return try keychainBundle(account: account)
+                let bundle = try keychainBundle(account: account)
+                let token = try extractToken(from: bundle.credentials)
+                if token.isExpired(), let email = emailIdentifier(from: bundle.credentials),
+                   let file = try? readCredentialsFile(at: credentialsFilePath),
+                   emailIdentifier(from: file.credentials)?.caseInsensitiveCompare(email) == .orderedSame,
+                   organizationUUID(from: file.credentials) == organizationUUID(from: bundle.credentials),
+                   let fileToken = try? extractToken(from: file.credentials), !fileToken.isExpired() {
+                    return file
+                }
+                return bundle
             } catch {
                 attempts.append("Keychain \(account.map { "item for \"\($0)\"" } ?? "item, any account") (\(shortReason(error)))")
                 // Only a missing item is worth retrying under another name. A denied or timed-out
@@ -59,6 +77,20 @@ enum ClaudeCodeCredentialReader {
         throw LocalizedErrorMessage(
             "Couldn't find your Claude Code sign-in. Open Claude Code and run /login, then hit refresh in Toki. Toki looked in \(attempts.joined(separator: ", "))."
         )
+    }
+
+    static func reread(source: String, email: String?) throws -> CredentialBundle {
+        if source.hasPrefix("Keychain ") {
+            let name = String(source.dropFirst("Keychain ".count))
+            return try keychainBundle(account: name == "(any account)" ? nil : name)
+        }
+        if source.hasPrefix("claude-swap "), let number = source.split(separator: " ").last, let email {
+            return CredentialBundle(credentials: try readKeychain(service: "claude-swap", account: "account-\(number)-\(email)"), source: source)
+        }
+        guard source.hasSuffix("/.credentials.json") else {
+            throw LocalizedErrorMessage("This credential source cannot be reread automatically")
+        }
+        return try readCredentialsFile(at: source)
     }
 
     // The Keychain item is stored under the account that created it, which is not always the name

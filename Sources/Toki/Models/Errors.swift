@@ -15,7 +15,7 @@ struct ClaudeSignInExpiredError: LocalizedError, Equatable {
             return "Sign-in expired. Open Claude Code to renew it - Toki picks the new token up on its own."
         }
         let account = accountLabel.map { " for \($0)" } ?? ""
-        return "Stored sign-in expired\(account). Run claude-swap to switch to it once, which renews the token."
+        return "Stored sign-in expired\(account). Switch to it with claude-swap, then renew the sign-in in Claude Code."
     }
 }
 

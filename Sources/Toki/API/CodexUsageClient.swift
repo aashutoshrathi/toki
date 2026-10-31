@@ -88,15 +88,21 @@ enum CodexAppServerClient {
         payload.rateLimits = responses.results[3]
         payload.account = responses.results[4]
 
-        if payload.usage == nil && payload.rateLimits == nil {
-            throw LocalizedErrorMessage(responses.errors.first ?? "Codex app-server did not return usage")
-        }
         // A successful account/rateLimits/read always returns a rate_limits object per the
         // app-server schema (only primary/secondary within it are optional) - a missing
         // response here means the call itself failed or timed out. Surface that as an error
         // instead of silently falling back to usage's raw token count, which is exactly the
         // degraded display this fix exists to prevent.
         if payload.rateLimits == nil {
+            if let error = responses.rpcErrors[3] {
+                let message = error["message"] as? String ?? "Codex rate limits unavailable"
+                if error["code"] as? Int == -32600,
+                   message == "codex account authentication required to read rate limits" {
+                    throw LocalizedErrorMessage("Codex is signed out. Open Codex to sign in.")
+                }
+                let code = (error["code"] as? Int).map { " (RPC \($0))" } ?? ""
+                throw LocalizedErrorMessage("Codex rate limits: \(message)\(code)")
+            }
             throw LocalizedErrorMessage(responses.errors.first ?? "Codex app-server did not return rate limits")
         }
         return payload
@@ -224,7 +230,7 @@ enum CodexAppServerClient {
         binary: CodexBinary,
         requests: [(id: Int, method: String, params: String)],
         pollSeconds: Int = 10
-    ) throws -> (results: [Int: Any], errors: [String]) {
+    ) throws -> (results: [Int: Any], errors: [String], rpcErrors: [Int: [String: Any]]) {
         let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"Toki","version":"\#(appVersion)"},"capabilities":{"experimentalApi":true}}}"#
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
         let requestLines = requests.map { #"{"jsonrpc":"2.0","id":\#($0.id),"method":"\#($0.method)","params":\#($0.params)}"# }
@@ -257,6 +263,7 @@ enum CodexAppServerClient {
         let output = try SecretResolver.runShell(command, timeout: TimeInterval(pollSeconds * 2))
         var results: [Int: Any] = [:]
         var errors: [String] = []
+        var rpcErrors: [Int: [String: Any]] = [:]
         var unparsedLines: [String] = []
 
         for rawLine in output.split(whereSeparator: \.isNewline) {
@@ -273,6 +280,7 @@ enum CodexAppServerClient {
             if let error = json["error"] as? [String: Any] {
                 let message = (error["message"] as? String) ?? "Codex app-server request \(id) failed"
                 errors.append(message)
+                rpcErrors[id] = error
                 continue
             }
 
@@ -295,6 +303,6 @@ enum CodexAppServerClient {
             errors.append("\(source) failed: \(firstUnparsed.prefix(200))")
         }
 
-        return (results, errors)
+        return (results, errors, rpcErrors)
     }
 }

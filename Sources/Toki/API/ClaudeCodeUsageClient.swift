@@ -35,7 +35,7 @@ struct ClaudeCodeUsageClient {
                 id: record.id,
                 name: record.displayName,
                 provider: .claudeCode,
-                primary: "Signed out",
+                primary: "Needs renewal",
                 subtitle: record.email ?? expiry.localizedDescription,
                 remainingRatio: nil,
                 metrics: [MetricLine(label: "Sign-in", value: expiry.localizedDescription)],
@@ -94,17 +94,9 @@ struct ClaudeCodeUsageClient {
     }
 
     private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
-        let accessToken: String
-        switch try Self.disposition(for: record) {
-        case .expired(let expiry):
-            throw expiry
-        case .useToken(let token):
-            accessToken = token
+        let (json, current) = try await Self.usageJSON(for: record, reread: reread) { token in
+            try await requestJSON(url: Self.usageURL, headers: Self.oauthHeaders(accessToken: token))
         }
-        let json = try await requestJSON(
-            url: URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!,
-            headers: Self.oauthHeaders(accessToken: accessToken)
-        )
         let usage = ClaudeCodeUsage(json: json)
         guard usage.hasUsage else {
             throw LocalizedErrorMessage("Claude Code usage unavailable")
@@ -115,7 +107,7 @@ struct ClaudeCodeUsageClient {
         let remainingRatio = max(0, min(1, 1 - usedRatio))
         let percentLeft = Int((remainingRatio * 100).rounded())
         let primary = "\(percentLeft)% left"
-        let email = record.email ?? record.credentials.flatMap(ClaudeCodeCredentialReader.emailIdentifier)
+        let email = record.email ?? current.credentials.flatMap(ClaudeCodeCredentialReader.emailIdentifier)
 
         return AccountSnapshot(
             id: record.id,
@@ -128,7 +120,7 @@ struct ClaudeCodeUsageClient {
             resetCreditsAvailable: usage.resetCreditsAvailable,
             resetCreditExpiry: usage.resetCreditExpiry,
             metrics: usage.metrics,
-            accountInfo: accountInfoLines(for: record, credentials: record.credentials),
+            accountInfo: accountInfoLines(for: record, credentials: current.credentials),
             switchTarget: switchTarget(for: record),
             switchCommand: account.claudeSwapCommand,
             emoji: record.label?.emoji,
@@ -137,6 +129,71 @@ struct ClaudeCodeUsageClient {
             secondaryWindow: usage.rateLimitWindows.dropFirst().first,
             modelWindows: usage.modelWindows
         )
+    }
+
+    static func usageJSON(
+        for record: ClaudeCodeAccountRecord,
+        reread: (ClaudeCodeAccountRecord) throws -> ClaudeCodeAccountRecord,
+        request: (String) async throws -> Any
+    ) async throws -> (Any, ClaudeCodeAccountRecord) {
+        var current = record
+        var accessToken: String
+        var rereadAttempted = false
+        switch try Self.disposition(for: record) {
+        case .expired(let expiry):
+            let refreshed = try reread(record)
+            rereadAttempted = true
+            guard Self.sameIdentity(record.credentials, refreshed.credentials ?? "", expectedEmail: record.email, expectedOrganization: record.organizationUUID) else {
+                throw LocalizedErrorMessage("Claude Code credential source has a different or unknown account identity")
+            }
+            guard case .useToken(let usable) = try Self.disposition(for: refreshed) else { throw expiry }
+            current = refreshed
+            accessToken = usable
+        case .useToken(let token):
+            accessToken = token
+        }
+        let json: Any
+        do {
+            json = try await request(accessToken)
+        } catch let error as HTTPStatusError where error.statusCode == 401 {
+            guard !rereadAttempted else { throw error }
+            let refreshed = try reread(current)
+            guard Self.sameIdentity(current.credentials, refreshed.credentials ?? "", expectedEmail: current.email, expectedOrganization: current.organizationUUID) else {
+                throw LocalizedErrorMessage("Claude Code credential source has a different or unknown account identity")
+            }
+            guard case .useToken(let usable) = try Self.disposition(for: refreshed), usable != accessToken else { throw error }
+            current = refreshed
+            accessToken = usable
+            json = try await request(accessToken)
+        }
+        return (json, current)
+    }
+
+    private func reread(_ record: ClaudeCodeAccountRecord) throws -> ClaudeCodeAccountRecord {
+        let source = record.source.hasSuffix(" active") ? String(record.source.dropLast(" active".count)) : record.source
+        let bundle: ClaudeCodeCredentialReader.CredentialBundle
+        if source == "Config" || source == "Command" || source.hasPrefix("Env ") {
+            bundle = try ClaudeCodeCredentialReader.readCredentials(account: account)
+        } else {
+            bundle = try ClaudeCodeCredentialReader.reread(source: source, email: record.email)
+        }
+        var updated = record
+        updated.credentials = bundle.credentials
+        return updated
+    }
+
+    static func sameIdentity(_ old: String?, _ new: String, expectedEmail: String?, expectedOrganization: String?) -> Bool {
+        guard let old else { return false }
+        if old == new { return true }
+        let oldEmail = ClaudeCodeCredentialReader.emailIdentifier(from: old)
+        let newEmail = ClaudeCodeCredentialReader.emailIdentifier(from: new)
+        let oldOrg = ClaudeCodeCredentialReader.organizationUUID(from: old)
+        let newOrg = ClaudeCodeCredentialReader.organizationUUID(from: new)
+        guard oldEmail != nil else { return false }
+        return oldEmail?.lowercased() == newEmail?.lowercased()
+            && oldOrg == newOrg
+            && (expectedEmail == nil || expectedEmail?.lowercased() == newEmail?.lowercased())
+            && (expectedOrganization == nil || expectedOrganization == newOrg)
     }
 
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!

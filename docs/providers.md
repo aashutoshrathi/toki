@@ -2,7 +2,10 @@
 
 ## Claude Code
 
-Credentials come from your Claude Code sign-in. Toki searches, in order:
+Credentials come from your Claude Code sign-in. An explicit `CLAUDE_CONFIG_DIR` in
+Toki's environment selects that directory's credential file; it does not fall back
+to a different account's default Keychain entry. Directory-specific Keychain lookup
+is not supported. Otherwise Toki searches, in order:
 
 1. Keychain item `Claude Code-credentials` under `$USER`
 2. the same item under the macOS account name, when that differs
@@ -25,6 +28,12 @@ claude-swap --switch-to <slot>
 then reloads discovery and refreshes usage. If `claude-swap` is not on your `PATH`, set `claudeSwapCommand` to its full path.
 
 macOS asks for Keychain access the first time Toki reads these credentials. The prompt blocks until you answer it, so nothing connects until it is granted.
+
+An expired Keychain token can fall back to a valid default credential file when
+the email and organization match. Toki rereads the selected source once on expiry
+or a usage authentication failure, and retries only with a usable token for the same
+account. If renewal is still needed, open Claude Code and sign in again. See
+[credential recovery](credential-recovery.md) for the design and limitations.
 
 Toki reads usage from the subscription sign-in that `/login` writes, which is the `claudeAiOauth` section of those credentials. Installing the CLI alone is not enough, and an API key (`ANTHROPIC_API_KEY`) or a Bedrock/Vertex setup produces no such section, so no usage is reported for those. When the card says **Not connected**, expand it: the message names each place Toki looked and what it found there.
 

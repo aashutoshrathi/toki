@@ -153,6 +153,92 @@ final class ClaudeSignInExpiryTests: XCTestCase {
         }
     }
 
+    func testExpiryRereadsOnceAndNeverRequestsAnExpiredToken() async throws {
+        let expired = record(credentials: credentialBlob(expiresAt: -3600))
+        var reads = 0
+        var requests = 0
+        do {
+            _ = try await ClaudeCodeUsageClient.usageJSON(for: expired, reread: { original in
+                reads += 1
+                return original
+            }, request: { _ in
+                requests += 1
+                return [:]
+            })
+            XCTFail("expected expired sign-in")
+        } catch is ClaudeSignInExpiredError {
+            XCTAssertEqual(reads, 1)
+            XCTAssertEqual(requests, 0)
+        }
+
+        let old = #"{"email":"a@b.com","claudeAiOauth":{"accessToken":"old","expiresAt":1}}"#
+        let fresh = #"{"email":"a@b.com","claudeAiOauth":{"accessToken":"new"}}"#
+        reads = 0
+        requests = 0
+        do {
+            _ = try await ClaudeCodeUsageClient.usageJSON(for: record(credentials: old), reread: { original in
+                reads += 1
+                var updated = original
+                updated.credentials = fresh
+                return updated
+            }, request: { _ in
+                requests += 1
+                throw HTTPStatusError(statusCode: 401, body: "")
+            })
+            XCTFail("expected 401")
+        } catch is HTTPStatusError {
+            XCTAssertEqual(reads, 1)
+            XCTAssertEqual(requests, 1)
+        }
+    }
+
+    func test401RetriesOnlyWithChangedTokenForSameAccount() async throws {
+        let old = #"{"email":"a@b.com","claudeAiOauth":{"accessToken":"old"}}"#
+        let renewed = #"{"email":"a@b.com","claudeAiOauth":{"accessToken":"new"}}"#
+        var reads = 0
+        var tokens: [String] = []
+        _ = try await ClaudeCodeUsageClient.usageJSON(for: record(credentials: old), reread: { original in
+            reads += 1
+            var updated = original
+            updated.credentials = renewed
+            return updated
+        }, request: { token in
+            tokens.append(token)
+            if token == "old" { throw HTTPStatusError(statusCode: 401, body: "") }
+            return [:]
+        })
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(tokens, ["old", "new"])
+
+        tokens = []
+        do {
+            _ = try await ClaudeCodeUsageClient.usageJSON(for: record(credentials: old), reread: { $0 }, request: { token in
+                tokens.append(token)
+                throw HTTPStatusError(statusCode: 401, body: "")
+            })
+            XCTFail("expected 401")
+        } catch is HTTPStatusError {
+            XCTAssertEqual(tokens, ["old"])
+        }
+
+        tokens = []
+        let other = #"{"email":"other@b.com","claudeAiOauth":{"accessToken":"new"}}"#
+        do {
+            _ = try await ClaudeCodeUsageClient.usageJSON(for: record(credentials: old), reread: { original in
+                var updated = original
+                updated.credentials = other
+                return updated
+            }, request: { token in
+                tokens.append(token)
+                throw HTTPStatusError(statusCode: 401, body: "")
+            })
+            XCTFail("expected account mismatch")
+        } catch let error as LocalizedErrorMessage {
+            XCTAssertTrue(error.localizedDescription.contains("different or unknown account identity"))
+            XCTAssertEqual(tokens, ["old"])
+        }
+    }
+
     // MARK: - Throttle: an expired sibling must not un-throttle a working account
 
     private func snapshot(expired: Bool) -> AccountSnapshot {
