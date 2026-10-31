@@ -71,7 +71,7 @@ struct ClaudeCodeUsageClient {
         guard let http = error as? HTTPStatusError, http.statusCode == 401 else {
             return error.localizedDescription
         }
-        return "Anthropic rejected this sign-in. Open Claude Code and run /login, then refresh Toki."
+        return "Anthropic rejected this sign-in. Open Claude Code or try /status in an existing session, then refresh Toki. Use /login only if Claude Code cannot restore access."
     }
 
     enum Disposition: Equatable {

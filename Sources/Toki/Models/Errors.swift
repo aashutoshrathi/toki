@@ -12,10 +12,10 @@ struct ClaudeSignInExpiredError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         if isActiveAccount {
-            return "Access token expired. Open Claude Code and use it, then refresh Toki. If it still fails, run /login in Claude Code."
+            return "Access token expired. Open Claude Code or try /status in an existing session, then refresh Toki. Use /login only if Claude Code cannot restore access."
         }
         let account = accountLabel.map { " for \($0)" } ?? ""
-        return "Stored access token expired\(account). Switch to it with claude-swap and use Claude Code, then refresh Toki. If it still fails, run /login in Claude Code."
+        return "Stored access token expired\(account). Switch to it with claude-swap, open Claude Code, and try /status, then refresh Toki. Use /login only if Claude Code cannot restore access."
     }
 }
 
