@@ -195,6 +195,18 @@ enum CodexAppServerClient {
         return (authPath as NSString).deletingLastPathComponent
     }
 
+    // A symlinked home, or a path that differs only in case on APFS, is still the same login.
+    static func sameHome(_ first: AccountConfig, _ second: AccountConfig) -> Bool {
+        let homes = [first, second].map { codexHomeDirectory(for: $0) }
+        guard homes[0] != homes[1] else { return true }
+        let identifiers = homes.map {
+            try? URL(fileURLWithPath: $0).resolvingSymlinksInPath()
+                .resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        }
+        guard let firstIdentifier = identifiers[0], let secondIdentifier = identifiers[1] else { return false }
+        return firstIdentifier.isEqual(secondIdentifier)
+    }
+
     // Usage and rate-limit reads each round-trip to OpenAI's backend, so a fixed short
     // sleep would race them - rateLimits can lose that race while usage (often served from a
     // faster path) wins, silently degrading the display to raw tokens. Poll for every expected

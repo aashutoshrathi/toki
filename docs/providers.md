@@ -36,7 +36,19 @@ Toki reads usage from the subscription sign-in that `/login` writes, which is th
 
 Toki asks the local Codex app-server for the signed-in account, usage, and rate limits. Codex resolves its own configured credential store, so file-based `auth.json`, macOS Keychain, and `auto` storage all work without Toki reading the access token. This is separate from OpenAI organization API usage.
 
-For a multi-account setup, `codexAuthPath` can point at the `auth.json` inside another Codex home. Toki uses its containing directory as `CODEX_HOME` when launching app-server; the default is `~/.codex`.
+### More than one Codex account
+
+Sign each extra account in to its own Codex home next to `~/.codex`:
+
+```sh
+CODEX_HOME=~/.codex-work codex login
+```
+
+Toki finds every folder in your home directory whose name starts with `.codex` and holds an `auth.json` or `config.toml`, asks Codex which account is signed in there, and adds it as its own card (`Codex (work)` for the example above). All accounts are read at the same time. A folder signed in to the same account and workspace as one already listed, such as a backup copy of `~/.codex`, is skipped.
+
+To stop tracking a folder, sign it out with `CODEX_HOME=~/.codex-old codex logout` (or rename it so its name does not start with `.codex`), then remove its account from `config.json`. If you only remove the account, the next scan adds it again.
+
+For a home somewhere else, set `codexAuthPath` to the `auth.json` path inside it. Toki uses its containing directory as `CODEX_HOME` when launching app-server; the default is `~/.codex`.
 
 The app-server is launched through a login shell, which sources `.zprofile` but not `.zshrc`. Since the version managers most CLIs are installed through (nvm, fnm, volta, bun, pnpm, mise, asdf) set `PATH` from `.zshrc`, their bin directories are appended explicitly, so a `codex` installed that way is found rather than reported as `command not found`.
 
