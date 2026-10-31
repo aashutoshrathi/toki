@@ -45,6 +45,12 @@ Toki reads usage from the subscription sign-in that `/login` writes, which is th
 
 Toki asks the local Codex app-server for the signed-in account, usage, and rate limits. Codex resolves its own configured credential store, so file-based `auth.json`, macOS Keychain, and `auto` storage all work without Toki reading the access token. This is separate from OpenAI organization API usage.
 
+If a signed-in account's usage request is rejected with an authentication error,
+clicking **Refresh** lets Toki ask Codex to refresh its credentials noninteractively,
+then retry usage once. Attempts are limited to once per minute per Codex home.
+Background refreshes do not trigger this recovery. If recovery fails, open Codex
+to restore its sign-in, then refresh Toki.
+
 ### More than one Codex account
 
 Sign each extra account in to its own Codex home next to `~/.codex`:

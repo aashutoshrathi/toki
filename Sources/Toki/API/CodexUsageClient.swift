@@ -5,8 +5,8 @@ import Foundation
 struct CodexUsageClient {
     let account: AccountConfig
 
-    func snapshot() async throws -> AccountSnapshot {
-        let payload = try await CodexAppServerClient.fetch(account: account)
+    func snapshot(allowsAuthRecovery: Bool = false) async throws -> AccountSnapshot {
+        let payload = try await CodexAppServerClient.fetch(account: account, allowsAuthRecovery: allowsAuthRecovery)
         return try snapshot(from: payload)
     }
 
@@ -57,6 +57,23 @@ struct CodexUsageClient {
 
 enum CodexAppServerClient {
     private static let path = agentCommandSearchPath
+    private final class RecoveryState: @unchecked Sendable {
+        let lock = NSLock()
+        var lastAttempt = Date.distantPast
+        var lastRefreshCallCompleted = false
+    }
+    private static let statesLock = NSLock()
+    nonisolated(unsafe) private static var recoveryStates: [String: RecoveryState] = [:]
+
+    private static func recoveryState(for home: String) -> RecoveryState {
+        statesLock.lock()
+        defer { statesLock.unlock() }
+        let key = URL(fileURLWithPath: home).resolvingSymlinksInPath().standardizedFileURL.path
+        if let state = recoveryStates[key] { return state }
+        let state = RecoveryState()
+        recoveryStates[key] = state
+        return state
+    }
 
     // Resolve once per fetch/reset and thread the result through, so the optional account-info line
     // can't disagree with the fetch if install state changes mid-refresh. Nothing usable found is a
@@ -74,13 +91,54 @@ enum CodexAppServerClient {
         return binary
     }
 
-    static func fetch(account: AccountConfig) async throws -> CodexAppServerPayload {
+    typealias Transport = (AccountConfig, CodexBinary, [(id: Int, method: String, params: String)], Int, Int) throws -> (results: [Int: Any], errors: [String], rpcErrors: [Int: [String: Any]])
+
+    static func fetch(account: AccountConfig, allowsAuthRecovery: Bool = false) async throws -> CodexAppServerPayload {
         let binary = try await resolvedBinary()
-        let responses = try call(account: account, binary: binary, requests: [
+        return try fetch(account: account, binary: binary, allowsAuthRecovery: allowsAuthRecovery) { account, binary, requests, pollSeconds, timeoutSeconds in
+            try call(account: account, binary: binary, requests: requests, pollSeconds: pollSeconds, timeoutSeconds: timeoutSeconds)
+        }
+    }
+
+    static func fetch(account: AccountConfig, binary: CodexBinary, allowsAuthRecovery: Bool, transport: Transport) throws -> CodexAppServerPayload {
+        let requests = [
             (id: 2, method: "account/usage/read", params: "null"),
             (id: 3, method: "account/rateLimits/read", params: "null"),
             (id: 4, method: "account/read", params: #"{"refreshToken":false}"#)
-        ])
+        ]
+        var responses = try transport(account, binary, requests, 10, 20)
+        if allowsAuthRecovery,
+           let error = responses.rpcErrors[3],
+           isBackendUnauthorized(error),
+           let signedIn = responses.results[4] as? [String: Any],
+           let accountInfo = signedIn["account"] as? [String: Any],
+           accountInfo["type"] as? String == "chatgpt" {
+            let state = recoveryState(for: codexHomeDirectory(for: account))
+            try state.lock.withLock {
+                guard Date().timeIntervalSince(state.lastAttempt) >= 60 else {
+                    guard state.lastRefreshCallCompleted else {
+                        throw LocalizedErrorMessage("Codex account check failed recently. Open Codex to sign in, then try again later.")
+                    }
+                    return
+                }
+                state.lastAttempt = Date()
+                state.lastRefreshCallCompleted = false
+                let refreshed: (results: [Int: Any], errors: [String], rpcErrors: [Int: [String: Any]])
+                do {
+                    refreshed = try transport(account, binary, [(id: 2, method: "account/read", params: #"{"refreshToken":true}"#)], 30, 30)
+                } catch {
+                    throw LocalizedErrorMessage("Codex couldn't complete its account check. Open Codex and try again.")
+                }
+                guard refreshed.rpcErrors[2] == nil,
+                      let result = refreshed.results[2] as? [String: Any],
+                      let renewedAccount = result["account"] as? [String: Any],
+                      renewedAccount["type"] as? String == "chatgpt" else {
+                    throw LocalizedErrorMessage("Codex didn't return a signed-in account. Open Codex and try again.")
+                }
+                state.lastRefreshCallCompleted = true
+            }
+            responses = try transport(account, binary, requests, 10, 20)
+        }
 
         var payload = CodexAppServerPayload()
         payload.binarySource = binary
@@ -106,6 +164,14 @@ enum CodexAppServerClient {
             throw LocalizedErrorMessage(responses.errors.first ?? "Codex app-server did not return rate limits")
         }
         return payload
+    }
+
+    static func isBackendUnauthorized(_ error: [String: Any]) -> Bool {
+        guard error["code"] as? Int == -32603,
+              let message = error["message"] as? String,
+              message.hasPrefix("failed to fetch codex rate limits: GET "),
+              message.contains("/backend-api/wham/usage failed: 401 Unauthorized") else { return false }
+        return true
     }
 
     // Provider discovery must ask Codex whether its selected credential store is signed in.
@@ -220,16 +286,14 @@ enum CodexAppServerClient {
     // plus `pollSeconds`). A reset gets a much longer budget than a read: killing app-server while
     // the consume is in flight can still spend the credit on OpenAI's side.
     //
-    // codex app-server is a single-client stdio transport: it exits as soon as it sees EOF
-    // on stdin, regardless of requests still in flight. The subshell feeding stdin must
-    // therefore stay alive (via a trailing sleep) for at least as long as we intend to poll,
-    // or app-server tears itself down mid-round-trip and every response after initialize goes
-    // missing - the app-server process itself is still killed explicitly below once we're done.
+    // Keep stdin open until all replies arrive: app-server exits on EOF even with requests
+    // in flight. Holding the FIFO open avoids a sleeping feeder delaying pipeline cleanup.
     private static func call(
         account: AccountConfig,
         binary: CodexBinary,
         requests: [(id: Int, method: String, params: String)],
-        pollSeconds: Int = 10
+        pollSeconds: Int = 10,
+        timeoutSeconds: Int? = nil
     ) throws -> (results: [Int: Any], errors: [String], rpcErrors: [Int: [String: Any]]) {
         let initialize = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"Toki","version":"\#(appVersion)"},"capabilities":{"experimentalApi":true}}}"#
         let initialized = #"{"jsonrpc":"2.0","method":"initialized","params":null}"#
@@ -241,14 +305,19 @@ enum CodexAppServerClient {
         let codexHome = codexHomeDirectory(for: account)
 
         let command = """
-        __toki_out=$(mktemp -t toki_codex); \
-        ( printf '%s\\n' '\(shellEscaped(initialize))'; \
-        sleep 0.2; \
-        printf '%s\\n' '\(shellEscaped(initialized))'; \
-        sleep 0.2; \
-        printf '%s\\n' \(printfArgs); \
-        sleep \(pollSeconds + 1) ) | CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" '\(shellEscaped(binary.executablePath))' app-server --stdio > "$__toki_out" 2>&1 & \
+        __toki_out=$(mktemp -t toki_codex) || exit 1; \
+        __toki_pid=''; \
+        trap '[[ -n "$__toki_pid" ]] && kill $__toki_pid 2>/dev/null; rm -f "$__toki_out" "$__toki_out.in"' EXIT; \
+        trap 'exit 1' TERM INT; \
+        mkfifo -m 600 "$__toki_out.in" || exit 1; \
+        exec {__toki_input}<> "$__toki_out.in" || exit 1; \
+        CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" '\(shellEscaped(binary.executablePath))' app-server --stdio < "$__toki_out.in" > "$__toki_out" 2>&1 & \
         __toki_pid=$!; \
+        printf '%s\\n' '\(shellEscaped(initialize))' >&$__toki_input; \
+        sleep 0.2; \
+        printf '%s\\n' '\(shellEscaped(initialized))' >&$__toki_input; \
+        sleep 0.2; \
+        printf '%s\\n' \(printfArgs) >&$__toki_input; \
         for ((__toki_i = 1; __toki_i <= \(pollSeconds * 10); __toki_i++)); do \
         sleep 0.1; \
         if \(idChecks); then break; fi; \
@@ -256,11 +325,12 @@ enum CodexAppServerClient {
         done; \
         kill $__toki_pid 2>/dev/null; \
         wait $__toki_pid 2>/dev/null; \
-        cat "$__toki_out"; \
-        rm -f "$__toki_out"
+        __toki_pid=''; \
+        exec {__toki_input}>&-; \
+        cat "$__toki_out"
         """
 
-        let output = try SecretResolver.runShell(command, timeout: TimeInterval(pollSeconds * 2))
+        let output = try SecretResolver.runShell(command, timeout: TimeInterval(timeoutSeconds ?? pollSeconds * 2))
         var results: [Int: Any] = [:]
         var errors: [String] = []
         var rpcErrors: [Int: [String: Any]] = [:]
