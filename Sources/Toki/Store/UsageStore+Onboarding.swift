@@ -8,16 +8,27 @@ enum ProviderScanDisposition: Equatable {
 
 func providerScanDisposition(
     detected: [DetectedProvider],
-    snapshotProviders: Set<Provider>,
+    isConnected: (DetectedProvider) -> Bool,
     configIsNil: Bool,
     needsOnboarding: Bool
 ) -> ProviderScanDisposition {
-    let newProviders = detected.filter { !snapshotProviders.contains($0.provider) }
+    let newProviders = detected.filter { !isConnected($0) }
     if newProviders.contains(where: \.isConnectable) { return .persistConnectable }
     if configIsNil, needsOnboarding, newProviders.contains(where: { !$0.isConnectable }) {
         return .activateLocalUsage
     }
     return .noAction
+}
+
+func detectedProviderIsConnected(
+    _ detected: DetectedProvider,
+    snapshotProviders: Set<Provider>,
+    accounts: [AccountConfig]
+) -> Bool {
+    guard detected.provider == .codex, let candidate = detected.makeAccount?() else {
+        return snapshotProviders.contains(detected.provider)
+    }
+    return accounts.contains { $0.provider == .codex && CodexAppServerClient.sameHome($0, candidate) }
 }
 
 extension UsageStore {
@@ -95,8 +106,9 @@ extension UsageStore {
         if let existing = providerScanTask { return existing }
         isScanningProviders = true
         let allowsKeychain = allowsKeychainReads
+        let accounts = config?.accounts ?? []
         let task = Task { [weak self] in
-            let detected = await ProviderDetection.scan(allowsKeychain: allowsKeychain)
+            let detected = await ProviderDetection.scan(allowsKeychain: allowsKeychain, accounts: accounts)
             guard let self else { return }
             self.detectedProviders = detected
             self.isScanningProviders = false
@@ -127,28 +139,35 @@ extension UsageStore {
         updatePreferences(next)
     }
 
-    // detectedProviders minus anything already present in snapshots (whether connected
-    // through config.json or auto-detected like OpenCode) - only ever non-empty for a
+    // detectedProviders minus anything already connected (through config.json, matched by
+    // Codex home for Codex, or auto-detected like OpenCode) - only ever non-empty for a
     // moment between a scan finding something and connectDetected writing it, or for
     // local-only providers with no makeAccount that never get written at all.
     var addableProviders: [DetectedProvider] {
-        detectedProviders.filter { detected in !snapshots.contains(where: { $0.provider == detected.provider }) }
+        detectedProviders.filter { !isConnected($0) }
+    }
+
+    private func isConnected(_ detected: DetectedProvider) -> Bool {
+        detectedProviderIsConnected(
+            detected,
+            snapshotProviders: Set(snapshots.map(\.provider)),
+            accounts: config?.accounts ?? []
+        )
     }
 
     // Auto-adds newly detected connectable providers. On a fresh install with only
     // local-history providers, installs an empty config in memory so UsageFetcher can
     // surface its synthetic accounts without creating config.json on disk.
     private func connectDetected(_ detected: [DetectedProvider]) {
-        let snapshotProviders = Set(snapshots.map(\.provider))
         switch providerScanDisposition(
             detected: detected,
-            snapshotProviders: snapshotProviders,
+            isConnected: isConnected,
             configIsNil: config == nil,
             needsOnboarding: needsOnboarding
         ) {
         case .persistConnectable:
             let newAccounts = detected.compactMap { candidate -> AccountConfig? in
-                guard candidate.isConnectable, !snapshotProviders.contains(candidate.provider) else { return nil }
+                guard candidate.isConnectable, !isConnected(candidate) else { return nil }
                 return candidate.makeAccount?()
             }
             guard !newAccounts.isEmpty else { return }
@@ -194,10 +213,14 @@ extension UsageStore {
         // different provider (e.g. a manual account someone happened to id "codex") and
         // fail validate() below - turning a working connect into an opaque error.
         var existingIDs = Set(next.accounts.map(\.id))
+        let previousCount = next.accounts.count
         for account in accounts {
             guard !existingIDs.contains(account.id) else { continue }
             next.accounts.append(account)
             existingIDs.insert(account.id)
+        }
+        guard next.accounts.count > previousCount else {
+            return
         }
         do {
             try ConfigLoader.validate(next)
