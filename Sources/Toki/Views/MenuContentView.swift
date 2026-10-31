@@ -197,7 +197,7 @@ struct MenuContentView: View {
 
             HStack(spacing: 5) {
                 Button {
-                    store.refresh(minimumRefreshInterval: 60, allowsAuthRecovery: true)
+                    store.refresh(minimumRefreshInterval: 60)
                 } label: {
                     Group {
                         if store.isRefreshing {

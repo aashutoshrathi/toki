@@ -5,8 +5,8 @@ import Foundation
 struct CodexUsageClient {
     let account: AccountConfig
 
-    func snapshot(allowsAuthRecovery: Bool = false) async throws -> AccountSnapshot {
-        let payload = try await CodexAppServerClient.fetch(account: account, allowsAuthRecovery: allowsAuthRecovery)
+    func snapshot() async throws -> AccountSnapshot {
+        let payload = try await CodexAppServerClient.fetch(account: account)
         return try snapshot(from: payload)
     }
 
@@ -93,22 +93,21 @@ enum CodexAppServerClient {
 
     typealias Transport = (AccountConfig, CodexBinary, [(id: Int, method: String, params: String)], Int, Int) throws -> (results: [Int: Any], errors: [String], rpcErrors: [Int: [String: Any]])
 
-    static func fetch(account: AccountConfig, allowsAuthRecovery: Bool = false) async throws -> CodexAppServerPayload {
+    static func fetch(account: AccountConfig) async throws -> CodexAppServerPayload {
         let binary = try await resolvedBinary()
-        return try fetch(account: account, binary: binary, allowsAuthRecovery: allowsAuthRecovery) { account, binary, requests, pollSeconds, timeoutSeconds in
+        return try fetch(account: account, binary: binary) { account, binary, requests, pollSeconds, timeoutSeconds in
             try call(account: account, binary: binary, requests: requests, pollSeconds: pollSeconds, timeoutSeconds: timeoutSeconds)
         }
     }
 
-    static func fetch(account: AccountConfig, binary: CodexBinary, allowsAuthRecovery: Bool, transport: Transport) throws -> CodexAppServerPayload {
+    static func fetch(account: AccountConfig, binary: CodexBinary, transport: Transport) throws -> CodexAppServerPayload {
         let requests = [
             (id: 2, method: "account/usage/read", params: "null"),
             (id: 3, method: "account/rateLimits/read", params: "null"),
             (id: 4, method: "account/read", params: #"{"refreshToken":false}"#)
         ]
         var responses = try transport(account, binary, requests, 10, 20)
-        if allowsAuthRecovery,
-           let error = responses.rpcErrors[3],
+        if let error = responses.rpcErrors[3],
            isBackendUnauthorized(error),
            let signedIn = responses.results[4] as? [String: Any],
            let accountInfo = signedIn["account"] as? [String: Any],

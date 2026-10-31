@@ -19,8 +19,7 @@ enum UsageFetcher {
         config: AppConfig,
         state: UsageState,
         previousSnapshots: [AccountSnapshot],
-        minimumRefreshInterval: TimeInterval?,
-        allowsAuthRecovery: Bool = false
+        minimumRefreshInterval: TimeInterval?
     ) async -> UsageFetchResponse {
         let accounts = accountsIncludingAutoDetected(config.accounts)
         // uniquingKeysWith (not uniqueKeysWithValues) so duplicate account ids never trap.
@@ -38,8 +37,7 @@ enum UsageFetcher {
                             previousByID: previousByID,
                             lastCalledAt: state.apiLastCalledAt,
                             now: fetchedAt,
-                            minimumRefreshInterval: minimumRefreshInterval,
-                            allowsAuthRecovery: allowsAuthRecovery
+                            minimumRefreshInterval: minimumRefreshInterval
                         )
                     )
                 }
@@ -150,13 +148,11 @@ enum UsageFetcher {
         previousByID: [String: AccountSnapshot],
         lastCalledAt: [String: Date],
         now: Date,
-        minimumRefreshInterval: TimeInterval?,
-        allowsAuthRecovery: Bool
+        minimumRefreshInterval: TimeInterval?
     ) async -> AccountFetchResult {
         let cacheKey = apiCacheKey(for: account)
         if let cacheKey,
            let previous = previousSnapshots(for: account, previousByID: previousByID),
-           !(allowsAuthRecovery && account.provider == .codex && previous.contains(where: \.isError)),
            !isDue(
                 account: account,
                 cacheKey: cacheKey,
@@ -190,7 +186,7 @@ enum UsageFetcher {
             case .openai:
                 snapshots = [try await OpenAIUsageClient(account: account).snapshot()]
             case .codex:
-                snapshots = [try await CodexUsageClient(account: account).snapshot(allowsAuthRecovery: allowsAuthRecovery)]
+                snapshots = [try await CodexUsageClient(account: account).snapshot()]
             case .anthropic:
                 snapshots = [try await AnthropicUsageClient(account: account).snapshot()]
             }

@@ -1,7 +1,7 @@
 import Foundation
 
 extension UsageStore {
-    func refresh(keepsExistingSnapshots: Bool = true, minimumRefreshInterval: TimeInterval? = nil, allowsAuthRecovery: Bool = false) {
+    func refresh(keepsExistingSnapshots: Bool = true, minimumRefreshInterval: TimeInterval? = nil) {
         guard isNetworkAvailable else {
             logDebug("Refresh skipped - internet connection unavailable")
             return
@@ -33,8 +33,7 @@ extension UsageStore {
                 config: config,
                 state: currentState,
                 previousSnapshots: previousSnapshots,
-                minimumRefreshInterval: minimumRefreshInterval,
-                allowsAuthRecovery: allowsAuthRecovery
+                minimumRefreshInterval: minimumRefreshInterval
             )
             guard isNetworkAvailable,
                   connectivityGeneration == startedForConnectivityGeneration else {

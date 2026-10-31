@@ -31,9 +31,10 @@ macOS asks for Keychain access the first time Toki reads these credentials. The 
 
 An expired Keychain token can fall back to a valid default credential file when
 the email and organization match. Toki rereads the selected source once on expiry
-or a usage authentication failure, and retries only with a usable token for the same
-account. Opening Claude Code and using it can renew its access token without a new
-login. Refresh Toki afterward; run `/login` in Claude Code if access still fails.
+or a usage authentication failure during manual or automatic refresh, and retries
+only with a usable token for the same account. Opening Claude Code and using it can
+renew its access token without a new login. Refresh Toki afterward; run `/login`
+in Claude Code if access still fails.
 
 Toki reads usage from the subscription sign-in that `/login` writes, which is the `claudeAiOauth` section of those credentials. Installing the CLI alone is not enough, and an API key (`ANTHROPIC_API_KEY`) or a Bedrock/Vertex setup produces no such section, so no usage is reported for those. When the card says **Not connected**, expand it: the message names each place Toki looked and what it found there.
 
@@ -45,11 +46,12 @@ Toki reads usage from the subscription sign-in that `/login` writes, which is th
 
 Toki asks the local Codex app-server for the signed-in account, usage, and rate limits. Codex resolves its own configured credential store, so file-based `auth.json`, macOS Keychain, and `auto` storage all work without Toki reading the access token. This is separate from OpenAI organization API usage.
 
-If a signed-in account's usage request is rejected with an authentication error,
-clicking **Refresh** lets Toki ask Codex to refresh its credentials noninteractively,
-then retry usage once. Attempts are limited to once per minute per Codex home.
-Background refreshes do not trigger this recovery. If recovery fails, open Codex
-to restore its sign-in, then refresh Toki.
+If a signed-in account's usage request is rejected with a backend 401, both manual
+and automatic refresh let Toki ask Codex to refresh its credentials noninteractively,
+then retry usage once. Attempts are limited to once per minute per Codex home,
+with a 30-second timeout. Normal polling intervals still apply; missing sign-in,
+permission errors, rate limits, and network errors do not trigger credential recovery.
+If recovery fails, open Codex to restore its sign-in, then refresh Toki.
 
 ### More than one Codex account
 
