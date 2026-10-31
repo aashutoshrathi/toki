@@ -32,7 +32,8 @@ macOS asks for Keychain access the first time Toki reads these credentials. The 
 An expired Keychain token can fall back to a valid default credential file when
 the email and organization match. Toki rereads the selected source once on expiry
 or a usage authentication failure, and retries only with a usable token for the same
-account. If renewal is still needed, open Claude Code and sign in again.
+account. Opening Claude Code and using it can renew its access token without a new
+login. Refresh Toki afterward; run `/login` in Claude Code if access still fails.
 
 Toki reads usage from the subscription sign-in that `/login` writes, which is the `claudeAiOauth` section of those credentials. Installing the CLI alone is not enough, and an API key (`ANTHROPIC_API_KEY`) or a Bedrock/Vertex setup produces no such section, so no usage is reported for those. When the card says **Not connected**, expand it: the message names each place Toki looked and what it found there.
 
