@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.4.0 - 2026-10-31
+
+One Line: Toki now shows every Codex account you are signed in to, each on its own card.
+
+### Added
+- **More than one Codex account.** Sign an extra account in to its own Codex home, for example `CODEX_HOME=~/.codex-work codex login`. Toki finds each `~/.codex*` folder that holds a Codex sign-in, asks Codex which account it is, and adds a card for it, such as `Codex (work)`. Each card shows its own limits and resets, and all of them refresh at the same time. A folder that is a copy of an account Toki already shows is skipped. Before, only `~/.codex` was found, and a second account needed a hand-written `codexAuthPath`.
+
+### Changed
+- **After you update, Toki can add cards for Codex folders you forgot.** If an old `~/.codex-*` folder is still signed in, it gets a card. To stop tracking it, sign it out with `CODEX_HOME=<folder> codex logout`, then remove its account from the config.
+
 ## 3.3.11 - 2026-10-29
 
 One Line: The phone page is safe from hostile links, T3 Code chats find their Claude transcript, and Codex and OpenCode usage load correctly.
