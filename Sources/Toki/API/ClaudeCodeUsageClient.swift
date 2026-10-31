@@ -35,7 +35,7 @@ struct ClaudeCodeUsageClient {
                 id: record.id,
                 name: record.displayName,
                 provider: .claudeCode,
-                primary: "Needs renewal",
+                primary: "Sign-in expired",
                 subtitle: record.email ?? expiry.localizedDescription,
                 remainingRatio: nil,
                 metrics: [MetricLine(label: "Sign-in", value: expiry.localizedDescription)],

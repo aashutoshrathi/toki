@@ -320,7 +320,7 @@ enum UsageFetcher {
             id: account.id,
             name: account.name,
             provider: account.provider,
-            primary: "Needs renewal",
+            primary: "Sign-in expired",
             subtitle: expiry.localizedDescription,
             remainingRatio: nil,
             metrics: [MetricLine(label: "Sign-in", value: expiry.localizedDescription)],

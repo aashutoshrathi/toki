@@ -123,7 +123,7 @@ struct AccountCard: View {
                 if let switchTarget = snapshot.switchTarget {
                     VStack(alignment: .trailing, spacing: 4) {
                         if snapshot.isError {
-                            StatusBadge(text: snapshot.isSignInExpired ? "needs renewal" : "not connected")
+                            StatusBadge(text: snapshot.isSignInExpired ? "sign-in expired" : "not connected")
                         }
                         Button {
                             store.switchClaudeAccount(target: switchTarget, command: snapshot.switchCommand)
