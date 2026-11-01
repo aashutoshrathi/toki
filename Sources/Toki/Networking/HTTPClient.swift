@@ -1,7 +1,8 @@
 import Foundation
 
-func requestJSON(url: URL, headers: [String: String]) async throws -> Any {
+func requestJSON(url: URL, headers: [String: String], timeout: TimeInterval? = nil) async throws -> Any {
     var request = URLRequest(url: url)
+    if let timeout { request.timeoutInterval = timeout }
     request.setValue(appUserAgent, forHTTPHeaderField: "User-Agent")
     for (key, value) in headers {
         request.setValue(value, forHTTPHeaderField: key)

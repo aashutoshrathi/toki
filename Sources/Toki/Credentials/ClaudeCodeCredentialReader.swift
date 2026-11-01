@@ -4,6 +4,12 @@ enum ClaudeCodeCredentialReader {
     static let keychainService = "Claude Code-credentials"
     static let credentialsFilePath = "~/.claude/.credentials.json"
 
+    static var customCredentialFilePath: String? {
+        guard let directory = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"],
+              isUsableConfigDirectory(directory) else { return nil }
+        return "\(directory.hasSuffix("/") ? String(directory.dropLast()) : directory)/.credentials.json"
+    }
+
     struct CredentialBundle {
         var credentials: String
         var source: String
@@ -35,9 +41,7 @@ enum ClaudeCodeCredentialReader {
     // as a side effect of opening the menu. A file-based sign-in is still found either way.
     static func readSignedInCredentials(allowsKeychain: Bool = true) throws -> CredentialBundle {
         var attempts: [String] = []
-        let custom = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
-        let customPath = custom.flatMap { isUsableConfigDirectory($0) ? "\($0.hasSuffix("/") ? String($0.dropLast()) : $0)/.credentials.json" : nil }
-        if let customPath {
+        if let customPath = customCredentialFilePath {
             do {
                 return try readCredentialsFile(at: customPath)
             } catch {
@@ -46,16 +50,7 @@ enum ClaudeCodeCredentialReader {
         }
         for account in keychainAccountCandidates() where allowsKeychain {
             do {
-                let bundle = try keychainBundle(account: account)
-                let token = try extractToken(from: bundle.credentials)
-                if token.isExpired(), let email = emailIdentifier(from: bundle.credentials),
-                   let file = try? readCredentialsFile(at: credentialsFilePath),
-                   emailIdentifier(from: file.credentials)?.caseInsensitiveCompare(email) == .orderedSame,
-                   organizationUUID(from: file.credentials) == organizationUUID(from: bundle.credentials),
-                   let fileToken = try? extractToken(from: file.credentials), !fileToken.isExpired() {
-                    return file
-                }
-                return bundle
+                return try keychainBundle(account: account)
             } catch {
                 attempts.append("Keychain \(account.map { "item for \"\($0)\"" } ?? "item, any account") (\(shortReason(error)))")
                 // Only a missing item is worth retrying under another name. A denied or timed-out

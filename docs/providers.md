@@ -2,10 +2,11 @@
 
 ## Claude Code
 
-Credentials come from your Claude Code sign-in. An explicit `CLAUDE_CONFIG_DIR` in
-Toki's environment selects that directory's credential file; it does not fall back
+Credentials come from your Claude Code sign-in. A valid absolute or `~`-rooted
+`CLAUDE_CONFIG_DIR` inherited by Toki selects that directory's credential file; it does not fall back
 to a different account's default Keychain entry. Directory-specific Keychain lookup
-is not supported. Otherwise Toki searches, in order:
+is not supported. This directory is tracked independently of the default
+`claude-swap` account list. Otherwise Toki searches, in order:
 
 1. Keychain item `Claude Code-credentials` under `$USER`
 2. the same item under the macOS account name, when that differs
@@ -15,7 +16,7 @@ is not supported. Otherwise Toki searches, in order:
 6. `$XDG_CONFIG_HOME/claude/.credentials.json`
 7. `~/.config/claude/.credentials.json`
 
-`CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME` are read from Toki's own environment first. A Finder-launched app inherits none of your shell environment, so if they aren't set there, Toki asks your login shell for them once and caches the answer. If your setup is stranger still, point Toki at it directly with `apiKeyCommand`, which can be any command that prints the credential JSON.
+`CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME` are read from Toki's own environment first. A Finder-launched app inherits none of your shell environment, so if they aren't set there, Toki asks your login shell for them once and caches the answer. Shell-only values participate in file fallback after the default Keychain; they do not isolate account discovery. If your setup is stranger still, point Toki at it directly with `apiKeyCommand`, which can be any command that prints the credential JSON.
 
 Whatever comes out of that file is sent to `api.anthropic.com` as a Bearer token, so it is checked before it is read. A candidate is skipped when the path isn't absolute (or `~`-rooted) or holds control characters, or when the file is a symlink, not a regular file, owned by another user, writable by group or other, empty, or larger than 256 KB. A file that is merely readable by others is still used, but the diagnostic log records it. `chmod 600` is what Claude Code writes and what Toki expects.
 
@@ -29,11 +30,15 @@ then reloads discovery and refreshes usage. If `claude-swap` is not on your `PAT
 
 macOS asks for Keychain access the first time Toki reads these credentials. The prompt blocks until you answer it, so nothing connects until it is granted.
 
-An expired Keychain token can fall back to a valid default credential file when
-the email and organization match. Toki rereads the selected source once on expiry
-or a usage authentication failure during manual or automatic refresh, and retries
-only with a usable token for the same account. Claude Code can renew its access token
-without a new login: try opening a session or running `/status` in an existing one.
+Toki rereads the selected source once on expiry or a usage authentication failure
+during manual or automatic refresh. A replacement token is verified through Claude's
+OAuth profile endpoint, with a 10-second inactivity timeout, before retrying usage once.
+An expired Keychain token can fall back to a valid default credential file only when
+the card's email and organization are known and match the replacement's profile.
+Failed recovery keeps the original sign-in error and records the failure in diagnostics.
+Reset redemption stays unavailable while usage depends on the fallback file.
+Claude Code can renew its access token without a new login: try opening a session
+or running `/status` in an existing one.
 Refresh Toki afterward or wait for its next automatic poll. Use `/login` only if
 Claude Code cannot restore access. Toki does not run `/status` itself.
 

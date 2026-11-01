@@ -94,7 +94,9 @@ struct ClaudeCodeUsageClient {
     }
 
     private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
-        let (json, current) = try await Self.usageJSON(for: record, reread: reread) { token in
+        let (json, current) = try await Self.usageJSON(for: record, reread: reread, profile: { token in
+            try await requestJSON(url: Self.profileURL, headers: Self.oauthHeaders(accessToken: token), timeout: 10)
+        }) { token in
             try await requestJSON(url: Self.usageURL, headers: Self.oauthHeaders(accessToken: token))
         }
         let usage = ClaudeCodeUsage(json: json)
@@ -117,8 +119,8 @@ struct ClaudeCodeUsageClient {
             subtitle: email ?? "Claude Code OAuth usage",
             remainingRatio: remainingRatio,
             progressRatio: usedRatio,
-            resetCreditsAvailable: usage.resetCreditsAvailable,
-            resetCreditExpiry: usage.resetCreditExpiry,
+            resetCreditsAvailable: current.source == record.source ? usage.resetCreditsAvailable : 0,
+            resetCreditExpiry: current.source == record.source ? usage.resetCreditExpiry : nil,
             metrics: usage.metrics,
             accountInfo: accountInfoLines(for: record, credentials: current.credentials),
             switchTarget: switchTarget(for: record),
@@ -134,6 +136,7 @@ struct ClaudeCodeUsageClient {
     static func usageJSON(
         for record: ClaudeCodeAccountRecord,
         reread: (ClaudeCodeAccountRecord) throws -> ClaudeCodeAccountRecord,
+        profile: (String) async throws -> Any,
         request: (String) async throws -> Any
     ) async throws -> (Any, ClaudeCodeAccountRecord) {
         var current = record
@@ -141,29 +144,35 @@ struct ClaudeCodeUsageClient {
         var rereadAttempted = false
         switch try Self.disposition(for: record) {
         case .expired(let expiry):
-            let refreshed = try reread(record)
             rereadAttempted = true
-            guard Self.sameIdentity(record.credentials, refreshed.credentials ?? "", expectedEmail: record.email, expectedOrganization: record.organizationUUID) else {
-                throw LocalizedErrorMessage("Claude Code credential source has a different or unknown account identity")
+            do {
+                let refreshed = try reread(record)
+                guard case .useToken(let usable) = try Self.disposition(for: refreshed) else { throw expiry }
+                current = try await verifiedRecord(refreshed, expected: record, profile: profile(usable))
+                accessToken = usable
+            } catch {
+                if !(error is ClaudeSignInExpiredError) {
+                    DiagnosticLogger.shared.record(.warning, component: "usage", code: "claude_recovery_failed", detail: diagnosticErrorDetail(error))
+                }
+                throw expiry
             }
-            guard case .useToken(let usable) = try Self.disposition(for: refreshed) else { throw expiry }
-            current = refreshed
-            accessToken = usable
         case .useToken(let token):
             accessToken = token
         }
         let json: Any
         do {
             json = try await request(accessToken)
-        } catch let error as HTTPStatusError where error.statusCode == 401 {
-            guard !rereadAttempted else { throw error }
-            let refreshed = try reread(current)
-            guard Self.sameIdentity(current.credentials, refreshed.credentials ?? "", expectedEmail: current.email, expectedOrganization: current.organizationUUID) else {
-                throw LocalizedErrorMessage("Claude Code credential source has a different or unknown account identity")
+        } catch let unauthorized as HTTPStatusError where unauthorized.statusCode == 401 {
+            guard !rereadAttempted else { throw unauthorized }
+            do {
+                let refreshed = try reread(current)
+                guard case .useToken(let usable) = try Self.disposition(for: refreshed), usable != accessToken else { throw unauthorized }
+                current = try await verifiedRecord(refreshed, expected: current, profile: profile(usable))
+                accessToken = usable
+            } catch {
+                DiagnosticLogger.shared.record(.warning, component: "usage", code: "claude_recovery_failed", detail: diagnosticErrorDetail(error))
+                throw unauthorized
             }
-            guard case .useToken(let usable) = try Self.disposition(for: refreshed), usable != accessToken else { throw error }
-            current = refreshed
-            accessToken = usable
             json = try await request(accessToken)
         }
         return (json, current)
@@ -171,32 +180,41 @@ struct ClaudeCodeUsageClient {
 
     private func reread(_ record: ClaudeCodeAccountRecord) throws -> ClaudeCodeAccountRecord {
         let source = record.source.hasSuffix(" active") ? String(record.source.dropLast(" active".count)) : record.source
-        let bundle: ClaudeCodeCredentialReader.CredentialBundle
+        var bundle: ClaudeCodeCredentialReader.CredentialBundle
         if source == "Config" || source == "Command" || source.hasPrefix("Env ") {
             bundle = try ClaudeCodeCredentialReader.readCredentials(account: account)
         } else {
             bundle = try ClaudeCodeCredentialReader.reread(source: source, email: record.email)
         }
+        if source.hasPrefix("Keychain "),
+           record.email != nil, record.organizationUUID != nil,
+           try ClaudeCodeCredentialReader.extractToken(from: bundle.credentials).isExpired(),
+           let file = try? ClaudeCodeCredentialReader.readCredentialsFile(),
+           let token = try? ClaudeCodeCredentialReader.extractToken(from: file.credentials), !token.isExpired() {
+            bundle = file
+        }
         var updated = record
         updated.credentials = bundle.credentials
+        updated.source = bundle.source == source ? record.source : bundle.source
         return updated
     }
 
-    static func sameIdentity(_ old: String?, _ new: String, expectedEmail: String?, expectedOrganization: String?) -> Bool {
-        guard let old else { return false }
-        if old == new { return true }
-        let oldEmail = ClaudeCodeCredentialReader.emailIdentifier(from: old)
-        let newEmail = ClaudeCodeCredentialReader.emailIdentifier(from: new)
-        let oldOrg = ClaudeCodeCredentialReader.organizationUUID(from: old)
-        let newOrg = ClaudeCodeCredentialReader.organizationUUID(from: new)
-        guard oldEmail != nil else { return false }
-        return oldEmail?.lowercased() == newEmail?.lowercased()
-            && oldOrg == newOrg
-            && (expectedEmail == nil || expectedEmail?.lowercased() == newEmail?.lowercased())
-            && (expectedOrganization == nil || expectedOrganization == newOrg)
+    private static func verifiedRecord(_ candidate: ClaudeCodeAccountRecord, expected: ClaudeCodeAccountRecord, profile: Any) throws -> ClaudeCodeAccountRecord {
+        guard let profile = profile as? [String: Any],
+              let account = profile["account"] as? [String: Any],
+              let email = account["email"] as? String, email.contains("@"),
+              let organization = profile["organization"] as? [String: Any],
+              let organizationUUID = organization["uuid"] as? String, !organizationUUID.isEmpty,
+              expected.email == nil || expected.email?.caseInsensitiveCompare(email) == .orderedSame,
+              expected.organizationUUID == nil || expected.organizationUUID == organizationUUID,
+              candidate.source == expected.source || (expected.email != nil && expected.organizationUUID != nil) else {
+            throw LocalizedErrorMessage("Claude Code credential source has a different or unknown account identity")
+        }
+        return candidate
     }
 
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!
+    private static let profileURL = URL(string: "https://api.anthropic.com/api/oauth/profile")!
 
     static func oauthHeaders(accessToken: String) -> [String: String] {
         [

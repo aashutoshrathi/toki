@@ -124,7 +124,7 @@ enum CodexAppServerClient {
                 state.lastRefreshCallCompleted = false
                 let refreshed: (results: [Int: Any], errors: [String], rpcErrors: [Int: [String: Any]])
                 do {
-                    refreshed = try transport(account, binary, [(id: 2, method: "account/read", params: #"{"refreshToken":true}"#)], 30, 30)
+                    refreshed = try transport(account, binary, [(id: 2, method: "account/read", params: #"{"refreshToken":true}"#)], 25, 30)
                 } catch {
                     throw LocalizedErrorMessage("Codex couldn't complete its account check. Open Codex and try again.")
                 }
@@ -310,7 +310,7 @@ enum CodexAppServerClient {
         trap 'exit 1' TERM INT; \
         mkfifo -m 600 "$__toki_out.in" || exit 1; \
         exec {__toki_input}<> "$__toki_out.in" || exit 1; \
-        CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" '\(shellEscaped(binary.executablePath))' app-server --stdio < "$__toki_out.in" > "$__toki_out" 2>&1 & \
+        CODEX_HOME='\(shellEscaped(codexHome))' PATH="\(path):$PATH" '\(shellEscaped(binary.executablePath))' app-server --stdio < "$__toki_out.in" > "$__toki_out" 2>&1 {__toki_input}>&- & \
         __toki_pid=$!; \
         printf '%s\\n' '\(shellEscaped(initialize))' >&$__toki_input; \
         sleep 0.2; \
@@ -322,10 +322,10 @@ enum CodexAppServerClient {
         if \(idChecks); then break; fi; \
         kill -0 $__toki_pid 2>/dev/null || break; \
         done; \
+        exec {__toki_input}>&-; \
         kill $__toki_pid 2>/dev/null; \
         wait $__toki_pid 2>/dev/null; \
         __toki_pid=''; \
-        exec {__toki_input}>&-; \
         cat "$__toki_out"
         """
 
