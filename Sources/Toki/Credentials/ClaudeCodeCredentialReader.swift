@@ -4,6 +4,12 @@ enum ClaudeCodeCredentialReader {
     static let keychainService = "Claude Code-credentials"
     static let credentialsFilePath = "~/.claude/.credentials.json"
 
+    static var customCredentialFilePath: String? {
+        guard let directory = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"],
+              isUsableConfigDirectory(directory) else { return nil }
+        return "\(directory.hasSuffix("/") ? String(directory.dropLast()) : directory)/.credentials.json"
+    }
+
     struct CredentialBundle {
         var credentials: String
         var source: String
@@ -35,6 +41,13 @@ enum ClaudeCodeCredentialReader {
     // as a side effect of opening the menu. A file-based sign-in is still found either way.
     static func readSignedInCredentials(allowsKeychain: Bool = true) throws -> CredentialBundle {
         var attempts: [String] = []
+        if let customPath = customCredentialFilePath {
+            do {
+                return try readCredentialsFile(at: customPath)
+            } catch {
+                throw LocalizedErrorMessage("Toki could not read the custom Claude credential file (\(shortReason(error))). Directory-specific Keychain lookup is unsupported; set an explicit credential source for this account.")
+            }
+        }
         for account in keychainAccountCandidates() where allowsKeychain {
             do {
                 return try keychainBundle(account: account)
@@ -59,6 +72,20 @@ enum ClaudeCodeCredentialReader {
         throw LocalizedErrorMessage(
             "Couldn't find your Claude Code sign-in. Open Claude Code and run /login, then hit refresh in Toki. Toki looked in \(attempts.joined(separator: ", "))."
         )
+    }
+
+    static func reread(source: String, email: String?) throws -> CredentialBundle {
+        if source.hasPrefix("Keychain ") {
+            let name = String(source.dropFirst("Keychain ".count))
+            return try keychainBundle(account: name == "(any account)" ? nil : name)
+        }
+        if source.hasPrefix("claude-swap "), let number = source.split(separator: " ").last, let email {
+            return CredentialBundle(credentials: try readKeychain(service: "claude-swap", account: "account-\(number)-\(email)"), source: source)
+        }
+        guard source.hasSuffix("/.credentials.json") else {
+            throw LocalizedErrorMessage("This credential source cannot be reread automatically")
+        }
+        return try readCredentialsFile(at: source)
     }
 
     // The Keychain item is stored under the account that created it, which is not always the name

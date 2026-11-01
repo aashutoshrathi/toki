@@ -135,6 +135,8 @@ enum ProviderDetection {
                             identity: CodexAccountInfo.identity(from: signIn)
                         ))
                     } catch {
+                        DiagnosticLogger.shared.record(.warning, component: "usage", code: "codex_sign_in_probe_failed",
+                                                       detail: "Could not determine sign-in state.")
                         return (index, .failed)
                     }
                 }

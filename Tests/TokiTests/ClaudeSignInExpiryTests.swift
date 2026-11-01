@@ -153,6 +153,179 @@ final class ClaudeSignInExpiryTests: XCTestCase {
         }
     }
 
+    private func profile(email: String = "a@b.com", organization: String = "org-1") -> Any {
+        ["account": ["email": email], "organization": ["uuid": organization, "name": "Workspace"]]
+    }
+
+    func testExpiryRereadsOnceAndNeverRequestsAnExpiredToken() async throws {
+        let expired = record(credentials: credentialBlob(expiresAt: -3600))
+        var reads = 0
+        var requests = 0
+        do {
+            _ = try await ClaudeCodeUsageClient.usageJSON(for: expired, reread: { original in
+                reads += 1
+                return original
+            }, profile: { _ in
+                XCTFail("An expired token must not be sent to the profile endpoint")
+                return [:]
+            }, request: { _ in
+                requests += 1
+                return [:]
+            })
+            XCTFail("expected expired sign-in")
+        } catch is ClaudeSignInExpiredError {
+            XCTAssertEqual(reads, 1)
+            XCTAssertEqual(requests, 0)
+        }
+
+        let fresh = #"{"claudeAiOauth":{"accessToken":"new"}}"#
+        reads = 0
+        requests = 0
+        var profiles = 0
+        do {
+            _ = try await ClaudeCodeUsageClient.usageJSON(for: expired, reread: { original in
+                reads += 1
+                var updated = original
+                updated.credentials = fresh
+                return updated
+            }, profile: { token in
+                profiles += 1
+                XCTAssertEqual(token, "new")
+                return self.profile()
+            }, request: { _ in
+                requests += 1
+                throw HTTPStatusError(statusCode: 401, body: "")
+            })
+            XCTFail("expected 401")
+        } catch is HTTPStatusError {
+            XCTAssertEqual(reads, 1)
+            XCTAssertEqual(profiles, 1)
+            XCTAssertEqual(requests, 1)
+        }
+    }
+
+    func test401RetriesOnlyWithChangedTokenForSameAccount() async throws {
+        let old = #"{"claudeAiOauth":{"accessToken":"old"}}"#
+        let renewed = #"{"claudeAiOauth":{"accessToken":"new"}}"#
+        var reads = 0
+        var tokens: [String] = []
+        var profiles = 0
+        _ = try await ClaudeCodeUsageClient.usageJSON(for: record(credentials: old), reread: { original in
+            reads += 1
+            var updated = original
+            updated.credentials = renewed
+            return updated
+        }, profile: { token in
+            profiles += 1
+            XCTAssertEqual(token, "new")
+            return self.profile()
+        }, request: { token in
+            tokens.append(token)
+            if token == "old" { throw HTTPStatusError(statusCode: 401, body: "") }
+            return [:]
+        })
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(profiles, 1)
+        XCTAssertEqual(tokens, ["old", "new"])
+
+        tokens = []
+        do {
+            _ = try await ClaudeCodeUsageClient.usageJSON(for: record(credentials: old), reread: { $0 }, profile: { _ in
+                XCTFail("An unchanged rejected token must not trigger a profile request")
+                return [:]
+            }, request: { token in
+                tokens.append(token)
+                throw HTTPStatusError(statusCode: 401, body: "")
+            })
+            XCTFail("expected 401")
+        } catch is HTTPStatusError {
+            XCTAssertEqual(tokens, ["old"])
+        }
+    }
+
+    func testRecoveryRejectsUnverifiedOrMismatchedIdentity() async throws {
+        var expired = record(credentials: credentialBlob(expiresAt: -3600))
+        expired.organizationUUID = "org-1"
+        let profiles: [(String) async throws -> Any] = [
+            { _ in self.profile(email: "other@b.com") },
+            { _ in self.profile(organization: "other-org") },
+            { _ in [:] },
+            { _ in throw URLError(.timedOut) }
+        ]
+        for profile in profiles {
+            do {
+                _ = try await ClaudeCodeUsageClient.usageJSON(for: expired, reread: { original in
+                    var updated = original
+                    updated.credentials = self.credentialBlob(expiresAt: 3600)
+                    return updated
+                }, profile: profile, request: { _ in
+                    XCTFail("Unverified credentials must not be used for usage")
+                    return [:]
+                })
+                XCTFail("expected identity verification failure")
+            } catch is ClaudeSignInExpiredError {
+            }
+        }
+    }
+
+    func testRecoveryAllowsGenericAccountButRequiresIdentityForDifferentSource() async throws {
+        let expired = record(credentials: credentialBlob(expiresAt: -3600), email: nil)
+        _ = try await ClaudeCodeUsageClient.usageJSON(for: expired, reread: { original in
+            var updated = original
+            updated.credentials = self.credentialBlob(expiresAt: 3600)
+            return updated
+        }, profile: { _ in self.profile() }, request: { _ in [:] })
+
+        for bound in [false, true] {
+            var original = expired
+            original.email = bound ? "a@b.com" : nil
+            original.organizationUUID = bound ? "org-1" : nil
+            var requests = 0
+            do {
+                _ = try await ClaudeCodeUsageClient.usageJSON(for: original, reread: { original in
+                    var updated = original
+                    updated.credentials = self.credentialBlob(expiresAt: 3600)
+                    updated.source = "/tmp/claude/.credentials.json"
+                    return updated
+                }, profile: { _ in self.profile() }, request: { _ in
+                    requests += 1
+                    return [:]
+                })
+                XCTAssertTrue(bound)
+                XCTAssertEqual(requests, 1)
+            } catch is ClaudeSignInExpiredError {
+                XCTAssertFalse(bound)
+                XCTAssertEqual(requests, 0)
+            }
+        }
+    }
+
+    func testRecoveryFailurePreservesOriginalSignInError() async throws {
+        for expired in [false, true] {
+            for failsRead in [false, true] {
+                let original = record(credentials: credentialBlob(expiresAt: expired ? -3600 : 3600))
+                do {
+                    _ = try await ClaudeCodeUsageClient.usageJSON(for: original, reread: { record in
+                        if failsRead { throw LocalizedErrorMessage("Keychain access denied") }
+                        var updated = record
+                        updated.credentials = #"{"claudeAiOauth":{"accessToken":"replacement"}}"#
+                        return updated
+                    }, profile: { _ in throw URLError(.timedOut) }, request: { _ in
+                        XCTAssertFalse(expired)
+                        throw HTTPStatusError(statusCode: 401, body: "original rejection")
+                    })
+                    XCTFail("expected original sign-in error")
+                } catch is ClaudeSignInExpiredError {
+                    XCTAssertTrue(expired)
+                } catch let error as HTTPStatusError {
+                    XCTAssertFalse(expired)
+                    XCTAssertEqual(error.statusCode, 401)
+                    XCTAssertEqual(error.body, "original rejection")
+                }
+            }
+        }
+    }
+
     // MARK: - Throttle: an expired sibling must not un-throttle a working account
 
     private func snapshot(expired: Bool) -> AccountSnapshot {

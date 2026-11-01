@@ -75,4 +75,75 @@ final class CodexAuthenticationTests: XCTestCase {
         XCTAssertTrue(usage.metrics.first?.value.contains("2000-01-01") == true)
     }
 
+    func testRecoveryRefreshesThenRetriesOnce() throws {
+        var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
+        account.codexAuthPath = "/tmp/toki-recovery-\(UUID().uuidString)/auth.json"
+        var methods: [String] = []
+        var timeouts: [Int] = []
+        let unauthorized: [String: Any] = [
+            "code": -32603,
+            "message": "failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized"
+        ]
+        let transport: CodexAppServerClient.Transport = { _, _, requests, _, timeout in
+            methods.append(requests.map(\.method).joined(separator: ","))
+            timeouts.append(timeout)
+            if requests.first?.params == #"{"refreshToken":true}"# {
+                return ([2: ["account": ["type": "chatgpt"]]], [], [:])
+            }
+            let accountResult: [String: Any] = ["account": ["type": "chatgpt"]]
+            if methods.count != 3 {
+                return ([4: accountResult], [], [3: unauthorized])
+            }
+            return ([3: ["rateLimits": [:]], 4: accountResult], [], [:])
+        }
+
+        _ = try CodexAppServerClient.fetch(account: account, binary: .pathInstall("/usr/bin/codex"), transport: transport)
+        XCTAssertEqual(methods, [
+            "account/usage/read,account/rateLimits/read,account/read",
+            "account/read",
+            "account/usage/read,account/rateLimits/read,account/read"
+        ])
+        XCTAssertThrowsError(try CodexAppServerClient.fetch(account: account, binary: .pathInstall("/usr/bin/codex"), transport: transport))
+        XCTAssertEqual(methods.count, 5)
+        XCTAssertEqual(timeouts, [20, 30, 20, 20, 20])
+    }
+
+    func testRecoveryRequiresSignedInAccountAndBackend401() throws {
+        let account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
+        let prefix = "failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed: "
+        for (code, message, signedIn) in [
+            (-32600, "codex account authentication required to read rate limits", true),
+            (-32603, prefix + "403 Forbidden", true),
+            (-32603, prefix + "429 Too Many Requests", true),
+            (-32603, "failed to fetch codex rate limits: request timed out", true),
+            (-32603, prefix + "401 Unauthorized", false)
+        ] {
+            var calls = 0
+            let transport: CodexAppServerClient.Transport = { _, _, _, _, _ in
+                calls += 1
+                let accountInfo: Any = signedIn ? ["type": "chatgpt"] as Any : NSNull()
+                return ([4: ["account": accountInfo]], [], [3: ["code": code, "message": message]])
+            }
+            XCTAssertThrowsError(try CodexAppServerClient.fetch(account: account, binary: .pathInstall("/usr/bin/codex"), transport: transport))
+            XCTAssertEqual(calls, 1)
+        }
+    }
+
+    func testFailedRenewalDoesNotRetryUsage() {
+        var account = AccountConfig(id: "codex", name: "Codex", provider: .codex)
+        account.codexAuthPath = "/tmp/toki-recovery-\(UUID().uuidString)/auth.json"
+        var calls = 0
+        let transport: CodexAppServerClient.Transport = { _, _, requests, _, _ in
+            calls += 1
+            if requests.first?.params == #"{"refreshToken":true}"# {
+                return ([:], [], [2: ["code": -32603, "message": "refresh failed"]])
+            }
+            return ([4: ["account": ["type": "chatgpt"]]], [], [3: ["code": -32603, "message": "failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized"]])
+        }
+        for expectedCalls in [2, 3] {
+            XCTAssertThrowsError(try CodexAppServerClient.fetch(account: account, binary: .pathInstall("/usr/bin/codex"), transport: transport))
+            XCTAssertEqual(calls, expectedCalls)
+        }
+    }
+
 }
