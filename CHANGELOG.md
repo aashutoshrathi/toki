@@ -2,13 +2,20 @@
 
 ## 3.4.0 - 2026-10-31
 
-One Line: Toki now shows every Codex account you are signed in to, each on its own card.
+One Line: Toki finds all your Codex accounts, recovers renewed sign-ins, and refreshes Codex usage faster.
 
 ### Added
 - **More than one Codex account.** Sign an extra account in to its own Codex home, for example `CODEX_HOME=~/.codex-work codex login`. Toki finds each `~/.codex*` folder that holds a Codex sign-in, asks Codex which account it is, and adds a card for it, such as `Codex (work)`. Each card shows its own limits and resets, and all of them refresh at the same time. A folder that is a copy of an account Toki already shows is skipped. Before, only `~/.codex` was found, and a second account needed a hand-written `codexAuthPath`.
 
 ### Changed
 - **After you update, Toki can add cards for Codex folders you forgot.** If an old `~/.codex-*` folder is still signed in, it gets a card. To stop tracking it, sign it out with `CODEX_HOME=<folder> codex logout`, then remove its account from the config.
+- **A custom Claude directory stays separate from default accounts.** When Toki inherits `CLAUDE_CONFIG_DIR`, it tracks that directory independently of the default claude-swap list. A missing credential file reports that custom-directory Keychain lookup is unsupported instead of using another account. While usage relies on a fallback file, reset redemption is unavailable.
+
+### Fixed
+- **Claude usage can recover after Claude Code renews a sign-in.** Toki rereads the selected credential source once after an expired token or rejected sign-in, verifies the replacement through Claude's profile endpoint, and retries usage once. Real credential files work without an embedded email. A valid default file can replace an expired Keychain token only when the account's known email and organization match the verified profile. Claude Code still renews the token; Toki does not run `/status` or `/login`.
+- **Sign-in failures keep useful guidance.** An expired Claude token shows "Sign-in expired". A failed recovery keeps the original sign-in error and records the recovery failure separately. Open Claude Code or try `/status`, then refresh Toki; use `/login` only if access cannot be restored. A signed-out Codex account also gets a clear sign-in message.
+- **Codex can recover a rejected sign-in during refresh.** After a verified usage-backend 401 for a signed-in ChatGPT account, Toki asks Codex to refresh credentials and retries usage once. Manual and automatic refresh use the same Codex home and binary, with one recovery attempt per home per minute. Missing sign-ins, permission errors, rate limits and network errors do not trigger recovery.
+- **Codex refresh no longer waits for a sleeping input feeder.** Toki keeps app-server input open only until replies arrive and closes inherited descriptors during cleanup. A synthetic transport check fell from about 2.6 seconds to 0.67 seconds; real provider latency still affects refresh time.
 
 ## 3.3.11 - 2026-10-29
 
