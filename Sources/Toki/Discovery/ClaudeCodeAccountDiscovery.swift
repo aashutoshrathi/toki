@@ -4,10 +4,23 @@ enum ClaudeCodeAccountDiscovery {
     private static let backupDir = "~/.claude-swap-backup"
 
     static func discover(config: AccountConfig, labels: [AccountLabelConfig]) -> [ClaudeCodeAccountRecord] {
-        if let sequence = readSequence() {
-            return records(from: sequence, labels: labels)
+        discover(
+            customCredentialFilePath: ClaudeCodeCredentialReader.customCredentialFilePath,
+            swapRecords: { readSequence().map { records(from: $0, labels: labels) } },
+            fallbackRecord: { fallbackRecord(config: config, labels: labels) }
+        )
+    }
+
+    static func discover(
+        customCredentialFilePath: String?,
+        swapRecords: () -> [ClaudeCodeAccountRecord]?,
+        fallbackRecord: () -> ClaudeCodeAccountRecord
+    ) -> [ClaudeCodeAccountRecord] {
+        // The default swap registry cannot identify credentials in a separate config directory.
+        if customCredentialFilePath == nil, let records = swapRecords() {
+            return records
         }
-        return [fallbackRecord(config: config, labels: labels)]
+        return [fallbackRecord()]
     }
 
     static func fallbackRecord(config: AccountConfig, labels: [AccountLabelConfig]) -> ClaudeCodeAccountRecord {

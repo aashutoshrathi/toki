@@ -264,6 +264,14 @@ struct CodexAccountInfo {
         return email
     }
 
+    static func identity(from value: Any?) -> String? {
+        guard let email = email(from: value) else { return nil }
+        let routing = (value as? [String: Any])?["workspaceRouting"] as? [String: Any]
+        let workspace = routing?["chatgptAccountId"] as? String
+            ?? account(from: value).flatMap { firstValue($0, keys: ["planType"]) as? String }
+        return [email, workspace].compactMap { $0 }.joined(separator: "|")
+    }
+
     static func lines(from value: Any?) -> [MetricLine] {
         guard let account = account(from: value) else { return [] }
 

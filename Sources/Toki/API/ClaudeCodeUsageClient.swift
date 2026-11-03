@@ -35,7 +35,7 @@ struct ClaudeCodeUsageClient {
                 id: record.id,
                 name: record.displayName,
                 provider: .claudeCode,
-                primary: "Signed out",
+                primary: "Sign-in expired",
                 subtitle: record.email ?? expiry.localizedDescription,
                 remainingRatio: nil,
                 metrics: [MetricLine(label: "Sign-in", value: expiry.localizedDescription)],
@@ -71,7 +71,7 @@ struct ClaudeCodeUsageClient {
         guard let http = error as? HTTPStatusError, http.statusCode == 401 else {
             return error.localizedDescription
         }
-        return "Anthropic rejected this sign-in. Open Claude Code and run /login, then refresh Toki."
+        return "Anthropic rejected this sign-in. Open Claude Code or try /status in an existing session, then refresh Toki. Use /login only if Claude Code cannot restore access."
     }
 
     enum Disposition: Equatable {
@@ -94,17 +94,11 @@ struct ClaudeCodeUsageClient {
     }
 
     private func snapshot(for record: ClaudeCodeAccountRecord) async throws -> AccountSnapshot {
-        let accessToken: String
-        switch try Self.disposition(for: record) {
-        case .expired(let expiry):
-            throw expiry
-        case .useToken(let token):
-            accessToken = token
+        let (json, current) = try await Self.usageJSON(for: record, reread: reread, profile: { token in
+            try await requestJSON(url: Self.profileURL, headers: Self.oauthHeaders(accessToken: token), timeout: 10)
+        }) { token in
+            try await requestJSON(url: Self.usageURL, headers: Self.oauthHeaders(accessToken: token))
         }
-        let json = try await requestJSON(
-            url: URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!,
-            headers: Self.oauthHeaders(accessToken: accessToken)
-        )
         let usage = ClaudeCodeUsage(json: json)
         guard usage.hasUsage else {
             throw LocalizedErrorMessage("Claude Code usage unavailable")
@@ -115,7 +109,7 @@ struct ClaudeCodeUsageClient {
         let remainingRatio = max(0, min(1, 1 - usedRatio))
         let percentLeft = Int((remainingRatio * 100).rounded())
         let primary = "\(percentLeft)% left"
-        let email = record.email ?? record.credentials.flatMap(ClaudeCodeCredentialReader.emailIdentifier)
+        let email = record.email ?? current.credentials.flatMap(ClaudeCodeCredentialReader.emailIdentifier)
 
         return AccountSnapshot(
             id: record.id,
@@ -125,10 +119,10 @@ struct ClaudeCodeUsageClient {
             subtitle: email ?? "Claude Code OAuth usage",
             remainingRatio: remainingRatio,
             progressRatio: usedRatio,
-            resetCreditsAvailable: usage.resetCreditsAvailable,
-            resetCreditExpiry: usage.resetCreditExpiry,
+            resetCreditsAvailable: current.source == record.source ? usage.resetCreditsAvailable : 0,
+            resetCreditExpiry: current.source == record.source ? usage.resetCreditExpiry : nil,
             metrics: usage.metrics,
-            accountInfo: accountInfoLines(for: record, credentials: record.credentials),
+            accountInfo: accountInfoLines(for: record, credentials: current.credentials),
             switchTarget: switchTarget(for: record),
             switchCommand: account.claudeSwapCommand,
             emoji: record.label?.emoji,
@@ -139,7 +133,88 @@ struct ClaudeCodeUsageClient {
         )
     }
 
+    static func usageJSON(
+        for record: ClaudeCodeAccountRecord,
+        reread: (ClaudeCodeAccountRecord) throws -> ClaudeCodeAccountRecord,
+        profile: (String) async throws -> Any,
+        request: (String) async throws -> Any
+    ) async throws -> (Any, ClaudeCodeAccountRecord) {
+        var current = record
+        var accessToken: String
+        var rereadAttempted = false
+        switch try Self.disposition(for: record) {
+        case .expired(let expiry):
+            rereadAttempted = true
+            do {
+                let refreshed = try reread(record)
+                guard case .useToken(let usable) = try Self.disposition(for: refreshed) else { throw expiry }
+                current = try await verifiedRecord(refreshed, expected: record, profile: profile(usable))
+                accessToken = usable
+            } catch {
+                if !(error is ClaudeSignInExpiredError) {
+                    DiagnosticLogger.shared.record(.warning, component: "usage", code: "claude_recovery_failed", detail: diagnosticErrorDetail(error))
+                }
+                throw expiry
+            }
+        case .useToken(let token):
+            accessToken = token
+        }
+        let json: Any
+        do {
+            json = try await request(accessToken)
+        } catch let unauthorized as HTTPStatusError where unauthorized.statusCode == 401 {
+            guard !rereadAttempted else { throw unauthorized }
+            do {
+                let refreshed = try reread(current)
+                guard case .useToken(let usable) = try Self.disposition(for: refreshed), usable != accessToken else { throw unauthorized }
+                current = try await verifiedRecord(refreshed, expected: current, profile: profile(usable))
+                accessToken = usable
+            } catch {
+                DiagnosticLogger.shared.record(.warning, component: "usage", code: "claude_recovery_failed", detail: diagnosticErrorDetail(error))
+                throw unauthorized
+            }
+            json = try await request(accessToken)
+        }
+        return (json, current)
+    }
+
+    private func reread(_ record: ClaudeCodeAccountRecord) throws -> ClaudeCodeAccountRecord {
+        let source = record.source.hasSuffix(" active") ? String(record.source.dropLast(" active".count)) : record.source
+        var bundle: ClaudeCodeCredentialReader.CredentialBundle
+        if source == "Config" || source == "Command" || source.hasPrefix("Env ") {
+            bundle = try ClaudeCodeCredentialReader.readCredentials(account: account)
+        } else {
+            bundle = try ClaudeCodeCredentialReader.reread(source: source, email: record.email)
+        }
+        if source.hasPrefix("Keychain "),
+           record.email != nil, record.organizationUUID != nil,
+           try ClaudeCodeCredentialReader.extractToken(from: bundle.credentials).isExpired(),
+           let file = try? ClaudeCodeCredentialReader.readCredentialsFile(),
+           let token = try? ClaudeCodeCredentialReader.extractToken(from: file.credentials), !token.isExpired() {
+            bundle = file
+        }
+        var updated = record
+        updated.credentials = bundle.credentials
+        updated.source = bundle.source == source ? record.source : bundle.source
+        return updated
+    }
+
+    private static func verifiedRecord(_ candidate: ClaudeCodeAccountRecord, expected: ClaudeCodeAccountRecord, profile: Any) throws -> ClaudeCodeAccountRecord {
+        guard let profile = profile as? [String: Any],
+              let account = profile["account"] as? [String: Any],
+              let email = account["email"] as? String, email.contains("@"),
+              let organization = profile["organization"] as? [String: Any],
+              let organizationUUID = organization["uuid"] as? String, !organizationUUID.isEmpty,
+              expected.email == nil || expected.email?.caseInsensitiveCompare(email) == .orderedSame,
+              expected.organizationUUID == nil || expected.organizationUUID == organizationUUID,
+              candidate.source == expected.source || (expected.email != nil && expected.organizationUUID != nil) else {
+            throw LocalizedErrorMessage("Claude Code credential source has a different or unknown account identity")
+        }
+        return candidate
+    }
+
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!
+    private static let profileURL = URL(string: "https://api.anthropic.com/api/oauth/profile")!
 
     static func oauthHeaders(accessToken: String) -> [String: String] {
         [

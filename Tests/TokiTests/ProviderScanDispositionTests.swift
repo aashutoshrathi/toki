@@ -6,7 +6,7 @@ final class ProviderScanDispositionTests: XCTestCase {
         XCTAssertEqual(
             providerScanDisposition(
                 detected: [local(.pi)],
-                snapshotProviders: [],
+                isConnected: { _ in false },
                 configIsNil: true,
                 needsOnboarding: true
             ),
@@ -18,7 +18,7 @@ final class ProviderScanDispositionTests: XCTestCase {
         XCTAssertEqual(
             providerScanDisposition(
                 detected: [local(.pi), connectable(.codex)],
-                snapshotProviders: [],
+                isConnected: { _ in false },
                 configIsNil: true,
                 needsOnboarding: true
             ),
@@ -30,7 +30,7 @@ final class ProviderScanDispositionTests: XCTestCase {
         XCTAssertEqual(
             providerScanDisposition(
                 detected: [local(.openCode)],
-                snapshotProviders: [],
+                isConnected: { _ in false },
                 configIsNil: true,
                 needsOnboarding: false
             ),
@@ -42,7 +42,7 @@ final class ProviderScanDispositionTests: XCTestCase {
         XCTAssertEqual(
             providerScanDisposition(
                 detected: [local(.pi)],
-                snapshotProviders: [.pi],
+                isConnected: { $0.provider == .pi },
                 configIsNil: true,
                 needsOnboarding: true
             ),
@@ -51,7 +51,7 @@ final class ProviderScanDispositionTests: XCTestCase {
         XCTAssertEqual(
             providerScanDisposition(
                 detected: [local(.pi)],
-                snapshotProviders: [],
+                isConnected: { _ in false },
                 configIsNil: false,
                 needsOnboarding: true
             ),
