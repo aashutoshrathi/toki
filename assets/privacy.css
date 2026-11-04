@@ -1,0 +1,114 @@
+.policy-hero {
+  max-width: 920px;
+  padding-block: 65px 42px;
+}
+.policy-back {
+  margin-bottom: 38px;
+  color: var(--muted);
+}
+.policy-hero h1 {
+  font-size: clamp(44px, 6vw, 68px);
+  line-height: 1.1;
+  letter-spacing: -0.055em;
+  font-weight: 550;
+  margin-bottom: 19px;
+}
+.policy-intro {
+  max-width: 540px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.8;
+}
+.policy-layout {
+  max-width: 920px;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 65px;
+  padding-bottom: 75px;
+}
+.policy-toc {
+  align-self: start;
+  position: sticky;
+  top: 30px;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.policy-toc p {
+  font:
+    10px ui-monospace,
+    SFMono-Regular,
+    monospace;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 15px;
+}
+.policy-toc a {
+  display: block;
+  padding-block: 9px;
+  font-size: 12px;
+}
+.policy-summary {
+  background: var(--soft-sage);
+  border: 1px solid #d7decb;
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 35px;
+}
+.policy-summary h2 {
+  font-size: 19px;
+  letter-spacing: -0.4px;
+  margin-bottom: 11px;
+}
+.policy-summary p {
+  color: var(--sage);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.policy-section {
+  border-top: 1px solid var(--line);
+  padding-block: 27px;
+}
+.policy-section h2 {
+  font-size: 23px;
+  letter-spacing: -0.6px;
+  margin-bottom: 16px;
+}
+.policy-section p {
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.9;
+}
+.policy-section p + p {
+  margin-top: 16px;
+}
+.policy-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+  padding-top: 19px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 760px) {
+  .policy-hero {
+    padding-block: 35px 30px;
+  }
+  .policy-back {
+    margin-bottom: 28px;
+  }
+  .policy-layout {
+    grid-template-columns: 1fr;
+    gap: 25px;
+    padding-bottom: 45px;
+  }
+  .policy-toc {
+    position: static;
+  }
+  .policy-toc nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 24px;
+  }
+  .policy-section p {
+    font-size: 14px;
+  }
+}

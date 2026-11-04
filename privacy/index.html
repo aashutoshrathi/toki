@@ -1,0 +1,175 @@
+---
+layout: null
+permalink: /privacy/
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy · Toki</title>
+    <meta
+      name="description"
+      content="How Toki handles credentials, session history, diagnostics, and Remote Control data. Read Toki's privacy policy in plain words."
+    />
+    <meta name="theme-color" content="#f4f1ea" />
+    <link rel="canonical" href="https://toki.aashutosh.dev/privacy/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Privacy · Toki" />
+    <meta
+      property="og:description"
+      content="Your Mac. Your data. Your business. How Toki handles your data, in plain words."
+    />
+    <meta property="og:url" content="https://toki.aashutosh.dev/privacy/" />
+    <meta
+      property="og:image"
+      content="https://toki.aashutosh.dev/docs/og.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="../Sources/Toki/Resources/webui/favicon.svg"
+    />
+    <link
+      rel="apple-touch-icon"
+      href="../Sources/Toki/Resources/webui/apple-touch-icon.png"
+    />
+    <link rel="stylesheet" href="../assets/landing.css" />
+    <link rel="stylesheet" href="../assets/privacy.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="wordmark" href="../" aria-label="Toki home"
+        ><img
+          src="../Sources/Toki/Resources/toki-logo.svg"
+          alt=""
+          width="38"
+          height="38"
+        />toki<span class="wordmark-dot">.</span></a
+      >
+      <nav aria-label="Main navigation">
+        <a class="nav-detail" href="../#features">Features</a>
+        <a
+          class="nav-detail"
+          href="https://github.com/aashutoshrathi/toki#documentation"
+          >Docs</a
+        >
+        <a href="https://github.com/aashutoshrathi/toki"
+          >GitHub <span aria-hidden="true">↗</span></a
+        >
+        <a class="button button-small" href="../#get-started"
+          >Get started <span aria-hidden="true">→</span></a
+        >
+      </nav>
+    </header>
+    <main id="main" data-testid="PrivacyPolicy">
+      <section class="policy-hero section-shell" aria-labelledby="policy-title">
+        <a class="text-link policy-back" href="../"
+          ><span aria-hidden="true">←</span> Back to Toki</a
+        >
+        <p class="eyebrow">PRIVACY, IN PLAIN WORDS</p>
+        <h1 id="policy-title">
+          Your Mac. Your data.<br /><span class="serif">Your business.</span>
+        </h1>
+        <p class="policy-intro">
+          How Toki handles the data on your Mac, and what changes when you turn
+          on Remote Control.
+        </p>
+      </section>
+      <div class="policy-layout section-shell">
+        <aside class="policy-toc">
+          <p>ON THIS PAGE</p>
+          <nav aria-label="Privacy policy sections">
+            <a href="#local-data">On your Mac</a
+            ><a href="#remote-control">Remote Control</a
+            ><a href="#configuration">Configuration</a>
+          </nav>
+        </aside>
+        <article aria-label="Privacy policy">
+          <div class="policy-summary">
+            <h2>A little app. A simple approach.</h2>
+            <p>
+              No telemetry. No Toki cloud service.<br />Remote Control is off by
+              default.
+            </p>
+          </div>
+          <section
+            class="policy-section"
+            id="local-data"
+            aria-labelledby="local-title"
+          >
+            <h2 id="local-title">01 / On your Mac</h2>
+            <p>
+              Toki stays on your Mac. Credentials are read from your Keychain or
+              the provider auth files already there. There is no cloud service
+              and no telemetry. Session history is read for token counts, costs,
+              timestamps, and titles, never message content. Diagnostics carry
+              error categories and status codes only.
+            </p>
+          </section>
+          <section
+            class="policy-section"
+            id="remote-control"
+            aria-labelledby="remote-title"
+          >
+            <h2 id="remote-title">02 / Remote Control</h2>
+            <p>
+              Remote Control is the one feature that reads message content,
+              because showing you a transcript is the point of it. It is off by
+              default.
+            </p>
+            <p>
+              When on, the transcript goes from your Mac straight to your phone
+              and nowhere else. Tailscale is the recommended route and keeps it
+              off the public internet entirely; the host setting decides which
+              networks the server answers at all.
+            </p>
+            <p>
+              If you use the hosted companion interface, that host serves the
+              page only and never receives agent data, and serving the page from
+              your own Mac instead removes it from the picture completely, which
+              is why that is the default.
+            </p>
+          </section>
+          <section
+            class="policy-section"
+            id="configuration"
+            aria-labelledby="config-title"
+          >
+            <h2 id="config-title">03 / Configuration</h2>
+            <p>
+              Backwards-compatible fallbacks for the old TokenBar config paths
+              are still honoured.
+            </p>
+          </section>
+          <div class="policy-links">
+            <a
+              class="text-link"
+              href="https://github.com/aashutoshrathi/toki/blob/main/docs/remote-control.md"
+              >Remote Control guide <span aria-hidden="true">↗</span></a
+            ><a
+              class="text-link"
+              href="https://github.com/aashutoshrathi/toki#privacy"
+              >Read on GitHub <span aria-hidden="true">↗</span></a
+            >
+          </div>
+        </article>
+      </div>
+    </main>
+    <footer class="site-footer section-shell">
+      <a class="wordmark" href="../">toki<span class="wordmark-dot">.</span></a
+      ><span>Native to your Mac. Open to everyone.</span>
+      <nav aria-label="Footer navigation">
+        <a href="./" aria-current="page">Privacy</a>
+        <a href="https://github.com/aashutoshrathi/toki">GitHub ↗</a
+        ><a href="https://github.com/aashutoshrathi/toki/releases">Releases</a
+        ><a href="https://github.com/aashutoshrathi/toki/blob/main/LICENSE"
+          >GPL-3.0</a
+        >
+      </nav>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,661 @@
+---
+layout: null
+permalink: /
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Toki · A little clarity for your AI workflow</title>
+    <meta
+      name="description"
+      content="Your AI coding agents, together at last. Track quotas, spend, and live sessions from your Mac's menu bar. Free, open source, and local by default."
+    />
+    <meta name="theme-color" content="#f4f1ea" />
+    <link rel="canonical" href="https://toki.aashutosh.dev/" />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:title"
+      content="Toki · Your agents. One little menu bar."
+    />
+    <meta
+      property="og:description"
+      content="Track AI usage, see where the money goes, and keep your agents moving. A native macOS app. Free and open source."
+    />
+    <meta property="og:url" content="https://toki.aashutosh.dev/" />
+    <meta
+      property="og:image"
+      content="https://toki.aashutosh.dev/docs/og.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="Sources/Toki/Resources/webui/favicon.svg"
+    />
+    <link
+      rel="apple-touch-icon"
+      href="Sources/Toki/Resources/webui/apple-touch-icon.png"
+    />
+    <link rel="stylesheet" href="assets/landing.css" />
+    <script src="assets/landing.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="wordmark" href="#" aria-label="Toki home"
+        ><img
+          src="Sources/Toki/Resources/toki-logo.svg"
+          alt=""
+          width="38"
+          height="38"
+        />toki<span class="wordmark-dot">.</span></a
+      >
+      <nav aria-label="Main navigation">
+        <a class="nav-detail" href="#features">Features</a>
+        <a
+          class="nav-detail"
+          href="https://github.com/aashutoshrathi/toki#documentation"
+          >Docs</a
+        >
+        <a href="https://github.com/aashutoshrathi/toki"
+          >GitHub <span aria-hidden="true">↗</span></a
+        >
+        <a class="button button-small" href="#get-started"
+          >Get started <span aria-hidden="true">→</span></a
+        >
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero section-shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <a
+            class="release-link"
+            href="https://github.com/aashutoshrathi/toki/releases/latest"
+            ><span class="status-dot"></span> A small app for a big agent era
+            <span aria-hidden="true">↗</span></a
+          >
+          <h1 id="hero-title">
+            Your agents.<br />One little<br /><span class="serif"
+              >menu bar.</span
+            >
+          </h1>
+          <p class="hero-description">
+            Less checking dashboards. More making things.<br
+              class="desktop-break"
+            />
+            Keep your AI usage, spend, and running agents<br
+              class="desktop-break"
+            />
+            in one quiet corner of your Mac.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button"
+              href="https://github.com/aashutoshrathi/toki/releases/latest"
+              ><svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                aria-hidden="true"
+              >
+                <path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" /></svg
+              >Download for macOS</a
+            >
+            <a class="text-link" href="#get-started"
+              >Get started <span aria-hidden="true">→</span></a
+            >
+          </div>
+          <p class="compatibility">
+            macOS 14+ <span>·</span> Apple silicon &amp; Intel
+            <span>·</span> Free &amp; open source
+          </p>
+        </div>
+        <div class="hero-stage" data-testid="ProductPreview">
+          <div class="stage-topline">
+            <span>YOUR MAC, AT A GLANCE</span><span aria-hidden="true">◌</span>
+          </div>
+          <div class="menu-bar" aria-hidden="true">
+            <span>Finder <b>File</b> <b>Edit</b></span
+            ><span class="menu-reading">✳ 72% <span>◈ 45%</span></span
+            ><span>◒ &nbsp; ⏚</span>
+          </div>
+          <div class="demo-window">
+            <div class="demo-header">
+              <span class="demo-brand"
+                ><img
+                  src="Sources/Toki/Resources/toki-logo.svg"
+                  width="28"
+                  height="28"
+                  alt=""
+                />
+                /toki</span
+              ><span class="demo-local"
+                ><span class="status-dot"></span> All local</span
+              >
+            </div>
+            <div
+              class="demo-tabs"
+              role="tablist"
+              aria-label="Explore the Toki preview"
+            >
+              <button
+                id="tab-usage"
+                role="tab"
+                aria-selected="true"
+                aria-controls="panel-usage"
+                type="button"
+              >
+                Usage
+              </button>
+              <button
+                id="tab-agents"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-agents"
+                tabindex="-1"
+                type="button"
+              >
+                Agents <span class="tab-count">3</span>
+              </button>
+              <button
+                id="tab-activity"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-activity"
+                tabindex="-1"
+                type="button"
+              >
+                Activity
+              </button>
+            </div>
+            <div
+              class="demo-panel"
+              id="panel-usage"
+              role="tabpanel"
+              aria-labelledby="tab-usage"
+              tabindex="0"
+            >
+              <div class="provider-row">
+                <div class="provider-label">
+                  <img
+                    src="Sources/Toki/Resources/claude-logo.svg"
+                    alt=""
+                    width="25"
+                    height="25"
+                  />
+                  <div>
+                    <strong>Claude Code</strong><small>Personal account</small>
+                  </div>
+                  <span class="provider-status">Room to build</span>
+                </div>
+                <div class="quota-label">
+                  <span>5-hour quota</span><strong>72% left</strong>
+                </div>
+                <div class="quota-track">
+                  <span style="--fill: 72%; --bar: #bba080"></span>
+                </div>
+                <div class="quota-foot">Resets in 3h 42m</div>
+              </div>
+              <div class="provider-row">
+                <div class="provider-label">
+                  <img
+                    src="Sources/Toki/Resources/codex-logo.svg"
+                    alt=""
+                    width="25"
+                    height="25"
+                  />
+                  <div><strong>Codex</strong><small>Weekly quota</small></div>
+                  <span class="provider-status blue">On track</span>
+                </div>
+                <div class="quota-label">
+                  <span>7-day quota</span><strong>45% left</strong>
+                </div>
+                <div class="quota-track">
+                  <span style="--fill: 45%; --bar: #9baec7"></span>
+                </div>
+                <div class="quota-foot">Resets in 4d</div>
+              </div>
+              <div class="provider-label cursor-row">
+                <img
+                  src="Sources/Toki/Resources/cursor-logo.svg"
+                  alt=""
+                  width="25"
+                  height="25"
+                />
+                <div>
+                  <strong>Cursor</strong><small>Spend this month</small>
+                </div>
+                <strong class="spend-value">$12.40</strong>
+              </div>
+            </div>
+            <div
+              class="demo-panel"
+              id="panel-agents"
+              role="tabpanel"
+              aria-labelledby="tab-agents"
+              tabindex="0"
+              hidden
+            >
+              <p class="panel-eyebrow">3 sessions · 1 needs you</p>
+              <div class="session">
+                <span class="session-dot amber"></span>
+                <div>
+                  <strong>Landing page polish</strong
+                  ><small>Claude Code · waiting for permission</small>
+                </div>
+                <span>↗</span>
+              </div>
+              <div class="prompt-preview">
+                Allow this agent to run the tests?<span
+                  >Catch the question before the work stalls.</span
+                >
+              </div>
+              <div class="session">
+                <span class="session-dot"></span>
+                <div>
+                  <strong>Fix the API tests</strong
+                  ><small>Codex · running in Terminal</small>
+                </div>
+                <span>↗</span>
+              </div>
+              <div class="session">
+                <span class="session-dot"></span>
+                <div>
+                  <strong>A fresh pair of eyes</strong
+                  ><small>OpenCode · running in iTerm2</small>
+                </div>
+                <span>↗</span>
+              </div>
+            </div>
+            <div
+              class="demo-panel"
+              id="panel-activity"
+              role="tabpanel"
+              aria-labelledby="tab-activity"
+              tabindex="0"
+              hidden
+            >
+              <p class="panel-eyebrow">THE LAST 7 DAYS · EXAMPLE DATA</p>
+              <div class="activity-total">
+                $24.80 <span>tracked spend</span>
+              </div>
+              <div
+                class="activity-chart"
+                role="img"
+                aria-label="Example daily spend chart: Monday 2 dollars, Tuesday 4, Wednesday 3, Thursday 6, Friday 4, Saturday 2, Sunday 3 dollars 80 cents."
+              >
+                <span style="--height: 33%">M</span
+                ><span style="--height: 67%">T</span
+                ><span style="--height: 50%">W</span
+                ><span style="--height: 100%">T</span
+                ><span style="--height: 67%">F</span
+                ><span style="--height: 33%">S</span
+                ><span style="--height: 63%">S</span>
+              </div>
+              <p class="activity-caption">
+                Your history comes with you.<br />Read from your tools' existing
+                session logs.
+              </p>
+            </div>
+            <div class="demo-footer">
+              <span class="status-dot"></span> A little clarity. Right where you
+              need it.
+            </div>
+          </div>
+          <div class="stage-caption">
+            <span class="sketch-arrow" aria-hidden="true">↖</span> Small
+            footprint. Whole picture.
+          </div>
+          <p class="demo-disclaimer">
+            Interactive illustration · example data · try the tabs
+          </p>
+        </div>
+      </section>
+      <section
+        class="provider-strip section-shell"
+        aria-label="Supported providers"
+      >
+        <p>MANY TOOLS.<br /><strong>ONE PLACE TO LOOK.</strong></p>
+        <div class="provider-logos">
+          <span
+            ><img
+              src="Sources/Toki/Resources/claude-logo.svg"
+              alt=""
+              width="25"
+              height="25"
+            />Claude Code</span
+          >
+          <span
+            ><img
+              src="Sources/Toki/Resources/codex-logo.svg"
+              alt=""
+              width="25"
+              height="25"
+            />Codex</span
+          >
+          <span
+            ><img
+              src="Sources/Toki/Resources/cursor-logo.svg"
+              alt=""
+              width="25"
+              height="25"
+            />Cursor</span
+          >
+          <span
+            ><img
+              src="Sources/Toki/Resources/opencode-logo.svg"
+              alt=""
+              width="25"
+              height="25"
+            />OpenCode</span
+          >
+          <a
+            href="https://github.com/aashutoshrathi/toki/blob/main/docs/providers.md"
+            >and more <span aria-hidden="true">↗</span></a
+          >
+        </div>
+      </section>
+      <section
+        id="features"
+        class="features section-shell"
+        aria-labelledby="features-title"
+      >
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LESS TAB HOPPING. MORE FLOW.</p>
+            <h2 id="features-title">
+              Keep the work moving.<br /><span class="serif"
+                >Toki keeps an eye on the rest.</span
+              >
+            </h2>
+          </div>
+          <p>
+            Built for the way you actually work:<br />a few tools, a few
+            projects,<br />and a lot going on.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature feature-usage">
+            <div>
+              <span class="feature-number">01 / THE WHOLE PICTURE</span>
+              <h3>Your limits.<br />Without the guesswork.</h3>
+              <p>
+                Live quotas for Claude Code and Codex. Spend tracking for Cursor
+                and more. See what's left before you hit a wall.
+              </p>
+              <a
+                class="text-link"
+                href="https://github.com/aashutoshrathi/toki/blob/main/docs/providers.md"
+                >Explore supported tools <span aria-hidden="true">↗</span></a
+              >
+            </div>
+            <figure class="real-screenshot">
+              <img
+                src="docs/screenshot.png"
+                alt="Actual Toki menu bar popover showing Claude Code, Codex, Cursor, and OpenCode usage"
+                width="844"
+                height="1102"
+                loading="lazy"
+              />
+              <figcaption>
+                At home in your menu bar. Actual app screenshot.
+              </figcaption>
+            </figure>
+          </article>
+          <article class="feature feature-remote">
+            <span class="feature-number">02 / A LITTLE FREEDOM</span>
+            <h3>Step away.<br />Stay in the loop.</h3>
+            <p>
+              An agent needs your OK. Your coffee needs you. Follow the
+              transcript and answer from your phone, directly to your Mac.
+            </p>
+            <div
+              class="remote-illustration"
+              aria-label="Illustration of an agent permission prompt on a phone"
+            >
+              <div class="phone-speaker"></div>
+              <div class="phone-heading">
+                <img
+                  src="Sources/Toki/Resources/toki-logo.svg"
+                  width="23"
+                  height="23"
+                  alt=""
+                />
+                toki <span>Connected</span>
+              </div>
+              <p><span class="status-dot"></span> Claude Code needs you</p>
+              <div class="phone-question">
+                Ready to run the test suite.<br />May I proceed?
+              </div>
+              <div class="phone-reply">
+                <span aria-hidden="true">✓</span> Yes, go ahead
+              </div>
+              <small>Illustrative conversation</small>
+            </div>
+            <a
+              class="text-link"
+              href="https://github.com/aashutoshrathi/toki/blob/main/docs/remote-control.md"
+              >Meet Remote Control <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature feature-history">
+            <span class="feature-number">03 / FOLLOW THE TOKENS</span>
+            <h3>Know where it all goes.</h3>
+            <p>
+              Daily spend, token counts, and a thirty-day heatmap. Your existing
+              session history is there from day one.
+            </p>
+            <div class="heatmap" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span
+              ><span></span><span></span><span></span><span></span><span></span
+              ><span></span><span></span><span></span><span></span><span></span
+              ><span></span><span></span><span></span><span></span><span></span
+              ><span></span><span></span><span></span><span></span><span></span
+              ><span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <span class="visual-caption"
+              >A rhythm you can see. Illustrative activity.</span
+            >
+          </article>
+        </div>
+        <div class="privacy-note" id="privacy">
+          <span class="privacy-icon" aria-hidden="true">⌘</span>
+          <div>
+            <h3>Your Mac. Your data. Your business.</h3>
+            <p>
+              No Toki account. No telemetry. No cloud relay. Remote Control is
+              off until you turn it on.
+            </p>
+          </div>
+          <a class="text-link" href="privacy/"
+            >Privacy, in plain words <span aria-hidden="true">↗</span></a
+          >
+        </div>
+      </section>
+      <section
+        id="get-started"
+        class="start-section"
+        aria-labelledby="start-title"
+      >
+        <div class="section-shell start-grid">
+          <div class="start-copy">
+            <p class="eyebrow">SMALL APP. EASY START.</p>
+            <h2 id="start-title">
+              Make a little room<br /><span class="serif"
+                >in your menu bar.</span
+              >
+            </h2>
+            <p>
+              Install Toki, open your favorite tools, and let the bigger picture
+              come to you.
+            </p>
+            <a
+              class="button"
+              href="https://github.com/aashutoshrathi/toki/releases/latest"
+              >Download for macOS <span aria-hidden="true">↓</span></a
+            ><span class="download-caption"
+              >Universal DMG · macOS 14 or later</span
+            ><a class="text-link" href="https://github.com/aashutoshrathi/toki"
+              >Or build it yourself on GitHub
+              <span aria-hidden="true">↗</span></a
+            >
+          </div>
+          <div class="install-guide">
+            <div class="install-step">
+              <span class="step-number">1</span>
+              <div>
+                <h3>Pick your way in.</h3>
+                <p>
+                  Download the latest DMG and drag Toki to Applications. Prefer
+                  the terminal?
+                </p>
+              </div>
+            </div>
+            <div class="code-block">
+              <div class="code-title">
+                <span>HOMEBREW</span
+                ><button
+                  class="copy-button"
+                  data-copy="brew-command"
+                  type="button"
+                  hidden
+                >
+                  Copy
+                </button>
+              </div>
+              <pre><code id="brew-command">brew tap aashutoshrathi/tap
+brew trust --cask aashutoshrathi/tap/toki
+brew install --cask toki</code></pre>
+            </div>
+            <div class="install-step">
+              <span class="step-number">2</span>
+              <div>
+                <h3>Give it a warm welcome.</h3>
+                <p>
+                  Toki is not notarized. After installing in Applications, run
+                  this once to let macOS open the app and its widgets:
+                </p>
+              </div>
+            </div>
+            <div class="code-block">
+              <div class="code-title">
+                <span>TERMINAL</span
+                ><button
+                  class="copy-button"
+                  data-copy="quarantine-command"
+                  type="button"
+                  hidden
+                >
+                  Copy
+                </button>
+              </div>
+              <pre><code id="quarantine-command">xattr -dr com.apple.quarantine /Applications/Toki.app</code></pre>
+            </div>
+            <div class="install-step">
+              <span class="step-number">3</span>
+              <div>
+                <h3>Open Toki. Get back to making.</h3>
+                <p>
+                  Toki reads the supported accounts and sessions already on your
+                  Mac. Find it in your menu bar.
+                </p>
+              </div>
+            </div>
+            <p class="copy-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+      <section class="faq section-shell" aria-labelledby="faq-title">
+        <div>
+          <p class="eyebrow">A FEW GOOD QUESTIONS</p>
+          <h2 id="faq-title">The little details.</h2>
+        </div>
+        <div class="faq-items">
+          <details>
+            <summary>
+              Is Toki really free?<span aria-hidden="true">+</span>
+            </summary>
+            <p>
+              Yes. Toki is free and open source under the GPL-3.0-or-later
+              license. Read the code, build it yourself, or help make it better
+              <a href="https://github.com/aashutoshrathi/toki">on GitHub</a>.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Which tools does it support?<span aria-hidden="true">+</span>
+            </summary>
+            <p>
+              Claude Code and Codex have quota tracking. Cursor, OpenCode, Pi,
+              Sarvam Code, and Vercel's fx have spend tracking. Toki also
+              detects sessions from tools such as Copilot CLI, Gemini CLI,
+              Antigravity, and Zed.
+              <a
+                href="https://github.com/aashutoshrathi/toki/blob/main/docs/providers.md"
+                >See the full provider guide</a
+              >.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Does my data leave my Mac?<span aria-hidden="true">+</span>
+            </summary>
+            <p>
+              Toki has no telemetry or cloud service. It reads credentials and
+              session history locally. If you enable Remote Control, transcripts
+              travel directly from your Mac to your paired device. Tailscale is
+              the recommended option for access away from home.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Can I control every agent from my phone?<span aria-hidden="true"
+                >+</span
+              >
+            </summary>
+            <p>
+              Remote replies work with agents that have a supported terminal
+              session. Editor-hosted agents without a terminal appear as
+              read-only. Remote Control is off by default; turn it on in
+              Settings and pair your phone using the QR code and verification
+              code.
+              <a
+                href="https://github.com/aashutoshrathi/toki/blob/main/docs/remote-control.md"
+                >Read the setup guide</a
+              >.
+            </p>
+          </details>
+        </div>
+      </section>
+      <section class="closing section-shell">
+        <img
+          src="Sources/Toki/Resources/toki-logo.svg"
+          alt=""
+          width="64"
+          height="64"
+        />
+        <h2>A little app.<br /><span class="serif">A clearer head.</span></h2>
+        <p>Made for people who make things with AI.</p>
+        <a class="button" href="#get-started"
+          >Get started with Toki <span aria-hidden="true">→</span></a
+        >
+      </section>
+    </main>
+    <footer class="site-footer section-shell">
+      <a class="wordmark" href="#">toki<span class="wordmark-dot">.</span></a
+      ><span>Native to your Mac. Open to everyone.</span>
+      <nav aria-label="Footer navigation">
+        <a href="privacy/">Privacy</a>
+        <a href="https://github.com/aashutoshrathi/toki">GitHub ↗</a
+        ><a href="https://github.com/aashutoshrathi/toki/releases">Releases</a
+        ><a href="https://github.com/aashutoshrathi/toki/blob/main/LICENSE"
+          >GPL-3.0</a
+        >
+      </nav>
+    </footer>
+  </body>
+</html>
