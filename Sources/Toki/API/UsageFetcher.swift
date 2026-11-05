@@ -55,9 +55,9 @@ enum UsageFetcher {
             }
         }
 
-        let snapshots = reconcileCodexSnapshots(orderedResults.flatMap { $0.snapshots })
+        let reconciled = reconcileCodexSnapshots(orderedResults.flatMap { $0.snapshots })
         return UsageFetchResponse(
-            snapshots: snapshots,
+            snapshots: reconciled,
             apiCallKeys: Set(orderedResults.flatMap { $0.apiCallKeys }),
             fetchedAt: fetchedAt
         )
