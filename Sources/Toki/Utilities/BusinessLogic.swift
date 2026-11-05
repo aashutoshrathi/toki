@@ -71,7 +71,8 @@ func menuBarEntries(
     mode: MenuBarDisplayMode = .smart,
     pinnedProviders: [Provider] = [],
     density: MenuBarDensity = .comfortable,
-    quotaWindows: [String: String] = [:]
+    quotaWindows: [String: String] = [:],
+    accounts: [String: String] = [:]
 ) -> [MenuBarStatusEntry] {
     // Logo-only asks for no readout at all, so the break suggestion - which is a readout -
     // would defeat the point of picking it.
@@ -82,14 +83,73 @@ func menuBarEntries(
 
     switch mode {
     case .smart:
-        return smartMenuBarEntries(for: snapshots, quotaWindows: quotaWindows)
+        return smartMenuBarEntries(for: snapshots, quotaWindows: quotaWindows, accounts: accounts)
     case .lowest:
         return lowestMenuBarEntries(for: snapshots, quotaWindows: quotaWindows)
     case .pinned:
-        return pinnedMenuBarEntries(for: snapshots, pinnedProviders: pinnedProviders, density: density, quotaWindows: quotaWindows)
+        return pinnedMenuBarEntries(
+            for: snapshots,
+            pinnedProviders: pinnedProviders,
+            density: density,
+            quotaWindows: quotaWindows,
+            accounts: accounts
+        )
     case .logoOnly:
         return []
     }
+}
+
+/// The account that represents `provider` in the menu bar.
+///
+/// An explicit choice always wins while that account still exists. Otherwise the account with
+/// the least quota left is picked: with several Codex homes, the first one in config order
+/// used to claim the segment even when another was nearly spent, which hid the number that
+/// matters. Accounts that are erroring are never candidates, and an account that is out of
+/// quota only stands in when every sibling is out too, so the provider doesn't look empty
+/// while another account could keep working.
+func menuBarAccount(
+    for provider: Provider,
+    among snapshots: [AccountSnapshot],
+    preferredAccountID: String?,
+    preferredWindow: String? = nil,
+    preferActive: Bool = false,
+    requireQuota: Bool = false,
+    matching: ((AccountSnapshot) -> Bool)? = nil
+) -> AccountSnapshot? {
+    let candidates = snapshots.filter { snapshot in
+        !snapshot.isError && (matching?(snapshot) ?? (snapshot.provider == provider))
+    }
+    guard !candidates.isEmpty else { return nil }
+    if let preferredAccountID,
+       let chosen = candidates.first(where: { $0.id == preferredAccountID }) {
+        return chosen
+    }
+    if preferActive,
+       let active = candidates.first(where: { $0.switchTarget == nil && ($0.remainingRatio ?? 1) > 0 }) {
+        return active
+    }
+    let withQuota = candidates.filter { ($0.remainingRatio ?? 1) > 0 }
+    let pool = withQuota.isEmpty ? candidates : withQuota
+    if requireQuota, withQuota.isEmpty { return nil }
+
+    // Ties keep snapshot order so an unchanged refresh can't make the segment flip accounts.
+    var best: AccountSnapshot?
+    var bestLeft: Double?
+    for snapshot in pool {
+        guard let left = menuBarRemaining(snapshot, preferredWindow: preferredWindow) else { continue }
+        if bestLeft == nil || left < bestLeft! {
+            best = snapshot
+            bestLeft = left
+        }
+    }
+    return best ?? pool.first
+}
+
+private func menuBarRemaining(_ snapshot: AccountSnapshot, preferredWindow: String?) -> Double? {
+    if let window = displayQuotaWindow(for: snapshot, preferredWindow: preferredWindow) {
+        return Double(window.percentLeft) / 100
+    }
+    return snapshot.remainingRatio
 }
 
 // Pinned providers are shown in the order they were pinned rather than in snapshot order, so
@@ -100,13 +160,21 @@ private func pinnedMenuBarEntries(
     for snapshots: [AccountSnapshot],
     pinnedProviders: [Provider],
     density: MenuBarDensity,
-    quotaWindows: [String: String]
+    quotaWindows: [String: String],
+    accounts: [String: String]
 ) -> [MenuBarStatusEntry] {
-    guard !pinnedProviders.isEmpty else { return smartMenuBarEntries(for: snapshots, quotaWindows: quotaWindows) }
+    guard !pinnedProviders.isEmpty else {
+        return smartMenuBarEntries(for: snapshots, quotaWindows: quotaWindows, accounts: accounts)
+    }
 
     let entries = pinnedProviders.compactMap { provider -> MenuBarStatusEntry? in
-        let match = snapshots.first { $0.provider == provider && $0.switchTarget == nil && !$0.isError }
-            ?? snapshots.first { $0.provider == provider && !$0.isError }
+        let match = menuBarAccount(
+            for: provider,
+            among: snapshots,
+            preferredAccountID: accounts[provider.rawValue],
+            preferredWindow: quotaWindows[provider.rawValue],
+            preferActive: provider.isClaudeAccount
+        )
         return match.map { menuBarEntry(for: $0, preferredWindow: quotaWindows[provider.rawValue]) }
     }
 
@@ -115,18 +183,31 @@ private func pinnedMenuBarEntries(
     return Array(entries.prefix(density.maxSegments))
 }
 
-private func smartMenuBarEntries(for snapshots: [AccountSnapshot], quotaWindows: [String: String]) -> [MenuBarStatusEntry] {
-    let activeClaude = snapshots.first {
-        $0.provider.isClaudeAccount && $0.switchTarget == nil && !$0.isError && ($0.remainingRatio ?? 1) > 0
-    }
-    let fallbackClaude = snapshots.first {
-        $0.provider.isClaudeAccount && !$0.isError && ($0.remainingRatio ?? 1) > 0
-    }
-    let codex = snapshots.first {
-        $0.provider == .codex && !$0.isError && ($0.remainingRatio ?? 1) > 0
-    }
+private func smartMenuBarEntries(
+    for snapshots: [AccountSnapshot],
+    quotaWindows: [String: String],
+    accounts: [String: String]
+) -> [MenuBarStatusEntry] {
+    // Smart names the account a person is actually working in, so the Claude slot keeps the
+    // active login rather than jumping to whichever sibling has less quota.
+    let claude = menuBarAccount(
+        for: .claudeCode,
+        among: snapshots,
+        preferredAccountID: accounts[Provider.claudeCode.rawValue],
+        preferredWindow: quotaWindows[Provider.claudeCode.rawValue],
+        preferActive: true,
+        requireQuota: true,
+        matching: { $0.provider.isClaudeAccount }
+    )
+    let codex = menuBarAccount(
+        for: .codex,
+        among: snapshots,
+        preferredAccountID: accounts[Provider.codex.rawValue],
+        preferredWindow: quotaWindows[Provider.codex.rawValue],
+        requireQuota: true
+    )
 
-    let quotaSegments = [activeClaude ?? fallbackClaude, codex].compactMap { $0 }
+    let quotaSegments = [claude, codex].compactMap { $0 }
 
     // Cost-based providers (Pi) have no quota percentage, so they're never picked as the
     // Claude/Codex quota segments above and would otherwise be invisible in the menu bar - even

@@ -83,7 +83,7 @@ enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .smart: return "The account you are on, plus Codex"
+        case .smart: return "Your active Claude account, plus the Codex account with the least left"
         case .lowest: return "Whichever quota is closest to running out"
         case .pinned: return "Only the providers you choose"
         case .logoOnly: return "Just the Toki mark, no numbers"
@@ -176,6 +176,11 @@ struct AppPreferences: Codable, Equatable {
     /// means the mode has nothing to draw, so the readout falls back to Smart rather than
     /// leaving an empty status item behind.
     var menuBarPinnedProviders: [Provider] = [.claudeCode, .codex]
+    /// Which account represents a provider in the menu bar, keyed by provider raw value.
+    /// Missing - or an account that no longer exists - means automatic: the account with the
+    /// least quota left, so a second Codex home can't hide behind a fuller one. Smart and
+    /// Pinned use it; Lowest already looks across every account.
+    var menuBarAccounts: [String: String] = [:]
     var quotaDisplayWindows: [String: String] = [:]
     var menuBarQuotaWindows: [String: String] = [:]
     // 30 days by default so the usage heatmap can fill its full window; it renders
@@ -220,6 +225,7 @@ struct AppPreferences: Codable, Equatable {
         case menuBarMode
         case menuBarDensity
         case menuBarPinnedProviders
+        case menuBarAccounts
         case quotaDisplayWindows
         case menuBarQuotaWindows
         case historyRetentionDays
@@ -270,6 +276,7 @@ struct AppPreferences: Codable, Equatable {
         menuBarPinnedProviders = try container.decodeIfPresent([String].self, forKey: .menuBarPinnedProviders)
             .map { $0.compactMap(Provider.init(rawValue:)) }
             ?? (migratedPins.isEmpty ? defaults.menuBarPinnedProviders : migratedPins)
+        menuBarAccounts = try container.decodeIfPresent([String: String].self, forKey: .menuBarAccounts) ?? [:]
         quotaDisplayWindows = try container.decodeIfPresent([String: String].self, forKey: .quotaDisplayWindows) ?? [:]
         menuBarQuotaWindows = try container.decodeIfPresent([String: String].self, forKey: .menuBarQuotaWindows) ?? [:]
         historyRetentionDays = try container.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
