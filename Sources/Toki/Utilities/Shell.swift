@@ -39,6 +39,8 @@ let agentCommandSearchPath = [
     "$HOME/.local/share/pnpm",
     "$HOME/.local/share/mise/shims",
     "$HOME/.asdf/shims",
+    "$HOME/.local/share/fnm/aliases/default/bin",
+    "$HOME/Library/Application Support/fnm/aliases/default/bin",
     "/opt/homebrew/bin",
     "/usr/local/bin",
     "/usr/bin",

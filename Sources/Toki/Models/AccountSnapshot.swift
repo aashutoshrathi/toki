@@ -35,6 +35,7 @@ struct AccountSnapshot: Identifiable, Hashable {
     var id: String
     var name: String
     var provider: Provider
+    var codexIdentity: String? = nil
     var primary: String
     var subtitle: String
     var remainingRatio: Double?

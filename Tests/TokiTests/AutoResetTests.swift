@@ -17,6 +17,7 @@ final class AutoResetTests: XCTestCase {
             id: "account",
             name: "Account",
             provider: provider,
+            codexIdentity: provider == .codex ? "account@example.com" : nil,
             primary: "",
             subtitle: "",
             remainingRatio: nil,
@@ -51,6 +52,14 @@ final class AutoResetTests: XCTestCase {
     func testSkipsErroredAndUnsupportedProviders() {
         XCTAssertFalse(shouldAutoRedeemReset(snapshot(weeklyLeft: 2, isError: true), weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
         XCTAssertFalse(shouldAutoRedeemReset(snapshot(provider: .cursor, weeklyLeft: 2), weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+    }
+
+    func testCodexWithoutIdentityCannotRedeem() {
+        var missingIdentity = snapshot(weeklyLeft: 2)
+        missingIdentity.codexIdentity = nil
+
+        XCTAssertFalse(shouldAutoRedeemReset(missingIdentity, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+        XCTAssertFalse(shouldRedeemExpiringReset(missingIdentity, minutesBeforeExpiry: 5, lastRedeemedExpiry: nil, now: now))
     }
 
     private func expiring(_ snapshot: AccountSnapshot, within minutes: Int, lastRedeemedExpiry: Date? = nil) -> Bool {

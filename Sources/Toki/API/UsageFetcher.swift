@@ -50,11 +50,41 @@ enum UsageFetcher {
             let orderedResults = accounts.indices.compactMap { index in
                 byIndex[index].map { withLocalActivity($0, account: accounts[index]) }
             }
+            let snapshots = reconcileCodexSnapshots(orderedResults.flatMap(\.snapshots))
             return UsageFetchResponse(
-                snapshots: orderedResults.flatMap(\.snapshots),
+                snapshots: snapshots,
                 apiCallKeys: Set(orderedResults.flatMap(\.apiCallKeys)),
                 fetchedAt: fetchedAt
             )
+        }
+    }
+
+    static func reconcileCodexSnapshots(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
+        let groups = Dictionary(grouping: snapshots.compactMap { snapshot -> (String, String)? in
+            guard snapshot.provider == .codex,
+                  let identity = snapshot.codexIdentity,
+                  !identity.isEmpty else {
+                return nil
+            }
+            return (identity, snapshot.id)
+        }, by: \.0)
+        let duplicateIDs = groups.values
+            .filter { $0.count > 1 }
+            .flatMap { $0.map(\.1) }
+        guard !duplicateIDs.isEmpty else { return snapshots }
+
+        return snapshots.map { snapshot in
+            guard duplicateIDs.contains(snapshot.id) else { return snapshot }
+            let otherNames = snapshots
+                .filter { $0.provider == .codex && $0.codexIdentity == snapshot.codexIdentity && $0.id != snapshot.id }
+                .map(\.name)
+                .joined(separator: ", ")
+            var blocked = snapshot
+            blocked.isError = true
+            blocked.subtitle = "Codex account configuration error: this login is also configured as \(otherNames)."
+            blocked.resetCreditsAvailable = 0
+            blocked.resetCreditExpiry = nil
+            return blocked
         }
     }
 

@@ -183,6 +183,10 @@ func canAutoRedeemReset(_ provider: Provider) -> Bool {
     provider == .claudeCode || provider == .codex
 }
 
+func canRedeemCodexReset(_ snapshot: AccountSnapshot) -> Bool {
+    snapshot.provider != .codex || (!snapshot.isError && snapshot.codexIdentity != nil)
+}
+
 func shouldAutoRedeemReset(
     _ snapshot: AccountSnapshot,
     weeklyPercentLeft threshold: Int,
@@ -191,6 +195,7 @@ func shouldAutoRedeemReset(
     now: Date
 ) -> Bool {
     guard canAutoRedeemReset(snapshot.provider),
+          canRedeemCodexReset(snapshot),
           !snapshot.isError,
           snapshot.resetCreditsAvailable > 0,
           let weekly = weeklyQuotaWindow(for: snapshot),
@@ -212,6 +217,7 @@ func shouldAutoRedeemReset(
 
 func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry minutes: Int, lastRedeemedExpiry: Date?, now: Date) -> Bool {
     guard canAutoRedeemReset(snapshot.provider),
+          canRedeemCodexReset(snapshot),
           !snapshot.isError,
           snapshot.resetCreditsAvailable > 0,
           let expiry = snapshot.resetCreditExpiry,
