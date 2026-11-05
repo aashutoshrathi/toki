@@ -433,7 +433,8 @@ struct MenuContentView: View {
             ScrollView {
                 let groups = providerAccountGroups
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(groups.enumerated()), id: \.element.provider) { index, group in
+                    ForEach(Array(groups.indices), id: \.self) { index in
+                        let group = groups[index]
                         if group.snapshots.count == 1, let snapshot = group.snapshots.first {
                             AccountCard(snapshot: snapshot, store: store) { id in
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {

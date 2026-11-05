@@ -202,7 +202,7 @@ final class AccountGroupingTests: XCTestCase {
             snapshot(id: "codex-secret", provider: .codex),
             snapshot(id: "claude-2", provider: .claudeCode)
         ])
-        XCTAssertEqual(groups.map(\.provider), [.codex, .claudeCode])
+        XCTAssertEqual(groups.map { $0.provider }, [.codex, .claudeCode])
         XCTAssertEqual(groups[0].snapshots.map(\.id), ["codex", "codex-secret"])
         XCTAssertEqual(groups[1].snapshots.map(\.id), ["claude-1", "claude-2"])
     }

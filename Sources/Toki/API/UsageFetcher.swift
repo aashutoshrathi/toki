@@ -60,17 +60,18 @@ enum UsageFetcher {
     }
 
     static func reconcileCodexSnapshots(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
-        let groups = Dictionary(grouping: snapshots.compactMap { snapshot -> (String, String)? in
-            guard snapshot.provider == .codex,
-                  let identity = snapshot.codexIdentity,
-                  !identity.isEmpty else {
-                return nil
-            }
-            return (identity, snapshot.id)
-        }, by: \.0)
-        let duplicateIDs = groups.values
-            .filter { $0.count > 1 }
-            .flatMap { $0.map(\.1) }
+        // Two Codex homes that resolve to the same login are a config error, not a second
+        // account, so reset redemption must not act on either. Built without tuple keypaths
+        // (Dictionary(grouping:by:) over a tuple array) because Swift 6.3.3 crashed on them.
+        var idsByIdentity: [String: [String]] = [:]
+        for snapshot in snapshots where snapshot.provider == .codex {
+            guard let identity = snapshot.codexIdentity, !identity.isEmpty else { continue }
+            idsByIdentity[identity, default: []].append(snapshot.id)
+        }
+        var duplicateIDs = Set<String>()
+        for ids in idsByIdentity.values where ids.count > 1 {
+            duplicateIDs.formUnion(ids)
+        }
         guard !duplicateIDs.isEmpty else { return snapshots }
 
         return snapshots.map { snapshot in
