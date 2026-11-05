@@ -23,7 +23,7 @@ struct AccountGroupCard: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(snapshots) { snapshot in
-                        AccountCard(snapshot: snapshot, store: store, onExpand: onExpand)
+                        AccountCard(snapshot: snapshot, store: store, onExpand: onExpand, compactIdentity: true)
                             .id(snapshot.id)
                     }
                 }
@@ -91,7 +91,7 @@ struct AccountGroupCard: View {
             if let lowest = lowestPercentLeft {
                 Text("Lowest \(lowest)%")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(healthColor(lowest))
+                    .foregroundStyle(providerAccent(provider))
             } else if snapshots.contains(where: \.isError) {
                 Text("Unavailable")
                     .font(.system(size: 12, weight: .semibold))
@@ -120,7 +120,6 @@ struct AccountGroupCard: View {
         let name: String
         let percentLeft: Int?
         let fillRatio: Double?
-        let color: Color
     }
 
     private var segments: [Segment] {
@@ -130,8 +129,7 @@ struct AccountGroupCard: View {
                 id: snapshot.id,
                 name: snapshot.name,
                 percentLeft: percent,
-                fillRatio: snapshot.remainingRatio.map { min(1, max(0, $0)) },
-                color: healthColor(percent)
+                fillRatio: snapshot.remainingRatio.map { min(1, max(0, $0)) }
             )
         }
     }
@@ -145,7 +143,7 @@ struct AccountGroupCard: View {
                             Capsule().fill(Color.primary.opacity(0.12))
                             if let ratio = segment.fillRatio {
                                 Capsule()
-                                    .fill(segment.color)
+                                    .fill(providerAccent(provider).opacity(0.55))
                                     .frame(width: geometry.size.width * ratio)
                             }
                         }
@@ -158,7 +156,7 @@ struct AccountGroupCard: View {
                 ForEach(segments) { segment in
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(segment.color)
+                            .fill(providerAccent(provider))
                             .frame(width: 7, height: 7)
                         Text(segment.name)
                             .font(.system(size: 10, weight: .medium))
@@ -167,18 +165,11 @@ struct AccountGroupCard: View {
                         Spacer(minLength: 4)
                         Text(segment.percentLeft.map { "\($0)% left" } ?? "—")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(segment.color)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
         }
         .help("Each segment is one account; the fill is how much quota that account has left.")
-    }
-
-    private func healthColor(_ percentLeft: Int?) -> Color {
-        guard let percentLeft else { return .secondary }
-        if percentLeft <= 15 { return .red }
-        if percentLeft <= 40 { return .orange }
-        return .green
     }
 }

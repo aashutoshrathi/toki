@@ -215,4 +215,19 @@ final class AccountGroupingTests: XCTestCase {
         XCTAssertEqual(groups.count, 2)
         XCTAssertEqual(groups.map(\.snapshots.count), [1, 1])
     }
+
+    func testWorkspaceLabelFallsBackToTheNameSuffix() {
+        let named = AccountSnapshot(
+            id: "codex-work", name: "Codex (work)", provider: .codex, primary: "50%",
+            subtitle: "", remainingRatio: 0.5, metrics: []
+        )
+        XCTAssertEqual(workspaceLabel(in: named), "work")
+
+        let org = AccountSnapshot(
+            id: "claude-1", name: "Claude - a@b.c", provider: .claudeCode, primary: "50%",
+            subtitle: "", remainingRatio: 0.5, metrics: [],
+            accountInfo: [MetricLine(label: "Org", value: "regie.ai")]
+        )
+        XCTAssertEqual(workspaceLabel(in: org), "regie.ai")
+    }
 }

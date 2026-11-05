@@ -4,6 +4,10 @@ struct AccountCard: View {
     var snapshot: AccountSnapshot
     @ObservedObject var store: UsageStore
     var onExpand: (String) -> Void = { _ in }
+    // When true the card is a sub-card inside a grouped provider: the provider logo and alias
+    // are already on the group header, so this shows only the identity that tells the accounts
+    // apart - email and workspace - instead of repeating them.
+    var compactIdentity: Bool = false
     @State private var isExpanded = false
     @State private var isEditingAlias = false
     @State private var aliasDraft = ""
@@ -18,10 +22,11 @@ struct AccountCard: View {
         var id: String { rawValue }
     }
 
-    init(snapshot: AccountSnapshot, store: UsageStore, onExpand: @escaping (String) -> Void = { _ in }) {
+    init(snapshot: AccountSnapshot, store: UsageStore, onExpand: @escaping (String) -> Void = { _ in }, compactIdentity: Bool = false) {
         self.snapshot = snapshot
         self.store = store
         self.onExpand = onExpand
+        self.compactIdentity = compactIdentity
         // No usage metrics ever populate for agent-detection-only providers, so the
         // Usage tab would just be empty - open straight to Sessions instead.
         _expandedTab = State(initialValue: snapshot.isAgentDetectionOnly ? .sessions : .usage)
@@ -89,48 +94,65 @@ struct AccountCard: View {
                 .help(isExpanded ? "Collapse account" : "Show account details")
                 .pointerOnHover()
 
-                AccountBadge(snapshot: snapshot, size: 26)
-                    .overlay(alignment: .topTrailing) {
-                        if !accountAgents.isEmpty {
-                            Text("\(accountAgents.count)")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(2)
-                                .frame(minWidth: 12, minHeight: 12)
-                                .background(Color.blue, in: Circle())
-                                .offset(x: 4, y: -1)
+                if !compactIdentity {
+                    AccountBadge(snapshot: snapshot, size: 26)
+                        .overlay(alignment: .topTrailing) {
+                            if !accountAgents.isEmpty {
+                                Text("\(accountAgents.count)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(2)
+                                    .frame(minWidth: 12, minHeight: 12)
+                                    .background(Color.blue, in: Circle())
+                                    .offset(x: 4, y: -1)
+                            }
                         }
-                    }
-                    // Opposite corner to the session count, so an account that is both busy
-                    // and on a struggling provider still shows each signal in full.
-                    .overlay(alignment: .bottomTrailing) {
-                        if let serviceStatus {
-                            ServiceStatusDot(level: serviceStatus.level)
-                                .offset(x: 2, y: 1)
-                                .help("\(serviceStatus.headline): \(serviceStatus.detail)")
-                                .accessibilityLabel(serviceStatus.headline)
+                        // Opposite corner to the session count, so an account that is both busy
+                        // and on a struggling provider still shows each signal in full.
+                        .overlay(alignment: .bottomTrailing) {
+                            if let serviceStatus {
+                                ServiceStatusDot(level: serviceStatus.level)
+                                    .offset(x: 2, y: 1)
+                                    .help("\(serviceStatus.headline): \(serviceStatus.detail)")
+                                    .accessibilityLabel(serviceStatus.headline)
+                            }
                         }
-                    }
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    aliasEditor
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        // Provider name is omitted here - the account logo already conveys it.
-                        if store.debugMode && snapshot.isError {
-                            Image(systemName: "exclamationmark.bubble.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.orange)
-                        }
-                        if let secondaryIdentifier {
-                            Text(secondaryIdentifier)
+                    if compactIdentity {
+                        Text(compactIdentityTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if let workspace = workspaceLabel(in: snapshot) {
+                            Text(workspace)
                                 .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                                // Error text reads better cut from the end (keeps the
-                                // meaningful lead-in); emails/org names keep .middle so the
-                                // domain/tail stays visible instead of just the local part.
-                                .truncationMode(snapshot.isError ? .tail : .middle)
+                                .truncationMode(.middle)
+                        }
+                    } else {
+                        aliasEditor
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            // Provider name is omitted here - the account logo already conveys it.
+                            if store.debugMode && snapshot.isError {
+                                Image(systemName: "exclamationmark.bubble.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.orange)
+                            }
+                            if let secondaryIdentifier {
+                                Text(secondaryIdentifier)
+                                    .font(.system(size: 9, weight: .regular))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    // Error text reads better cut from the end (keeps the
+                                    // meaningful lead-in); emails/org names keep .middle so the
+                                    // domain/tail stays visible instead of just the local part.
+                                    .truncationMode(snapshot.isError ? .tail : .middle)
+                            }
                         }
                     }
                 }
@@ -416,6 +438,14 @@ struct AccountCard: View {
 
     private var accountIdentifier: String {
         return snapshot.name
+    }
+
+    // The identity line for a compact sub-card: the email when known, else the account name.
+    // The provider logo and alias are already on the group header, so this is the part that
+    // actually distinguishes one account from its sibling.
+    private var compactIdentityTitle: String {
+        let raw = emailAddress(in: snapshot) ?? accountIdentifier
+        return store.hidesSensitiveInfo ? SensitiveText.redactingEmails(raw) : raw
     }
 
     // Default Claude records repeat the email in both the generated name and the subtitle.

@@ -40,6 +40,21 @@ func organizationName(in snapshot: AccountSnapshot) -> String? {
     snapshot.accountInfo.first(where: { $0.label == "Org" })?.value
 }
 
+/// The label that names which workspace/home an account lives in, for the compact sub-cards a
+/// grouped provider draws. Prefers an explicit organization, else the suffix of a generated
+/// "Provider (workspace)" name (e.g. "Codex (work)" -> "work").
+func workspaceLabel(in snapshot: AccountSnapshot) -> String? {
+    if let org = organizationName(in: snapshot), !org.isEmpty {
+        return org
+    }
+    let prefix = snapshot.provider.displayName
+    guard snapshot.name.hasPrefix(prefix) else { return nil }
+    let rest = snapshot.name.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+    guard rest.hasPrefix("("), rest.hasSuffix(")") else { return nil }
+    let inner = rest.dropFirst().dropLast()
+    return inner.isEmpty ? nil : String(inner)
+}
+
 func jwtPayload(_ token: String) -> [String: Any]? {
     let parts = token.split(separator: ".")
     guard parts.count >= 2 else { return nil }
