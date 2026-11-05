@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.4.1 - 2026-11-05
+
+One Line: OpenCode Go usage shows up, accounts of one provider group into a single card, and the menu bar picks the Codex account that matters.
+
+### Added
+- **OpenCode Go subscription usage.** A signed-in OpenCode with a Go subscription now shows its three allowances - the rolling 5-hour, weekly and monthly caps - read from the local OpenCode server (`opencode api get /api/experimental/usage/limits`). A BYO-key install with no Go plan keeps the local spend card it always had, so nothing is lost when the subscription is absent.
+- **More than one account of a provider becomes one card.** When a provider has several signed-in accounts, the Accounts tab draws it once. The collapsed card shows a bar divided into one segment per account, with a legend and a "Lowest N%" summary; expanding it shows each account as its own full card with its quota bars, pace markers, resets and sessions. The sub-cards show only what tells the accounts apart - email and workspace - instead of repeating the provider logo and alias.
+- **The menu bar picks the Codex account that matters.** With several Codex homes, the menu bar's Codex segment shows the account closest to running out rather than whichever came first in config order, so a nearly spent home cannot hide behind a fuller one. Hovering the readout names the account it is showing. In Settings › Menu bar you can pin a specific account instead; Lowest mode still compares every account across every provider.
+
+### Fixed
+- **Each Codex account keeps its own usage and reset credits.** The reset flow now names the account it is acting on, and refuses to redeem when the live account no longer matches the card. Two homes configured for the same sign-in are flagged as a configuration error and excluded from reset redemption, so a banked reset cannot be spent against the wrong account.
+- **Codex sessions are attributed to the account that signed them in.** Toki reads each running Codex process's `CODEX_HOME` and matches it to the account whose home it was launched from, so a session's transcript and Sessions tab land on the right card instead of being provider-scoped. A session whose home cannot be read stays visible everywhere.
+- **CLIs installed through fnm are found.** The agent command search path now includes fnm's `default/bin`, so a Codex or OpenCode installed with fnm is discovered rather than reported as not found.
+
+### Changed
+- **The grouped card's bar is tinted by provider, not by alarm.** The per-account segments no longer use saturated quota green/orange/red. They fill with a muted provider accent, and the fill length plus the "% left" label carry the health signal.
+
 ## 3.4.0 - 2026-10-31
 
 One Line: Toki finds all your Codex accounts, recovers renewed sign-ins, and refreshes Codex usage faster.
