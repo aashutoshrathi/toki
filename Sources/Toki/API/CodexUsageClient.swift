@@ -36,6 +36,7 @@ struct CodexUsageClient {
             name: account.name,
             provider: .codex,
             codexIdentity: CodexAccountInfo.identity(from: payload.account),
+            codexHome: CodexAppServerClient.codexHomeDirectory(for: account),
             primary: primary,
             subtitle: rateLimits.subtitle ?? CodexAccountInfo.email(from: payload.account) ?? "OpenAI Codex usage",
             remainingRatio: rateLimits.remainingRatio,
@@ -352,6 +353,14 @@ enum CodexAppServerClient {
     // A symlinked home, or a path that differs only in case on APFS, is still the same login.
     static func sameHome(_ first: AccountConfig, _ second: AccountConfig) -> Bool {
         let homes = [first, second].map { codexHomeDirectory(for: $0) }
+        return sameHome(homes[0], homes[1])
+    }
+
+    // Path-based comparison for an already-resolved home, so a running session's CODEX_HOME can
+    // be matched against a configured account without reconstructing an AccountConfig.
+    static func sameHome(_ firstPath: String?, _ secondPath: String?) -> Bool {
+        guard let firstPath, let secondPath, !firstPath.isEmpty, !secondPath.isEmpty else { return false }
+        let homes = [firstPath, secondPath].map { expandedPath($0) }
         guard homes[0] != homes[1] else { return true }
         let identifiers = homes.map {
             try? URL(fileURLWithPath: $0).resolvingSymlinksInPath()

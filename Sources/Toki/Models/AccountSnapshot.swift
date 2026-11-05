@@ -36,6 +36,10 @@ struct AccountSnapshot: Identifiable, Hashable {
     var name: String
     var provider: Provider
     var codexIdentity: String? = nil
+    /// For Codex, the resolved home directory this account signs in from (derived from
+    /// `codexAuthPath`, default `~/.codex`). Matched against a running session's CODEX_HOME to
+    /// attribute that session to this account; nil for every other provider.
+    var codexHome: String? = nil
     var primary: String
     var subtitle: String
     var remainingRatio: Double?

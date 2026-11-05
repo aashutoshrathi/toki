@@ -431,19 +431,29 @@ struct MenuContentView: View {
     private var accountList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                let snapshots = sortedSnapshots
+                let groups = providerAccountGroups
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
-                        AccountCard(snapshot: snapshot, store: store) { id in
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                                    proxy.scrollTo(id, anchor: .top)
+                    ForEach(Array(groups.enumerated()), id: \.element.provider) { index, group in
+                        if group.snapshots.count == 1, let snapshot = group.snapshots.first {
+                            AccountCard(snapshot: snapshot, store: store) { id in
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                        proxy.scrollTo(id, anchor: .top)
+                                    }
+                                }
+                            }
+                            .id(snapshot.id)
+                        } else {
+                            AccountGroupCard(snapshots: group.snapshots, store: store) { id in
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                        proxy.scrollTo(id, anchor: .top)
+                                    }
                                 }
                             }
                         }
-                        .id(snapshot.id)
 
-                        if index < snapshots.count - 1 {
+                        if index < groups.count - 1 {
                             Divider()
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 2)
@@ -454,6 +464,12 @@ struct MenuContentView: View {
             }
             .frame(maxHeight: .infinity)
         }
+    }
+
+    // Accounts of one provider are drawn as a single card once there is more than one, so the
+    // list groups by provider while keeping the provider's position from its first account.
+    private var providerAccountGroups: [(provider: Provider, snapshots: [AccountSnapshot])] {
+        Toki.accountGroups(for: sortedSnapshots)
     }
 
     private var showsQuotaRings: Bool {

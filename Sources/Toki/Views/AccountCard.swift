@@ -28,10 +28,9 @@ struct AccountCard: View {
     }
 
     // Active agents are discovered by scanning processes, which reveals the provider but not
-    // which configured account authenticated them, so sessions are provider-scoped. The one
-    // exception is Claude Code with multiple accounts: only one is active at a time (claude-swap),
-    // and the active account is the one with no switch target, so sessions are attributed there
-    // instead of double-counting on every Claude card.
+    // which configured account authenticated them, so sessions are provider-scoped. Two
+    // providers are account-scoped: Claude Code (claude-swap keeps one account active at a time,
+    // the one with no switch target) and Codex (a session's CODEX_HOME names the account).
     private var accountAgents: [ActiveAgent] {
         Self.attributedAgents(store.activeAgents, for: snapshot, among: store.snapshots)
     }
@@ -42,6 +41,9 @@ struct AccountCard: View {
         among snapshots: [AccountSnapshot]
     ) -> [ActiveAgent] {
         let agents = activeAgents.filter { $0.provider == snapshot.provider }
+        if snapshot.provider == .codex {
+            return codexAttributedAgents(agents, for: snapshot, among: snapshots)
+        }
         guard snapshot.provider == .claudeCode else { return agents }
         let claudeSnapshots = snapshots.filter { $0.provider == .claudeCode }
         // Only narrow to the active account when the data unambiguously has one: exactly one
@@ -52,6 +54,23 @@ struct AccountCard: View {
             return agents
         }
         return snapshot.switchTarget == nil ? agents : []
+    }
+
+    // Codex sessions carry the CODEX_HOME of the process that launched them. With more than one
+    // Codex account, each session belongs on the card whose home matches; a session whose home
+    // could not be read stays provider-scoped so it isn't hidden everywhere.
+    private static func codexAttributedAgents(
+        _ agents: [ActiveAgent],
+        for snapshot: AccountSnapshot,
+        among snapshots: [AccountSnapshot]
+    ) -> [ActiveAgent] {
+        guard snapshots.filter({ $0.provider == .codex }).count > 1, let home = snapshot.codexHome else {
+            return agents
+        }
+        return agents.filter { agent in
+            guard let agentHome = agent.codexHome else { return true }
+            return CodexAppServerClient.sameHome(agentHome, home)
+        }
     }
 
     var body: some View {
