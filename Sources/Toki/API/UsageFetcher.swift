@@ -25,7 +25,10 @@ enum UsageFetcher {
         // uniquingKeysWith (not uniqueKeysWithValues) so duplicate account ids never trap.
         let previousByID = Dictionary(previousSnapshots.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         let fetchedAt = Date()
-        return await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
+        // The reconcile and response construction live outside the task group: Swift 6.3.3
+        // crashed type-checking them inside the closure's return-type inference, so the group
+        // only reduces to the fetched results and the rest runs after it resolves.
+        let orderedResults: [AccountFetchResult] = await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
             for (index, account) in accounts.enumerated() {
                 group.addTask {
                     await (
@@ -47,16 +50,17 @@ enum UsageFetcher {
             for await result in group {
                 byIndex[result.0] = result.1
             }
-            let orderedResults = accounts.indices.compactMap { index in
+            return accounts.indices.compactMap { index in
                 byIndex[index].map { withLocalActivity($0, account: accounts[index]) }
             }
-            let snapshots = reconcileCodexSnapshots(orderedResults.flatMap(\.snapshots))
-            return UsageFetchResponse(
-                snapshots: snapshots,
-                apiCallKeys: Set(orderedResults.flatMap(\.apiCallKeys)),
-                fetchedAt: fetchedAt
-            )
         }
+
+        let snapshots = reconcileCodexSnapshots(orderedResults.flatMap { $0.snapshots })
+        return UsageFetchResponse(
+            snapshots: snapshots,
+            apiCallKeys: Set(orderedResults.flatMap { $0.apiCallKeys }),
+            fetchedAt: fetchedAt
+        )
     }
 
     static func reconcileCodexSnapshots(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
