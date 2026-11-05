@@ -25,19 +25,24 @@ extension UsageStore {
     }
 
     func consumeResetCredit(accountID: String) {
-        startResetRedeem(accountID: accountID, condition: nil, completion: nil)
+        guard let snapshot = snapshots.first(where: { $0.id == accountID }) else { return }
+        startResetRedeem(snapshot: snapshot, condition: nil, completion: nil)
     }
 
     @discardableResult
     private func startResetRedeem(
-        accountID: String,
+        snapshot: AccountSnapshot,
         condition: AutoRedeemCondition?,
         completion: ((Result<RedeemedReset, Error>) -> Void)?
     ) -> Bool {
-        guard !resettingAccountIDs.contains(accountID), let account = resetCapableAccount(for: accountID) else {
+        guard !resettingAccountIDs.contains(snapshot.id),
+              let account = resetCapableAccount(for: snapshot),
+              canRedeemCodexReset(snapshot) else {
             return false
         }
-        resettingAccountIDs.insert(accountID)
+        resettingAccountIDs.insert(snapshot.id)
+        let accountID = snapshot.id
+        let expectedIdentity = snapshot.codexIdentity
         Task {
             defer { resettingAccountIDs.remove(accountID) }
             let result = await Task.detached { () -> Result<RedeemedReset, Error> in
@@ -45,7 +50,12 @@ extension UsageStore {
                     if account.provider == .claudeCode {
                         return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, recordID: accountID, condition: condition))
                     }
-                    return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(account: account, creditID: nil, condition: condition))
+                    return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(
+                        account: account,
+                        expectedIdentity: expectedIdentity,
+                        creditID: nil,
+                        condition: condition
+                    ))
                 } catch {
                     return .failure(error)
                 }
@@ -97,7 +107,7 @@ extension UsageStore {
                   ) else {
                 continue
             }
-            let started = startResetRedeem(accountID: snapshot.id, condition: claim.condition) { [weak self] result in
+            let started = startResetRedeem(snapshot: snapshot, condition: claim.condition) { [weak self] result in
                 self?.finishAutoRedeem(claim, for: snapshot, result: result)
             }
             if started {
@@ -209,7 +219,12 @@ extension UsageStore {
         guard preferences.autoResetEnabled, let minutes = preferences.autoResetMinutesBeforeExpiry else {
             return
         }
-        let eligible = snapshots.filter { canAutoRedeemReset($0.provider) && !$0.isError && $0.resetCreditsAvailable > 0 }
+        let eligible = snapshots.filter {
+            canAutoRedeemReset($0.provider)
+                && !$0.isError
+                && $0.resetCreditsAvailable > 0
+                && canRedeemCodexReset($0)
+        }
         let expiryChecks = eligible.compactMap { $0.resetCreditExpiry?.addingTimeInterval(-TimeInterval(minutes * 60)) }
         let retryChecks = eligible.compactMap { autoRedeemRetryTimes[autoRedeemRetryKey(for: .expiry, accountID: $0.id)] }
         let nextCheck = (expiryChecks + retryChecks).filter { $0 > date }.min()
@@ -224,12 +239,12 @@ extension UsageStore {
         }
     }
 
-    private func resetCapableAccount(for snapshotID: String) -> AccountConfig? {
-        if let exact = config?.accounts.first(where: { $0.id == snapshotID }),
+    private func resetCapableAccount(for snapshot: AccountSnapshot) -> AccountConfig? {
+        if let exact = config?.accounts.first(where: { $0.id == snapshot.id }),
            exact.provider == .codex || exact.provider == .claudeCode {
             return exact
         }
-        guard snapshots.first(where: { $0.id == snapshotID })?.provider == .claudeCode else { return nil }
+        guard snapshot.provider == .claudeCode else { return nil }
         return config?.accounts.first { $0.provider == .claudeCode }
     }
 

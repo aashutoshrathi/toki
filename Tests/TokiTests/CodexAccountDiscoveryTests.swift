@@ -135,13 +135,13 @@ final class CodexAccountDiscoveryTests: XCTestCase {
         XCTAssertNotEqual(CodexAccountInfo.identity(from: first), CodexAccountInfo.identity(from: second))
     }
 
-    func testIdentityTellsPlansOfOneEmailApart() {
+    func testIdentityUsesEmailWhenWorkspaceIsMissing() {
         let personal: [String: Any] = ["account": ["email": "person@example.com", "planType": "plus"]]
         let team: [String: Any] = ["account": ["email": "person@example.com", "planType": "team"]]
         let apiKey: [String: Any] = ["account": ["type": "apiKey"]]
 
-        XCTAssertEqual(CodexAccountInfo.identity(from: personal), "person@example.com|plus")
-        XCTAssertNotEqual(CodexAccountInfo.identity(from: personal), CodexAccountInfo.identity(from: team))
+        XCTAssertEqual(CodexAccountInfo.identity(from: personal), "person@example.com")
+        XCTAssertEqual(CodexAccountInfo.identity(from: personal), CodexAccountInfo.identity(from: team))
         XCTAssertNil(CodexAccountInfo.identity(from: apiKey))
     }
 

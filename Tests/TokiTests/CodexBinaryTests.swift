@@ -102,6 +102,19 @@ final class CodexBinaryTests: XCTestCase {
         XCTAssertNil(try CodexBinaryResolver.probeCodexOnPath(directory.path))
     }
 
+    func testShellProbeFindsFNMDefaultBeforeSystemInstall() throws {
+        for relativePath in [".local/share/fnm/aliases/default/bin", "Library/Application Support/fnm/aliases/default/bin"] {
+            let home = try makeTemporaryDirectory()
+            let directory = home.appendingPathComponent(relativePath)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let executable = directory.appendingPathComponent("codex")
+            try writeExecutable(at: executable)
+            let searchPath = agentCommandSearchPath.replacingOccurrences(of: "$HOME", with: home.path)
+
+            XCTAssertEqual(try CodexBinaryResolver.probeCodexOnPath(searchPath), executable.path)
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeTemporaryDirectory() throws -> URL {

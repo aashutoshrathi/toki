@@ -25,7 +25,10 @@ enum UsageFetcher {
         // uniquingKeysWith (not uniqueKeysWithValues) so duplicate account ids never trap.
         let previousByID = Dictionary(previousSnapshots.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         let fetchedAt = Date()
-        return await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
+        // The reconcile and response construction live outside the task group: Swift 6.3.3
+        // crashed type-checking them inside the closure's return-type inference, so the group
+        // only reduces to the fetched results and the rest runs after it resolves.
+        let orderedResults: [AccountFetchResult] = await withTaskGroup(of: (Int, AccountFetchResult).self) { group in
             for (index, account) in accounts.enumerated() {
                 group.addTask {
                     await (
@@ -47,14 +50,46 @@ enum UsageFetcher {
             for await result in group {
                 byIndex[result.0] = result.1
             }
-            let orderedResults = accounts.indices.compactMap { index in
+            return accounts.indices.compactMap { index in
                 byIndex[index].map { withLocalActivity($0, account: accounts[index]) }
             }
-            return UsageFetchResponse(
-                snapshots: orderedResults.flatMap(\.snapshots),
-                apiCallKeys: Set(orderedResults.flatMap(\.apiCallKeys)),
-                fetchedAt: fetchedAt
-            )
+        }
+
+        let reconciled = reconcileCodexSnapshots(orderedResults.flatMap { $0.snapshots })
+        return UsageFetchResponse(
+            snapshots: reconciled,
+            apiCallKeys: Set(orderedResults.flatMap { $0.apiCallKeys }),
+            fetchedAt: fetchedAt
+        )
+    }
+
+    static func reconcileCodexSnapshots(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
+        // Two Codex homes that resolve to the same login are a config error, not a second
+        // account, so reset redemption must not act on either. Built without tuple keypaths
+        // (Dictionary(grouping:by:) over a tuple array) because Swift 6.3.3 crashed on them.
+        var idsByIdentity: [String: [String]] = [:]
+        for snapshot in snapshots where snapshot.provider == .codex {
+            guard let identity = snapshot.codexIdentity, !identity.isEmpty else { continue }
+            idsByIdentity[identity, default: []].append(snapshot.id)
+        }
+        var duplicateIDs = Set<String>()
+        for ids in idsByIdentity.values where ids.count > 1 {
+            duplicateIDs.formUnion(ids)
+        }
+        guard !duplicateIDs.isEmpty else { return snapshots }
+
+        return snapshots.map { snapshot in
+            guard duplicateIDs.contains(snapshot.id) else { return snapshot }
+            let otherNames = snapshots
+                .filter { $0.provider == .codex && $0.codexIdentity == snapshot.codexIdentity && $0.id != snapshot.id }
+                .map(\.name)
+                .joined(separator: ", ")
+            var blocked = snapshot
+            blocked.isError = true
+            blocked.subtitle = "Codex account configuration error: this login is also configured as \(otherNames)."
+            blocked.resetCreditsAvailable = 0
+            blocked.resetCreditExpiry = nil
+            return blocked
         }
     }
 

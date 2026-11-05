@@ -497,7 +497,7 @@ final class RemoteControlServer: ObservableObject {
                     entry["resetExpiry"] = ISO8601DateFormatter().string(from: expiry)
                 }
             }
-            let windows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 } + snapshot.modelWindows
+            let windows = snapshot.allWindows
             if !windows.isEmpty {
                 entry["windows"] = windows.map { windowPayload($0, in: snapshot, preferences: preferences, now: now) }
             }

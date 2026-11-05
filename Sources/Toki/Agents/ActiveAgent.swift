@@ -84,6 +84,10 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     var worktree: String? = nil
     var origin: AgentOrigin = .process
     var t3Thread: T3CodeThreadStore.Thread? = nil
+    // For Codex, the resolved CODEX_HOME of the running process (default ~/.codex). This is
+    // the signal that maps a session to the account that signed it in; other providers leave
+    // it nil and stay provider-scoped.
+    var codexHome: String? = nil
     // A short marker (the terminal tty) appended to the title only when another agent would
     // otherwise show the same one - several agents in one project can resolve to the same
     // session, and identical rows can't be told apart. Set by a post-scan pass.
@@ -171,6 +175,7 @@ enum ActiveAgentScanner {
         let hostViaTmux: Bool
         let branch: String?
         let worktree: String?
+        let codexHome: String?
     }
     private nonisolated(unsafe) static var cache: [Int32: CacheEntry] = [:]
 
@@ -520,6 +525,7 @@ enum ActiveAgentScanner {
         let startTime: Date?
         let branch: String?
         let worktree: String?
+        let codexHome: String?
     }
 
     private static func isClaudeFamily(_ provider: Provider) -> Bool {
@@ -552,8 +558,12 @@ enum ActiveAgentScanner {
         
         let branch = reusable?.branch ?? (cwd.flatMap { Shell.output("/usr/bin/git", ["rev-parse", "--abbrev-ref", "HEAD"], cwd: $0)?.trimmingCharacters(in: .whitespacesAndNewlines) })
         let worktree = reusable?.worktree ?? (cwd.flatMap { Shell.output("/usr/bin/git", ["rev-parse", "--show-toplevel"], cwd: $0)?.trimmingCharacters(in: .whitespacesAndNewlines) })
+        // CODEX_HOME is fixed for the life of a process, so it is cached alongside cwd. Reading
+        // the environment is one extra `ps -E` call, so it only happens for Codex processes and
+        // only once per PID.
+        let codexHome = reusable?.codexHome ?? (c.provider == .codex ? Self.codexHome(ofPID: c.pid) : nil)
 
-        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux, branch: branch, worktree: worktree)
+        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux, branch: branch, worktree: worktree, codexHome: codexHome)
         return ProcessContext(
             candidate: c,
             directory: cwd,
@@ -562,8 +572,27 @@ enum ActiveAgentScanner {
             // The launch time is what separates two agents sharing one project folder.
             startTime: startDate(fromETime: c.runtime),
             branch: branch,
-            worktree: worktree
+            worktree: worktree,
+            codexHome: codexHome
         )
+    }
+
+    // The environment a Codex process was launched with, read via `ps -E`. CODEX_HOME maps a
+    // session to the account that signed it in; when it is absent the process used the default
+    // home (~/.codex). A nil return means the read itself failed - the caller then keeps the
+    // session provider-scoped rather than guessing.
+    private static func codexHome(ofPID pid: Int32) -> String? {
+        guard let output = Shell.output("/bin/ps", ["-E", "-p", String(pid), "-o", "command="]) else {
+            return nil
+        }
+        for token in output.split(separator: " ", omittingEmptySubsequences: true) {
+            guard token.hasPrefix("CODEX_HOME=") else { continue }
+            let value = String(token.dropFirst("CODEX_HOME=".count))
+            return value.isEmpty ? nil : expandedPath(value)
+        }
+        // The environment was readable and carried no CODEX_HOME, so the process used the
+        // default home.
+        return expandedPath("~/.codex")
     }
 
     // `session` is Claude's assigned transcript; every field it backs is read from that one file
@@ -601,7 +630,8 @@ enum ActiveAgentScanner {
                 : AgentSessionResolver.sessionPath(provider: c.provider, command: c.command, cwd: cwd, startTime: context.startTime),
             branch: context.branch,
             worktree: context.worktree,
-            t3Thread: t3Thread
+            t3Thread: t3Thread,
+            codexHome: context.codexHome
         )
     }
 }

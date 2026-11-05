@@ -35,6 +35,8 @@ struct CodexUsageClient {
             id: account.id,
             name: account.name,
             provider: .codex,
+            codexIdentity: CodexAccountInfo.identity(from: payload.account),
+            codexHome: CodexAppServerClient.codexHomeDirectory(for: account),
             primary: primary,
             subtitle: rateLimits.subtitle ?? CodexAccountInfo.email(from: payload.account) ?? "OpenAI Codex usage",
             remainingRatio: rateLimits.remainingRatio,
@@ -188,58 +190,125 @@ enum CodexAppServerClient {
         return account
     }
 
-    private static func consumeRequest(
+    typealias SessionFactory = (AccountConfig, CodexBinary) throws -> any CodexAppServerSession
+
+    static func consumeRateLimitResetCredit(
         account: AccountConfig,
+        expectedIdentity: String? = nil,
         creditID: String?,
-        condition: AutoRedeemCondition?
-    ) async throws -> (binary: CodexBinary, request: (id: Int, method: String, params: String), creditExpiry: Date?) {
-        let binary = try await resolvedBinary()
-        let check = try call(account: account, binary: binary, requests: [(id: 2, method: "account/rateLimits/read", params: "null")])
-        guard let rateLimits = check.results[2] else {
-            throw LocalizedErrorMessage(check.errors.first ?? "Couldn't confirm a Codex reset is available, so none was redeemed.")
+        condition: AutoRedeemCondition?,
+        sessionFactory: SessionFactory? = nil,
+        binaryOverride: CodexBinary? = nil
+    ) async throws -> RedeemedReset {
+        guard let expectedIdentity, !expectedIdentity.isEmpty else {
+            throw ResetNotAttempted(reason: "Codex account identity is unavailable, so no reset was redeemed.")
         }
-        let live = CodexRateLimits(json: rateLimits)
-        guard live.resetCreditsAvailable > 0 else {
-            throw LocalizedErrorMessage("Codex reports no reset available right now, so none was redeemed.")
+
+        let binary: CodexBinary
+        if let suppliedBinary = binaryOverride {
+            binary = suppliedBinary
+        } else {
+            do {
+                binary = try await resolvedBinary()
+            } catch {
+                throw ResetNotAttempted(reason: error.localizedDescription)
+            }
         }
-        if let condition,
-           !autoRedeemConditionHolds(
-               condition,
-               weeklyWindow: weeklyQuotaWindow(among: [live.primaryWindow, live.secondaryWindow].compactMap { $0 }),
-               soonestExpiry: live.resetCreditExpiry,
-               now: Date()
-           ) {
-            throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+
+        let session: any CodexAppServerSession
+        do {
+            session = try (sessionFactory ?? { account, binary in
+                try CodexAppServerProcessSession(account: account, binary: binary, path: path)
+            })(account, binary)
+        } catch {
+            throw ResetNotAttempted(reason: error.localizedDescription)
         }
+        defer { session.close() }
+
+        let liveAccount: [String: Any]
+        do {
+            liveAccount = try accountInfo(
+                from: session.request(
+                    id: 2,
+                    method: "account/read",
+                    params: #"{"refreshToken":false}"#,
+                    timeout: TimeInterval(consumePollSeconds)
+                )
+            )
+            guard let liveIdentity = CodexAccountInfo.identity(from: liveAccount), liveIdentity == expectedIdentity else {
+                throw ResetNotAttempted(reason: "The live Codex account no longer matches this account, so no reset was redeemed.")
+            }
+        } catch let error as ResetNotAttempted {
+            throw error
+        } catch {
+            throw ResetNotAttempted(reason: error.localizedDescription)
+        }
+
+        let live: CodexRateLimits
+        do {
+            let response = try session.request(id: 3, method: "account/rateLimits/read", params: "null", timeout: TimeInterval(consumePollSeconds))
+            guard let rateLimits = try result(from: response) else {
+                throw LocalizedErrorMessage("Couldn't confirm a Codex reset is available, so none was redeemed.")
+            }
+            live = CodexRateLimits(json: rateLimits)
+            guard live.resetCreditsAvailable > 0 else {
+                throw LocalizedErrorMessage("Codex reports no reset available right now, so none was redeemed.")
+            }
+            if let condition,
+               !autoRedeemConditionHolds(
+                   condition,
+                   weeklyWindow: weeklyQuotaWindow(among: [live.primaryWindow, live.secondaryWindow].compactMap { $0 }),
+                   soonestExpiry: live.resetCreditExpiry,
+                   now: Date()
+               ) {
+                throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+            }
+        } catch let error as ResetNotAttempted {
+            throw error
+        } catch {
+            throw ResetNotAttempted(reason: error.localizedDescription)
+        }
+
         var params: [String: Any] = ["idempotencyKey": UUID().uuidString]
         if let creditID = creditID ?? live.soonestExpiringCreditID {
             params["creditId"] = creditID
         }
         let paramsData = try JSONSerialization.data(withJSONObject: params)
         let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
-        let request = (id: 2, method: "account/rateLimitResetCredit/consume", params: paramsString)
         let creditExpiry = creditID == nil ? live.resetCreditExpiry : nil
-        return (binary, request, creditExpiry)
-    }
-
-    static func consumeRateLimitResetCredit(account: AccountConfig, creditID: String?, condition: AutoRedeemCondition?) async throws -> RedeemedReset {
-        let binary: CodexBinary
-        let request: (id: Int, method: String, params: String)
-        let creditExpiry: Date?
-        do {
-            (binary, request, creditExpiry) = try await consumeRequest(account: account, creditID: creditID, condition: condition)
-        } catch {
-            throw ResetNotAttempted(reason: error.localizedDescription)
-        }
 
         var lastError: String?
         for attempt in 1...consumeAttempts {
-            do {
-                let responses = try call(account: account, binary: binary, requests: [request], pollSeconds: consumePollSeconds)
-                if let result = responses.results[2] as? [String: Any], let outcome = result["outcome"] as? String {
-                    return RedeemedReset(outcome: outcome, creditExpiry: creditExpiry)
+            if attempt > 1 {
+                do {
+                    let retryAccount = try accountInfo(
+                        from: session.request(
+                            id: 4 + attempt,
+                            method: "account/read",
+                            params: #"{"refreshToken":false}"#,
+                            timeout: TimeInterval(consumePollSeconds)
+                        )
+                    )
+                    guard CodexAccountInfo.identity(from: retryAccount) == expectedIdentity else {
+                        throw LocalizedErrorMessage("The live Codex account changed while confirming the reset. It may still have been redeemed, so Toki is reading your usage again before you retry.")
+                    }
+                } catch {
+                    lastError = error.localizedDescription
+                    break
                 }
-                lastError = responses.errors.first
+            }
+            do {
+                let response = try session.request(
+                    id: 10 + attempt,
+                    method: "account/rateLimitResetCredit/consume",
+                    params: paramsString,
+                    timeout: TimeInterval(consumePollSeconds)
+                )
+                guard let result = try result(from: response),
+                      let outcome = (result as? [String: Any])?["outcome"] as? String else {
+                    throw LocalizedErrorMessage("Codex did not confirm the reset.")
+                }
+                return RedeemedReset(outcome: outcome, creditExpiry: creditExpiry)
             } catch {
                 lastError = error.localizedDescription
             }
@@ -251,6 +320,21 @@ enum CodexAppServerClient {
             )
         }
         throw LocalizedErrorMessage("Codex did not confirm the reset. It may still have been redeemed, so Toki is reading your usage again before you retry.")
+    }
+
+    private static func accountInfo(from response: CodexRPCResponse) throws -> [String: Any] {
+        guard let result = try result(from: response) as? [String: Any],
+              result["account"] as? [String: Any] != nil else {
+            throw LocalizedErrorMessage("Codex did not return a signed-in account")
+        }
+        return result
+    }
+
+    private static func result(from response: CodexRPCResponse) throws -> Any? {
+        if let error = response.error {
+            throw LocalizedErrorMessage(error["message"] as? String ?? "Codex app-server request failed")
+        }
+        return response.result
     }
 
     private static let consumeAttempts = 2
@@ -269,6 +353,14 @@ enum CodexAppServerClient {
     // A symlinked home, or a path that differs only in case on APFS, is still the same login.
     static func sameHome(_ first: AccountConfig, _ second: AccountConfig) -> Bool {
         let homes = [first, second].map { codexHomeDirectory(for: $0) }
+        return sameHome(homes[0], homes[1])
+    }
+
+    // Path-based comparison for an already-resolved home, so a running session's CODEX_HOME can
+    // be matched against a configured account without reconstructing an AccountConfig.
+    static func sameHome(_ firstPath: String?, _ secondPath: String?) -> Bool {
+        guard let firstPath, let secondPath, !firstPath.isEmpty, !secondPath.isEmpty else { return false }
+        let homes = [firstPath, secondPath].map { expandedPath($0) }
         guard homes[0] != homes[1] else { return true }
         let identifiers = homes.map {
             try? URL(fileURLWithPath: $0).resolvingSymlinksInPath()

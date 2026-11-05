@@ -35,6 +35,11 @@ struct AccountSnapshot: Identifiable, Hashable {
     var id: String
     var name: String
     var provider: Provider
+    var codexIdentity: String? = nil
+    /// For Codex, the resolved home directory this account signs in from (derived from
+    /// `codexAuthPath`, default `~/.codex`). Matched against a running session's CODEX_HOME to
+    /// attribute that session to this account; nil for every other provider.
+    var codexHome: String? = nil
     var primary: String
     var subtitle: String
     var remainingRatio: Double?
@@ -57,6 +62,22 @@ struct AccountSnapshot: Identifiable, Hashable {
     /// Weekly limits scoped to a single model, which are a separate allowance from the shared
     /// windows above rather than a subdivision of them.
     var modelWindows: [RateLimitWindow] = []
+    /// Further plan-wide windows past `primaryWindow`/`secondaryWindow`. OpenCode Go reports
+    /// three concurrent caps (5-hour, weekly, monthly) but only two of the named slots exist,
+    /// so the third still needs somewhere to live to stay visible.
+    var extraWindows: [RateLimitWindow] = []
+
+    /// Plan-wide windows only: the named slots plus any extra plan caps. Model-scoped
+    /// allowances are deliberately excluded - they are a separate allowance and never the
+    /// number a menu bar should represent for the account.
+    var planWindows: [RateLimitWindow] {
+        [primaryWindow, secondaryWindow].compactMap { $0 } + extraWindows
+    }
+
+    /// Every window a provider reported, in the order it should be drawn.
+    var allWindows: [RateLimitWindow] {
+        planWindows + modelWindows
+    }
     // A compact value (e.g. Pi's "$1.20" today-spend) for cost-based providers that have no
     // percentage to show. When set, the menu bar renders this instead of a "--" placeholder.
     var menuBarValue: String? = nil

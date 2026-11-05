@@ -69,6 +69,8 @@ CODEX_HOME=~/.codex-work codex login
 
 Toki finds every folder in your home directory whose name starts with `.codex` and holds an `auth.json` or `config.toml`, asks Codex which account is signed in there, and adds it as its own card (`Codex (work)` for the example above). All accounts are read at the same time. A folder signed in to the same account and workspace as one already listed, such as a backup copy of `~/.codex`, is skipped.
 
+The menu bar has one Codex segment no matter how many accounts you sign in, so it speaks for the account closest to running out — the number that changes what you do next. Each account's usage and reset credits stay its own, and a spent account never hides a sibling that still has quota. To name a specific account instead, pick it under **Menu bar → Codex account** in Settings; the choice is remembered by account and falls back to the lowest one if that account is signed out. Lowest mode still compares every account across every provider.
+
 To stop tracking a folder, sign it out with `CODEX_HOME=~/.codex-old codex logout` (or rename it so its name does not start with `.codex`), then remove its account from `config.json`. If you only remove the account, the next scan adds it again.
 
 For a home somewhere else, set `codexAuthPath` to the `auth.json` path inside it. Toki uses its containing directory as `CODEX_HOME` when launching app-server; the default is `~/.codex`.
@@ -99,7 +101,7 @@ When a log contains cost data, Toki uses its currency; otherwise it assumes USD.
 
 ## OpenCode
 
-Auto-detected from its local database and surfaced as an account. Also the second provider (with Claude Code) where Toki can tell that a session is parked waiting on you.
+Auto-detected from its local database and surfaced as an account. Also the second provider (with Claude Code) where Toki can tell that a session is parked waiting on you. With an OpenCode Go subscription, the card also shows the plan's 5-hour, weekly and monthly allowances, read through the local OpenCode CLI.
 
 ## fx
 

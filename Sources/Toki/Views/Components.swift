@@ -1,6 +1,25 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Provider accent
+
+// A soft, brand-tinted colour per provider, used where a readout wants a provider's identity
+// without the saturated green/orange/red of a quota alarm. Deliberately muted so it reads as a
+// subtle accent rather than a status colour.
+func providerAccent(_ provider: Provider) -> Color {
+    switch provider {
+    case .codex, .openai, .chatgpt: return Color(red: 0.48, green: 0.61, blue: 1)
+    case .claude, .claudeCode, .anthropic: return Color(red: 0.85, green: 0.47, blue: 0.34)
+    case .openCode: return Color(red: 0.20, green: 0.72, blue: 0.48)
+    case .copilot: return Color(red: 0.55, green: 0.45, blue: 0.95)
+    case .gemini: return Color(red: 0.26, green: 0.52, blue: 0.96)
+    case .cursor: return Color(red: 0.40, green: 0.44, blue: 0.52)
+    case .pi: return Color(red: 0.52, green: 0.42, blue: 0.90)
+    case .grok: return Color(red: 0.55, green: 0.55, blue: 0.58)
+    default: return .secondary
+    }
+}
+
 // MARK: - UpdateAvailableBanner
 
 // Shared with Settings' "Check now" button so both places offer the same install/dismiss

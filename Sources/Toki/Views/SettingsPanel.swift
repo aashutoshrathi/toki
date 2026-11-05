@@ -684,6 +684,38 @@ struct SettingsPanel: View {
                     .padding(.leading, 34)
                 
                 ForEach(pinnableProviders, id: \.self) { provider in
+                    let choices = menuBarAccountChoices(for: provider)
+                    if choices.count > 1, store.preferences.menuBarMode == .smart || store.preferences.menuBarMode == .pinned {
+                        HStack(spacing: 8) {
+                            Text("\(provider.displayName) account")
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.leading, 26)
+                            Spacer(minLength: 8)
+                            Picker("\(provider.displayName) menu bar account", selection: Binding(
+                                get: {
+                                    let selected = store.preferences.menuBarAccounts[provider.rawValue] ?? ""
+                                    return choices.contains { $0.id == selected } ? selected : ""
+                                },
+                                set: { selected in
+                                    var next = store.preferences
+                                    next.menuBarAccounts[provider.rawValue] = selected.isEmpty ? nil : selected
+                                    store.updatePreferences(next)
+                                }
+                            )) {
+                                Text("Auto (least left)").tag("")
+                                ForEach(choices, id: \.id) { choice in
+                                    Text(choice.label).tag(choice.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .controlSize(.small)
+                            .fixedSize()
+                            .help("Auto shows the account with the least quota left, so a second Codex home can't hide behind a fuller one.")
+                        }
+                        .padding(8)
+                    }
+
                     let windows = quotaWindowLabels(for: provider)
                     if windows.count > 1 {
                         HStack(spacing: 8) {
@@ -771,9 +803,21 @@ struct SettingsPanel: View {
     private func quotaWindowLabels(for provider: Provider) -> [String] {
         let snapshot = store.snapshots.first { $0.provider == provider && $0.switchTarget == nil && !$0.isError }
             ?? store.snapshots.first { $0.provider == provider && !$0.isError }
-        return [snapshot?.primaryWindow, snapshot?.secondaryWindow].compactMap { $0?.label }
-            .reduce(into: []) { labels, label in
-                if !labels.contains(label) { labels.append(label) }
+        return snapshot?.planWindows.map(\.label).reduce(into: []) { labels, label in
+            if !labels.contains(label) { labels.append(label) }
+        } ?? []
+    }
+
+    // One row per account when a provider has several, so the menu bar can name the one it
+    // speaks for instead of silently drawing whichever snapshot came first.
+    private func menuBarAccountChoices(for provider: Provider) -> [(id: String, label: String)] {
+        var seen = Set<String>()
+        return store.snapshots
+            .filter { $0.provider == provider && !$0.isError }
+            .compactMap { snapshot in
+                guard seen.insert(snapshot.id).inserted else { return nil }
+                let name = snapshot.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return (snapshot.id, name.isEmpty ? snapshot.id : name)
             }
     }
 

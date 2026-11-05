@@ -145,3 +145,89 @@ final class ClaudeSessionAttributionTests: XCTestCase {
         XCTAssertEqual(agents.map(\.id), [1])
     }
 }
+
+final class CodexSessionAttributionTests: XCTestCase {
+    private func agent(pid: Int32, codexHome: String?) -> ActiveAgent {
+        ActiveAgent(
+            id: pid, provider: .codex, directory: nil, chatTitle: nil,
+            hostApp: nil, hostProcessID: nil, lastActivity: nil, processID: pid, runtime: "1:00",
+            terminalTTY: nil, memoryKB: 1000, command: "codex", sessionUsage: nil, attention: nil,
+            codexHome: codexHome
+        )
+    }
+
+    private func codex(id: String, home: String) -> AccountSnapshot {
+        AccountSnapshot(
+            id: id, name: id, provider: .codex, codexHome: home, primary: "50%", subtitle: "",
+            remainingRatio: 0.5, metrics: []
+        )
+    }
+
+    func testSingleCodexAccountStaysProviderScoped() {
+        let account = codex(id: "codex", home: "/Users/x/.codex")
+        let agents = AccountCard.attributedAgents(
+            [agent(pid: 7, codexHome: "/Users/x/.codex-secret-workspace")],
+            for: account, among: [account]
+        )
+        XCTAssertEqual(agents.map(\.id), [7])
+    }
+
+    func testSessionLandsOnTheAccountWhoseHomeMatches() {
+        let work = codex(id: "codex", home: "/Users/x/.codex")
+        let secret = codex(id: "codex-secret", home: "/Users/x/.codex-secret-workspace")
+        let session = agent(pid: 7, codexHome: "/Users/x/.codex-secret-workspace")
+        XCTAssertEqual(AccountCard.attributedAgents([session], for: secret, among: [work, secret]).map(\.id), [7])
+        XCTAssertTrue(AccountCard.attributedAgents([session], for: work, among: [work, secret]).isEmpty)
+    }
+
+    func testAnUnattributedSessionStaysProviderScoped() {
+        let work = codex(id: "codex", home: "/Users/x/.codex")
+        let secret = codex(id: "codex-secret", home: "/Users/x/.codex-secret-workspace")
+        let session = agent(pid: 7, codexHome: nil)
+        XCTAssertEqual(AccountCard.attributedAgents([session], for: work, among: [work, secret]).map(\.id), [7])
+        XCTAssertEqual(AccountCard.attributedAgents([session], for: secret, among: [work, secret]).map(\.id), [7])
+    }
+}
+
+final class AccountGroupingTests: XCTestCase {
+    private func snapshot(id: String, provider: Provider) -> AccountSnapshot {
+        AccountSnapshot(id: id, name: id, provider: provider, primary: "50%", subtitle: "",
+                        remainingRatio: 0.5, metrics: [])
+    }
+
+    func testGroupsAccountsOfTheSameProvider() {
+        let groups = accountGroups(for: [
+            snapshot(id: "codex", provider: .codex),
+            snapshot(id: "claude-1", provider: .claudeCode),
+            snapshot(id: "codex-secret", provider: .codex),
+            snapshot(id: "claude-2", provider: .claudeCode)
+        ])
+        XCTAssertEqual(groups.map { $0.provider }, [.codex, .claudeCode])
+        XCTAssertEqual(groups[0].snapshots.map(\.id), ["codex", "codex-secret"])
+        XCTAssertEqual(groups[1].snapshots.map(\.id), ["claude-1", "claude-2"])
+    }
+
+    func testSingleAccountProviderStaysItsOwnGroup() {
+        let groups = accountGroups(for: [
+            snapshot(id: "codex", provider: .codex),
+            snapshot(id: "pi", provider: .pi)
+        ])
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(groups.map(\.snapshots.count), [1, 1])
+    }
+
+    func testWorkspaceLabelFallsBackToTheNameSuffix() {
+        let named = AccountSnapshot(
+            id: "codex-work", name: "Codex (work)", provider: .codex, primary: "50%",
+            subtitle: "", remainingRatio: 0.5, metrics: []
+        )
+        XCTAssertEqual(workspaceLabel(in: named), "work")
+
+        let org = AccountSnapshot(
+            id: "claude-1", name: "Claude - a@b.c", provider: .claudeCode, primary: "50%",
+            subtitle: "", remainingRatio: 0.5, metrics: [],
+            accountInfo: [MetricLine(label: "Org", value: "regie.ai")]
+        )
+        XCTAssertEqual(workspaceLabel(in: org), "regie.ai")
+    }
+}
