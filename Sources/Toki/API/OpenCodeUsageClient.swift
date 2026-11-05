@@ -19,6 +19,12 @@ struct OpenCodeUsageClient {
     let account: AccountConfig
 
     func snapshot() async throws -> AccountSnapshot {
+        let local = try localSnapshot()
+        guard let limits = OpenCodeGoClient.limits() else { return local }
+        return OpenCodeUsageClient.merging(limits, into: local)
+    }
+
+    private func localSnapshot() throws -> AccountSnapshot {
         let dbPath = OpenCodeUsageClient.databasePath()
         guard FileManager.default.fileExists(atPath: dbPath) else {
             let shortPath = dbPath.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
@@ -60,6 +66,41 @@ struct OpenCodeUsageClient {
             isError: false,
             menuBarValue: formatUSD(todayCost)
         )
+    }
+
+    // Go is a subscription on top of the same local database, so the card keeps today's spend
+    // and gains the plan's quota windows. The headline percentage comes from the tightest
+    // window: the monthly cap is the plan's size, but a nearly-spent 5-hour window is what
+    // stops work first, and the menu bar can only show one number.
+    static func merging(_ limits: OpenCodeGoLimits, into snapshot: AccountSnapshot) -> AccountSnapshot {
+        var updated = snapshot
+        let windows = limits.windowsAsRateLimits
+        guard !windows.isEmpty else { return updated }
+
+        var metrics = snapshot.metrics
+        var insertAt = metrics.firstIndex { $0.label == "Today" }.map { $0 + 1 } ?? 0
+        for (index, window) in windows.enumerated() {
+            let source = limits.windows[index]
+            var value = "\(source.percentUsed)% used"
+            if let hint = window.resetHint { value += " - \(hint)" }
+            metrics.insert(MetricLine(label: window.label, value: value), at: insertAt)
+            insertAt += 1
+            if source.limited {
+                metrics.append(MetricLine(label: "Limit", value: "\(window.label) reached"))
+            }
+        }
+
+        let tightest = windows.min { $0.percentLeft < $1.percentLeft } ?? windows[0]
+        let remaining = max(0, min(1, Double(tightest.percentLeft) / 100))
+        updated.primary = "\(tightest.percentLeft)% left"
+        updated.subtitle = "OpenCode Go - " + (limits.workspaceName ?? "subscription")
+        updated.remainingRatio = remaining
+        updated.progressRatio = 1 - remaining
+        updated.metrics = metrics
+        updated.primaryWindow = windows[0]
+        updated.secondaryWindow = windows.count > 1 ? windows[1] : nil
+        updated.extraWindows = Array(windows.dropFirst(2))
+        return updated
     }
 
     private struct Row {

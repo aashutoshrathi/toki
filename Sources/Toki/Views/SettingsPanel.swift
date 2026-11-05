@@ -771,10 +771,9 @@ struct SettingsPanel: View {
     private func quotaWindowLabels(for provider: Provider) -> [String] {
         let snapshot = store.snapshots.first { $0.provider == provider && $0.switchTarget == nil && !$0.isError }
             ?? store.snapshots.first { $0.provider == provider && !$0.isError }
-        return [snapshot?.primaryWindow, snapshot?.secondaryWindow].compactMap { $0?.label }
-            .reduce(into: []) { labels, label in
-                if !labels.contains(label) { labels.append(label) }
-            }
+        return snapshot?.planWindows.map(\.label).reduce(into: []) { labels, label in
+            if !labels.contains(label) { labels.append(label) }
+        } ?? []
     }
 
     // Driven off connected accounts rather than the full Provider list, so the choices are

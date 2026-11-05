@@ -163,7 +163,7 @@ func menuBarPlaceholderEntries() -> [MenuBarStatusEntry] {
 }
 
 func displayQuotaWindow(for snapshot: AccountSnapshot, preferredWindow: String? = nil) -> RateLimitWindow? {
-    let windows = [snapshot.primaryWindow, snapshot.secondaryWindow].compactMap { $0 }
+    let windows = snapshot.planWindows
     return windows.first { $0.label == preferredWindow }
         ?? windows.min {
             if $0.percentLeft != $1.percentLeft { return $0.percentLeft < $1.percentLeft }

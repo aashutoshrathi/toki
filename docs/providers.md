@@ -99,7 +99,7 @@ When a log contains cost data, Toki uses its currency; otherwise it assumes USD.
 
 ## OpenCode
 
-Auto-detected from its local database and surfaced as an account. Also the second provider (with Claude Code) where Toki can tell that a session is parked waiting on you.
+Auto-detected from its local database and surfaced as an account. Also the second provider (with Claude Code) where Toki can tell that a session is parked waiting on you. With an OpenCode Go subscription, the card also shows the plan's 5-hour, weekly and monthly allowances, read through the local OpenCode CLI.
 
 ## fx
 
