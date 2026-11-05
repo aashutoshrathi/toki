@@ -258,6 +258,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                                         remoteControlOn: RemoteControlServer.shared.isRunning,
                                         density: store.preferences.menuBarDensity)
         guard let button = statusItem.button else { return }
+        // One segment per provider means the readout can only name a percentage. With more
+        // than one Codex home signed in, the tooltip is the only place the account that
+        // segment belongs to can be read off without opening the popover.
+        let accounts = latestEntries.compactMap { entry -> String? in
+            guard let label = entry.accountLabel, !label.isEmpty else { return nil }
+            return "\(entry.provider.displayName) \u{2014} \(label)"
+        }
+        button.toolTip = accounts.isEmpty ? "Toki" : accounts.joined(separator: "\n")
         let hostingView: PassthroughHostingView<MenuBarStatusView>
         if let existing = statusHostingView {
             existing.rootView = content

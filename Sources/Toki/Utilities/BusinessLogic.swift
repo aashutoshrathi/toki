@@ -463,10 +463,15 @@ func autoResetMarkerRatio(for window: RateLimitWindow, in snapshot: AccountSnaps
 
 func menuBarEntry(for snapshot: AccountSnapshot, preferredWindow: String? = nil) -> MenuBarStatusEntry {
     if let window = displayQuotaWindow(for: snapshot, preferredWindow: preferredWindow) {
-        return MenuBarStatusEntry(provider: snapshot.provider, value: "\(window.percentLeft)%", windowLabel: window.label)
+        return MenuBarStatusEntry(
+            provider: snapshot.provider,
+            value: "\(window.percentLeft)%",
+            windowLabel: window.label,
+            accountLabel: snapshot.name
+        )
     }
     let value = snapshot.remainingRatio.map(percentText) ?? snapshot.menuBarValue ?? "--"
-    return MenuBarStatusEntry(provider: snapshot.provider, value: value)
+    return MenuBarStatusEntry(provider: snapshot.provider, value: value, accountLabel: snapshot.name)
 }
 
 func smartRecommendation(for snapshots: [AccountSnapshot]) -> SmartRecommendation {

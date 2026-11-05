@@ -233,4 +233,7 @@ struct MenuBarStatusEntry: Identifiable, Codable, Sendable {
     var value: String
     var leadingText: String? = nil
     var windowLabel: String? = nil
+    /// The account this segment stands for. One segment per provider can't show two Codex
+    /// homes at once, so the name is what tells the reader whose quota the number is.
+    var accountLabel: String? = nil
 }

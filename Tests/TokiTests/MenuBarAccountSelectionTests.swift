@@ -125,4 +125,14 @@ final class MenuBarAccountSelectionTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppPreferences.self, from: Data("{}".utf8))
         XCTAssertTrue(decoded.menuBarAccounts.isEmpty)
     }
+
+    // The segment only has room for a percentage, so it carries the account name for the
+    // status item's tooltip - the only way to tell two Codex homes apart at a glance.
+    func testTheSegmentNamesTheAccountItStandsFor() {
+        let entries = menuBarEntries(
+            for: [codex("work", left: 70), codex("personal", left: 20)],
+            mode: .smart
+        )
+        XCTAssertEqual(entries.first?.accountLabel, "personal")
+    }
 }
