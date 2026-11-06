@@ -546,15 +546,22 @@ func allTrackedQuotaExhausted(_ snapshots: [AccountSnapshot]) -> Bool {
     return tracked.allSatisfy { ($0.remainingRatio ?? 1) <= 0.01 }
 }
 
+struct AccountGroup: Identifiable {
+    var provider: Provider
+    var snapshots: [AccountSnapshot]
+
+    var id: Provider { provider }
+}
+
 /// Groups snapshots by provider, preserving each provider's position from its first account.
 /// The accounts list draws each provider once, collapsing several accounts into one card, so
 /// this keeps the provider's place in the list while collecting its siblings beside it.
-func accountGroups(for snapshots: [AccountSnapshot]) -> [(provider: Provider, snapshots: [AccountSnapshot])] {
+func accountGroups(for snapshots: [AccountSnapshot]) -> [AccountGroup] {
     snapshots.reduce(into: []) { groups, snapshot in
         if let index = groups.firstIndex(where: { $0.provider == snapshot.provider }) {
             groups[index].snapshots.append(snapshot)
         } else {
-            groups.append((snapshot.provider, [snapshot]))
+            groups.append(AccountGroup(provider: snapshot.provider, snapshots: [snapshot]))
         }
     }
 }
