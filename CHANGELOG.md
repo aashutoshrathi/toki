@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.2 - 2026-11-06
+
+One Line: A Claude account that recovers its sign-in stops showing a stale "Sign-in expired" card.
+
+### Fixed
+- **A recovered Claude sign-in stops showing a stale card.** After Claude renews a sign-in, the Accounts tab could keep showing "Sign-in expired" while the menu bar showed live quota, and the card stayed stale through later refreshes and popover reopens. Account rows are now keyed by provider instead of by their position in the list, so a recovering account that re-sorts by health redraws its card rather than keeping the old contents.
+
 ## 3.4.1 - 2026-11-05
 
 One Line: OpenCode Go usage shows up, accounts of one provider group into a single card, and the menu bar picks the Codex account that matters.
