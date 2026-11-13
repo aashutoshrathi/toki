@@ -568,18 +568,6 @@ final class AutoResetTests: XCTestCase {
         XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10)))
     }
 
-    func testClaudeAutoResetWeeklyPicksStandardExpiringSoonest() throws {
-        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
-        account.resetCreditGroups = [
-            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400 * 3), grantID: "standard-later", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
-            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400), grantID: "standard-sooner", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"])
-        ]
-
-        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10)))
-        XCTAssertEqual(result.trigger, .weekly)
-        XCTAssertEqual(result.creditID, "standard-sooner")
-    }
-
     func testClaudeAutoResetExpiryPicksExpiringFableEvenWhenStandardHasLaterExpiry() throws {
         var account = snapshot(provider: .claudeCode, weeklyLeft: 80)
         let fableExpiry = now.addingTimeInterval(4 * 60)
@@ -608,5 +596,48 @@ final class AutoResetTests: XCTestCase {
         XCTAssertEqual(result.trigger, .expiry)
         XCTAssertEqual(result.creditID, "standard-expiring")
         XCTAssertEqual(result.guardDate, standardExpiry)
+    }
+
+    func testClaudeAutoResetExpiryTieBreakPrefersFableWhenFableQuotaIsLower() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 50)
+        account.modelWindows = [
+            RateLimitWindow(label: "Claude Fable 5", percentLeft: 20, resetAt: now.addingTimeInterval(86400))
+        ]
+        let sameExpiry = now.addingTimeInterval(3 * 60)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: sameExpiry, grantID: "standard-tie", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: sameExpiry, grantID: "fable-tie", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "fable-tie")
+    }
+
+    func testClaudeAutoResetExpiryTieBreakPrefersStandardWhenWeeklyQuotaIsLower() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 20)
+        account.modelWindows = [
+            RateLimitWindow(label: "Claude Fable 5", percentLeft: 90, resetAt: now.addingTimeInterval(86400))
+        ]
+        let sameExpiry = now.addingTimeInterval(3 * 60)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: sameExpiry, grantID: "standard-tie", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: sameExpiry, grantID: "fable-tie", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "standard-tie")
+    }
+
+    func testCodexAutoResetUsesLegacyPathWithoutCreditID() throws {
+        var account = snapshot(provider: .codex, weeklyLeft: 5)
+        account.resetCreditsAvailable = 2
+        account.resetCreditExpiry = now.addingTimeInterval(3 * 60)
+        account.resetCreditGroups = []
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10)))
+        XCTAssertEqual(result.trigger, .weekly)
+        XCTAssertNil(result.creditID)
     }
 }

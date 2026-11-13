@@ -96,6 +96,23 @@ struct ClaudeCodeUsage {
         let grants = (block["grants"] as? [[String: Any]]) ?? []
         let nextGrantID = block["next_grant_id"] as? String
 
+        let usable = grants.filter { grant in
+            guard let left = optionalNumber(grant["resets_left"]), left > 0,
+                  grant["paused"] as? Bool != true,
+                  grant["usable_now"] as? Bool == true else { return false }
+            return atLimit || grant["use_requires_limit"] as? Bool != true
+        }
+
+        // Anthropic only accepts the named next grant; if nextGrantID is absent or unusable,
+        // no reset can be redeemed right now.
+        guard let nextGrantID, usable.contains(where: { $0["id"] as? String == nextGrantID }) else {
+            resetCreditsAvailable = 0
+            resetCreditExpiry = nil
+            resetGrantID = nil
+            resetCreditGroups = []
+            return
+        }
+
         var groups: [ResetCreditGroup] = []
         let standardGrants = grants.filter { !Self.isFableGrant($0) }
         let fableGrants = grants.filter { Self.isFableGrant($0) }
@@ -112,10 +129,10 @@ struct ClaudeCodeUsage {
             let totalLeft = activeGrants.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
             guard totalLeft > 0 else { return nil }
 
-            let preferredID = activeGrants.first(where: { $0["id"] as? String == nextGrantID })?["id"] as? String
-                ?? activeGrants.first?["id"] as? String
-
-            let chosenGrant = activeGrants.first(where: { ($0["id"] as? String) == preferredID }) ?? activeGrants[0]
+            let nextGrant = activeGrants.first(where: { $0["id"] as? String == nextGrantID })
+            let isNextInThisGroup = nextGrant != nil
+            let groupGrantID = isNextInThisGroup ? nextGrantID : nil
+            let chosenGrant = nextGrant ?? activeGrants[0]
             let requiresLimit = chosenGrant["use_requires_limit"] as? Bool ?? false
             let expiry = chosenGrant["ends_at"].flatMap { resetDate($0) }
                 ?? activeGrants.compactMap { resetDate($0["ends_at"]) }.min()
@@ -126,7 +143,7 @@ struct ClaudeCodeUsage {
                 kind: kind,
                 count: totalLeft,
                 expiry: expiry,
-                grantID: preferredID,
+                grantID: groupGrantID,
                 label: label,
                 requiresLimit: requiresLimit,
                 atLimit: atLimit,
@@ -143,34 +160,11 @@ struct ClaudeCodeUsage {
 
         resetCreditGroups = groups
 
-        let usable = grants.filter { grant in
-            guard let left = optionalNumber(grant["resets_left"]), left > 0,
-                  grant["paused"] as? Bool != true,
-                  grant["usable_now"] as? Bool == true else { return false }
-            return atLimit || grant["use_requires_limit"] as? Bool != true
-        }
-        if let nextGrantID, usable.contains(where: { $0["id"] as? String == nextGrantID }) {
-            resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
-            resetCreditExpiry = usable.first { $0["id"] as? String == nextGrantID }.flatMap { resetDate($0["ends_at"]) }
-            resetGrantID = nextGrantID
-        } else {
-            resetCreditsAvailable = 0
-            resetCreditExpiry = nil
-            resetGrantID = nil
-        }
+        resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
+        resetCreditExpiry = usable.first { $0["id"] as? String == nextGrantID }.flatMap { resetDate($0["ends_at"]) }
+        resetGrantID = nextGrantID
 
-        if groups.count > 1 {
-            for group in groups {
-                var value = "\(group.count) available"
-                if group.requiresLimit && !atLimit {
-                    value += " · requires limit"
-                }
-                if let exp = group.expiry {
-                    value += " · expires \(resetDescription(for: exp))"
-                }
-                metrics.append(MetricLine(label: "Resets (\(group.kind.displayName))", value: value))
-            }
-        } else if let group = groups.first {
+        for group in groups {
             var value = "\(group.count) available"
             if group.requiresLimit && !atLimit {
                 value += " · requires limit"
@@ -178,7 +172,9 @@ struct ClaudeCodeUsage {
             if let exp = group.expiry {
                 value += " · expires \(resetDescription(for: exp))"
             }
-            let label = group.kind == .fable ? "Resets (Fable)" : "Resets"
+            let label = groups.count > 1
+                ? "Resets (\(group.kind.displayName))"
+                : (group.kind == .fable ? "Resets (Fable)" : "Resets")
             metrics.append(MetricLine(label: label, value: value))
         }
     }

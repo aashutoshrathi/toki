@@ -43,18 +43,7 @@ struct CodexUsageClient {
             progressRatio: rateLimits.progressRatio,
             resetCreditsAvailable: rateLimits.resetCreditsAvailable,
             resetCreditExpiry: rateLimits.resetCreditExpiry,
-            resetCreditGroups: rateLimits.resetCreditsAvailable > 0 ? [
-                ResetCreditGroup(
-                    kind: .standard,
-                    count: rateLimits.resetCreditsAvailable,
-                    expiry: rateLimits.resetCreditExpiry,
-                    grantID: nil,
-                    label: nil,
-                    requiresLimit: false,
-                    atLimit: false,
-                    clears: ["5h", "7d"]
-                )
-            ] : [],
+            resetCreditGroups: [],
             metrics: rateLimits.metrics + usage.metrics,
             accountInfo: CodexAccountInfo.lines(from: payload.account)
                 + Self.binaryInfoLines(payload.binarySource),

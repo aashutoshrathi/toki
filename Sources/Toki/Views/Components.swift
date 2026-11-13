@@ -364,7 +364,7 @@ struct ResetCreditBadge: View {
     }
 
     private var accessibilityText: String {
-        let prefix = title != nil ? "\(title!): " : ""
+        let prefix = title.map { "\($0): " } ?? ""
         let base = count > 1 ? "\(count) resets available" : "1 reset available"
         return "\(prefix)\(base)"
     }
@@ -374,8 +374,9 @@ struct ResetCreditBadge: View {
             if let title {
                 return "\(title) rate-limit reset: \(count) available"
             }
-            return count > 1 ? "\(count) rate-limit resets are banked and ready to redeem"
-                             : "A rate-limit reset is banked and ready to redeem"
+            return count > 1
+                ? "\(count) rate-limit resets are banked and ready to redeem"
+                : "A rate-limit reset is banked and ready to redeem"
         }()
         if let expiry {
             return "\(base). Expires \(resetDescription(for: expiry))."

@@ -555,9 +555,14 @@ struct AccountCard: View {
                 }
                 .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
                     Button("Redeem reset", role: .destructive) {
-                        store.consumeResetCredit(accountID: snapshot.id, creditID: selectedResetGroup?.grantID)
+                        let targetGrantID = snapshot.resetCreditGroups.first(where: { $0.id == selectedResetGroup?.id })?.grantID
+                            ?? selectedResetGroup?.grantID
+                        selectedResetGroup = nil
+                        store.consumeResetCredit(accountID: snapshot.id, creditID: targetGrantID)
                     }
-                    Button("Cancel", role: .cancel) {}
+                    Button("Cancel", role: .cancel) {
+                        selectedResetGroup = nil
+                    }
                 } message: {
                     Text(resetWasteWarning(for: selectedResetGroup))
                 }

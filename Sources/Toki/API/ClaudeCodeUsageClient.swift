@@ -260,7 +260,7 @@ struct ClaudeCodeUsageClient {
         }
         let targetExpiry: Date? = {
             if let creditID, let liveUsage {
-                return liveUsage.resetCreditGroups.first(where: { $0.grantID == creditID })?.expiry ?? liveUsage.resetCreditExpiry
+                return liveUsage.resetCreditGroups.first(where: { $0.grantID == creditID })?.expiry
             }
             return liveUsage?.resetCreditExpiry
         }()
