@@ -343,50 +343,40 @@ struct ResetCreditBadge: View {
     var count: Int
     var expiry: Date?
     var title: String? = nil
-    var requirement: String? = nil
 
     var body: some View {
         let text: String = {
             if let title {
-                if let requirement {
-                    return "\(title): \(count) (\(requirement))"
-                }
                 return "\(title): \(count)"
             }
-            if let requirement {
-                let base = count > 1 ? "\(count) resets" : "1 reset"
-                return "\(base) (\(requirement))"
-            }
-            return count > 1 ? "\(count) resets" : "1 reset"
+            return "\(count)"
         }()
-        Label(text, systemImage: "arrow.counterclockwise")
-            .labelStyle(.titleAndIcon)
-            .fixedSize()
-            .padding(.vertical, 3)
-            .help(badgeHelp)
-            .accessibilityLabel(accessibilityText)
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: 8.5, weight: .bold))
+            Text(text)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .help(badgeHelp)
+        .accessibilityLabel(accessibilityText)
     }
 
     private var accessibilityText: String {
         let prefix = title != nil ? "\(title!): " : ""
         let base = count > 1 ? "\(count) resets available" : "1 reset available"
-        if let requirement {
-            return "\(prefix)\(base), \(requirement)"
-        }
         return "\(prefix)\(base)"
     }
 
     private var badgeHelp: String {
-        var base: String
-        if let title {
-            base = "\(title) rate-limit reset: \(count) available"
-        } else {
-            base = count > 1 ? "\(count) rate-limit resets are banked and ready to redeem"
+        let base: String = {
+            if let title {
+                return "\(title) rate-limit reset: \(count) available"
+            }
+            return count > 1 ? "\(count) rate-limit resets are banked and ready to redeem"
                              : "A rate-limit reset is banked and ready to redeem"
-        }
-        if let requirement {
-            base += " (\(requirement))"
-        }
+        }()
         if let expiry {
             return "\(base). Expires \(resetDescription(for: expiry))."
         }

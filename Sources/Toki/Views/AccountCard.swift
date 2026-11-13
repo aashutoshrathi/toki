@@ -768,9 +768,7 @@ struct AccountCard: View {
 
     private func resetButton(for group: ResetCreditGroup) -> some View {
         let isFable = group.kind == .fable
-        let hasMultiple = snapshot.resetCreditGroups.count > 1
-        let title: String? = (isFable || hasMultiple) ? group.kind.displayName : nil
-        let requirement: String? = (group.requiresLimit && !group.atLimit) ? "at limit" : nil
+        let title: String? = isFable ? "Fable" : nil
         let canRedeem = group.canRedeemNow
 
         return Button {
@@ -780,8 +778,7 @@ struct AccountCard: View {
             ResetCreditBadge(
                 count: group.count,
                 expiry: group.expiry,
-                title: title,
-                requirement: requirement
+                title: title
             )
         }
         .accentGlassControlStyle()
