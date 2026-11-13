@@ -68,6 +68,7 @@ struct ClaudeCodeUsage {
     var resetCreditsAvailable: Int = 0
     var resetCreditExpiry: Date?
     var resetGrantID: String?
+    var resetCreditGroups: [ResetCreditGroup] = []
 
     var hasUsage: Bool {
         !metrics.isEmpty
@@ -93,25 +94,103 @@ struct ClaudeCodeUsage {
         guard let block = raw as? [String: Any], block["eligible"] as? Bool == true else { return }
         let atLimit = block["at_limit"] as? Bool ?? false
         let grants = (block["grants"] as? [[String: Any]]) ?? []
+        let nextGrantID = block["next_grant_id"] as? String
+
+        var groups: [ResetCreditGroup] = []
+        let standardGrants = grants.filter { !Self.isFableGrant($0) }
+        let fableGrants = grants.filter { Self.isFableGrant($0) }
+
+        func processGroup(kind: ResetCreditGroup.Kind, candidateGrants: [[String: Any]]) -> ResetCreditGroup? {
+            let activeGrants = candidateGrants.filter { grant in
+                guard let left = optionalNumber(grant["resets_left"]), left > 0,
+                      grant["paused"] as? Bool != true,
+                      grant["usable_now"] as? Bool == true else { return false }
+                return true
+            }
+            guard !activeGrants.isEmpty else { return nil }
+
+            let totalLeft = activeGrants.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
+            guard totalLeft > 0 else { return nil }
+
+            let preferredID = activeGrants.first(where: { $0["id"] as? String == nextGrantID })?["id"] as? String
+                ?? activeGrants.first?["id"] as? String
+
+            let chosenGrant = activeGrants.first(where: { ($0["id"] as? String) == preferredID }) ?? activeGrants[0]
+            let requiresLimit = chosenGrant["use_requires_limit"] as? Bool ?? false
+            let expiry = chosenGrant["ends_at"].flatMap { resetDate($0) }
+                ?? activeGrants.compactMap { resetDate($0["ends_at"]) }.min()
+            let label = chosenGrant["label"] as? String
+            let clears = (chosenGrant["clears"] as? [String]) ?? []
+
+            return ResetCreditGroup(
+                kind: kind,
+                count: totalLeft,
+                expiry: expiry,
+                grantID: preferredID,
+                label: label,
+                requiresLimit: requiresLimit,
+                atLimit: atLimit,
+                clears: clears
+            )
+        }
+
+        if let std = processGroup(kind: .standard, candidateGrants: standardGrants) {
+            groups.append(std)
+        }
+        if let fab = processGroup(kind: .fable, candidateGrants: fableGrants) {
+            groups.append(fab)
+        }
+
+        resetCreditGroups = groups
+
         let usable = grants.filter { grant in
             guard let left = optionalNumber(grant["resets_left"]), left > 0,
                   grant["paused"] as? Bool != true,
                   grant["usable_now"] as? Bool == true else { return false }
             return atLimit || grant["use_requires_limit"] as? Bool != true
         }
-        guard let nextGrantID = block["next_grant_id"] as? String,
-              usable.contains(where: { $0["id"] as? String == nextGrantID }) else { return }
-
-        resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
-        // Anthropic only accepts the named next grant, so its expiry is the one a redeem can beat.
-        resetCreditExpiry = usable.first { $0["id"] as? String == nextGrantID }.flatMap { resetDate($0["ends_at"]) }
-        resetGrantID = nextGrantID
-
-        var value = "\(resetCreditsAvailable) available"
-        if let resetCreditExpiry {
-            value += " · expires \(resetDescription(for: resetCreditExpiry))"
+        if let nextGrantID, usable.contains(where: { $0["id"] as? String == nextGrantID }) {
+            resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
+            resetCreditExpiry = usable.first { $0["id"] as? String == nextGrantID }.flatMap { resetDate($0["ends_at"]) }
+            resetGrantID = nextGrantID
+        } else {
+            resetCreditsAvailable = 0
+            resetCreditExpiry = nil
+            resetGrantID = nil
         }
-        metrics.append(MetricLine(label: "Resets", value: value))
+
+        if groups.count > 1 {
+            for group in groups {
+                var value = "\(group.count) available"
+                if group.requiresLimit && !atLimit {
+                    value += " · requires limit"
+                }
+                if let exp = group.expiry {
+                    value += " · expires \(resetDescription(for: exp))"
+                }
+                metrics.append(MetricLine(label: "Resets (\(group.kind.displayName))", value: value))
+            }
+        } else if let group = groups.first {
+            var value = "\(group.count) available"
+            if group.requiresLimit && !atLimit {
+                value += " · requires limit"
+            }
+            if let exp = group.expiry {
+                value += " · expires \(resetDescription(for: exp))"
+            }
+            let label = group.kind == .fable ? "Resets (Fable)" : "Resets"
+            metrics.append(MetricLine(label: label, value: value))
+        }
+    }
+
+    static func isFableGrant(_ grant: [String: Any]) -> Bool {
+        let clears = (grant["clears"] as? [String]) ?? []
+        let id = (grant["id"] as? String ?? "").lowercased()
+        let label = (grant["label"] as? String ?? "").lowercased()
+        if clears.contains(where: { $0.lowercased().contains("fable") }) {
+            return true
+        }
+        return id.contains("fable") || label.contains("fable")
     }
 
     // The top-level keys are codenames (seven_day_omelette, seven_day_tangelo) that say nothing

@@ -121,6 +121,7 @@ struct ClaudeCodeUsageClient {
             progressRatio: usedRatio,
             resetCreditsAvailable: current.source == record.source ? usage.resetCreditsAvailable : 0,
             resetCreditExpiry: current.source == record.source ? usage.resetCreditExpiry : nil,
+            resetCreditGroups: current.source == record.source ? usage.resetCreditGroups : [],
             metrics: usage.metrics,
             accountInfo: accountInfoLines(for: record, credentials: current.credentials),
             switchTarget: switchTarget(for: record),

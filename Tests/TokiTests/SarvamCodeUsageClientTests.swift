@@ -113,6 +113,67 @@ final class SarvamCodeUsageClientTests: XCTestCase {
         """
     }
 
+    func testSnapshotTokenUsageWhenNoCostDataShowsTokensAndNoDollarCost() async throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeSession(
+            root: root,
+            name: "tokens-only",
+            events: [
+                event(at: "2026-08-24T10:00:00Z", input: 1000, cached: 200, output: 500, reasoning: 100, total: 1500, cost: "\"cost\":null")
+            ]
+        )
+
+        let account = AccountConfig(id: "sarvam-test", name: "Sarvam Code", provider: .sarvamCode)
+        let client = SarvamCodeUsageClient(account: account)
+        let snapshot = try await client.snapshot(root: root.path, now: iso("2026-08-24T12:00:00Z"), calendar: utcCalendar)
+
+        XCTAssertEqual(snapshot.primary, "1.5K tokens today")
+        XCTAssertEqual(snapshot.menuBarValue, "1.5K tok")
+        XCTAssertFalse(snapshot.metrics.contains { $0.label.contains("Cost") })
+        XCTAssertTrue(snapshot.metrics.contains { $0.label == "Total" && $0.value == "1.5K tokens" })
+    }
+
+    func testSnapshotTokenUsageWhenZeroTokensTodayShowsAllTime() async throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeSession(
+            root: root,
+            name: "tokens-past",
+            events: [
+                event(at: "2026-08-23T10:00:00Z", input: 1000, cached: 200, output: 500, reasoning: 100, total: 1500, cost: "\"cost\":null")
+            ]
+        )
+
+        let account = AccountConfig(id: "sarvam-test", name: "Sarvam Code", provider: .sarvamCode)
+        let client = SarvamCodeUsageClient(account: account)
+        let snapshot = try await client.snapshot(root: root.path, now: iso("2026-08-24T12:00:00Z"), calendar: utcCalendar)
+
+        XCTAssertEqual(snapshot.primary, "0 tokens today · 1.5K all-time")
+        XCTAssertEqual(snapshot.menuBarValue, "1.5K tok")
+        XCTAssertFalse(snapshot.metrics.contains { $0.label.contains("Cost") })
+    }
+
+    func testSnapshotIncludesCostWhenCostDataExists() async throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeSession(
+            root: root,
+            name: "tokens-with-cost",
+            events: [
+                event(at: "2026-08-24T10:00:00Z", input: 100, cached: 0, output: 50, reasoning: 0, total: 150, cost: "\"cost\":0.25")
+            ]
+        )
+
+        let account = AccountConfig(id: "sarvam-test", name: "Sarvam Code", provider: .sarvamCode)
+        let client = SarvamCodeUsageClient(account: account)
+        let snapshot = try await client.snapshot(root: root.path, now: iso("2026-08-24T12:00:00Z"), calendar: utcCalendar)
+
+        XCTAssertEqual(snapshot.primary, "150 tokens today")
+        XCTAssertEqual(snapshot.menuBarValue, "$0.25")
+        XCTAssertTrue(snapshot.metrics.contains { $0.label == "Cost today" && $0.value == "$0.25" })
+    }
+
     private func iso(_ value: String) -> Date {
         ISO8601DateFormatter().date(from: value)!
     }
