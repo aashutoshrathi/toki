@@ -113,7 +113,7 @@ extension UsageStore {
                   ) else {
                 continue
             }
-            let started = startResetRedeem(snapshot: snapshot, condition: claim.condition) { [weak self] result in
+            let started = startResetRedeem(snapshot: snapshot, creditID: claim.creditID, condition: claim.condition) { [weak self] result in
                 self?.finishAutoRedeem(claim, for: snapshot, result: result)
             }
             if started {
@@ -231,7 +231,16 @@ extension UsageStore {
                 && $0.resetCreditsAvailable > 0
                 && canRedeemCodexReset($0)
         }
-        let expiryChecks = eligible.compactMap { $0.resetCreditExpiry?.addingTimeInterval(-TimeInterval(minutes * 60)) }
+        let expiryChecks = eligible.flatMap { snapshot -> [Date] in
+            if !snapshot.resetCreditGroups.isEmpty {
+                return snapshot.resetCreditGroups.compactMap { group in
+                    guard group.canRedeemNow, let expiry = group.expiry else { return nil }
+                    return expiry.addingTimeInterval(-TimeInterval(minutes * 60))
+                }
+            }
+            guard let expiry = snapshot.resetCreditExpiry else { return [] }
+            return [expiry.addingTimeInterval(-TimeInterval(minutes * 60))]
+        }
         let retryChecks = eligible.compactMap { autoRedeemRetryTimes[autoRedeemRetryKey(for: .expiry, accountID: $0.id)] }
         let nextCheck = (expiryChecks + retryChecks).filter { $0 > date }.min()
         guard let nextCheck else {

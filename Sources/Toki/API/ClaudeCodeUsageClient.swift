@@ -258,12 +258,18 @@ struct ClaudeCodeUsageClient {
         } else {
             liveUsage = nil
         }
+        let targetExpiry: Date? = {
+            if let creditID, let liveUsage {
+                return liveUsage.resetCreditGroups.first(where: { $0.grantID == creditID })?.expiry ?? liveUsage.resetCreditExpiry
+            }
+            return liveUsage?.resetCreditExpiry
+        }()
         if let condition,
            let liveUsage,
            !autoRedeemConditionHolds(
                condition,
                weeklyWindow: weeklyQuotaWindow(among: liveUsage.rateLimitWindows),
-               soonestExpiry: liveUsage.resetCreditExpiry,
+               soonestExpiry: targetExpiry,
                now: Date()
            ) {
             throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")

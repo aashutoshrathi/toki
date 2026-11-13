@@ -545,4 +545,68 @@ final class AutoResetTests: XCTestCase {
             XCTAssertLessThan(try XCTUnwrap(afterFailedExpiry[.expiry]), expiresAt)
         }
     }
+
+    func testClaudeAutoResetWeeklyPicksStandardOverFable() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .fable, count: 2, expiry: now.addingTimeInterval(86400), grantID: "fable-grant", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"]),
+            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400 * 2), grantID: "standard-grant", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10)))
+        XCTAssertEqual(result.trigger, .weekly)
+        XCTAssertEqual(result.creditID, "standard-grant")
+    }
+
+    func testClaudeAutoResetWeeklySkipsWhenOnlyFableIsAvailable() {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .fable, count: 2, expiry: now.addingTimeInterval(86400), grantID: "fable-grant", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        XCTAssertFalse(shouldAutoRedeemReset(account, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+        XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10)))
+    }
+
+    func testClaudeAutoResetWeeklyPicksStandardExpiringSoonest() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400 * 3), grantID: "standard-later", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400), grantID: "standard-sooner", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10)))
+        XCTAssertEqual(result.trigger, .weekly)
+        XCTAssertEqual(result.creditID, "standard-sooner")
+    }
+
+    func testClaudeAutoResetExpiryPicksExpiringFableEvenWhenStandardHasLaterExpiry() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 80)
+        let fableExpiry = now.addingTimeInterval(4 * 60)
+        let standardExpiry = now.addingTimeInterval(86400)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: standardExpiry, grantID: "standard-later", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: fableExpiry, grantID: "fable-expiring", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "fable-expiring")
+        XCTAssertEqual(result.guardDate, fableExpiry)
+    }
+
+    func testClaudeAutoResetExpiryPicksExpiringStandardEvenWhenFableHasLaterExpiry() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 80)
+        let standardExpiry = now.addingTimeInterval(3 * 60)
+        let fableExpiry = now.addingTimeInterval(86400)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: standardExpiry, grantID: "standard-expiring", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: fableExpiry, grantID: "fable-later", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "standard-expiring")
+        XCTAssertEqual(result.guardDate, standardExpiry)
+    }
 }
