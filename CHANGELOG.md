@@ -6,6 +6,7 @@ One Line: Separate Claude reset types (Standard vs Fable) and show Sarvam token 
 
 ### Added
 - **Separate Claude reset types.** Claude rate limit reset credits are now separated into Standard (5-hour and 7-day windows) and Fable-only resets. Each type displays its own badge, expiry, and redemption requirements (such as whether reaching the rate limit is required).
+- **Smart Claude auto-reset selection.** Auto-apply reset now chooses the most helpful credit for Claude: for weekly quota triggers, it automatically selects Standard resets that clear 7d/5h limits (skipping Fable-only resets) prioritizing earliest expiry; for expiring resets, it identifies whichever credit is facing immediate loss across all groups and redeems that specific grant.
 - **Sarvam token usage readout.** Sarvam accounts display token counts (today and all-time) in the menu bar and card when monetary spend is unavailable.
 
 ### Fixed
