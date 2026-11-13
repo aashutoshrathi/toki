@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.4.3 - 2026-11-13
+
+One Line: Separate Claude reset types (Standard vs Fable) and show Sarvam token usage.
+
+### Added
+- **Separate Claude reset types.** Claude rate limit reset credits are now separated into Standard (5-hour and 7-day windows) and Fable-only resets. Each type displays its own badge, expiry, and redemption requirements (such as whether reaching the rate limit is required).
+- **Sarvam token usage readout.** Sarvam accounts display token counts (today and all-time) in the menu bar and card when monetary spend is unavailable.
+
+### Fixed
+- **Thread safety in agent process cache.** Guarded active agent cache access to prevent concurrent dictionary access crashes.
+
 ## 3.4.2 - 2026-11-06
 
 One Line: A Claude account that recovers its sign-in stops showing a stale "Sign-in expired" card.
