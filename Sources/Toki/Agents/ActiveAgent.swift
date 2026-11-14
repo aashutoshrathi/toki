@@ -177,7 +177,26 @@ enum ActiveAgentScanner {
         let worktree: String?
         let codexHome: String?
     }
+    private static let cacheLock = NSLock()
     private nonisolated(unsafe) static var cache: [Int32: CacheEntry] = [:]
+
+    private static func cachedEntry(for pid: Int32) -> CacheEntry? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cache[pid]
+    }
+
+    private static func setCachedEntry(_ entry: CacheEntry, for pid: Int32) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        cache[pid] = entry
+    }
+
+    private static func pruneCache(alive: Set<Int32>) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        cache = cache.filter { alive.contains($0.key) }
+    }
 
     static func scan() async -> [ActiveAgent] {
         await Task.detached(priority: .utility) {
@@ -218,7 +237,7 @@ enum ActiveAgentScanner {
             )
             // Drop cache entries for PIDs that are no longer running.
             let alive = Set(candidates.map(\.pid))
-            cache = cache.filter { alive.contains($0.key) }
+            pruneCache(alive: alive)
 
             return agents.sorted { lhs, rhs in
                 // Deliberately not sorted by needsInput: a row that moves while the pointer is
@@ -535,7 +554,7 @@ enum ActiveAgentScanner {
     // cwd and host app are cached here; title, usage and activity are read per scan in
     // buildAgent, since those change as the conversation evolves.
     private static func resolveContext(_ c: Candidate) -> ProcessContext {
-        let cached = cache[c.pid]
+        let cached = cachedEntry(for: c.pid)
         let reusable = cached?.command == c.command ? cached : nil
         let cwd = reusable?.directory
             ?? AgentSessionResolver.workingDirectory(fromCommand: c.command)
@@ -563,7 +582,7 @@ enum ActiveAgentScanner {
         // only once per PID.
         let codexHome = reusable?.codexHome ?? (c.provider == .codex ? Self.codexHome(ofPID: c.pid) : nil)
 
-        cache[c.pid] = CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux, branch: branch, worktree: worktree, codexHome: codexHome)
+        setCachedEntry(CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux, branch: branch, worktree: worktree, codexHome: codexHome), for: c.pid)
         return ProcessContext(
             candidate: c,
             directory: cwd,

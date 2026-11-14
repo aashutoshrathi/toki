@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.4.3 - 2026-11-13
+
+One Line: Separate Claude reset types (Standard vs Fable) and show Sarvam token usage.
+
+### Added
+- **Separate Claude reset types.** Claude rate limit reset credits are now separated into Standard (5-hour and 7-day windows) and Fable-only resets. Each type displays its own badge, expiry, and redemption requirements (such as whether reaching the rate limit is required).
+- **Smart Claude auto-reset selection.** Auto-apply reset now chooses the most helpful credit for Claude: for weekly quota triggers, it automatically selects Standard resets that clear 7d/5h limits (skipping Fable-only resets) prioritizing earliest expiry; for expiring resets, it identifies whichever credit is facing immediate loss across all groups and redeems that specific grant.
+- **Sarvam token usage readout.** Sarvam accounts display token counts (today and all-time) in the menu bar and card when monetary spend is unavailable.
+
+### Fixed
+- **Thread safety in agent process cache.** Guarded active agent cache access to prevent concurrent dictionary access crashes.
+
+## 3.4.2 - 2026-11-06
+
+One Line: A Claude account that recovers its sign-in stops showing a stale "Sign-in expired" card.
+
+### Fixed
+- **A recovered Claude sign-in stops showing a stale card.** After Claude renews a sign-in, the Accounts tab could keep showing "Sign-in expired" while the menu bar showed live quota, and the card stayed stale through later refreshes and popover reopens. Account rows are now keyed by provider instead of by their position in the list, so a recovering account that re-sorts by health redraws its card rather than keeping the old contents.
+
 ## 3.4.1 - 2026-11-05
 
 One Line: OpenCode Go usage shows up, accounts of one provider group into a single card, and the menu bar picks the Codex account that matters.

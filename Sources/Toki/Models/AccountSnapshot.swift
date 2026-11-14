@@ -31,6 +31,42 @@ struct RateLimitWindow: Identifiable, Hashable {
     }
 }
 
+struct ResetCreditGroup: Identifiable, Hashable, Sendable {
+    enum Kind: String, Hashable, Codable, Sendable {
+        case standard = "standard"
+        case fable = "fable"
+
+        var displayName: String {
+            switch self {
+            case .standard: return "Standard"
+            case .fable: return "Fable"
+            }
+        }
+    }
+
+    var id: String { "\(kind.rawValue)-\(grantID ?? "")" }
+    var kind: Kind
+    var count: Int
+    var expiry: Date? = nil
+    var grantID: String? = nil
+    var label: String? = nil
+    var requiresLimit: Bool = false
+    var atLimit: Bool = false
+    var clears: [String] = []
+
+    var canRedeemNow: Bool {
+        if requiresLimit && !atLimit { return false }
+        return count > 0 && grantID != nil
+    }
+
+    var requirementDescription: String? {
+        if requiresLimit {
+            return atLimit ? "At rate limit" : "Requires rate limit"
+        }
+        return nil
+    }
+}
+
 struct AccountSnapshot: Identifiable, Hashable {
     var id: String
     var name: String
@@ -49,6 +85,7 @@ struct AccountSnapshot: Identifiable, Hashable {
     // when only the count is known. Surfaced in the UI so the user can decide whether to
     // redeem now or wait (issue #130).
     var resetCreditExpiry: Date? = nil
+    var resetCreditGroups: [ResetCreditGroup] = []
     var metrics: [MetricLine]
     var accountInfo: [MetricLine] = []
     var isError: Bool = false

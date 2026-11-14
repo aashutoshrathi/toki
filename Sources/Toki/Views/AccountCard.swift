@@ -14,6 +14,7 @@ struct AccountCard: View {
     @FocusState private var aliasFocused: Bool
     @State private var expandedTab: ExpandedTab
     @State private var confirmingReset = false
+    @State private var selectedResetGroup: ResetCreditGroup? = nil
     @State private var isHovered = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
@@ -275,11 +276,19 @@ struct AccountCard: View {
                     .font(.system(size: 11, weight: .medium))
                 }
 
-                if snapshot.resetCreditsAvailable > 0 {
+                if !snapshot.resetCreditGroups.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(snapshot.resetCreditGroups) { group in
+                            expandedResetButton(for: group)
+                        }
+                        Spacer()
+                    }
+                } else if snapshot.resetCreditsAvailable > 0 {
                     HStack(spacing: 8) {
                         Button {
                             // Same confirm-first flow as the collapsed-card badge; a reset is a
                             // limited credit, so redeeming always asks first.
+                            selectedResetGroup = nil
                             confirmingReset = true
                         } label: {
                             ZStack {
@@ -288,7 +297,7 @@ struct AccountCard: View {
                                 if isResetting {
                                     ProgressView()
                                         .controlSize(.small)
-                                        .accessibilityLabel("Resetting Codex rate limit")
+                                        .accessibilityLabel("Resetting rate limit")
                                 }
                             }
                         }
@@ -538,8 +547,28 @@ struct AccountCard: View {
             .lineLimit(1)
             .minimumScaleFactor(0.8)
         } else if !quotaWindows.isEmpty {
-            if snapshot.resetCreditsAvailable > 0 {
+            if !snapshot.resetCreditGroups.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(snapshot.resetCreditGroups) { group in
+                        resetButton(for: group)
+                    }
+                }
+                .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
+                    Button("Redeem reset", role: .destructive) {
+                        let targetGrantID = snapshot.resetCreditGroups.first(where: { $0.id == selectedResetGroup?.id })?.grantID
+                            ?? selectedResetGroup?.grantID
+                        selectedResetGroup = nil
+                        store.consumeResetCredit(accountID: snapshot.id, creditID: targetGrantID)
+                    }
+                    Button("Cancel", role: .cancel) {
+                        selectedResetGroup = nil
+                    }
+                } message: {
+                    Text(resetWasteWarning(for: selectedResetGroup))
+                }
+            } else if snapshot.resetCreditsAvailable > 0 {
                 Button {
+                    selectedResetGroup = nil
                     confirmingReset = true
                 } label: {
                     ResetCreditBadge(count: snapshot.resetCreditsAvailable, expiry: snapshot.resetCreditExpiry)
@@ -556,7 +585,7 @@ struct AccountCard: View {
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text(resetWasteWarning)
+                    Text(resetWasteWarning(for: nil))
                 }
             }
         } else {
@@ -742,6 +771,63 @@ struct AccountCard: View {
         store.resettingAccountIDs.contains(snapshot.id)
     }
 
+    private func resetButton(for group: ResetCreditGroup) -> some View {
+        let isFable = group.kind == .fable
+        let title: String? = isFable ? "Fable" : nil
+        let canRedeem = group.canRedeemNow
+
+        return Button {
+            selectedResetGroup = group
+            confirmingReset = true
+        } label: {
+            ResetCreditBadge(
+                count: group.count,
+                expiry: group.expiry,
+                title: title
+            )
+        }
+        .accentGlassControlStyle()
+        .buttonBorderShape(.capsule)
+        .controlSize(.mini)
+        .disabled(isResetting || !canRedeem)
+        .pointerOnHover()
+        .help(resetButtonHelp(for: group))
+    }
+
+    private func expandedResetButton(for group: ResetCreditGroup) -> some View {
+        let name = group.kind.displayName
+        let title: String = {
+            if group.requiresLimit && !group.atLimit {
+                return "\(name) reset (requires limit)"
+            }
+            if group.count > 1 {
+                return "Reset \(name) now (\(group.count) available)"
+            }
+            return "Reset \(name) now"
+        }()
+
+        return Button {
+            selectedResetGroup = group
+            confirmingReset = true
+        } label: {
+            ZStack {
+                Label(title, systemImage: "arrow.counterclockwise")
+                    .opacity(isResetting ? 0 : 1)
+                if isResetting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Resetting \(name) rate limit")
+                }
+            }
+        }
+        .accentGlassControlStyle()
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .disabled(isResetting || !group.canRedeemNow)
+        .pointerOnHover()
+        .help(resetButtonHelp(for: group))
+    }
+
     private var resetButtonTitle: String {
         snapshot.resetCreditsAvailable > 1 ? "Reset now (\(snapshot.resetCreditsAvailable) available)" : "Reset now"
     }
@@ -754,21 +840,50 @@ struct AccountCard: View {
         return help
     }
 
+    private func resetButtonHelp(for group: ResetCreditGroup) -> String {
+        let target = group.kind == .fable ? "Fable 7d rate limit" : "rate limit"
+        var help = "Redeem a banked \(group.kind.displayName) reset credit to reset \(target) now"
+        if group.requiresLimit && !group.atLimit {
+            help += ". Requires reaching the rate limit first."
+        }
+        if let expiry = group.expiry {
+            help += ". Expires \(resetDescription(for: expiry))."
+        }
+        return help
+    }
+
     // A reset is a limited, banked resource: redeeming while quota remains discards the rest
     // of the current window. State how much is still left so the confirmation is an informed
     // choice rather than a bare warning. Also surface the credit's expiry when known, so the
     // user can decide whether to redeem now or wait (issue #130).
     private var resetWasteWarning: String {
-        let leftRatio = snapshot.remainingRatio ?? progressRatio.map { 1 - $0 }
+        resetWasteWarning(for: selectedResetGroup)
+    }
+
+    private func resetWasteWarning(for group: ResetCreditGroup?) -> String {
+        let leftRatio: Double?
+        let windowName: String
+        if group?.kind == .fable {
+            let fableWindow = snapshot.modelWindows.first { $0.label.lowercased().contains("fable") }
+            leftRatio = fableWindow.map { Double($0.percentLeft) / 100 }
+            windowName = "this Fable"
+        } else {
+            leftRatio = snapshot.remainingRatio ?? progressRatio.map { 1 - $0 }
+            windowName = "this"
+        }
+
+        let creditName = group?.kind == .fable ? "Fable reset" : "reset"
+        let expiry = group?.expiry ?? snapshot.resetCreditExpiry
+
         if let percentLeft = leftRatio.map({ Int(($0 * 100).rounded()) }) {
-            var warning = "You still have \(percentLeft)% of this window left. A reset is a limited banked credit, and redeeming it now discards that remaining quota."
-            if let expiry = snapshot.resetCreditExpiry {
+            var warning = "You still have \(percentLeft)% of \(windowName) window left. A \(creditName) is a limited banked credit, and redeeming it now discards that remaining quota."
+            if let expiry {
                 warning += " This reset credit expires \(resetDescription(for: expiry))."
             }
             return warning + " Redeem anyway?"
         }
-        var warning = "A reset is a limited banked credit and redeeming it now discards the quota you haven't used yet."
-        if let expiry = snapshot.resetCreditExpiry {
+        var warning = "A \(creditName) is a limited banked credit and redeeming it now discards the quota you haven't used yet."
+        if let expiry {
             warning += " This reset credit expires \(resetDescription(for: expiry))."
         }
         return warning + " Redeem anyway?"

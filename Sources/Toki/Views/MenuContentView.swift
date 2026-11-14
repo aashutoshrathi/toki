@@ -433,8 +433,7 @@ struct MenuContentView: View {
             ScrollView {
                 let groups = providerAccountGroups
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(groups.indices), id: \.self) { index in
-                        let group = groups[index]
+                    ForEach(groups) { group in
                         if group.snapshots.count == 1, let snapshot = group.snapshots.first {
                             AccountCard(snapshot: snapshot, store: store) { id in
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
@@ -454,7 +453,7 @@ struct MenuContentView: View {
                             }
                         }
 
-                        if index < groups.count - 1 {
+                        if group.id != groups.last?.id {
                             Divider()
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 2)
@@ -469,7 +468,7 @@ struct MenuContentView: View {
 
     // Accounts of one provider are drawn as a single card once there is more than one, so the
     // list groups by provider while keeping the provider's position from its first account.
-    private var providerAccountGroups: [(provider: Provider, snapshots: [AccountSnapshot])] {
+    private var providerAccountGroups: [AccountGroup] {
         Toki.accountGroups(for: sortedSnapshots)
     }
 

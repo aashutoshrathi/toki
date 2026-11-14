@@ -138,4 +138,194 @@ final class ClaudeResetGrantTests: XCTestCase {
 
         XCTAssertEqual(ClaudeCodeUsage(json: payload).resetCreditsAvailable, 0)
     }
+
+    func testFableAndStandardResetsAreSeparated() {
+        let fableEnds = "2026-10-15T12:00:00+00:00"
+        let stdEnds = "2026-10-20T12:00:00+00:00"
+        let fableGrant: [String: Any] = [
+            "id": "fable-launch-2026",
+            "label": "Claude Fable 5 weekly reset",
+            "resets_total": 1,
+            "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": fableEnds,
+            "clears": ["seven_day_fable_5"],
+            "paused": false,
+            "usable_now": true,
+            "use_requires_limit": true
+        ]
+        let stdGrant: [String: Any] = [
+            "id": "team-launch-2026",
+            "label": "Claude standard reset",
+            "resets_total": 2,
+            "resets_left": 2,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": stdEnds,
+            "clears": ["five_hour", "seven_day"],
+            "paused": false,
+            "usable_now": true,
+            "use_requires_limit": false
+        ]
+
+        let payload = usage(cedarEmber: block(
+            atLimit: false,
+            grants: [stdGrant, fableGrant],
+            nextGrantID: "team-launch-2026"
+        ))
+        let parsed = ClaudeCodeUsage(json: payload)
+
+        XCTAssertEqual(parsed.resetCreditGroups.count, 2)
+        let std = parsed.resetCreditGroups.first { $0.kind == .standard }
+        let fab = parsed.resetCreditGroups.first { $0.kind == .fable }
+
+        XCTAssertNotNil(std)
+        XCTAssertEqual(std?.count, 2)
+        XCTAssertEqual(std?.expiry, ISO8601DateFormatter().date(from: stdEnds))
+        XCTAssertTrue(std?.canRedeemNow == true)
+        XCTAssertEqual(std?.grantID, "team-launch-2026")
+
+        XCTAssertNotNil(fab)
+        XCTAssertEqual(fab?.count, 1)
+        XCTAssertEqual(fab?.expiry, ISO8601DateFormatter().date(from: fableEnds))
+        XCTAssertFalse(fab?.canRedeemNow == true) // requires limit, and atLimit is false
+        XCTAssertEqual(fab?.requirementDescription, "Requires rate limit")
+        XCTAssertNil(fab?.grantID) // Not the named next_grant_id, so cannot be redeemed yet
+
+        XCTAssertTrue(parsed.metrics.contains { $0.label == "Resets (Standard)" && $0.value.contains("2 available") })
+        XCTAssertTrue(parsed.metrics.contains { $0.label == "Resets (Fable)" && $0.value.contains("requires limit") })
+    }
+
+    func testOnlyTheGroupHoldingNextGrantIDIsRedeemable() {
+        let fableGrant: [String: Any] = [
+            "id": "fable-launch-2026",
+            "label": "Claude Fable 5 weekly reset",
+            "resets_total": 1,
+            "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": endsAt,
+            "clears": ["seven_day_fable_5"],
+            "paused": false,
+            "usable_now": true,
+            "use_requires_limit": true
+        ]
+        let stdGrant: [String: Any] = [
+            "id": "team-launch-2026",
+            "label": "Claude Standard weekly reset",
+            "resets_total": 1,
+            "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": endsAt,
+            "clears": ["five_hour", "seven_day"],
+            "paused": false,
+            "usable_now": true,
+            "use_requires_limit": false
+        ]
+
+        // When next_grant_id is the Fable grant and at limit
+        let fableNextPayload = usage(cedarEmber: block(
+            atLimit: true,
+            grants: [stdGrant, fableGrant],
+            nextGrantID: "fable-launch-2026"
+        ))
+        let fableParsed = ClaudeCodeUsage(json: fableNextPayload)
+        let fabGroup = fableParsed.resetCreditGroups.first { $0.kind == .fable }
+        let stdGroup = fableParsed.resetCreditGroups.first { $0.kind == .standard }
+
+        XCTAssertEqual(fabGroup?.grantID, "fable-launch-2026")
+        XCTAssertTrue(fabGroup?.canRedeemNow == true)
+        XCTAssertNil(stdGroup?.grantID)
+        XCTAssertFalse(stdGroup?.canRedeemNow == true)
+    }
+
+    func testUnusableOrMissingNextGrantHidesGroups() {
+        let grantA = grant(id: "grant-a")
+        for badNextID in ["other-grant", nil] {
+            let payload = usage(cedarEmber: block(grants: [grantA], nextGrantID: badNextID))
+            let parsed = ClaudeCodeUsage(json: payload)
+            XCTAssertTrue(parsed.resetCreditGroups.isEmpty)
+            XCTAssertEqual(parsed.resetCreditsAvailable, 0)
+            XCTAssertNil(parsed.resetGrantID)
+        }
+    }
+
+    func testFableResetCanRedeemWhenAtLimit() {
+        let fableGrant: [String: Any] = [
+            "id": "fable-launch-2026",
+            "label": "Claude Fable 5 weekly reset",
+            "resets_total": 1,
+            "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": endsAt,
+            "clears": ["seven_day_fable_5"],
+            "paused": false,
+            "usable_now": true,
+            "use_requires_limit": true
+        ]
+        let payload = usage(cedarEmber: block(
+            atLimit: true,
+            grants: [fableGrant],
+            nextGrantID: "fable-launch-2026"
+        ))
+        let parsed = ClaudeCodeUsage(json: payload)
+
+        XCTAssertEqual(parsed.resetCreditGroups.count, 1)
+        let fab = parsed.resetCreditGroups.first
+        XCTAssertEqual(fab?.kind, .fable)
+        XCTAssertTrue(fab?.canRedeemNow == true)
+        XCTAssertEqual(fab?.requirementDescription, "At rate limit")
+        XCTAssertTrue(parsed.metrics.contains { $0.label == "Resets (Fable)" })
+    }
+
+    func testNextGrantWithoutExpiryDoesNotInheritAnotherGrantsExpiry() throws {
+        var next = grant(id: "next")
+        next["ends_at"] = NSNull()
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(
+            grants: [grant(id: "other"), next], nextGrantID: "next"
+        )))
+        XCTAssertNil(parsed.resetCreditExpiry)
+        XCTAssertNil(try XCTUnwrap(parsed.resetCreditGroups.first).expiry)
+    }
+
+    func testSelectedGrantIsRevalidatedAgainstLiveNextGrant() throws {
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(
+            grants: [grant(id: "old"), grant(id: "next")], nextGrantID: "next"
+        )))
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: "old", condition: nil
+        ))
+        let selected = try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: "next", condition: nil
+        )
+        XCTAssertEqual(selected.grantID, "next")
+        XCTAssertEqual(selected.expiry, ISO8601DateFormatter().date(from: endsAt))
+    }
+
+    func testSelectedGrantCannotRedeemWhenLiveGrantIsPaused() {
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(grants: [grant(paused: true)])))
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: "opus55-launch-team-20260921", condition: nil
+        ))
+    }
+
+    func testSelectedGrantExpiryConditionUsesItsLiveExpiry() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: endsAt)).addingTimeInterval(-120)
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(grants: [grant()])))
+        let selected = try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: parsed.resetGrantID,
+            condition: .expiringBy(now.addingTimeInterval(300)), now: now
+        )
+        XCTAssertEqual(selected.expiry, parsed.resetCreditExpiry)
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: parsed.resetGrantID,
+            condition: .expiringBy(now.addingTimeInterval(60)), now: now
+        ))
+    }
+
+    func testIsFableGrantVariants() {
+        XCTAssertTrue(ClaudeCodeUsage.isFableGrant(["clears": ["seven_day_fable_5"]]))
+        XCTAssertTrue(ClaudeCodeUsage.isFableGrant(["clears": ["fable_window"]]))
+        XCTAssertTrue(ClaudeCodeUsage.isFableGrant(["id": "fable-launch-credit"]))
+        XCTAssertTrue(ClaudeCodeUsage.isFableGrant(["label": "Fable 5 special reset"]))
+        XCTAssertFalse(ClaudeCodeUsage.isFableGrant(["clears": ["five_hour", "seven_day"], "id": "standard-grant"]))
+    }
 }

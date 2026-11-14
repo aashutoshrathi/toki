@@ -24,16 +24,17 @@ extension UsageStore {
         refresh()
     }
 
-    func consumeResetCredit(accountID: String) {
+    func consumeResetCredit(accountID: String, creditID: String? = nil) {
         guard let snapshot = snapshots.first(where: { $0.id == accountID }) else { return }
-        startResetRedeem(snapshot: snapshot, condition: nil, completion: nil)
+        startResetRedeem(snapshot: snapshot, creditID: creditID, condition: nil, completion: nil)
     }
 
     @discardableResult
     private func startResetRedeem(
         snapshot: AccountSnapshot,
-        condition: AutoRedeemCondition?,
-        completion: ((Result<RedeemedReset, Error>) -> Void)?
+        creditID: String? = nil,
+        condition: AutoRedeemCondition? = nil,
+        completion: ((Result<RedeemedReset, Error>) -> Void)? = nil
     ) -> Bool {
         guard !resettingAccountIDs.contains(snapshot.id),
               let account = resetCapableAccount(for: snapshot),
@@ -48,12 +49,17 @@ extension UsageStore {
             let result = await Task.detached { () -> Result<RedeemedReset, Error> in
                 do {
                     if account.provider == .claudeCode {
-                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(account: account, recordID: accountID, condition: condition))
+                        return .success(try await ClaudeCodeUsageClient.consumeRateLimitResetCredit(
+                            account: account,
+                            recordID: accountID,
+                            creditID: creditID,
+                            condition: condition
+                        ))
                     }
                     return .success(try await CodexAppServerClient.consumeRateLimitResetCredit(
                         account: account,
                         expectedIdentity: expectedIdentity,
-                        creditID: nil,
+                        creditID: creditID,
                         condition: condition
                     ))
                 } catch {
@@ -107,7 +113,7 @@ extension UsageStore {
                   ) else {
                 continue
             }
-            let started = startResetRedeem(snapshot: snapshot, condition: claim.condition) { [weak self] result in
+            let started = startResetRedeem(snapshot: snapshot, creditID: claim.creditID, condition: claim.condition) { [weak self] result in
                 self?.finishAutoRedeem(claim, for: snapshot, result: result)
             }
             if started {
@@ -225,7 +231,16 @@ extension UsageStore {
                 && $0.resetCreditsAvailable > 0
                 && canRedeemCodexReset($0)
         }
-        let expiryChecks = eligible.compactMap { $0.resetCreditExpiry?.addingTimeInterval(-TimeInterval(minutes * 60)) }
+        let expiryChecks = eligible.flatMap { snapshot -> [Date] in
+            if !snapshot.resetCreditGroups.isEmpty {
+                return snapshot.resetCreditGroups.compactMap { group in
+                    guard group.canRedeemNow, let expiry = group.expiry else { return nil }
+                    return expiry.addingTimeInterval(-TimeInterval(minutes * 60))
+                }
+            }
+            guard let expiry = snapshot.resetCreditExpiry else { return [] }
+            return [expiry.addingTimeInterval(-TimeInterval(minutes * 60))]
+        }
         let retryChecks = eligible.compactMap { autoRedeemRetryTimes[autoRedeemRetryKey(for: .expiry, accountID: $0.id)] }
         let nextCheck = (expiryChecks + retryChecks).filter { $0 > date }.min()
         guard let nextCheck else {
