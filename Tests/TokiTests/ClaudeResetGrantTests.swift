@@ -276,6 +276,51 @@ final class ClaudeResetGrantTests: XCTestCase {
         XCTAssertTrue(parsed.metrics.contains { $0.label == "Resets (Fable)" })
     }
 
+    func testNextGrantWithoutExpiryDoesNotInheritAnotherGrantsExpiry() throws {
+        var next = grant(id: "next")
+        next["ends_at"] = NSNull()
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(
+            grants: [grant(id: "other"), next], nextGrantID: "next"
+        )))
+        XCTAssertNil(parsed.resetCreditExpiry)
+        XCTAssertNil(try XCTUnwrap(parsed.resetCreditGroups.first).expiry)
+    }
+
+    func testSelectedGrantIsRevalidatedAgainstLiveNextGrant() throws {
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(
+            grants: [grant(id: "old"), grant(id: "next")], nextGrantID: "next"
+        )))
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: "old", condition: nil
+        ))
+        let selected = try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: "next", condition: nil
+        )
+        XCTAssertEqual(selected.grantID, "next")
+        XCTAssertEqual(selected.expiry, ISO8601DateFormatter().date(from: endsAt))
+    }
+
+    func testSelectedGrantCannotRedeemWhenLiveGrantIsPaused() {
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(grants: [grant(paused: true)])))
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: "opus55-launch-team-20260921", condition: nil
+        ))
+    }
+
+    func testSelectedGrantExpiryConditionUsesItsLiveExpiry() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: endsAt)).addingTimeInterval(-120)
+        let parsed = ClaudeCodeUsage(json: usage(cedarEmber: block(grants: [grant()])))
+        let selected = try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: parsed.resetGrantID,
+            condition: .expiringBy(now.addingTimeInterval(300)), now: now
+        )
+        XCTAssertEqual(selected.expiry, parsed.resetCreditExpiry)
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: parsed, creditID: parsed.resetGrantID,
+            condition: .expiringBy(now.addingTimeInterval(60)), now: now
+        ))
+    }
+
     func testIsFableGrantVariants() {
         XCTAssertTrue(ClaudeCodeUsage.isFableGrant(["clears": ["seven_day_fable_5"]]))
         XCTAssertTrue(ClaudeCodeUsage.isFableGrant(["clears": ["fable_window"]]))

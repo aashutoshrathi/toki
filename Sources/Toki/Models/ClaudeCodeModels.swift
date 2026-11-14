@@ -134,8 +134,7 @@ struct ClaudeCodeUsage {
             let groupGrantID = isNextInThisGroup ? nextGrantID : nil
             let chosenGrant = nextGrant ?? activeGrants[0]
             let requiresLimit = chosenGrant["use_requires_limit"] as? Bool ?? false
-            let expiry = chosenGrant["ends_at"].flatMap { resetDate($0) }
-                ?? activeGrants.compactMap { resetDate($0["ends_at"]) }.min()
+            let expiry = resetDate(chosenGrant["ends_at"])
             let label = chosenGrant["label"] as? String
             let clears = (chosenGrant["clears"] as? [String]) ?? []
 

@@ -252,33 +252,31 @@ struct ClaudeCodeUsageClient {
         }
 
         let headers = oauthHeaders(accessToken: accessToken)
-        let liveUsage: ClaudeCodeUsage?
-        if condition != nil || creditID == nil {
-            liveUsage = ClaudeCodeUsage(json: try await requestJSON(url: usageURL, headers: headers))
-        } else {
-            liveUsage = nil
+        let liveUsage = ClaudeCodeUsage(json: try await requestJSON(url: usageURL, headers: headers))
+        let grant = try validatedResetGrant(in: liveUsage, creditID: creditID, condition: condition)
+        return (organizationUUID, headers, grant.grantID, grant.expiry)
+    }
+
+    static func validatedResetGrant(
+        in usage: ClaudeCodeUsage,
+        creditID: String?,
+        condition: AutoRedeemCondition?,
+        now: Date = Date()
+    ) throws -> (grantID: String, expiry: Date?) {
+        guard let grantID = usage.resetGrantID,
+              creditID == nil || creditID == grantID else {
+            throw LocalizedErrorMessage("The selected reset is no longer available to redeem.")
         }
-        let targetExpiry: Date? = {
-            if let creditID, let liveUsage {
-                return liveUsage.resetCreditGroups.first(where: { $0.grantID == creditID })?.expiry
-            }
-            return liveUsage?.resetCreditExpiry
-        }()
         if let condition,
-           let liveUsage,
            !autoRedeemConditionHolds(
                condition,
-               weeklyWindow: weeklyQuotaWindow(among: liveUsage.rateLimitWindows),
-               soonestExpiry: targetExpiry,
-               now: Date()
+               weeklyWindow: weeklyQuotaWindow(among: usage.rateLimitWindows),
+               soonestExpiry: usage.resetCreditExpiry,
+               now: now
            ) {
             throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
         }
-        guard let grantID = creditID ?? liveUsage?.resetGrantID else {
-            throw LocalizedErrorMessage("No reset is available to redeem right now.")
-        }
-        let creditExpiry = creditID == nil ? liveUsage?.resetCreditExpiry : nil
-        return (organizationUUID, headers, grantID, creditExpiry)
+        return (grantID, usage.resetCreditExpiry)
     }
 
     static func consumeRateLimitResetCredit(
