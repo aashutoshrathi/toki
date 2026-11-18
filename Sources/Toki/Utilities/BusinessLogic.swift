@@ -270,7 +270,11 @@ func canRedeemCodexReset(_ snapshot: AccountSnapshot) -> Bool {
 
 /// For Claude auto-reset, selects the most helpful standard reset credit to clear weekly rate limits.
 func bestWeeklyResetGroup(in snapshot: AccountSnapshot) -> ResetCreditGroup? {
-    let standardGroups = snapshot.resetCreditGroups.filter { $0.kind == .standard && $0.canRedeemNow }
+    let standardGroups = snapshot.resetCreditGroups.filter { group in
+        group.kind == .standard
+            && group.canRedeemNow
+            && (group.clears.isEmpty || group.clears.contains(where: { $0.contains("seven_day") }))
+    }
     return standardGroups.min { ($0.expiry ?? .distantFuture) < ($1.expiry ?? .distantFuture) }
 }
 

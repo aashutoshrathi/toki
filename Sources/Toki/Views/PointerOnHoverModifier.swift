@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct PointerOnHoverModifier: ViewModifier {
+    var isEnabled: Bool = true
+
     func body(content: Content) -> some View {
         content.onHover { hovering in
+            guard isEnabled else { return }
             if hovering {
                 NSCursor.pointingHand.push()
             } else {
@@ -13,7 +16,7 @@ struct PointerOnHoverModifier: ViewModifier {
 }
 
 extension View {
-    func pointerOnHover() -> some View {
-        modifier(PointerOnHoverModifier())
+    func pointerOnHover(_ enabled: Bool = true) -> some View {
+        modifier(PointerOnHoverModifier(isEnabled: enabled))
     }
 }

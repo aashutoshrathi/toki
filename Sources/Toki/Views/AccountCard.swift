@@ -390,6 +390,19 @@ struct AccountCard: View {
             // reconnect doesn't leave the toggle stuck on a hidden Sessions selection.
             if isError { expandedTab = .usage }
         }
+        .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("Redeem reset", role: .destructive) {
+                let targetGrantID = snapshot.resetCreditGroups.first(where: { $0.id == selectedResetGroup?.id })?.grantID
+                    ?? selectedResetGroup?.grantID
+                selectedResetGroup = nil
+                store.consumeResetCredit(accountID: snapshot.id, creditID: targetGrantID)
+            }
+            Button("Cancel", role: .cancel) {
+                selectedResetGroup = nil
+            }
+        } message: {
+            Text(resetWasteWarning(for: selectedResetGroup))
+        }
     }
 
     private var rowBackground: Color {
@@ -553,40 +566,19 @@ struct AccountCard: View {
                         resetButton(for: group)
                     }
                 }
-                .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
-                    Button("Redeem reset", role: .destructive) {
-                        let targetGrantID = snapshot.resetCreditGroups.first(where: { $0.id == selectedResetGroup?.id })?.grantID
-                            ?? selectedResetGroup?.grantID
-                        selectedResetGroup = nil
-                        store.consumeResetCredit(accountID: snapshot.id, creditID: targetGrantID)
-                    }
-                    Button("Cancel", role: .cancel) {
-                        selectedResetGroup = nil
-                    }
-                } message: {
-                    Text(resetWasteWarning(for: selectedResetGroup))
-                }
             } else if snapshot.resetCreditsAvailable > 0 {
                 Button {
                     selectedResetGroup = nil
                     confirmingReset = true
                 } label: {
-                    ResetCreditBadge(count: snapshot.resetCreditsAvailable, expiry: snapshot.resetCreditExpiry)
+                    ResetCreditBadge(count: snapshot.resetCreditsAvailable, expiry: snapshot.resetCreditExpiry, showsHelp: false)
                 }
                 .accentGlassControlStyle()
                 .buttonBorderShape(.capsule)
                 .controlSize(.mini)
                 .disabled(isResetting)
-                .pointerOnHover()
+                .pointerOnHover(!isResetting)
                 .help(resetButtonHelp)
-                .confirmationDialog("Spend a reset now?", isPresented: $confirmingReset, titleVisibility: .visible) {
-                    Button("Redeem reset", role: .destructive) {
-                        store.consumeResetCredit(accountID: snapshot.id)
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text(resetWasteWarning(for: nil))
-                }
             }
         } else {
             QuotaSummaryLine(label: "current", value: currentSessionAvailability, resetHint: currentResetTime)
@@ -775,6 +767,7 @@ struct AccountCard: View {
         let isFable = group.kind == .fable
         let title: String? = isFable ? "Fable" : nil
         let canRedeem = group.canRedeemNow
+        let helpText = resetButtonHelp(for: group)
 
         return Button {
             selectedResetGroup = group
@@ -783,20 +776,33 @@ struct AccountCard: View {
             ResetCreditBadge(
                 count: group.count,
                 expiry: group.expiry,
-                title: title
+                title: title,
+                showsHelp: false
             )
         }
         .accentGlassControlStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.mini)
         .disabled(isResetting || !canRedeem)
-        .pointerOnHover()
-        .help(resetButtonHelp(for: group))
+        .pointerOnHover(!isResetting && canRedeem)
+        .overlay {
+            if isResetting || !canRedeem {
+                Color.white.opacity(0.0001)
+                    .contentShape(Capsule())
+                    .help(helpText)
+            }
+        }
+        .help(helpText)
     }
 
     private func expandedResetButton(for group: ResetCreditGroup) -> some View {
         let name = group.kind.displayName
+        let canRedeem = group.canRedeemNow
+        let helpText = resetButtonHelp(for: group)
         let title: String = {
+            if group.grantID == nil {
+                return "\(name) reset (queued)"
+            }
             if group.requiresLimit && !group.atLimit {
                 return "\(name) reset (requires limit)"
             }
@@ -823,9 +829,16 @@ struct AccountCard: View {
         .accentGlassControlStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.small)
-        .disabled(isResetting || !group.canRedeemNow)
-        .pointerOnHover()
-        .help(resetButtonHelp(for: group))
+        .disabled(isResetting || !canRedeem)
+        .pointerOnHover(!isResetting && canRedeem)
+        .overlay {
+            if isResetting || !canRedeem {
+                Color.white.opacity(0.0001)
+                    .contentShape(Capsule())
+                    .help(helpText)
+            }
+        }
+        .help(helpText)
     }
 
     private var resetButtonTitle: String {
@@ -842,9 +855,13 @@ struct AccountCard: View {
 
     private func resetButtonHelp(for group: ResetCreditGroup) -> String {
         let target = group.kind == .fable ? "Fable 7d rate limit" : "rate limit"
-        var help = "Redeem a banked \(group.kind.displayName) reset credit to reset \(target) now"
-        if group.requiresLimit && !group.atLimit {
-            help += ". Requires reaching the rate limit first."
+        var help: String
+        if group.grantID == nil {
+            help = "\(group.kind.displayName) reset credit is queued; another reset is active first"
+        } else if group.requiresLimit && !group.atLimit {
+            help = "\(group.kind.displayName) reset credit requires reaching the rate limit first"
+        } else {
+            help = "Redeem a banked \(group.kind.displayName) reset credit to reset \(target) now"
         }
         if let expiry = group.expiry {
             help += ". Expires \(resetDescription(for: expiry))."

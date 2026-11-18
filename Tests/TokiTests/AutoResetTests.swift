@@ -568,6 +568,16 @@ final class AutoResetTests: XCTestCase {
         XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10)))
     }
 
+    func testClaudeAutoResetWeeklySkipsStandardCreditWithoutSevenDayClear() {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400), grantID: "five-hour-only", requiresLimit: false, atLimit: false, clears: ["five_hour"])
+        ]
+
+        XCTAssertFalse(shouldAutoRedeemReset(account, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+        XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10)))
+    }
+
     func testClaudeAutoResetExpiryPicksExpiringFableEvenWhenStandardHasLaterExpiry() throws {
         var account = snapshot(provider: .claudeCode, weeklyLeft: 80)
         let fableExpiry = now.addingTimeInterval(4 * 60)

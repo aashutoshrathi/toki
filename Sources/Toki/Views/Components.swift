@@ -343,6 +343,7 @@ struct ResetCreditBadge: View {
     var count: Int
     var expiry: Date?
     var title: String? = nil
+    var showsHelp: Bool = true
 
     var body: some View {
         let text: String = {
@@ -351,7 +352,7 @@ struct ResetCreditBadge: View {
             }
             return "\(count)"
         }()
-        HStack(spacing: 3) {
+        let badge = HStack(spacing: 3) {
             Image(systemName: "arrow.counterclockwise")
                 .font(.system(size: 8.5, weight: .bold))
             Text(text)
@@ -359,8 +360,13 @@ struct ResetCreditBadge: View {
         }
         .lineLimit(1)
         .fixedSize()
-        .help(badgeHelp)
         .accessibilityLabel(accessibilityText)
+
+        if showsHelp {
+            badge.help(badgeHelp)
+        } else {
+            badge
+        }
     }
 
     private var accessibilityText: String {
