@@ -20,6 +20,7 @@ final class ClaudeResetGrantTests: XCTestCase {
 
     private func grant(
         id: String = "opus55-launch-team-20260921",
+        label: String? = nil,
         resetsLeft: Int = 1,
         paused: Bool = false,
         usableNow: Bool = true,
@@ -29,7 +30,7 @@ final class ClaudeResetGrantTests: XCTestCase {
     ) -> [String: Any] {
         [
             "id": id,
-            "label": "Claude Opus 5.5 launch: one usage-limit reset for Team members",
+            "label": label ?? "Claude Opus 5.5 launch: one usage-limit reset for Team members",
             "resets_total": 1,
             "resets_left": resetsLeft,
             "starts_at": "2026-09-22T16:00:00+00:00",
@@ -529,5 +530,26 @@ final class ClaudeResetGrantTests: XCTestCase {
         XCTAssertEqual(codexSnapshot.allResetGrants.count, 1)
         XCTAssertEqual(codexSnapshot.allResetGrants[0].id, "codex-reset")
         XCTAssertEqual(codexSnapshot.allResetGrants[0].count, 2)
+    }
+
+    func testStableQueueOrderingPreservesRelativeOrder() throws {
+        let grantA = grant(id: "grant-A", label: "First Grant", resetsLeft: 1, clears: ["seven_day"])
+        let grantB = grant(id: "grant-B", label: "Middle Grant", resetsLeft: 1, clears: ["five_hour", "seven_day"])
+        let grantC = grant(id: "grant-C", label: "Last Grant", resetsLeft: 1, clears: ["seven_day"])
+
+        // grantB is designated as nextGrantID; grants in payload are [grantA, grantB, grantC]
+        let parsed = ClaudeCodeUsage(json: usage(
+            cedarEmber: block(grants: [grantA, grantB, grantC], nextGrantID: "grant-B")
+        ))
+
+        XCTAssertEqual(parsed.resetCreditGrants.count, 3)
+        // grantB moves to front because it's next
+        XCTAssertEqual(parsed.resetCreditGrants[0].id, "grant-B")
+        XCTAssertTrue(parsed.resetCreditGrants[0].isNext)
+        // grantA and grantC maintain their relative order
+        XCTAssertEqual(parsed.resetCreditGrants[1].id, "grant-A")
+        XCTAssertFalse(parsed.resetCreditGrants[1].isNext)
+        XCTAssertEqual(parsed.resetCreditGrants[2].id, "grant-C")
+        XCTAssertFalse(parsed.resetCreditGrants[2].isNext)
     }
 }

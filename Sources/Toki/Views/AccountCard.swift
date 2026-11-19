@@ -413,6 +413,7 @@ struct AccountCard: View {
         .sheet(isPresented: $confirmingReset) {
             ResetConfirmationSheet(
                 snapshot: snapshot,
+                accountDisplayName: displayedAccountIdentifier,
                 selectedGroup: selectedResetGroup,
                 onConfirm: { targetGrantID in
                     selectedResetGroup = nil

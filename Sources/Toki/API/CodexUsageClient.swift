@@ -270,13 +270,14 @@ enum CodexAppServerClient {
             throw ResetNotAttempted(reason: error.localizedDescription)
         }
 
+        let sanitizedCreditID = (creditID == "codex-reset") ? nil : creditID
         var params: [String: Any] = ["idempotencyKey": UUID().uuidString]
-        if let creditID = creditID ?? live.soonestExpiringCreditID {
+        if let creditID = sanitizedCreditID ?? live.soonestExpiringCreditID {
             params["creditId"] = creditID
         }
         let paramsData = try JSONSerialization.data(withJSONObject: params)
         let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
-        let creditExpiry = creditID == nil ? live.resetCreditExpiry : nil
+        let creditExpiry = sanitizedCreditID == nil ? live.resetCreditExpiry : nil
 
         var lastError: String?
         for attempt in 1...consumeAttempts {

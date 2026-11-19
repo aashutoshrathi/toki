@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ResetConfirmationSheet: View {
     var snapshot: AccountSnapshot
+    var accountDisplayName: String? = nil
     var selectedGroup: ResetCreditGroup? = nil
     var onConfirm: (_ targetGrantID: String?) -> Void
     var onCancel: () -> Void
@@ -36,10 +37,14 @@ struct ResetConfirmationSheet: View {
     }
 
     private var targetGrantID: String? {
+        // Codex does not accept synthetic client-side credit IDs; it expects nil to pick soonest
+        if snapshot.provider == .codex {
+            return nil
+        }
         if let grantID = selectedGroup?.grantID {
             return grantID
         }
-        if let active = activeGrant {
+        if let active = activeGrant, active.id != "codex-reset" {
             return active.id
         }
         return snapshot.resetCreditGroups.first(where: { $0.canRedeemNow })?.grantID
@@ -52,7 +57,6 @@ struct ResetConfirmationSheet: View {
 
     private var quotaWarning: QuotaWarning {
         let isFable = selectedGroup?.kind == .fable || activeGrant?.kind == .fable
-        let creditName = isFable ? "Fable reset" : "reset"
 
         if isFable {
             let fableWindow = snapshot.modelWindows.first { $0.label.lowercased().contains("fable") }
@@ -60,24 +64,34 @@ struct ResetConfirmationSheet: View {
                 if fableWindow.percentLeft <= 0 {
                     return QuotaWarning(
                         isExhausted: true,
-                        message: "Your Fable quota is currently exhausted. Redeeming a \(creditName) will restore your quota immediately."
+                        message: "Your Fable quota is currently exhausted. Redeeming a Fable reset will restore your quota immediately."
                     )
                 }
                 return QuotaWarning(
                     isExhausted: false,
-                    message: "You still have \(fableWindow.percentLeft)% of this Fable window left. Redeeming a \(creditName) now will discard that remaining quota."
+                    message: "You still have \(fableWindow.percentLeft)% of this Fable window left. Redeeming a Fable reset now will discard that remaining quota."
                 )
             }
+            return QuotaWarning(
+                isExhausted: false,
+                message: "Redeeming a Fable reset now will discard any quota remaining in your 7-day Fable window."
+            )
         }
 
-        let fiveHour = snapshot.allWindows.first { $0.label.contains("5h") || $0.label.contains("Daily") }
-        let sevenDay = snapshot.allWindows.first { $0.label.contains("7d") || $0.label.contains("Weekly") }
+        let clears = activeGrant?.clears ?? []
+        let clears5h = clears.isEmpty || clears.contains(where: { $0.lowercased().contains("five_hour") })
+        let clears7d = clears.isEmpty || clears.contains(where: {
+            $0.lowercased() == "seven_day" || ($0.lowercased().contains("seven_day") && !$0.lowercased().contains("fable"))
+        })
+
+        let fiveHour = clears5h ? snapshot.planWindows.first(where: { $0.label.contains("5h") || $0.label.contains("Daily") }) : nil
+        let sevenDay = clears7d ? snapshot.planWindows.first(where: { $0.label.contains("7d") || $0.label.contains("Weekly") }) : nil
 
         if let fiveHour, let sevenDay {
             if fiveHour.percentLeft <= 0 && sevenDay.percentLeft <= 0 {
                 return QuotaWarning(
                     isExhausted: true,
-                    message: "Your rate limit quota is currently exhausted. Redeeming a \(creditName) will restore your quota immediately."
+                    message: "Your rate limit quota is currently exhausted. Redeeming a reset will restore your quota immediately."
                 )
             }
             var parts: [String] = []
@@ -90,7 +104,29 @@ struct ResetConfirmationSheet: View {
             let remainingText = parts.isEmpty ? "quota" : parts.joined(separator: " and ")
             return QuotaWarning(
                 isExhausted: false,
-                message: "You still have \(remainingText) left. Redeeming a \(creditName) now will discard that remaining quota."
+                message: "You still have \(remainingText) left. Redeeming a reset now will discard that remaining quota."
+            )
+        } else if let sevenDay {
+            if sevenDay.percentLeft <= 0 {
+                return QuotaWarning(
+                    isExhausted: true,
+                    message: "Your weekly rate limit quota is currently exhausted. Redeeming a reset will restore your quota immediately."
+                )
+            }
+            return QuotaWarning(
+                isExhausted: false,
+                message: "You still have \(sevenDay.percentLeft)% of your weekly window left. Redeeming a reset now will discard that remaining quota."
+            )
+        } else if let fiveHour {
+            if fiveHour.percentLeft <= 0 {
+                return QuotaWarning(
+                    isExhausted: true,
+                    message: "Your 5-hour rate limit quota is currently exhausted. Redeeming a reset will restore your quota immediately."
+                )
+            }
+            return QuotaWarning(
+                isExhausted: false,
+                message: "You still have \(fiveHour.percentLeft)% of your 5-hour window left. Redeeming a reset now will discard that remaining quota."
             )
         }
 
@@ -99,18 +135,18 @@ struct ResetConfirmationSheet: View {
             if percentLeft <= 0 {
                 return QuotaWarning(
                     isExhausted: true,
-                    message: "Your rate limit quota is currently exhausted. Redeeming a \(creditName) will restore your quota immediately."
+                    message: "Your rate limit quota is currently exhausted. Redeeming a reset will restore your quota immediately."
                 )
             }
             return QuotaWarning(
                 isExhausted: false,
-                message: "You still have \(percentLeft)% of this window left. Redeeming a \(creditName) now will discard that remaining quota."
+                message: "You still have \(percentLeft)% of this window left. Redeeming a reset now will discard that remaining quota."
             )
         }
 
         return QuotaWarning(
             isExhausted: false,
-            message: "Redeeming a \(creditName) now will discard any quota remaining in your current rate limit window."
+            message: "Redeeming a reset now will discard any quota remaining in your current rate limit window."
         )
     }
 
@@ -131,7 +167,7 @@ struct ResetConfirmationSheet: View {
             footerActions
         }
         .padding(18)
-        .frame(width: 375)
+        .frame(width: 390)
     }
 
     private var headerView: some View {
@@ -144,7 +180,7 @@ struct ResetConfirmationSheet: View {
                 Text("Redeem Rate Limit Reset")
                     .font(.headline)
 
-                Text(snapshot.name)
+                Text(accountDisplayName ?? snapshot.name)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -204,6 +240,7 @@ struct ResetConfirmationSheet: View {
                 Text(grant.title)
                     .font(.system(size: 12.5, weight: .semibold))
                     .lineLimit(1)
+                    .help(grant.title)
 
                 Spacer()
             }
@@ -218,6 +255,7 @@ struct ResetConfirmationSheet: View {
                 }
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .help("Clears: \(grant.clearsDescription)")
 
                 Spacer()
 
@@ -231,6 +269,7 @@ struct ResetConfirmationSheet: View {
                     }
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help("Expires \(resetDescription(for: expiry))")
                 }
             }
         }
@@ -287,17 +326,17 @@ struct ResetConfirmationSheet: View {
                 Text("Clears")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(.tertiary)
-                    .frame(width: 82, alignment: .leading)
+                    .frame(width: 86, alignment: .leading)
 
                 Text("Status")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(.tertiary)
-                    .frame(width: 76, alignment: .leading)
+                    .frame(width: 74, alignment: .leading)
 
                 Text("Expires")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(.tertiary)
-                    .frame(width: 80, alignment: .trailing)
+                    .frame(width: 78, alignment: .trailing)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -319,21 +358,25 @@ struct ResetConfirmationSheet: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .help(grant.title)
 
                             Text(grant.clearsDescription)
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                                .frame(width: 82, alignment: .leading)
+                                .frame(width: 86, alignment: .leading)
+                                .help("Clears: \(grant.clearsDescription)")
 
                             statusPill(for: grant)
-                                .frame(width: 76, alignment: .leading)
+                                .frame(width: 74, alignment: .leading)
+                                .help(grant.statusDescription)
 
-                            Text(expiryText(for: grant.expiry))
+                            Text(compactExpiry(for: grant.expiry))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                                .frame(width: 80, alignment: .trailing)
+                                .frame(width: 78, alignment: .trailing)
+                                .help(grant.expiry.map { "Expires \(resetDescription(for: $0))" } ?? "No expiration date")
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -363,9 +406,10 @@ struct ResetConfirmationSheet: View {
             .foregroundStyle(needsLimit ? Color.orange : Color.secondary)
     }
 
-    private func expiryText(for date: Date?) -> String {
-        guard let date else { return "Never" }
-        return resetDescription(for: date)
+    private func compactExpiry(for date: Date?) -> String {
+        guard let date else { return "—" }
+        let full = resetDescription(for: date)
+        return compactResetDescription(full) ?? full
     }
 
     private var footerActions: some View {

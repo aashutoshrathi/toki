@@ -194,13 +194,9 @@ struct ClaudeCodeUsage {
                 )
             )
         }
-        grantItems.sort { (a, b) in
-            if a.isNext != b.isNext {
-                return a.isNext && !b.isNext
-            }
-            return false
-        }
-        resetCreditGrants = grantItems
+        let nextItems = grantItems.filter(\.isNext)
+        let otherItems = grantItems.filter { !$0.isNext }
+        resetCreditGrants = nextItems + otherItems
 
         let nextGrant = activeGrants.first(where: { $0["id"] as? String == nextGrantID })
         resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
