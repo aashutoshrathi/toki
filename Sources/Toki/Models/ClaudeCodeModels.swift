@@ -69,6 +69,7 @@ struct ClaudeCodeUsage {
     var resetCreditExpiry: Date?
     var resetGrantID: String?
     var resetCreditGroups: [ResetCreditGroup] = []
+    var resetCreditGrants: [ResetGrantItem] = []
 
     var hasUsage: Bool {
         !metrics.isEmpty
@@ -110,6 +111,7 @@ struct ClaudeCodeUsage {
             resetCreditExpiry = nil
             resetGrantID = nil
             resetCreditGroups = []
+            resetCreditGrants = []
             return
         }
 
@@ -166,6 +168,39 @@ struct ClaudeCodeUsage {
         }
 
         resetCreditGroups = groups
+
+        var grantItems: [ResetGrantItem] = []
+        for grant in activeGrants {
+            guard let id = grant["id"] as? String else { continue }
+            let count = Int(optionalNumber(grant["resets_left"]) ?? 1)
+            let isFable = Self.isFableGrant(grant)
+            let kind: ResetCreditGroup.Kind = isFable ? .fable : .standard
+            let expiry = resetDate(grant["ends_at"])
+            let label = grant["label"] as? String
+            let clears = (grant["clears"] as? [String]) ?? []
+            let reqLimit = grant["use_requires_limit"] as? Bool ?? false
+            let isNext = (id == nextGrantID)
+            grantItems.append(
+                ResetGrantItem(
+                    id: id,
+                    label: label,
+                    kind: kind,
+                    count: count,
+                    expiry: expiry,
+                    requiresLimit: reqLimit,
+                    atLimit: atLimit,
+                    clears: clears,
+                    isNext: isNext
+                )
+            )
+        }
+        grantItems.sort { (a, b) in
+            if a.isNext != b.isNext {
+                return a.isNext && !b.isNext
+            }
+            return false
+        }
+        resetCreditGrants = grantItems
 
         let nextGrant = activeGrants.first(where: { $0["id"] as? String == nextGrantID })
         resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }

@@ -464,4 +464,70 @@ final class ClaudeResetGrantTests: XCTestCase {
             now: now
         ))
     }
+
+    func testPopulatesResetCreditGrantsWithQueueOrdering() throws {
+        let std = grant(id: "std-1", resetsLeft: 2, clears: ["five_hour", "seven_day"])
+        let fable = [
+            "id": "fab-1", "label": "Fable Launch Credit", "resets_total": 1, "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00", "ends_at": endsAt,
+            "clears": ["seven_day_fable_5"], "paused": false, "usable_now": true, "use_requires_limit": true
+        ] as [String: Any]
+
+        let parsed = ClaudeCodeUsage(json: usage(
+            cedarEmber: block(grants: [fable, std], nextGrantID: "std-1")
+        ))
+
+        XCTAssertEqual(parsed.resetCreditGrants.count, 2)
+        XCTAssertEqual(parsed.resetCreditGrants[0].id, "std-1")
+        XCTAssertTrue(parsed.resetCreditGrants[0].isNext)
+        XCTAssertEqual(parsed.resetCreditGrants[0].count, 2)
+        XCTAssertEqual(parsed.resetCreditGrants[0].clearsDescription, "5h & 7d limits")
+        XCTAssertEqual(parsed.resetCreditGrants[0].statusDescription, "Active (ready)")
+
+        XCTAssertEqual(parsed.resetCreditGrants[1].id, "fab-1")
+        XCTAssertFalse(parsed.resetCreditGrants[1].isNext)
+        XCTAssertEqual(parsed.resetCreditGrants[1].count, 1)
+        XCTAssertEqual(parsed.resetCreditGrants[1].clearsDescription, "7d Fable limit")
+        XCTAssertEqual(parsed.resetCreditGrants[1].statusDescription, "Queued (needs Fable 7d limit)")
+    }
+
+    func testAccountSnapshotAllResetGrantsFallback() {
+        let groupSnapshot = AccountSnapshot(
+            id: "test-acc",
+            name: "Test Account",
+            provider: .claudeCode,
+            primary: "10%",
+            subtitle: "",
+            resetCreditsAvailable: 1,
+            resetCreditGroups: [
+                ResetCreditGroup(
+                    kind: .standard,
+                    count: 1,
+                    expiry: nil,
+                    grantID: "std-grant",
+                    label: "Standard Reset",
+                    requiresLimit: false,
+                    atLimit: false,
+                    clears: ["five_hour", "seven_day"]
+                )
+            ],
+            metrics: []
+        )
+        XCTAssertEqual(groupSnapshot.allResetGrants.count, 1)
+        XCTAssertEqual(groupSnapshot.allResetGrants[0].id, "std-grant")
+        XCTAssertTrue(groupSnapshot.allResetGrants[0].isNext)
+
+        let codexSnapshot = AccountSnapshot(
+            id: "codex-acc",
+            name: "Codex Account",
+            provider: .codex,
+            primary: "10%",
+            subtitle: "",
+            resetCreditsAvailable: 2,
+            metrics: []
+        )
+        XCTAssertEqual(codexSnapshot.allResetGrants.count, 1)
+        XCTAssertEqual(codexSnapshot.allResetGrants[0].id, "codex-reset")
+        XCTAssertEqual(codexSnapshot.allResetGrants[0].count, 2)
+    }
 }
