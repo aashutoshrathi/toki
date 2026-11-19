@@ -384,7 +384,15 @@ struct AccountCard: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(rowBackground, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(rowBackground)
+                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .onTapGesture {
+                    guard !isEditingAlias else { return }
+                    toggleExpanded()
+                }
+        }
         .overlay(alignment: .leading) {
             if snapshot.isError {
                 Capsule()
@@ -394,14 +402,6 @@ struct AccountCard: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .gesture(
-            TapGesture().onEnded {
-                guard !isEditingAlias else { return }
-                toggleExpanded()
-            },
-            including: .all
-        )
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeInOut(duration: 0.15), value: isExpanded)
@@ -848,6 +848,8 @@ struct AccountCard: View {
             return "Reset \(name) now"
         }()
 
+        let isThisGroupResetting = isResetting && (selectedResetGroup?.id == group.id || (selectedResetGroup == nil && group.canRedeemNow))
+
         return Button {
             if isResetting { return }
             if canRedeem {
@@ -861,8 +863,8 @@ struct AccountCard: View {
                 Label(title, systemImage: "arrow.counterclockwise")
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .opacity(isResetting ? 0 : 1)
-                if isResetting {
+                    .opacity(isThisGroupResetting ? 0 : 1)
+                if isThisGroupResetting {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel("Resetting \(name) rate limit")

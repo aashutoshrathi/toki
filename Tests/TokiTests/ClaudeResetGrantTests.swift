@@ -5,10 +5,14 @@ import XCTest
 final class ClaudeResetGrantTests: XCTestCase {
     private let endsAt = "2026-10-22T16:00:00+00:00"
 
-    private func usage(cedarEmber: Any?) -> [String: Any] {
+    private func usage(
+        cedarEmber: Any?,
+        fiveHour: [String: Any]? = nil,
+        sevenDay: [String: Any]? = nil
+    ) -> [String: Any] {
         var payload: [String: Any] = [
-            "five_hour": ["utilization": 10.0, "resets_at": "2026-09-22T22:59:59.879383+00:00"],
-            "seven_day": ["utilization": 64.0, "resets_at": "2026-09-22T18:59:59.879412+00:00"]
+            "five_hour": fiveHour ?? ["utilization": 10.0, "resets_at": "2026-09-22T22:59:59.879383+00:00"],
+            "seven_day": sevenDay ?? ["utilization": 64.0, "resets_at": "2026-09-22T18:59:59.879412+00:00"]
         ]
         if let cedarEmber { payload["cedar_ember"] = cedarEmber }
         return payload
@@ -20,7 +24,8 @@ final class ClaudeResetGrantTests: XCTestCase {
         paused: Bool = false,
         usableNow: Bool = true,
         useRequiresLimit: Bool = false,
-        endsAt: String? = nil
+        endsAt: String? = nil,
+        clears: [String]? = nil
     ) -> [String: Any] {
         [
             "id": id,
@@ -29,7 +34,7 @@ final class ClaudeResetGrantTests: XCTestCase {
             "resets_left": resetsLeft,
             "starts_at": "2026-09-22T16:00:00+00:00",
             "ends_at": endsAt ?? self.endsAt,
-            "clears": ["five_hour", "seven_day", "seven_day_overage_included"],
+            "clears": clears ?? ["five_hour", "seven_day", "seven_day_overage_included"],
             "paused": paused,
             "usable_now": usableNow,
             "use_requires_limit": useRequiresLimit,
@@ -387,5 +392,76 @@ final class ClaudeResetGrantTests: XCTestCase {
         let fabGroup = parsed.resetCreditGroups.first { $0.kind == .fable }
         XCTAssertNotNil(fabGroup)
         XCTAssertEqual(fabGroup?.expiry, ISO8601DateFormatter().date(from: "2026-10-01T16:00:00+00:00"))
+    }
+
+    func testSelectedGrantWeeklyConditionRequiresSevenDayClear() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let weekEnd = now.addingTimeInterval(86_400)
+        let weekEndStr = ISO8601DateFormatter().string(from: weekEnd)
+
+        // Grant with exact seven_day clear succeeds (utilization: 95 means 5% left)
+        let validGrant = grant(id: "std-valid", clears: ["five_hour", "seven_day"])
+        let validParsed = ClaudeCodeUsage(json: usage(
+            cedarEmber: block(grants: [validGrant], nextGrantID: "std-valid"),
+            sevenDay: ["utilization": 95.0, "resets_at": weekEndStr]
+        ))
+        let selected = try ClaudeCodeUsageClient.validatedResetGrant(
+            in: validParsed,
+            creditID: "std-valid",
+            condition: .weeklyAtOrBelow(10, minimumHoursRemaining: 1, expectedWindowEnd: weekEnd),
+            now: now
+        )
+        XCTAssertEqual(selected.grantID, "std-valid")
+
+        // Grant with only model-specific or empty clears fails weekly live check
+        let emptyClearsGrant = grant(id: "empty-clears", clears: [])
+        let emptyParsed = ClaudeCodeUsage(json: usage(
+            cedarEmber: block(grants: [emptyClearsGrant], nextGrantID: "empty-clears"),
+            sevenDay: ["utilization": 95.0, "resets_at": weekEndStr]
+        ))
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: emptyParsed,
+            creditID: "empty-clears",
+            condition: .weeklyAtOrBelow(10, minimumHoursRemaining: 1),
+            now: now
+        ))
+
+        let fableClearsGrant: [String: Any] = [
+            "id": "fab-clears", "resets_total": 1, "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00", "ends_at": endsAt,
+            "clears": ["seven_day_fable_5"], "paused": false, "usable_now": true, "use_requires_limit": false
+        ]
+        let fableParsed = ClaudeCodeUsage(json: usage(
+            cedarEmber: block(grants: [fableClearsGrant], nextGrantID: "fab-clears"),
+            sevenDay: ["utilization": 95.0, "resets_at": weekEndStr]
+        ))
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: fableParsed,
+            creditID: "fab-clears",
+            condition: .weeklyAtOrBelow(10, minimumHoursRemaining: 1),
+            now: now
+        ))
+    }
+
+    func testSelectedGrantWeeklyConditionRejectsWindowEndDrift() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let originalWindowEnd = now.addingTimeInterval(48 * 3600)
+        let movedWindowEnd = originalWindowEnd.addingTimeInterval(5 * 3600) // 5 hours later
+
+        let stdGrant = grant(id: "std-drift", clears: ["five_hour", "seven_day"])
+        let liveUsage = ClaudeCodeUsage(json: usage(
+            cedarEmber: block(grants: [stdGrant], nextGrantID: "std-drift"),
+            sevenDay: [
+                "utilization": 95.0,
+                "resets_at": ISO8601DateFormatter().string(from: movedWindowEnd)
+            ]
+        ))
+
+        XCTAssertThrowsError(try ClaudeCodeUsageClient.validatedResetGrant(
+            in: liveUsage,
+            creditID: "std-drift",
+            condition: .weeklyAtOrBelow(10, minimumHoursRemaining: 1, expectedWindowEnd: originalWindowEnd),
+            now: now
+        ))
     }
 }

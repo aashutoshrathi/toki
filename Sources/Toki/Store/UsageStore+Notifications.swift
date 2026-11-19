@@ -184,5 +184,7 @@ extension UsageStore {
         usageState.events = Array(usageState.events.suffix(160))
         usageState.autoRedeemedWindowEnds = usageState.autoRedeemedWindowEnds.filter { now.timeIntervalSince($0.value) <= 86_400 }
         usageState.autoRedeemedExpiries = usageState.autoRedeemedExpiries.filter { now.timeIntervalSince($0.value) <= 86_400 }
+        let validAccounts = Set(usageState.autoRedeemedExpiries.keys)
+        usageState.autoRedeemedGrantIDs = usageState.autoRedeemedGrantIDs.filter { validAccounts.contains($0.key) }
     }
 }

@@ -108,6 +108,7 @@ extension UsageStore {
                       preferences: preferences,
                       lastRedeemedWindowEnd: usageState.autoRedeemedWindowEnds[snapshot.id],
                       lastRedeemedExpiry: usageState.autoRedeemedExpiries[snapshot.id],
+                      lastRedeemedGrantID: usageState.autoRedeemedGrantIDs[snapshot.id],
                       blockedTriggers: blockedAutoRedeemTriggers(accountID: snapshot.id, at: date),
                       now: date
                   ) else {
@@ -117,7 +118,7 @@ extension UsageStore {
                 self?.finishAutoRedeem(claim, for: snapshot, result: result)
             }
             if started {
-                setAutoRedeemGuard(claim.guardDate, for: claim.trigger, accountID: snapshot.id)
+                setAutoRedeemGuard(claim.guardDate, for: claim.trigger, accountID: snapshot.id, grantID: claim.creditID)
             }
         }
     }
@@ -145,7 +146,7 @@ extension UsageStore {
             case .keep:
                 break
             case .move(let spent):
-                setAutoRedeemGuard(spent, for: claim.trigger, accountID: snapshot.id)
+                setAutoRedeemGuard(spent, for: claim.trigger, accountID: snapshot.id, grantID: claim.creditID)
             case .release:
                 releaseAutoRedeem(claim, for: snapshot)
             }
@@ -177,6 +178,7 @@ extension UsageStore {
                   preferences: preferences,
                   lastRedeemedWindowEnd: usageState.autoRedeemedWindowEnds[snapshot.id],
                   lastRedeemedExpiry: usageState.autoRedeemedExpiries[snapshot.id],
+                  lastRedeemedGrantID: usageState.autoRedeemedGrantIDs[snapshot.id],
                   blockedTriggers: [.weekly],
                   now: now
               ),
@@ -210,10 +212,19 @@ extension UsageStore {
         }
     }
 
-    private func setAutoRedeemGuard(_ date: Date?, for trigger: AutoRedeemClaim.Trigger, accountID: String) {
+    private func setAutoRedeemGuard(_ date: Date?, for trigger: AutoRedeemClaim.Trigger, accountID: String, grantID: String? = nil) {
         switch trigger {
-        case .weekly: usageState.autoRedeemedWindowEnds[accountID] = date
-        case .expiry: usageState.autoRedeemedExpiries[accountID] = date
+        case .weekly:
+            usageState.autoRedeemedWindowEnds[accountID] = date
+        case .expiry:
+            usageState.autoRedeemedExpiries[accountID] = date
+            if date != nil {
+                if let grantID {
+                    usageState.autoRedeemedGrantIDs[accountID] = grantID
+                }
+            } else {
+                usageState.autoRedeemedGrantIDs.removeValue(forKey: accountID)
+            }
         }
         StateLoader.save(usageState)
     }

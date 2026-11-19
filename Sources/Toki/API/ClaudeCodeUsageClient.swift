@@ -270,14 +270,23 @@ struct ClaudeCodeUsageClient {
               creditID == nil || creditID == grantID else {
             throw LocalizedErrorMessage("The selected reset is no longer available to redeem.")
         }
-        if let condition,
-           !autoRedeemConditionHolds(
-               condition,
-               weeklyWindow: weeklyQuotaWindow(among: usage.rateLimitWindows),
-               soonestExpiry: usage.resetCreditExpiry,
-               now: now
-           ) {
-            throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+        if let condition {
+            if case .weeklyAtOrBelow = condition {
+                let activeGroup = usage.resetCreditGroups.first(where: { $0.grantID == grantID })
+                guard let activeGroup,
+                      activeGroup.kind == .standard,
+                      activeGroup.clears.contains(where: { $0.lowercased() == "seven_day" }) else {
+                    throw LocalizedErrorMessage("The active reset credit does not clear the 7-day rate limit window.")
+                }
+            }
+            guard autoRedeemConditionHolds(
+                condition,
+                weeklyWindow: weeklyQuotaWindow(among: usage.rateLimitWindows),
+                soonestExpiry: usage.resetCreditExpiry,
+                now: now
+            ) else {
+                throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+            }
         }
         return (grantID, usage.resetCreditExpiry)
     }

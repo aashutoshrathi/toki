@@ -273,7 +273,7 @@ func bestWeeklyResetGroup(in snapshot: AccountSnapshot) -> ResetCreditGroup? {
     let standardGroups = snapshot.resetCreditGroups.filter { group in
         group.kind == .standard
             && group.canRedeemNow
-            && (group.clears.isEmpty || group.clears.contains(where: { $0.lowercased().contains("seven_day") }))
+            && group.clears.contains(where: { $0.lowercased() == "seven_day" })
     }
     return standardGroups.min { ($0.expiry ?? .distantFuture) < ($1.expiry ?? .distantFuture) }
 }
@@ -283,6 +283,7 @@ func bestExpiringResetGroup(
     in snapshot: AccountSnapshot,
     minutesBeforeExpiry minutes: Int,
     lastRedeemedExpiry: Date?,
+    lastRedeemedGrantID: String? = nil,
     now: Date
 ) -> ResetCreditGroup? {
     let candidates = snapshot.resetCreditGroups.filter { group in
@@ -293,7 +294,13 @@ func bestExpiringResetGroup(
             return false
         }
         if let lastRedeemedExpiry {
-            return abs(expiry.timeIntervalSince(lastRedeemedExpiry)) >= 1
+            let isSameExpiry = abs(expiry.timeIntervalSince(lastRedeemedExpiry)) < 1
+            if isSameExpiry {
+                if let lastRedeemedGrantID, let currentGrantID = group.grantID, currentGrantID != lastRedeemedGrantID {
+                    return true
+                }
+                return false
+            }
         }
         return true
     }
@@ -359,7 +366,13 @@ func shouldAutoRedeemReset(
     return windowEnd > lastRedeemedWindowEnd.addingTimeInterval(3600)
 }
 
-func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry minutes: Int, lastRedeemedExpiry: Date?, now: Date) -> Bool {
+func shouldRedeemExpiringReset(
+    _ snapshot: AccountSnapshot,
+    minutesBeforeExpiry minutes: Int,
+    lastRedeemedExpiry: Date?,
+    lastRedeemedGrantID: String? = nil,
+    now: Date
+) -> Bool {
     guard canAutoRedeemReset(snapshot.provider),
           canRedeemCodexReset(snapshot),
           !snapshot.isError else {
@@ -370,6 +383,7 @@ func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry 
             in: snapshot,
             minutesBeforeExpiry: minutes,
             lastRedeemedExpiry: lastRedeemedExpiry,
+            lastRedeemedGrantID: lastRedeemedGrantID,
             now: now
         ) != nil
     }
@@ -382,12 +396,18 @@ func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry 
     guard let lastRedeemedExpiry else {
         return true
     }
-    // Saved guards lose sub-second precision, so the same expiry can read back a fraction off.
-    return abs(expiry.timeIntervalSince(lastRedeemedExpiry)) >= 1
+    let isSameExpiry = abs(expiry.timeIntervalSince(lastRedeemedExpiry)) < 1
+    if isSameExpiry {
+        if let lastRedeemedGrantID, let currentGrantID = snapshot.resetCreditGroups.first?.grantID, currentGrantID != lastRedeemedGrantID {
+            return true
+        }
+        return false
+    }
+    return true
 }
 
 enum AutoRedeemCondition: Equatable, Sendable {
-    case weeklyAtOrBelow(Int, minimumHoursRemaining: Int)
+    case weeklyAtOrBelow(Int, minimumHoursRemaining: Int, expectedWindowEnd: Date? = nil)
     case expiringBy(Date)
 }
 
@@ -406,13 +426,18 @@ struct AutoRedeemClaim: Equatable {
 
 func autoRedeemConditionHolds(_ condition: AutoRedeemCondition, weeklyWindow: RateLimitWindow?, soonestExpiry: Date?, now: Date) -> Bool {
     switch condition {
-    case .weeklyAtOrBelow(let threshold, let minimumHoursRemaining):
+    case .weeklyAtOrBelow(let threshold, let minimumHoursRemaining, let expectedWindowEnd):
         guard (0...99).contains(threshold),
               (1...168).contains(minimumHoursRemaining),
               let weeklyWindow,
               let resetAt = weeklyWindow.resetAt,
               resetAt > now.addingTimeInterval(TimeInterval(minimumHoursRemaining) * 3600) else {
             return false
+        }
+        if let expectedWindowEnd {
+            guard abs(resetAt.timeIntervalSince(expectedWindowEnd)) <= 3600 else {
+                return false
+            }
         }
         return weeklyWindow.percentLeft <= threshold
     case .expiringBy(let deadline):
@@ -428,6 +453,7 @@ func autoRedeemClaim(
     preferences: AppPreferences,
     lastRedeemedWindowEnd: Date?,
     lastRedeemedExpiry: Date?,
+    lastRedeemedGrantID: String? = nil,
     blockedTriggers: Set<AutoRedeemClaim.Trigger>,
     now: Date
 ) -> AutoRedeemClaim? {
@@ -453,7 +479,11 @@ func autoRedeemClaim(
         }()
         return AutoRedeemClaim(
             trigger: .weekly,
-            condition: .weeklyAtOrBelow(threshold, minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining),
+            condition: .weeklyAtOrBelow(
+                threshold,
+                minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining,
+                expectedWindowEnd: windowEnd
+            ),
             guardDate: windowEnd,
             detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting, with more than \(preferences.autoResetWeeklyMinHoursRemaining)h before the natural weekly reset.",
             creditID: chosenCreditID
@@ -461,10 +491,22 @@ func autoRedeemClaim(
     }
     if !blockedTriggers.contains(.expiry),
        let minutes = preferences.autoResetMinutesBeforeExpiry,
-       shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: now) {
+       shouldRedeemExpiringReset(
+           snapshot,
+           minutesBeforeExpiry: minutes,
+           lastRedeemedExpiry: lastRedeemedExpiry,
+           lastRedeemedGrantID: lastRedeemedGrantID,
+           now: now
+       ) {
         let (expiry, creditID, isFable): (Date, String?, Bool) = {
             if snapshot.provider == .claudeCode && !snapshot.resetCreditGroups.isEmpty,
-               let best = bestExpiringResetGroup(in: snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: now),
+               let best = bestExpiringResetGroup(
+                   in: snapshot,
+                   minutesBeforeExpiry: minutes,
+                   lastRedeemedExpiry: lastRedeemedExpiry,
+                   lastRedeemedGrantID: lastRedeemedGrantID,
+                   now: now
+               ),
                let exp = best.expiry {
                 return (exp, best.grantID, best.kind == .fable)
             }
