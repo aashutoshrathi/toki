@@ -189,10 +189,11 @@ final class ClaudeResetGrantTests: XCTestCase {
         XCTAssertEqual(fab?.expiry, ISO8601DateFormatter().date(from: fableEnds))
         XCTAssertFalse(fab?.canRedeemNow == true) // requires limit, and atLimit is false
         XCTAssertEqual(fab?.requirementDescription, "Requires rate limit")
+        XCTAssertEqual(fab?.unavailableReason, "queued behind active reset; requires reaching Fable 7d limit first")
         XCTAssertNil(fab?.grantID) // Not the named next_grant_id, so cannot be redeemed yet
 
         XCTAssertTrue(parsed.metrics.contains { $0.label == "Resets (Standard)" && $0.value.contains("2 available") })
-        XCTAssertTrue(parsed.metrics.contains { $0.label == "Resets (Fable)" && $0.value.contains("requires limit") })
+        XCTAssertTrue(parsed.metrics.contains { $0.label == "Resets (Fable)" && $0.value.contains("queued") && $0.value.contains("requires limit") })
     }
 
     func testOnlyTheGroupHoldingNextGrantIDIsRedeemable() {
@@ -235,6 +236,7 @@ final class ClaudeResetGrantTests: XCTestCase {
         XCTAssertTrue(fabGroup?.canRedeemNow == true)
         XCTAssertNil(stdGroup?.grantID)
         XCTAssertFalse(stdGroup?.canRedeemNow == true)
+        XCTAssertEqual(stdGroup?.unavailableReason, "queued behind active reset")
     }
 
     func testUnusableOrMissingNextGrantHidesGroups() {

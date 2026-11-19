@@ -165,6 +165,9 @@ struct ClaudeCodeUsage {
 
         for group in groups {
             var value = "\(group.count) available"
+            if group.grantID == nil {
+                value += " · queued"
+            }
             if group.requiresLimit && !atLimit {
                 value += " · requires limit"
             }

@@ -65,6 +65,20 @@ struct ResetCreditGroup: Identifiable, Hashable, Sendable {
         }
         return nil
     }
+
+    var unavailableReason: String? {
+        guard !canRedeemNow else { return nil }
+        if count <= 0 { return "No credits remaining" }
+        var parts: [String] = []
+        if grantID == nil {
+            parts.append("queued behind active reset")
+        }
+        if requiresLimit && !atLimit {
+            let target = kind == .fable ? "Fable 7d limit" : "rate limit"
+            parts.append("requires reaching \(target) first")
+        }
+        return parts.isEmpty ? "cannot be redeemed right now" : parts.joined(separator: "; ")
+    }
 }
 
 struct AccountSnapshot: Identifiable, Hashable {
