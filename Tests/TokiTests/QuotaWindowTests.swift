@@ -83,6 +83,17 @@ final class QuotaWindowTests: XCTestCase {
         XCTAssertNil(compactResetDescription(nil))
     }
 
+    func testResetDescriptionFormatsDaysWithoutCoarseWeekRounding() {
+        let now = Date()
+        let elevenDays = now.addingTimeInterval(11.3 * 86_400)
+        let desc = resetDescription(for: elevenDays)
+        XCTAssertTrue(desc.hasPrefix("11d ("), "Expected '11d (...)' but got '\(desc)'")
+
+        let threeDays = now.addingTimeInterval(3.5 * 86_400)
+        let threeDesc = resetDescription(for: threeDays)
+        XCTAssertTrue(threeDesc.hasPrefix("3d ") && threeDesc.contains("h ("), "Expected '3d Xh (...)' but got '\(threeDesc)'")
+    }
+
     func testPaceComparesUsedQuotaWithElapsedWindowTime() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         var window = RateLimitWindow(
