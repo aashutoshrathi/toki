@@ -30,7 +30,7 @@ struct ClaudeCodeUsageClient {
             return try await snapshot(for: record)
         } catch let expiry as ClaudeSignInExpiredError {
             DiagnosticLogger.shared.record(.info, component: "usage", code: "claude_sign_in_expired",
-                                           detail: "account=\(record.email ?? record.id) active=\(record.isActive)")
+                                           detail: "account=\(SensitiveText.redactingEmails(record.email ?? record.id)) active=\(record.isActive)")
             return AccountSnapshot(
                 id: record.id,
                 name: record.displayName,
@@ -232,14 +232,17 @@ struct ClaudeCodeUsageClient {
         condition: AutoRedeemCondition?
     ) async throws -> (organizationUUID: String, headers: [String: String], grantID: String, creditExpiry: Date?) {
         let records = ClaudeCodeAccountDiscovery.discover(config: account, labels: [])
-        let named = records.first(where: { $0.id == recordID })
-        if condition != nil, named == nil {
-            throw LocalizedErrorMessage("That Claude account is no longer signed in, so no reset was redeemed.")
-        }
-        guard let record = named
-            ?? records.first(where: { $0.isActive })
-            ?? records.first else {
-            throw LocalizedErrorMessage("No Claude account found")
+        let record: ClaudeCodeAccountRecord
+        if let recordID {
+            guard let named = records.first(where: { $0.id == recordID }) else {
+                throw LocalizedErrorMessage("That Claude account is no longer signed in, so no reset was redeemed.")
+            }
+            record = named
+        } else {
+            guard let fallback = records.first(where: { $0.isActive }) ?? records.first else {
+                throw LocalizedErrorMessage("No Claude account found")
+            }
+            record = fallback
         }
         let accessToken: String
         switch try disposition(for: record) {
@@ -300,7 +303,9 @@ struct ClaudeCodeUsageClient {
             throw ResetNotAttempted(reason: error.localizedDescription)
         }
 
-        let url = URL(string: "https://api.anthropic.com/api/organizations/\(organizationUUID)/reset_rate_limits")!
+        guard let url = URL(string: "https://api.anthropic.com/api/organizations/\(organizationUUID)/reset_rate_limits") else {
+            throw ResetNotAttempted(reason: "Invalid reset endpoint URL for organization \(organizationUUID)")
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         for (key, value) in headers {

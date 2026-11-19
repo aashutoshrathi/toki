@@ -96,16 +96,16 @@ struct ClaudeCodeUsage {
         let grants = (block["grants"] as? [[String: Any]]) ?? []
         let nextGrantID = block["next_grant_id"] as? String
 
-        let usable = grants.filter { grant in
+        let activeGrants = grants.filter { grant in
             guard let left = optionalNumber(grant["resets_left"]), left > 0,
                   grant["paused"] as? Bool != true,
                   grant["usable_now"] as? Bool == true else { return false }
-            return atLimit || grant["use_requires_limit"] as? Bool != true
+            return true
         }
 
-        // Anthropic only accepts the named next grant; if nextGrantID is absent or unusable,
+        // Anthropic only accepts the named next grant; if nextGrantID is absent or not among active grants,
         // no reset can be redeemed right now.
-        guard let nextGrantID, usable.contains(where: { $0["id"] as? String == nextGrantID }) else {
+        guard let nextGrantID, activeGrants.contains(where: { $0["id"] as? String == nextGrantID }) else {
             resetCreditsAvailable = 0
             resetCreditExpiry = nil
             resetGrantID = nil
@@ -113,28 +113,36 @@ struct ClaudeCodeUsage {
             return
         }
 
+        let usable = activeGrants.filter { grant in
+            return atLimit || grant["use_requires_limit"] as? Bool != true
+        }
+        let nextCanRedeem = usable.contains(where: { $0["id"] as? String == nextGrantID })
+
         var groups: [ResetCreditGroup] = []
         let standardGrants = grants.filter { !Self.isFableGrant($0) }
         let fableGrants = grants.filter { Self.isFableGrant($0) }
 
         func processGroup(kind: ResetCreditGroup.Kind, candidateGrants: [[String: Any]]) -> ResetCreditGroup? {
-            let activeGrants = candidateGrants.filter { grant in
+            let activeCandidates = candidateGrants.filter { grant in
                 guard let left = optionalNumber(grant["resets_left"]), left > 0,
                       grant["paused"] as? Bool != true,
                       grant["usable_now"] as? Bool == true else { return false }
                 return true
             }
-            guard !activeGrants.isEmpty else { return nil }
+            guard !activeCandidates.isEmpty else { return nil }
 
-            let totalLeft = activeGrants.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
+            let totalLeft = activeCandidates.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
             guard totalLeft > 0 else { return nil }
 
-            let nextGrant = activeGrants.first(where: { $0["id"] as? String == nextGrantID })
+            let nextGrant = activeCandidates.first(where: { $0["id"] as? String == nextGrantID })
             let isNextInThisGroup = nextGrant != nil
             let groupGrantID = isNextInThisGroup ? nextGrantID : nil
-            let chosenGrant = nextGrant ?? activeGrants[0]
+            let chosenGrant = nextGrant ?? activeCandidates[0]
             let requiresLimit = chosenGrant["use_requires_limit"] as? Bool ?? false
-            let expiry = resetDate(chosenGrant["ends_at"])
+            // For the active group, use the next grant's expiry; for queued groups, use the soonest expiry
+            let expiry = isNextInThisGroup
+                ? resetDate(chosenGrant["ends_at"])
+                : activeCandidates.compactMap { resetDate($0["ends_at"]) }.min()
             let label = chosenGrant["label"] as? String
             let clears = (chosenGrant["clears"] as? [String]) ?? []
 
@@ -159,9 +167,10 @@ struct ClaudeCodeUsage {
 
         resetCreditGroups = groups
 
+        let nextGrant = activeGrants.first(where: { $0["id"] as? String == nextGrantID })
         resetCreditsAvailable = usable.reduce(0) { $0 + Int(optionalNumber($1["resets_left"]) ?? 0) }
-        resetCreditExpiry = usable.first { $0["id"] as? String == nextGrantID }.flatMap { resetDate($0["ends_at"]) }
-        resetGrantID = nextGrantID
+        resetCreditExpiry = nextGrant.flatMap { resetDate($0["ends_at"]) }
+        resetGrantID = nextCanRedeem ? nextGrantID : nil
 
         for group in groups {
             var value = "\(group.count) available"

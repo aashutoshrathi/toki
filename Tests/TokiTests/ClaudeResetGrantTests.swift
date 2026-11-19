@@ -330,4 +330,62 @@ final class ClaudeResetGrantTests: XCTestCase {
         XCTAssertTrue(ClaudeCodeUsage.isFableGrant(["label": "Fable 5 special reset"]))
         XCTAssertFalse(ClaudeCodeUsage.isFableGrant(["clears": ["five_hour", "seven_day"], "id": "standard-grant"]))
     }
+
+    func testSingleGrantRequiringRateLimitIsVisibleWhenNotAtLimit() {
+        let fableGrant: [String: Any] = [
+            "id": "fable-only",
+            "label": "Claude Fable reset",
+            "resets_total": 1,
+            "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": endsAt,
+            "clears": ["seven_day_fable_5"],
+            "paused": false,
+            "usable_now": true,
+            "use_requires_limit": true
+        ]
+        let payload = usage(cedarEmber: block(
+            atLimit: false,
+            grants: [fableGrant],
+            nextGrantID: "fable-only"
+        ))
+        let parsed = ClaudeCodeUsage(json: payload)
+
+        XCTAssertEqual(parsed.resetCreditsAvailable, 0)
+        XCTAssertNil(parsed.resetGrantID)
+        XCTAssertEqual(parsed.resetCreditGroups.count, 1)
+
+        let fab = parsed.resetCreditGroups.first
+        XCTAssertEqual(fab?.count, 1)
+        XCTAssertEqual(fab?.grantID, "fable-only")
+        XCTAssertFalse(fab?.canRedeemNow == true)
+        XCTAssertEqual(fab?.requirementDescription, "Requires rate limit")
+        XCTAssertEqual(fab?.unavailableReason, "requires reaching Fable 7d limit first")
+    }
+
+    func testQueuedGroupUsesSoonestExpiryAmongItsGrants() {
+        let stdGrant = grant(id: "std-next", endsAt: "2026-11-20T16:00:00+00:00")
+        let fabLate: [String: Any] = [
+            "id": "fab-late", "resets_total": 1, "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": "2026-12-01T16:00:00+00:00",
+            "clears": ["seven_day_fable_5"], "paused": false, "usable_now": true, "use_requires_limit": true
+        ]
+        let fabSoon: [String: Any] = [
+            "id": "fab-soon", "resets_total": 1, "resets_left": 1,
+            "starts_at": "2026-09-22T16:00:00+00:00",
+            "ends_at": "2026-10-01T16:00:00+00:00",
+            "clears": ["seven_day_fable_5"], "paused": false, "usable_now": true, "use_requires_limit": true
+        ]
+        let payload = usage(cedarEmber: block(
+            atLimit: false,
+            grants: [stdGrant, fabLate, fabSoon],
+            nextGrantID: "std-next"
+        ))
+        let parsed = ClaudeCodeUsage(json: payload)
+
+        let fabGroup = parsed.resetCreditGroups.first { $0.kind == .fable }
+        XCTAssertNotNil(fabGroup)
+        XCTAssertEqual(fabGroup?.expiry, ISO8601DateFormatter().date(from: "2026-10-01T16:00:00+00:00"))
+    }
 }

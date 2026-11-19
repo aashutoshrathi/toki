@@ -799,7 +799,7 @@ struct AccountCard: View {
 
     private func resetButton(for group: ResetCreditGroup) -> some View {
         let isFable = group.kind == .fable
-        let title: String? = isFable ? "Fable" : nil
+        let title: String? = isFable ? "Fable" : (snapshot.resetCreditGroups.count > 1 ? "Standard" : nil)
         let canRedeem = group.canRedeemNow
         let helpText = resetButtonHelp(for: group)
 
@@ -818,8 +818,8 @@ struct AccountCard: View {
                 title: title,
                 showsHelp: false
             )
-            .opacity(canRedeem ? 1.0 : 0.5)
         }
+        .opacity(canRedeem ? 1.0 : 0.5)
         .accentGlassControlStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.mini)
@@ -859,6 +859,8 @@ struct AccountCard: View {
         } label: {
             ZStack {
                 Label(title, systemImage: "arrow.counterclockwise")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .opacity(isResetting ? 0 : 1)
                 if isResetting {
                     ProgressView()
@@ -866,8 +868,8 @@ struct AccountCard: View {
                         .accessibilityLabel("Resetting \(name) rate limit")
                 }
             }
-            .opacity(canRedeem ? 1.0 : 0.5)
         }
+        .opacity(canRedeem ? 1.0 : 0.5)
         .accentGlassControlStyle()
         .buttonBorderShape(.capsule)
         .controlSize(.small)
@@ -892,15 +894,8 @@ struct AccountCard: View {
         let target = group.kind == .fable ? "Fable 7d rate limit" : "rate limit"
         var help: String
         if !group.canRedeemNow {
-            var reasons: [String] = []
-            if group.grantID == nil {
-                reasons.append("another reset credit is active first (queued)")
-            }
-            if group.requiresLimit && !group.atLimit {
-                reasons.append("requires reaching \(target) first")
-            }
-            let reasonStr = reasons.isEmpty ? "cannot be redeemed right now" : reasons.joined(separator: ", and ")
-            help = "\(group.kind.displayName) reset credit is disabled: \(reasonStr)"
+            let reason = group.unavailableReason ?? "cannot be redeemed right now"
+            help = "\(group.kind.displayName) reset credit cannot be redeemed yet: \(reason)"
         } else {
             help = "Redeem a banked \(group.kind.displayName) reset credit to reset \(target) now"
         }
@@ -911,18 +906,7 @@ struct AccountCard: View {
     }
 
     private func inlineDisabledExplanation(for group: ResetCreditGroup) -> String {
-        var reasons: [String] = []
-        if group.grantID == nil {
-            reasons.append("Queued (another reset active first)")
-        }
-        if group.requiresLimit && !group.atLimit {
-            let target = group.kind == .fable ? "Fable 7d limit" : "rate limit"
-            reasons.append("Requires reaching \(target) first")
-        }
-        if reasons.isEmpty {
-            return "Unavailable right now"
-        }
-        return reasons.joined(separator: " · ")
+        group.unavailableReason ?? "Unavailable right now"
     }
 
     private func unredeemableAlertMessage(for group: ResetCreditGroup) -> String {
@@ -946,40 +930,59 @@ struct AccountCard: View {
         return message
     }
 
-    // A reset is a limited, banked resource: redeeming while quota remains discards the rest
-    // of the current window. State how much is still left so the confirmation is an informed
-    // choice rather than a bare warning. Also surface the credit's expiry when known, so the
-    // user can decide whether to redeem now or wait (issue #130).
-    private var resetWasteWarning: String {
-        resetWasteWarning(for: selectedResetGroup)
-    }
-
     private func resetWasteWarning(for group: ResetCreditGroup?) -> String {
-        let leftRatio: Double?
-        let windowName: String
-        if group?.kind == .fable {
-            let fableWindow = snapshot.modelWindows.first { $0.label.lowercased().contains("fable") }
-            leftRatio = fableWindow.map { Double($0.percentLeft) / 100 }
-            windowName = "this Fable"
-        } else {
-            leftRatio = snapshot.remainingRatio ?? progressRatio.map { 1 - $0 }
-            windowName = "this"
-        }
-
         let creditName = group?.kind == .fable ? "Fable reset" : "reset"
         let expiry = group?.expiry ?? snapshot.resetCreditExpiry
 
-        if let percentLeft = leftRatio.map({ Int(($0 * 100).rounded()) }) {
-            var warning = "You still have \(percentLeft)% of \(windowName) window left. A \(creditName) is a limited banked credit, and redeeming it now discards that remaining quota."
-            if let expiry {
-                warning += " This reset credit expires \(resetDescription(for: expiry))."
+        if group?.kind == .fable {
+            let fableWindow = snapshot.modelWindows.first { $0.label.lowercased().contains("fable") }
+            if let fableWindow {
+                if fableWindow.percentLeft <= 0 {
+                    var warning = "Your Fable quota is currently exhausted. A Fable reset is a limited banked credit."
+                    if let expiry { warning += " This reset credit expires \(resetDescription(for: expiry))." }
+                    return warning + " Redeem now?"
+                }
+                var warning = "You still have \(fableWindow.percentLeft)% of this Fable window left. A Fable reset is a limited banked credit, and redeeming it now discards that remaining quota."
+                if let expiry { warning += " This reset credit expires \(resetDescription(for: expiry))." }
+                return warning + " Redeem anyway?"
             }
+        }
+
+        let fiveHour = snapshot.allWindows.first { $0.label.contains("5h") || $0.label.contains("Daily") }
+        let sevenDay = snapshot.allWindows.first { $0.label.contains("7d") || $0.label.contains("Weekly") }
+
+        if let fiveHour, let sevenDay {
+            if fiveHour.percentLeft <= 0 && sevenDay.percentLeft <= 0 {
+                var warning = "Your rate limit quota is currently exhausted. A \(creditName) is a limited banked credit."
+                if let expiry { warning += " This reset credit expires \(resetDescription(for: expiry))." }
+                return warning + " Redeem now?"
+            }
+            var parts: [String] = []
+            if fiveHour.percentLeft > 0 {
+                parts.append("\(fiveHour.percentLeft)% of 5h window")
+            }
+            if sevenDay.percentLeft > 0 {
+                parts.append("\(sevenDay.percentLeft)% of weekly window")
+            }
+            let remainingText = parts.isEmpty ? "quota" : parts.joined(separator: " and ")
+            var warning = "You still have \(remainingText) left. A \(creditName) is a limited banked credit, and redeeming it now discards that remaining quota."
+            if let expiry { warning += " This reset credit expires \(resetDescription(for: expiry))." }
             return warning + " Redeem anyway?"
         }
-        var warning = "A \(creditName) is a limited banked credit and redeeming it now discards the quota you haven't used yet."
-        if let expiry {
-            warning += " This reset credit expires \(resetDescription(for: expiry))."
+
+        let leftRatio = snapshot.remainingRatio ?? progressRatio.map { 1 - $0 }
+        if let percentLeft = leftRatio.map({ Int(($0 * 100).rounded()) }) {
+            if percentLeft <= 0 {
+                var warning = "Your rate limit quota is currently exhausted. A \(creditName) is a limited banked credit."
+                if let expiry { warning += " This reset credit expires \(resetDescription(for: expiry))." }
+                return warning + " Redeem now?"
+            }
+            var warning = "You still have \(percentLeft)% of this window left. A \(creditName) is a limited banked credit, and redeeming it now discards that remaining quota."
+            if let expiry { warning += " This reset credit expires \(resetDescription(for: expiry))." }
+            return warning + " Redeem anyway?"
         }
+        var warning = "A \(creditName) is a limited banked credit and redeeming it now discards any quota you haven't used yet."
+        if let expiry { warning += " This reset credit expires \(resetDescription(for: expiry))." }
         return warning + " Redeem anyway?"
     }
 

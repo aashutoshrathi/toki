@@ -273,7 +273,7 @@ func bestWeeklyResetGroup(in snapshot: AccountSnapshot) -> ResetCreditGroup? {
     let standardGroups = snapshot.resetCreditGroups.filter { group in
         group.kind == .standard
             && group.canRedeemNow
-            && (group.clears.isEmpty || group.clears.contains(where: { $0.contains("seven_day") }))
+            && (group.clears.isEmpty || group.clears.contains(where: { $0.lowercased().contains("seven_day") }))
     }
     return standardGroups.min { ($0.expiry ?? .distantFuture) < ($1.expiry ?? .distantFuture) }
 }

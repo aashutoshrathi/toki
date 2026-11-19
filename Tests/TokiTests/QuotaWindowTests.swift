@@ -92,6 +92,10 @@ final class QuotaWindowTests: XCTestCase {
         let threeDays = now.addingTimeInterval(3.5 * 86_400)
         let threeDesc = resetDescription(for: threeDays)
         XCTAssertTrue(threeDesc.hasPrefix("3d ") && threeDesc.contains("h ("), "Expected '3d Xh (...)' but got '\(threeDesc)'")
+
+        let past = now.addingTimeInterval(-60)
+        let pastDesc = resetDescription(for: past)
+        XCTAssertTrue(pastDesc.hasPrefix("now ("), "Expected 'now (...)' but got '\(pastDesc)'")
     }
 
     func testPaceComparesUsedQuotaWithElapsedWindowTime() {

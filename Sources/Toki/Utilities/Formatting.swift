@@ -42,7 +42,9 @@ func resetDescription(for resetDate: Date) -> String {
     let now = Date()
     let seconds = resetDate.timeIntervalSince(now)
     let countdown: String
-    if seconds >= 86_400 {
+    if seconds <= 0 {
+        countdown = "now"
+    } else if seconds >= 86_400 {
         let days = Int(seconds / 86_400)
         let hours = Int((seconds.truncatingRemainder(dividingBy: 86_400)) / 3600)
         countdown = hours > 0 && days < 7 ? "\(days)d \(hours)h" : "\(days)d"
