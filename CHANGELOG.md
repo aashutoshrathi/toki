@@ -1,15 +1,26 @@
 # Changelog
 
-## 3.4.3 - 2026-11-13
+## 3.4.3 - 2026-11-20
 
-One Line: Separate Claude reset types (Standard vs Fable) and show Sarvam token usage.
+One Line: See which reset credit will be redeemed next and what is queued behind it, separate Claude Standard and Fable resets, and view Sarvam token usage.
 
 ### Added
-- **Separate Claude reset types.** Claude rate limit reset credits are now separated into Standard (5-hour and 7-day windows) and Fable-only resets. Each type displays its own badge, expiry, and redemption requirements (such as whether reaching the rate limit is required).
+- **Rich reset confirmation modal with upcoming queue table.** Replacing the plain macOS alert dialog, a new custom sheet shows exactly which reset credit is being redeemed now (with credit kind, windows cleared, and expiry) alongside an upcoming queue table (`NEXT IN QUEUE`) detailing queued credits, limit conditions, and expiration times.
+- **Separate Claude reset types (Standard vs Fable).** Claude rate limit reset credits are now separated into Standard (clearing 5-hour and 7-day windows) and Fable-only resets. Each type displays its own badge, expiry, and redemption requirements (such as whether reaching the rate limit is required).
 - **Smart Claude auto-reset selection.** Auto-apply reset now chooses the most helpful credit for Claude: for weekly quota triggers, it automatically selects Standard resets that clear 7d/5h limits (skipping Fable-only resets) prioritizing earliest expiry; for expiring resets, it identifies whichever credit is facing immediate loss across all groups and redeems that specific grant.
+- **Context-aware quota waste warnings.** The reset confirmation modal warns when quota remains in the active window (explaining that redeeming now discards that quota) or confirms that an exhausted quota is being restored, strictly scoped to the exact windows that credit will clear.
 - **Sarvam token usage readout.** Sarvam accounts display token counts (today and all-time) in the menu bar and card when monetary spend is unavailable.
 
+### Changed
+- **Precise multi-day expiry countdowns.** Expiration and reset countdowns across cards, badges, and sheets now report exact days and hours (e.g. `11d 4h` or `11d`) instead of coarse rounding to `1w`.
+- **Compact reset chips.** Reset badges use crisp typography and compact padding (⟲ 1 for Standard, ⟲ Fable: 2) with distinct iconography (`sparkles` for Fable, `bolt` for Standard).
+
 ### Fixed
+- **Anthropic serial queue and head-of-line blocking enforcement.** Toki strictly respects Anthropic's `next_grant_id` queue order, preventing failed redemptions when a credit is queued behind another, and clearly surfaces in tooltips and alert sheets when credits are queued or waiting on a specific rate limit.
+- **Visibility of credits requiring rate limits.** Grants with `use_requires_limit: true` remain visible with a clear "requires limit" indicator rather than disappearing when the user is not yet at the limit.
+- **Codex reset targeting safety.** Manual Codex redemptions are prevented from sending synthetic client-side credit IDs, ensuring Codex always redeems its soonest-expiring credit and maintains expiry bookkeeping.
+- **Sensitive information masking in reset modal.** The reset confirmation sheet masks account email addresses when "Hide sensitive info" is turned on.
+- **Live grant re-validation and window-drift protection.** Re-validates Claude reset grants and quota windows against live server data before redeeming to prevent burning credits against shifted reset windows.
 - **Thread safety in agent process cache.** Guarded active agent cache access to prevent concurrent dictionary access crashes.
 
 ## 3.4.2 - 2026-11-06
