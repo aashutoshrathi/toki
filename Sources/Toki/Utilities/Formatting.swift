@@ -41,14 +41,24 @@ func resetDescriptionFromUnix(_ value: Any?) -> String? {
 func resetDescription(for resetDate: Date) -> String {
     let now = Date()
     let seconds = resetDate.timeIntervalSince(now)
-    let relative = RelativeDateTimeFormatter()
-    relative.unitsStyle = .abbreviated
-    relative.locale = Locale(identifier: "en_US_POSIX")
-    var countdown = relative.localizedString(for: resetDate, relativeTo: now)
-    if seconds >= 3600 && seconds < 86_400 {
+    let countdown: String
+    if seconds <= 0 {
+        countdown = "now"
+    } else if seconds >= 86_400 {
+        let days = Int(seconds / 86_400)
+        let hours = Int((seconds.truncatingRemainder(dividingBy: 86_400)) / 3600)
+        countdown = hours > 0 && days < 7 ? "\(days)d \(hours)h" : "\(days)d"
+    } else if seconds >= 3600 {
         countdown = formatDuration(seconds: seconds.rounded(.down))
-    } else if countdown.hasPrefix("in ") {
-        countdown.removeFirst(3)
+    } else {
+        let relative = RelativeDateTimeFormatter()
+        relative.unitsStyle = .abbreviated
+        relative.locale = Locale(identifier: "en_US_POSIX")
+        var relativeStr = relative.localizedString(for: resetDate, relativeTo: now)
+        if relativeStr.hasPrefix("in ") {
+            relativeStr.removeFirst(3)
+        }
+        countdown = relativeStr
     }
     let formatter = DateFormatter()
     formatter.dateFormat = Calendar.current.isDateInToday(resetDate) ? "HH:mm" : "MMM d HH:mm"

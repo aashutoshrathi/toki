@@ -91,30 +91,58 @@ struct SarvamCodeUsageClient {
 
     let account: AccountConfig
 
-    func snapshot() async throws -> AccountSnapshot {
-        let totals = try Self.aggregate()
+    func snapshot(
+        root: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) async throws -> AccountSnapshot {
+        let totals = try Self.aggregate(root: root, now: now, calendar: calendar)
+        let hasCosts = !totals.todayCosts.isEmpty || !totals.allTimeCosts.isEmpty
         let todayCost = totals.todayCosts.isEmpty ? formatUSD(0) : totals.todayCosts.formatted
         let totalCost = totals.allTimeCosts.isEmpty ? formatUSD(0) : totals.allTimeCosts.formatted
+
+        let primaryText: String
+        let menuBarText: String
+        if hasCosts {
+            primaryText = "\(formatCompact(Double(totals.todayTokens))) tokens today"
+            menuBarText = todayCost
+        } else {
+            if totals.todayTokens > 0 {
+                primaryText = "\(formatCompact(Double(totals.todayTokens))) tokens today"
+                menuBarText = "\(formatCompact(Double(totals.todayTokens))) tok"
+            } else if totals.allTimeTokens > 0 {
+                primaryText = "0 tokens today · \(formatCompact(Double(totals.allTimeTokens))) all-time"
+                menuBarText = "\(formatCompact(Double(totals.allTimeTokens))) tok"
+            } else {
+                primaryText = "0 tokens today"
+                menuBarText = "0 tok"
+            }
+        }
+
+        var metrics: [MetricLine] = [
+            MetricLine(label: "Today", value: "\(formatCompact(Double(totals.todayInput))) in / \(formatCompact(Double(totals.todayOutput))) out"),
+            MetricLine(label: "Cached input", value: formatCompact(Double(totals.todayCachedInput))),
+            MetricLine(label: "Reasoning output", value: formatCompact(Double(totals.todayReasoningOutput))),
+            MetricLine(label: "This week", value: "\(formatCompact(Double(totals.weekTokens))) tokens"),
+            MetricLine(label: "This month", value: "\(formatCompact(Double(totals.monthTokens))) tokens"),
+            MetricLine(label: "Total", value: "\(formatCompact(Double(totals.allTimeTokens))) tokens"),
+        ]
+        if hasCosts {
+            metrics.append(MetricLine(label: "Cost today", value: todayCost))
+            metrics.append(MetricLine(label: "Cost total", value: totalCost))
+        }
+        metrics.append(MetricLine(label: "Sessions", value: "\(totals.sessionCount)"))
+
         return AccountSnapshot(
             id: account.id,
             name: account.name,
             provider: .sarvamCode,
-            primary: "\(formatCompact(Double(totals.todayTokens))) tokens today",
+            primary: primaryText,
             subtitle: "Sarvam Code - local usage",
             remainingRatio: nil,
-            metrics: [
-                MetricLine(label: "Today", value: "\(formatCompact(Double(totals.todayInput))) in / \(formatCompact(Double(totals.todayOutput))) out"),
-                MetricLine(label: "Cached input", value: formatCompact(Double(totals.todayCachedInput))),
-                MetricLine(label: "Reasoning output", value: formatCompact(Double(totals.todayReasoningOutput))),
-                MetricLine(label: "This week", value: "\(formatCompact(Double(totals.weekTokens))) tokens"),
-                MetricLine(label: "This month", value: "\(formatCompact(Double(totals.monthTokens))) tokens"),
-                MetricLine(label: "Total", value: "\(formatCompact(Double(totals.allTimeTokens))) tokens"),
-                MetricLine(label: "Cost today", value: todayCost),
-                MetricLine(label: "Cost total", value: totalCost),
-                MetricLine(label: "Sessions", value: "\(totals.sessionCount)")
-            ],
+            metrics: metrics,
             isError: false,
-            menuBarValue: todayCost
+            menuBarValue: menuBarText
         )
     }
 

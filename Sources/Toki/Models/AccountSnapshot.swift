@@ -31,6 +31,101 @@ struct RateLimitWindow: Identifiable, Hashable {
     }
 }
 
+struct ResetCreditGroup: Identifiable, Hashable, Sendable {
+    enum Kind: String, Hashable, Codable, Sendable {
+        case standard = "standard"
+        case fable = "fable"
+
+        var displayName: String {
+            switch self {
+            case .standard: return "Standard"
+            case .fable: return "Fable"
+            }
+        }
+    }
+
+    var id: String { "\(kind.rawValue)-\(grantID ?? "")" }
+    var kind: Kind
+    var count: Int
+    var expiry: Date? = nil
+    var grantID: String? = nil
+    var label: String? = nil
+    var requiresLimit: Bool = false
+    var atLimit: Bool = false
+    var clears: [String] = []
+
+    var canRedeemNow: Bool {
+        if requiresLimit && !atLimit { return false }
+        return count > 0 && grantID != nil
+    }
+
+    var requirementDescription: String? {
+        if requiresLimit {
+            return atLimit ? "At rate limit" : "Requires rate limit"
+        }
+        return nil
+    }
+
+    var unavailableReason: String? {
+        guard !canRedeemNow else { return nil }
+        if count <= 0 { return "No credits remaining" }
+        var parts: [String] = []
+        if grantID == nil {
+            parts.append("queued behind active reset")
+        }
+        if requiresLimit && !atLimit {
+            let target = kind == .fable ? "Fable 7d limit" : "rate limit"
+            parts.append("requires reaching \(target) first")
+        }
+        return parts.isEmpty ? "cannot be redeemed right now" : parts.joined(separator: "; ")
+    }
+}
+
+struct ResetGrantItem: Identifiable, Hashable, Sendable {
+    var id: String
+    var label: String?
+    var kind: ResetCreditGroup.Kind
+    var count: Int
+    var expiry: Date? = nil
+    var requiresLimit: Bool = false
+    var atLimit: Bool = false
+    var clears: [String] = []
+    var isNext: Bool = false
+
+    var title: String {
+        if let label, !label.isEmpty {
+            return label
+        }
+        return kind == .fable ? "Fable Reset" : "Standard Reset"
+    }
+
+    var clearsDescription: String {
+        if clears.isEmpty { return "Standard window" }
+        let has5h = clears.contains(where: { $0.lowercased().contains("five_hour") })
+        let has7d = clears.contains(where: { $0.lowercased() == "seven_day" })
+        let hasFable = clears.contains(where: { $0.lowercased().contains("fable") })
+        if has5h && has7d { return "5h & 7d limits" }
+        if hasFable { return "7d Fable limit" }
+        if has7d { return "7d limit" }
+        if has5h { return "5h limit" }
+        return clears.joined(separator: ", ")
+    }
+
+    var statusDescription: String {
+        if isNext {
+            if requiresLimit && !atLimit {
+                return "Requires rate limit"
+            }
+            return "Active (ready)"
+        }
+        if requiresLimit && !atLimit {
+            let target = kind == .fable ? "Fable 7d limit" : "rate limit"
+            return "Queued (needs \(target))"
+        }
+        return "Queued"
+    }
+}
+
 struct AccountSnapshot: Identifiable, Hashable {
     var id: String
     var name: String
@@ -49,6 +144,8 @@ struct AccountSnapshot: Identifiable, Hashable {
     // when only the count is known. Surfaced in the UI so the user can decide whether to
     // redeem now or wait (issue #130).
     var resetCreditExpiry: Date? = nil
+    var resetCreditGroups: [ResetCreditGroup] = []
+    var resetCreditGrants: [ResetGrantItem] = []
     var metrics: [MetricLine]
     var accountInfo: [MetricLine] = []
     var isError: Bool = false
@@ -77,6 +174,44 @@ struct AccountSnapshot: Identifiable, Hashable {
     /// Every window a provider reported, in the order it should be drawn.
     var allWindows: [RateLimitWindow] {
         planWindows + modelWindows
+    }
+
+    /// All available and queued reset grants for this account, with their queue and limit status.
+    var allResetGrants: [ResetGrantItem] {
+        if !resetCreditGrants.isEmpty {
+            return resetCreditGrants
+        }
+        if !resetCreditGroups.isEmpty {
+            return resetCreditGroups.map { group in
+                ResetGrantItem(
+                    id: group.grantID ?? group.id,
+                    label: group.label,
+                    kind: group.kind,
+                    count: group.count,
+                    expiry: group.expiry,
+                    requiresLimit: group.requiresLimit,
+                    atLimit: group.atLimit,
+                    clears: group.clears,
+                    isNext: group.canRedeemNow
+                )
+            }
+        }
+        if resetCreditsAvailable > 0 {
+            return [
+                ResetGrantItem(
+                    id: "codex-reset",
+                    label: "Rate Limit Reset",
+                    kind: .standard,
+                    count: resetCreditsAvailable,
+                    expiry: resetCreditExpiry,
+                    requiresLimit: false,
+                    atLimit: false,
+                    clears: ["five_hour", "seven_day"],
+                    isNext: true
+                )
+            ]
+        }
+        return []
     }
     // A compact value (e.g. Pi's "$1.20" today-spend) for cost-based providers that have no
     // percentage to show. When set, the menu bar renders this instead of a "--" placeholder.

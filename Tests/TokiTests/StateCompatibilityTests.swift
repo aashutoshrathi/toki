@@ -93,10 +93,12 @@ final class StateCompatibilityTests: XCTestCase {
         var state = UsageState()
         state.autoRedeemedWindowEnds = ["claude": Date(timeIntervalSince1970: 1_800_000_000)]
         state.autoRedeemedExpiries = ["codex": Date(timeIntervalSince1970: 1_800_086_400)]
+        state.autoRedeemedGrantIDs = ["claude": "grant-123"]
         let data = try JSONEncoder.toki.encode(state)
         let decoded = try JSONDecoder.toki.decode(UsageState.self, from: data)
         XCTAssertEqual(decoded.autoRedeemedWindowEnds, state.autoRedeemedWindowEnds)
         XCTAssertEqual(decoded.autoRedeemedExpiries, state.autoRedeemedExpiries)
+        XCTAssertEqual(decoded.autoRedeemedGrantIDs, state.autoRedeemedGrantIDs)
     }
 
     func testStateFromBeforeAutoRedeemGuardsDecodesWithNone() throws {
@@ -104,6 +106,7 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertTrue(state.preferences.autoResetEnabled)
         XCTAssertTrue(state.autoRedeemedWindowEnds.isEmpty)
         XCTAssertTrue(state.autoRedeemedExpiries.isEmpty)
+        XCTAssertTrue(state.autoRedeemedGrantIDs.isEmpty)
     }
 
     func testUnknownQuotaChoicesPreserveTheRestOfTheState() throws {

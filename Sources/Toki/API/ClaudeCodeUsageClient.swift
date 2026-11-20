@@ -30,7 +30,7 @@ struct ClaudeCodeUsageClient {
             return try await snapshot(for: record)
         } catch let expiry as ClaudeSignInExpiredError {
             DiagnosticLogger.shared.record(.info, component: "usage", code: "claude_sign_in_expired",
-                                           detail: "account=\(record.email ?? record.id) active=\(record.isActive)")
+                                           detail: "account=\(SensitiveText.redactingEmails(record.email ?? record.id)) active=\(record.isActive)")
             return AccountSnapshot(
                 id: record.id,
                 name: record.displayName,
@@ -121,6 +121,8 @@ struct ClaudeCodeUsageClient {
             progressRatio: usedRatio,
             resetCreditsAvailable: current.source == record.source ? usage.resetCreditsAvailable : 0,
             resetCreditExpiry: current.source == record.source ? usage.resetCreditExpiry : nil,
+            resetCreditGroups: current.source == record.source ? usage.resetCreditGroups : [],
+            resetCreditGrants: current.source == record.source ? usage.resetCreditGrants : [],
             metrics: usage.metrics,
             accountInfo: accountInfoLines(for: record, credentials: current.credentials),
             switchTarget: switchTarget(for: record),
@@ -231,14 +233,17 @@ struct ClaudeCodeUsageClient {
         condition: AutoRedeemCondition?
     ) async throws -> (organizationUUID: String, headers: [String: String], grantID: String, creditExpiry: Date?) {
         let records = ClaudeCodeAccountDiscovery.discover(config: account, labels: [])
-        let named = records.first(where: { $0.id == recordID })
-        if condition != nil, named == nil {
-            throw LocalizedErrorMessage("That Claude account is no longer signed in, so no reset was redeemed.")
-        }
-        guard let record = named
-            ?? records.first(where: { $0.isActive })
-            ?? records.first else {
-            throw LocalizedErrorMessage("No Claude account found")
+        let record: ClaudeCodeAccountRecord
+        if let recordID {
+            guard let named = records.first(where: { $0.id == recordID }) else {
+                throw LocalizedErrorMessage("That Claude account is no longer signed in, so no reset was redeemed.")
+            }
+            record = named
+        } else {
+            guard let fallback = records.first(where: { $0.isActive }) ?? records.first else {
+                throw LocalizedErrorMessage("No Claude account found")
+            }
+            record = fallback
         }
         let accessToken: String
         switch try disposition(for: record) {
@@ -251,27 +256,40 @@ struct ClaudeCodeUsageClient {
         }
 
         let headers = oauthHeaders(accessToken: accessToken)
-        let liveUsage: ClaudeCodeUsage?
-        if condition != nil || creditID == nil {
-            liveUsage = ClaudeCodeUsage(json: try await requestJSON(url: usageURL, headers: headers))
-        } else {
-            liveUsage = nil
+        let liveUsage = ClaudeCodeUsage(json: try await requestJSON(url: usageURL, headers: headers))
+        let grant = try validatedResetGrant(in: liveUsage, creditID: creditID, condition: condition)
+        return (organizationUUID, headers, grant.grantID, grant.expiry)
+    }
+
+    static func validatedResetGrant(
+        in usage: ClaudeCodeUsage,
+        creditID: String?,
+        condition: AutoRedeemCondition?,
+        now: Date = Date()
+    ) throws -> (grantID: String, expiry: Date?) {
+        guard let grantID = usage.resetGrantID,
+              creditID == nil || creditID == grantID else {
+            throw LocalizedErrorMessage("The selected reset is no longer available to redeem.")
         }
-        if let condition,
-           let liveUsage,
-           !autoRedeemConditionHolds(
-               condition,
-               weeklyWindow: weeklyQuotaWindow(among: liveUsage.rateLimitWindows),
-               soonestExpiry: liveUsage.resetCreditExpiry,
-               now: Date()
-           ) {
-            throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+        if let condition {
+            if case .weeklyAtOrBelow = condition {
+                let activeGroup = usage.resetCreditGroups.first(where: { $0.grantID == grantID })
+                guard let activeGroup,
+                      activeGroup.kind == .standard,
+                      activeGroup.clears.contains(where: { $0.lowercased() == "seven_day" }) else {
+                    throw LocalizedErrorMessage("The active reset credit does not clear the 7-day rate limit window.")
+                }
+            }
+            guard autoRedeemConditionHolds(
+                condition,
+                weeklyWindow: weeklyQuotaWindow(among: usage.rateLimitWindows),
+                soonestExpiry: usage.resetCreditExpiry,
+                now: now
+            ) else {
+                throw LocalizedErrorMessage("The auto-redeem trigger no longer holds on live data, so no reset was redeemed.")
+            }
         }
-        guard let grantID = creditID ?? liveUsage?.resetGrantID else {
-            throw LocalizedErrorMessage("No reset is available to redeem right now.")
-        }
-        let creditExpiry = creditID == nil ? liveUsage?.resetCreditExpiry : nil
-        return (organizationUUID, headers, grantID, creditExpiry)
+        return (grantID, usage.resetCreditExpiry)
     }
 
     static func consumeRateLimitResetCredit(
@@ -295,7 +313,9 @@ struct ClaudeCodeUsageClient {
             throw ResetNotAttempted(reason: error.localizedDescription)
         }
 
-        let url = URL(string: "https://api.anthropic.com/api/organizations/\(organizationUUID)/reset_rate_limits")!
+        guard let url = URL(string: "https://api.anthropic.com/api/organizations/\(organizationUUID)/reset_rate_limits") else {
+            throw ResetNotAttempted(reason: "Invalid reset endpoint URL for organization \(organizationUUID)")
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         for (key, value) in headers {

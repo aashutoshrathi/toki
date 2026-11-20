@@ -268,6 +268,66 @@ func canRedeemCodexReset(_ snapshot: AccountSnapshot) -> Bool {
     snapshot.provider != .codex || (!snapshot.isError && snapshot.codexIdentity != nil)
 }
 
+/// For Claude auto-reset, selects the most helpful standard reset credit to clear weekly rate limits.
+func bestWeeklyResetGroup(in snapshot: AccountSnapshot) -> ResetCreditGroup? {
+    let standardGroups = snapshot.resetCreditGroups.filter { group in
+        group.kind == .standard
+            && group.canRedeemNow
+            && group.clears.contains(where: { $0.lowercased() == "seven_day" })
+    }
+    return standardGroups.min { ($0.expiry ?? .distantFuture) < ($1.expiry ?? .distantFuture) }
+}
+
+/// For Claude auto-reset, selects the most helpful expiring reset credit.
+func bestExpiringResetGroup(
+    in snapshot: AccountSnapshot,
+    minutesBeforeExpiry minutes: Int,
+    lastRedeemedExpiry: Date?,
+    lastRedeemedGrantID: String? = nil,
+    now: Date
+) -> ResetCreditGroup? {
+    let candidates = snapshot.resetCreditGroups.filter { group in
+        guard group.canRedeemNow,
+              let expiry = group.expiry,
+              expiry > now,
+              expiry.timeIntervalSince(now) <= TimeInterval(minutes * 60) else {
+            return false
+        }
+        if let lastRedeemedExpiry {
+            let isSameExpiry = abs(expiry.timeIntervalSince(lastRedeemedExpiry)) < 1
+            if isSameExpiry {
+                if let lastRedeemedGrantID, let currentGrantID = group.grantID, currentGrantID != lastRedeemedGrantID {
+                    return true
+                }
+                return false
+            }
+        }
+        return true
+    }
+    guard !candidates.isEmpty else { return nil }
+
+    return candidates.min { g1, g2 in
+        let exp1 = g1.expiry ?? .distantFuture
+        let exp2 = g2.expiry ?? .distantFuture
+        if exp1 != exp2 {
+            return exp1 < exp2
+        }
+        if g1.kind != g2.kind {
+            let fableWindow = snapshot.modelWindows.first { $0.label.lowercased().contains("fable") }
+            let weeklyWindow = weeklyQuotaWindow(for: snapshot)
+            let fableLeft = fableWindow?.percentLeft ?? 100
+            let weeklyLeft = weeklyWindow?.percentLeft ?? 100
+            if fableLeft < weeklyLeft {
+                return g1.kind == .fable
+            } else if weeklyLeft < fableLeft {
+                return g1.kind == .standard
+            }
+            return g1.kind == .fable
+        }
+        return false
+    }
+}
+
 func shouldAutoRedeemReset(
     _ snapshot: AccountSnapshot,
     weeklyPercentLeft threshold: Int,
@@ -277,9 +337,19 @@ func shouldAutoRedeemReset(
 ) -> Bool {
     guard canAutoRedeemReset(snapshot.provider),
           canRedeemCodexReset(snapshot),
-          !snapshot.isError,
-          snapshot.resetCreditsAvailable > 0,
-          let weekly = weeklyQuotaWindow(for: snapshot),
+          !snapshot.isError else {
+        return false
+    }
+    if snapshot.provider == .claudeCode && !snapshot.resetCreditGroups.isEmpty {
+        guard bestWeeklyResetGroup(in: snapshot) != nil else {
+            return false
+        }
+    } else {
+        guard snapshot.resetCreditsAvailable > 0 else {
+            return false
+        }
+    }
+    guard let weekly = weeklyQuotaWindow(for: snapshot),
           let windowEnd = weekly.resetAt,
           autoRedeemConditionHolds(
               .weeklyAtOrBelow(threshold, minimumHoursRemaining: minimumHoursRemaining),
@@ -296,11 +366,28 @@ func shouldAutoRedeemReset(
     return windowEnd > lastRedeemedWindowEnd.addingTimeInterval(3600)
 }
 
-func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry minutes: Int, lastRedeemedExpiry: Date?, now: Date) -> Bool {
+func shouldRedeemExpiringReset(
+    _ snapshot: AccountSnapshot,
+    minutesBeforeExpiry minutes: Int,
+    lastRedeemedExpiry: Date?,
+    lastRedeemedGrantID: String? = nil,
+    now: Date
+) -> Bool {
     guard canAutoRedeemReset(snapshot.provider),
           canRedeemCodexReset(snapshot),
-          !snapshot.isError,
-          snapshot.resetCreditsAvailable > 0,
+          !snapshot.isError else {
+        return false
+    }
+    if snapshot.provider == .claudeCode && !snapshot.resetCreditGroups.isEmpty {
+        return bestExpiringResetGroup(
+            in: snapshot,
+            minutesBeforeExpiry: minutes,
+            lastRedeemedExpiry: lastRedeemedExpiry,
+            lastRedeemedGrantID: lastRedeemedGrantID,
+            now: now
+        ) != nil
+    }
+    guard snapshot.resetCreditsAvailable > 0,
           let expiry = snapshot.resetCreditExpiry,
           expiry > now,
           expiry.timeIntervalSince(now) <= TimeInterval(minutes * 60) else {
@@ -309,12 +396,18 @@ func shouldRedeemExpiringReset(_ snapshot: AccountSnapshot, minutesBeforeExpiry 
     guard let lastRedeemedExpiry else {
         return true
     }
-    // Saved guards lose sub-second precision, so the same expiry can read back a fraction off.
-    return abs(expiry.timeIntervalSince(lastRedeemedExpiry)) >= 1
+    let isSameExpiry = abs(expiry.timeIntervalSince(lastRedeemedExpiry)) < 1
+    if isSameExpiry {
+        if let lastRedeemedGrantID, let currentGrantID = snapshot.resetCreditGroups.first?.grantID, currentGrantID != lastRedeemedGrantID {
+            return true
+        }
+        return false
+    }
+    return true
 }
 
 enum AutoRedeemCondition: Equatable, Sendable {
-    case weeklyAtOrBelow(Int, minimumHoursRemaining: Int)
+    case weeklyAtOrBelow(Int, minimumHoursRemaining: Int, expectedWindowEnd: Date? = nil)
     case expiringBy(Date)
 }
 
@@ -328,17 +421,23 @@ struct AutoRedeemClaim: Equatable {
     let condition: AutoRedeemCondition
     let guardDate: Date
     let detail: String
+    var creditID: String? = nil
 }
 
 func autoRedeemConditionHolds(_ condition: AutoRedeemCondition, weeklyWindow: RateLimitWindow?, soonestExpiry: Date?, now: Date) -> Bool {
     switch condition {
-    case .weeklyAtOrBelow(let threshold, let minimumHoursRemaining):
+    case .weeklyAtOrBelow(let threshold, let minimumHoursRemaining, let expectedWindowEnd):
         guard (0...99).contains(threshold),
               (1...168).contains(minimumHoursRemaining),
               let weeklyWindow,
               let resetAt = weeklyWindow.resetAt,
               resetAt > now.addingTimeInterval(TimeInterval(minimumHoursRemaining) * 3600) else {
             return false
+        }
+        if let expectedWindowEnd {
+            guard abs(resetAt.timeIntervalSince(expectedWindowEnd)) <= 3600 else {
+                return false
+            }
         }
         return weeklyWindow.percentLeft <= threshold
     case .expiringBy(let deadline):
@@ -354,6 +453,7 @@ func autoRedeemClaim(
     preferences: AppPreferences,
     lastRedeemedWindowEnd: Date?,
     lastRedeemedExpiry: Date?,
+    lastRedeemedGrantID: String? = nil,
     blockedTriggers: Set<AutoRedeemClaim.Trigger>,
     now: Date
 ) -> AutoRedeemClaim? {
@@ -371,22 +471,55 @@ func autoRedeemClaim(
        ),
        let weekly = weeklyQuotaWindow(for: snapshot),
        let windowEnd = weekly.resetAt {
+        let chosenCreditID: String? = {
+            if snapshot.provider == .claudeCode && !snapshot.resetCreditGroups.isEmpty {
+                return bestWeeklyResetGroup(in: snapshot)?.grantID
+            }
+            return snapshot.resetCreditGroups.first?.grantID
+        }()
         return AutoRedeemClaim(
             trigger: .weekly,
-            condition: .weeklyAtOrBelow(threshold, minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining),
+            condition: .weeklyAtOrBelow(
+                threshold,
+                minimumHoursRemaining: preferences.autoResetWeeklyMinHoursRemaining,
+                expectedWindowEnd: windowEnd
+            ),
             guardDate: windowEnd,
-            detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting, with more than \(preferences.autoResetWeeklyMinHoursRemaining)h before the natural weekly reset."
+            detail: "Weekly quota was at \(weekly.percentLeft)% left, at or below your \(threshold)% setting, with more than \(preferences.autoResetWeeklyMinHoursRemaining)h before the natural weekly reset.",
+            creditID: chosenCreditID
         )
     }
     if !blockedTriggers.contains(.expiry),
        let minutes = preferences.autoResetMinutesBeforeExpiry,
-       shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: now),
-       let expiry = snapshot.resetCreditExpiry {
+       shouldRedeemExpiringReset(
+           snapshot,
+           minutesBeforeExpiry: minutes,
+           lastRedeemedExpiry: lastRedeemedExpiry,
+           lastRedeemedGrantID: lastRedeemedGrantID,
+           now: now
+       ) {
+        let (expiry, creditID, isFable): (Date, String?, Bool) = {
+            if snapshot.provider == .claudeCode && !snapshot.resetCreditGroups.isEmpty,
+               let best = bestExpiringResetGroup(
+                   in: snapshot,
+                   minutesBeforeExpiry: minutes,
+                   lastRedeemedExpiry: lastRedeemedExpiry,
+                   lastRedeemedGrantID: lastRedeemedGrantID,
+                   now: now
+               ),
+               let exp = best.expiry {
+                return (exp, best.grantID, best.kind == .fable)
+            }
+            return (snapshot.resetCreditExpiry ?? now, snapshot.resetCreditGroups.first?.grantID, false)
+        }()
+        guard expiry > now else { return nil }
+        let creditDesc = isFable ? "A banked Fable reset" : "A banked reset"
         return AutoRedeemClaim(
             trigger: .expiry,
             condition: .expiringBy(now.addingTimeInterval(TimeInterval(minutes * 60))),
             guardDate: expiry,
-            detail: "A banked reset was about to expire (in \(resetDescription(for: expiry))), within your \(minutes)-minute setting."
+            detail: "\(creditDesc) was about to expire (in \(resetDescription(for: expiry))), within your \(minutes)-minute setting.",
+            creditID: creditID
         )
     }
     return nil
@@ -546,15 +679,22 @@ func allTrackedQuotaExhausted(_ snapshots: [AccountSnapshot]) -> Bool {
     return tracked.allSatisfy { ($0.remainingRatio ?? 1) <= 0.01 }
 }
 
+struct AccountGroup: Identifiable {
+    var provider: Provider
+    var snapshots: [AccountSnapshot]
+
+    var id: Provider { provider }
+}
+
 /// Groups snapshots by provider, preserving each provider's position from its first account.
 /// The accounts list draws each provider once, collapsing several accounts into one card, so
 /// this keeps the provider's place in the list while collecting its siblings beside it.
-func accountGroups(for snapshots: [AccountSnapshot]) -> [(provider: Provider, snapshots: [AccountSnapshot])] {
+func accountGroups(for snapshots: [AccountSnapshot]) -> [AccountGroup] {
     snapshots.reduce(into: []) { groups, snapshot in
         if let index = groups.firstIndex(where: { $0.provider == snapshot.provider }) {
             groups[index].snapshots.append(snapshot)
         } else {
-            groups.append((snapshot.provider, [snapshot]))
+            groups.append(AccountGroup(provider: snapshot.provider, snapshots: [snapshot]))
         }
     }
 }

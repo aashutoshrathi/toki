@@ -62,8 +62,19 @@ final class AutoResetTests: XCTestCase {
         XCTAssertFalse(shouldRedeemExpiringReset(missingIdentity, minutesBeforeExpiry: 5, lastRedeemedExpiry: nil, now: now))
     }
 
-    private func expiring(_ snapshot: AccountSnapshot, within minutes: Int, lastRedeemedExpiry: Date? = nil) -> Bool {
-        shouldRedeemExpiringReset(snapshot, minutesBeforeExpiry: minutes, lastRedeemedExpiry: lastRedeemedExpiry, now: now)
+    private func expiring(
+        _ snapshot: AccountSnapshot,
+        within minutes: Int,
+        lastRedeemedExpiry: Date? = nil,
+        lastRedeemedGrantID: String? = nil
+    ) -> Bool {
+        shouldRedeemExpiringReset(
+            snapshot,
+            minutesBeforeExpiry: minutes,
+            lastRedeemedExpiry: lastRedeemedExpiry,
+            lastRedeemedGrantID: lastRedeemedGrantID,
+            now: now
+        )
     }
 
     func testRedeemsAResetAboutToExpire() {
@@ -271,13 +282,15 @@ final class AutoResetTests: XCTestCase {
         _ snapshot: AccountSnapshot,
         preferences: AppPreferences,
         lastRedeemedWindowEnd: Date? = nil,
-        lastRedeemedExpiry: Date? = nil
+        lastRedeemedExpiry: Date? = nil,
+        lastRedeemedGrantID: String? = nil
     ) -> AutoRedeemClaim? {
         autoRedeemClaim(
             for: snapshot,
             preferences: preferences,
             lastRedeemedWindowEnd: lastRedeemedWindowEnd,
             lastRedeemedExpiry: lastRedeemedExpiry,
+            lastRedeemedGrantID: lastRedeemedGrantID,
             blockedTriggers: [],
             now: now
         )
@@ -301,7 +314,7 @@ final class AutoResetTests: XCTestCase {
     func testWeeklyClaimCarriesTheConditionTheGuardAndTheReason() throws {
         let result = try XCTUnwrap(claim(snapshot(weeklyLeft: 4), preferences: claimPreferences(weekly: 10)))
         XCTAssertEqual(result.trigger, .weekly)
-        XCTAssertEqual(result.condition, .weeklyAtOrBelow(10, minimumHoursRemaining: 1))
+        XCTAssertEqual(result.condition, .weeklyAtOrBelow(10, minimumHoursRemaining: 1, expectedWindowEnd: weekEnd))
         XCTAssertEqual(result.guardDate, weekEnd)
         XCTAssertEqual(result.detail, "Weekly quota was at 4% left, at or below your 10% setting, with more than 1h before the natural weekly reset.")
     }
@@ -544,5 +557,178 @@ final class AutoResetTests: XCTestCase {
             let afterFailedExpiry = autoRedeemRetries(afterReleasing: next, expiryRuleMatches: false, now: wakeUp)
             XCTAssertLessThan(try XCTUnwrap(afterFailedExpiry[.expiry]), expiresAt)
         }
+    }
+
+    func testClaudeAutoResetWeeklyPicksStandardOverFable() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .fable, count: 2, expiry: now.addingTimeInterval(86400), grantID: "fable-grant", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"]),
+            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400 * 2), grantID: "standard-grant", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10)))
+        XCTAssertEqual(result.trigger, .weekly)
+        XCTAssertEqual(result.creditID, "standard-grant")
+    }
+
+    func testClaudeAutoResetWeeklySkipsWhenOnlyFableIsAvailable() {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .fable, count: 2, expiry: now.addingTimeInterval(86400), grantID: "fable-grant", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        XCTAssertFalse(shouldAutoRedeemReset(account, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+        XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10)))
+    }
+
+    func testClaudeAutoResetWeeklySkipsStandardCreditWithoutSevenDayClear() {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 4)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: now.addingTimeInterval(86400), grantID: "five-hour-only", requiresLimit: false, atLimit: false, clears: ["five_hour"])
+        ]
+
+        XCTAssertFalse(shouldAutoRedeemReset(account, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+        XCTAssertNil(claim(account, preferences: claimPreferences(weekly: 10)))
+    }
+
+    func testClaudeAutoResetExpiryPicksExpiringFableEvenWhenStandardHasLaterExpiry() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 80)
+        let fableExpiry = now.addingTimeInterval(4 * 60)
+        let standardExpiry = now.addingTimeInterval(86400)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: standardExpiry, grantID: "standard-later", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: fableExpiry, grantID: "fable-expiring", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "fable-expiring")
+        XCTAssertEqual(result.guardDate, fableExpiry)
+    }
+
+    func testClaudeAutoResetExpiryPicksExpiringStandardEvenWhenFableHasLaterExpiry() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 80)
+        let standardExpiry = now.addingTimeInterval(3 * 60)
+        let fableExpiry = now.addingTimeInterval(86400)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: standardExpiry, grantID: "standard-expiring", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: fableExpiry, grantID: "fable-later", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "standard-expiring")
+        XCTAssertEqual(result.guardDate, standardExpiry)
+    }
+
+    func testClaudeAutoResetExpiryTieBreakPrefersFableWhenFableQuotaIsLower() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 50)
+        account.modelWindows = [
+            RateLimitWindow(label: "Claude Fable 5", percentLeft: 20, resetAt: now.addingTimeInterval(86400))
+        ]
+        let sameExpiry = now.addingTimeInterval(3 * 60)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: sameExpiry, grantID: "standard-tie", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: sameExpiry, grantID: "fable-tie", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "fable-tie")
+    }
+
+    func testClaudeAutoResetExpiryTieBreakPrefersStandardWhenWeeklyQuotaIsLower() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 20)
+        account.modelWindows = [
+            RateLimitWindow(label: "Claude Fable 5", percentLeft: 90, resetAt: now.addingTimeInterval(86400))
+        ]
+        let sameExpiry = now.addingTimeInterval(3 * 60)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: sameExpiry, grantID: "standard-tie", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"]),
+            ResetCreditGroup(kind: .fable, count: 1, expiry: sameExpiry, grantID: "fable-tie", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(minutes: 5)))
+        XCTAssertEqual(result.trigger, .expiry)
+        XCTAssertEqual(result.creditID, "standard-tie")
+    }
+
+    func testCodexAutoResetUsesLegacyPathWithoutCreditID() throws {
+        var account = snapshot(provider: .codex, weeklyLeft: 5)
+        account.resetCreditsAvailable = 2
+        account.resetCreditExpiry = now.addingTimeInterval(3 * 60)
+        account.resetCreditGroups = []
+
+        let result = try XCTUnwrap(claim(account, preferences: claimPreferences(weekly: 10)))
+        XCTAssertEqual(result.trigger, .weekly)
+        XCTAssertNil(result.creditID)
+    }
+
+    func testClaudeAutoResetWeeklyRequiresExactSevenDayClear() throws {
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 5)
+
+        // Only Fable-specific clear
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: nil, grantID: "g1", requiresLimit: false, atLimit: false, clears: ["seven_day_fable_5"])
+        ]
+        XCTAssertNil(bestWeeklyResetGroup(in: account))
+        XCTAssertFalse(shouldAutoRedeemReset(account, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+
+        // Empty clear
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: nil, grantID: "g1", requiresLimit: false, atLimit: false, clears: [])
+        ]
+        XCTAssertNil(bestWeeklyResetGroup(in: account))
+        XCTAssertFalse(shouldAutoRedeemReset(account, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+
+        // Valid seven_day clear
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: nil, grantID: "g1", requiresLimit: false, atLimit: false, clears: ["five_hour", "seven_day"])
+        ]
+        XCTAssertNotNil(bestWeeklyResetGroup(in: account))
+        XCTAssertTrue(shouldAutoRedeemReset(account, weeklyPercentLeft: 10, minimumHoursRemaining: 1, lastRedeemedWindowEnd: nil, now: now))
+    }
+
+    func testClaudeAutoResetExpiryAllowsSameExpiryWithDifferentGrantID() throws {
+        let sameExpiry = now.addingTimeInterval(3 * 60)
+        var account = snapshot(provider: .claudeCode, weeklyLeft: 80)
+        account.resetCreditGroups = [
+            ResetCreditGroup(kind: .standard, count: 1, expiry: sameExpiry, grantID: "grant-next", requiresLimit: false, atLimit: false, clears: ["seven_day"])
+        ]
+
+        // If last redeemed was a DIFFERENT grant with the same expiry timestamp, it is eligible!
+        XCTAssertTrue(expiring(account, within: 5, lastRedeemedExpiry: sameExpiry, lastRedeemedGrantID: "grant-previous"))
+
+        // If last redeemed was the SAME grant, it is suppressed
+        XCTAssertFalse(expiring(account, within: 5, lastRedeemedExpiry: sameExpiry, lastRedeemedGrantID: "grant-next"))
+    }
+
+    func testAutoRedeemConditionHoldsWeeklyWindowEndDrift() {
+        let weekly = RateLimitWindow(label: "7d", percentLeft: 5, resetAt: now.addingTimeInterval(24 * 3600))
+        let expectedEnd = weekly.resetAt!
+
+        // Window end matches expected
+        XCTAssertTrue(autoRedeemConditionHolds(
+            .weeklyAtOrBelow(10, minimumHoursRemaining: 1, expectedWindowEnd: expectedEnd),
+            weeklyWindow: weekly,
+            soonestExpiry: nil,
+            now: now
+        ))
+
+        // Window end moved by 10 minutes (within 1h tolerance) -> still holds
+        XCTAssertTrue(autoRedeemConditionHolds(
+            .weeklyAtOrBelow(10, minimumHoursRemaining: 1, expectedWindowEnd: expectedEnd.addingTimeInterval(600)),
+            weeklyWindow: weekly,
+            soonestExpiry: nil,
+            now: now
+        ))
+
+        // Window end moved by 3 hours (beyond 1h tolerance) -> fails
+        XCTAssertFalse(autoRedeemConditionHolds(
+            .weeklyAtOrBelow(10, minimumHoursRemaining: 1, expectedWindowEnd: expectedEnd.addingTimeInterval(3 * 3600)),
+            weeklyWindow: weekly,
+            soonestExpiry: nil,
+            now: now
+        ))
     }
 }
