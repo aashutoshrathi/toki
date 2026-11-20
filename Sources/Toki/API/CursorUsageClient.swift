@@ -1,41 +1,5 @@
+import CoreFoundation
 import Foundation
-
-enum CursorAuth {
-    struct Credentials {
-        let token: String
-        let userId: String
-    }
-
-    static func read(home: String = FileManager.default.homeDirectoryForCurrentUser.path) -> Credentials? {
-        let db = "\(home)/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
-        guard FileManager.default.fileExists(atPath: db),
-              let token = Shell.output("/usr/bin/sqlite3", ["-readonly", db,
-                "SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken';"])?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !token.isEmpty,
-              let userId = jwtSubject(token) else {
-            return nil
-        }
-        return Credentials(token: token, userId: userId)
-    }
-
-    static func jwtSubject(_ token: String) -> String? {
-        let segments = token.split(separator: ".")
-        guard segments.count >= 2,
-              let data = base64URLDecode(String(segments[1])),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sub = object["sub"] as? String else {
-            return nil
-        }
-        return sub.split(separator: "|").last.map(String.init)
-    }
-
-    private static func base64URLDecode(_ value: String) -> Data? {
-        var base64 = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        while base64.count % 4 != 0 { base64 += "=" }
-        return Data(base64Encoded: base64)
-    }
-}
 
 struct CursorUsageClient {
     struct Usage: Equatable {
@@ -49,17 +13,71 @@ struct CursorUsageClient {
 
     let account: AccountConfig
 
-    func snapshot() async throws -> AccountSnapshot {
+    func snapshot(previous: AccountSnapshot? = nil, login: CursorAuth.Login? = nil) async throws -> AccountSnapshot {
         let activity = CursorLocalActivity.latest()
-        guard let credentials = CursorAuth.read() else {
+        let login = login ?? CursorAuth.read()
+        let credentials: CursorAuth.Credentials
+        switch login {
+        case .missing:
             return localSnapshot(activity: activity)
+        case .locked:
+            return localSnapshot(activity: activity, locked: true)
+        case .connected(let login):
+            credentials = login
         }
+        let previous = Self.verifiedPrevious(previous, login: login)
         do {
-            let usage = try await fetchUsage(credentials: credentials)
-            return usageSnapshot(usage: usage, activity: activity)
+            let status: [String: Any]?
+            var probeFailure: Error?
+            do {
+                status = try await dashboard("dashboard/get-sand-usage-status", body: [:], credentials: credentials)
+            } catch {
+                try Task.checkCancellation()
+                let code = (error as? HTTPStatusError)?.statusCode
+                if var last = previous, last.primaryWindow != nil,
+                   code != 401, code != 403 {
+                    last.lastActivity = activity
+                    return last
+                }
+                if code == 429 { throw error }
+                probeFailure = error
+                status = nil
+            }
+            if let shared = status, shared["isUnified"] as? Bool == true {
+                guard let weekly = Self.parseUnifiedUsage(shared) else {
+                    return localSnapshot(activity: activity, detail: "Cursor did not report a current weekly allowance")
+                }
+                let identity = try? await dashboard("auth/me", credentials: credentials)
+                let email = identity.flatMap { firstString(in: $0, keys: ["email"]) }
+                let quota = email.map { WeeklySubscriptionQuota(email: $0, ratio: weekly.ratio, window: weekly.window) }
+                return AccountSnapshot(
+                    id: account.id, name: account.name, provider: .cursor,
+                    primary: "\(weekly.ratio.formatted(.percent.precision(.fractionLength(0...2)))) left",
+                    subtitle: "X Subscription · shared with Grok",
+                    remainingRatio: weekly.ratio, metrics: [],
+                    primaryWindow: weekly.window, lastActivity: activity, weeklySubscriptionQuota: quota,
+                    cursorIdentity: credentials.userId
+                )
+            }
+            let usage = try await fetchUsage(credentials: credentials, probeFailure: probeFailure,
+                                            knownLegacy: previous != nil && previous?.primaryWindow == nil)
+            var snapshot = usageSnapshot(usage: usage, activity: activity)
+            snapshot.cursorIdentity = credentials.userId
+            return snapshot
         } catch let error as HTTPStatusError where error.statusCode == 401 || error.statusCode == 403 {
             return localSnapshot(activity: activity)
+        } catch where isConnectivityFailure(error) || (error as? HTTPStatusError)?.statusCode == 429 {
+            guard var last = previous else { throw error }
+            last.lastActivity = activity
+            return last
         }
+    }
+
+    static func verifiedPrevious(_ snapshot: AccountSnapshot?, login: CursorAuth.Login, now: Date = Date()) -> AccountSnapshot? {
+        guard let snapshot, snapshot.provider == .cursor, !snapshot.isError, !snapshot.isAgentDetectionOnly,
+              case .connected(let credentials) = login, snapshot.cursorIdentity == credentials.userId,
+              snapshot.primaryWindow?.resetAt.map({ $0 > now }) ?? true else { return nil }
+        return snapshot
     }
 
     private func usageSnapshot(usage: Usage, activity: Date?) -> AccountSnapshot {
@@ -98,35 +116,54 @@ struct CursorUsageClient {
         )
     }
 
-    private func localSnapshot(activity: Date?) -> AccountSnapshot {
+    private func localSnapshot(activity: Date?, locked: Bool = false,
+                               detail: String = "Sign in to Cursor for usage") -> AccountSnapshot {
         AccountSnapshot(
             id: account.id,
             name: account.name,
             provider: .cursor,
-            primary: "No usage API available",
-            subtitle: "Sign in to Cursor for usage",
+            primary: "Cursor usage unavailable",
+            subtitle: locked ? "Connect your Cursor sign-in" : detail,
             remainingRatio: nil,
             metrics: [],
             isError: false,
             isAgentDetectionOnly: true,
-            lastActivity: activity
+            lastActivity: activity,
+            requiresCursorKeychainAccess: locked
         )
     }
 
-    private func fetchUsage(credentials: CursorAuth.Credentials) async throws -> Usage {
+    static func parseUnifiedUsage(_ object: [String: Any], now: Date = Date()) -> (ratio: Double, window: RateLimitWindow)? {
+        let hasLimit = (object["includedLimitZero"] as? Bool).map { !$0 }
+            ?? object["hasNonZeroIncludedLimit"] as? Bool
+        guard object["isUnified"] as? Bool == true, hasLimit == true,
+              (object["usagePercent"] as? NSNumber).map({ CFGetTypeID($0) != CFBooleanGetTypeID() }) ?? true,
+              let used = optionalNumber(object["usagePercent"]), used.isFinite, used >= 0,
+              let reset = resetDate(object["nextResetTimestampUtc"]), reset > now else { return nil }
+
+        let ratio = max(0, 1 - used / 100)
+        return (ratio, RateLimitWindow(
+            label: "7d", percentLeft: Int((ratio * 100).rounded()),
+            resetHint: "resets in \(resetDescription(for: reset))", resetAt: reset, duration: 7 * 86_400
+        ))
+    }
+
+    private func fetchUsage(credentials: CursorAuth.Credentials, probeFailure: Error?, knownLegacy: Bool) async throws -> Usage {
         let profile = try await fetchProfile(credentials: credentials)
+        // During a dashboard outage, only show classic spend for an identified legacy plan.
+        if let probeFailure, !knownLegacy, !Self.isLegacyMembership(profile.plan) { throw probeFailure }
         var body: [String: Any] = [:]
         if let teamId = profile.teamId { body["teamId"] = teamId }
 
-        let aggregated = try await dashboard("get-aggregated-usage-events", body: body, credentials: credentials)
+        let aggregated = try await dashboard("dashboard/get-aggregated-usage-events", body: body, credentials: credentials)
         var usage = Self.parseAggregated(aggregated)
         usage.plan = profile.plan
         if let configured = account.limit, configured > 0 {
             usage.hardLimitDollars = configured
-        } else if let hardLimit = try? await dashboard("get-hard-limit", body: [:], credentials: credentials) {
+        } else if let hardLimit = try? await dashboard("dashboard/get-hard-limit", body: [:], credentials: credentials) {
             usage.hardLimitDollars = Self.parseHardLimit(hardLimit)
         }
-        if let teamSpend = try? await dashboard("get-team-spend", body: body, credentials: credentials) {
+        if let teamSpend = try? await dashboard("dashboard/get-team-spend", body: body, credentials: credentials) {
             usage.cycleEndMs = Self.parseCycleEnd(teamSpend)
         }
         return usage
@@ -162,22 +199,50 @@ struct CursorUsageClient {
         return (object?["membershipType"] as? String, Self.intFrom(object?["teamId"]).nonZero)
     }
 
-    private func dashboard(_ path: String, body: [String: Any],
+    private func dashboard(_ path: String, body: [String: Any]? = nil,
                            credentials: CursorAuth.Credentials) async throws -> [String: Any] {
-        var request = URLRequest(url: URL(string: "https://cursor.com/api/dashboard/\(path)")!)
-        request.httpMethod = "POST"
+        var request = URLRequest(url: URL(string: "https://cursor.com/api/\(path)")!)
         request.timeoutInterval = 15
         request.setValue("WorkosCursorSessionToken=\(credentials.userId)::\(credentials.token)", forHTTPHeaderField: "Cookie")
-        request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        if let body {
+            request.httpMethod = "POST"
+            request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
         let data = try await Self.send(request)
-        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw LocalizedErrorMessage("Cursor returned an invalid dashboard response")
+        }
+        return object
     }
+
+    static func isLegacyMembership(_ plan: String?) -> Bool {
+        switch plan?.lowercased() {
+        case "hobby", "pro", "pro_plus", "pro+", "business", "team", "teams", "enterprise": true
+        default: false
+        }
+    }
+
+    private final class SameOriginRedirects: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+            let sameOrigin = response.url?.scheme == request.url?.scheme
+                && response.url?.host == request.url?.host
+                && response.url?.port == request.url?.port
+            completionHandler(sameOrigin ? request : nil)
+        }
+    }
+
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpShouldSetCookies = false
+        return URLSession(configuration: config, delegate: SameOriginRedirects(), delegateQueue: nil)
+    }()
 
     private static func send(_ request: URLRequest) async throws -> Data {
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
             try checkStatus(response)
             return data
         } catch {

@@ -394,8 +394,9 @@ struct MenuContentView: View {
     }
 
     private func latestActivity(for snapshot: AccountSnapshot) -> Date? {
+        let providers = snapshot.sessionProviders(among: store.snapshots)
         let agentActivity = store.activeAgents
-            .filter { $0.provider == snapshot.provider }
+            .filter { providers.contains($0.provider) }
             .compactMap { $0.lastActivity }
             .max()
         let cutoff = Date().addingTimeInterval(-Self.recentActivityWindow)

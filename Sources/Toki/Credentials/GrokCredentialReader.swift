@@ -5,16 +5,14 @@ import Foundation
 // only checks whether the CLI already has a live-looking credential cached, the same way
 // ProviderDetection checks Claude Code, Codex, and Gemini for onboarding.
 //
-// There is deliberately no usage/quota lookup here - the CLI's own subcommand surface
-// (`grok --help`) has no account/usage/billing command, so like Gemini and Copilot, Grok
-// is detection-only. The email is best-effort: pulled from an id_token JWT if one is
-// cached, falling back to a plain top-level field if the CLI ever stores it that way.
+// The email is best-effort: pulled from an ID-token JWT or a cached email field.
 enum GrokCredentialReader {
     struct Credentials {
         var email: String?
     }
 
-    static func readCredentials(path: String = "~/.grok/auth.json") throws -> Credentials {
+    static func readCredentials(path: String = "~/.grok/auth.json",
+                                requiresUniqueAccount: Bool = false) throws -> Credentials {
         let expanded = expandedPath(path)
         guard FileManager.default.fileExists(atPath: expanded) else {
             throw LocalizedErrorMessage("No Grok CLI credentials found")
@@ -22,6 +20,9 @@ enum GrokCredentialReader {
         let data = try Data(contentsOf: URL(fileURLWithPath: expanded))
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw LocalizedErrorMessage("No Grok CLI credentials found")
+        }
+        if requiresUniqueAccount, json.keys.filter({ $0.contains("::") }).count > 1 {
+            return Credentials(email: nil)
         }
         let idToken = firstString(in: json, keys: ["id_token", "idToken"])
         let claims = idToken.flatMap(jwtPayload)

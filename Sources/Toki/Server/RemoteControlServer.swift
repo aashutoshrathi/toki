@@ -479,10 +479,10 @@ final class RemoteControlServer: ObservableObject {
 
     /// The phone gets the same numbers the menu bar shows, not a second source of truth.
     nonisolated static func usagePayload(from snapshots: [AccountSnapshot], preferences: AppPreferences, now: Date) -> [[String: Any]] {
-        snapshots.filter { !$0.isAgentDetectionOnly }.map { snapshot in
+        snapshots.filter { !$0.isAgentDetectionOnly && $0.sharedWithCursorID == nil }.map { snapshot in
             var entry: [String: Any] = [
                 "id": snapshot.id,
-                "name": snapshot.name,
+                "name": snapshot.sharedDisplayName(among: snapshots),
                 "provider": snapshot.provider.rawValue,
                 "primary": snapshot.primary,
                 "error": snapshot.isError

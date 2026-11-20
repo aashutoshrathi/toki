@@ -57,10 +57,34 @@ enum UsageFetcher {
 
         let reconciled = reconcileCodexSnapshots(orderedResults.flatMap { $0.snapshots })
         return UsageFetchResponse(
-            snapshots: reconciled,
+            snapshots: reconcileSharedWeeklyQuota(reconciled),
             apiCallKeys: Set(orderedResults.flatMap { $0.apiCallKeys }),
             fetchedAt: fetchedAt
         )
+    }
+
+    static func reconcileSharedWeeklyQuota(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
+        let cursorAccounts = snapshots.filter { $0.provider == .cursor }
+        return snapshots.map { snapshot in
+            guard snapshot.provider == .grok, let grok = snapshot.weeklySubscriptionQuota else { return snapshot }
+            var result = snapshot
+            if let reset = grok.window.resetAt,
+               let cursor = cursorAccounts.first(where: {
+                   guard let quota = $0.weeklySubscriptionQuota else { return false }
+                   return quota.window.resetAt == reset && quota.email.caseInsensitiveCompare(grok.email) == .orderedSame
+               }) {
+                result.sharedWithCursorID = cursor.id
+                result.primaryWindow = nil
+                result.remainingRatio = nil
+            } else {
+                // Cached snapshots are already reconciled. Restore the CLI reading when a
+                // matching Cursor account is no longer available.
+                result.sharedWithCursorID = nil
+                result.primaryWindow = grok.window
+                result.remainingRatio = grok.ratio
+            }
+            return result
+        }
     }
 
     static func reconcileCodexSnapshots(_ snapshots: [AccountSnapshot]) -> [AccountSnapshot] {
@@ -171,9 +195,14 @@ enum UsageFetcher {
     }
 
     static func cliIsInstalled(named name: String) -> Bool {
-        ["~/.local/bin/", "/usr/local/bin/", "/opt/homebrew/bin/"]
-            .map { ($0 + name as NSString).expandingTildeInPath }
-            .contains { FileManager.default.isExecutableFile(atPath: $0) }
+        installedCLI(named: name) != nil
+    }
+
+    static func installedCLI(named name: String) -> URL? {
+        agentCommandSearchPath.split(separator: ":")
+            .map { URL(fileURLWithPath: $0.replacingOccurrences(of: "$HOME", with: NSHomeDirectory()), isDirectory: true)
+                .appendingPathComponent(name) }
+            .first { CodexBinaryResolver.isRegularExecutable($0.path) }
     }
 
     private static func snapshots(
@@ -186,8 +215,9 @@ enum UsageFetcher {
         minimumRefreshInterval: TimeInterval?
     ) async -> AccountFetchResult {
         let cacheKey = apiCacheKey(for: account)
+        let cursorLogin = account.provider == .cursor ? CursorAuth.read() : nil
         if let cacheKey,
-           let previous = previousSnapshots(for: account, previousByID: previousByID),
+           let previous = previousSnapshots(for: account, previousByID: previousByID, cursorLogin: cursorLogin),
            !isDue(
                 account: account,
                 cacheKey: cacheKey,
@@ -206,10 +236,24 @@ enum UsageFetcher {
                 snapshots = try await ClaudeCodeUsageClient(account: account, labels: config.accountLabels ?? []).snapshots()
             case .chatgpt, .claude, .manual:
                 snapshots = [consumerSnapshot(for: account, state: state)]
-            case .copilot, .grok, .gemini, .antigravity, .zed:
+            case .copilot, .gemini, .zed:
                 snapshots = [agentOnlySnapshot(for: account)]
+            case .grok, .antigravity:
+                do {
+                    let quota = try await CLIJSONProcess.run { cancellation in
+                        switch account.provider {
+                        case .grok: try GrokUsageClient.snapshot(for: account, cancellation: cancellation)
+                        default: try AntigravityUsageClient.snapshot(for: account, cancellation: cancellation)
+                        }
+                    }
+                    snapshots = [quota]
+                } catch where !Task.isCancelled {
+                    recordFetchFailure(account, code: "quota_unavailable", detail: diagnosticErrorDetail(error))
+                    snapshots = [agentOnlySnapshot(for: account, detail: error.localizedDescription)]
+                }
             case .cursor:
-                snapshots = [try await CursorUsageClient(account: account).snapshot()]
+                snapshots = [try await CursorUsageClient(account: account)
+                    .snapshot(previous: previousByID[account.id], login: cursorLogin)]
             case .fx:
                 snapshots = [try await FxUsageClient(account: account).snapshot()]
             case .openCode:
@@ -278,9 +322,9 @@ enum UsageFetcher {
 
     private static func apiCacheKey(for account: AccountConfig) -> String? {
         switch account.provider {
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .zed, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .gemini, .pi, .sarvamCode, .zed, .manual:
             return nil
-        case .claudeCode, .codex, .openai, .anthropic, .fx, .cursor:
+        case .claudeCode, .codex, .openai, .anthropic, .fx, .cursor, .grok, .antigravity:
             return "\(account.provider.rawValue):\(account.id)"
         }
     }
@@ -300,14 +344,15 @@ enum UsageFetcher {
         switch provider {
         case .claudeCode:
             return claudeRefreshInterval
-        case .codex, .openai, .anthropic, .fx, .cursor:
+        case .codex, .openai, .anthropic, .fx, .cursor, .grok, .antigravity:
             return defaultAPIRefreshInterval
-        case .chatgpt, .claude, .copilot, .openCode, .grok, .gemini, .pi, .antigravity, .sarvamCode, .zed, .manual:
+        case .chatgpt, .claude, .copilot, .openCode, .gemini, .pi, .sarvamCode, .zed, .manual:
             return 0
         }
     }
 
-    private static func previousSnapshots(for account: AccountConfig, previousByID: [String: AccountSnapshot]) -> [AccountSnapshot]? {
+    private static func previousSnapshots(for account: AccountConfig, previousByID: [String: AccountSnapshot],
+                                          cursorLogin: CursorAuth.Login? = nil) -> [AccountSnapshot]? {
         switch account.provider {
         case .claudeCode:
             let snapshots = previousByID.values
@@ -315,6 +360,11 @@ enum UsageFetcher {
                 .filter { !$0.isLoadingPlaceholder }
                 .sorted { $0.id < $1.id }
             return snapshots.isEmpty ? nil : snapshots
+        case .cursor:
+            guard let cursorLogin, let snapshot = CursorUsageClient.verifiedPrevious(previousByID[account.id], login: cursorLogin) else {
+                return nil
+            }
+            return [snapshot]
         default:
             guard let snapshot = previousByID[account.id], !snapshot.isLoadingPlaceholder else {
                 return nil
@@ -410,13 +460,13 @@ enum UsageFetcher {
         )
     }
 
-    private static func agentOnlySnapshot(for account: AccountConfig) -> AccountSnapshot {
+    private static func agentOnlySnapshot(for account: AccountConfig, detail: String = "No usage API") -> AccountSnapshot {
         AccountSnapshot(
             id: account.id,
             name: account.name,
             provider: account.provider,
             primary: "No usage API available",
-            subtitle: "No usage API",
+            subtitle: detail,
             remainingRatio: nil,
             metrics: [],
             isError: false,

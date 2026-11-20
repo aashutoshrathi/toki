@@ -33,7 +33,7 @@
 
 If you move between Claude Code, Codex, Cursor, and half a dozen others during the day, each one keeps its own quota, its own bill, and its own idea of what is running. Toki puts all of it in one place.
 
-**Usage across every harness.** Live quota for Claude Code and Codex, a spend ring for Cursor, and local token and spend tracking for OpenCode, Pi, Sarvam Code, and Vercel's fx. Whichever provider you are actively running sorts to the top. Multiple Claude Code accounts are discovered and switchable in one click.
+**Usage across every harness.** Live quota for Claude Code, Codex, Cursor, Grok Build, and Antigravity, with local token and spend tracking for OpenCode, Pi, Sarvam Code, and Vercel's fx. Whichever provider you are actively running sorts to the top. Multiple Claude Code accounts are discovered and switchable in one click.
 
 **Analytics that go back further than the install.** Spend and token counts across today, this week, this month, and all time, plus a thirty-day heatmap filterable by provider. Both are read from each tool's own session history, so they cover work you did before Toki existed. Reported currencies are preserved.
 
@@ -47,9 +47,9 @@ Also: on-device Apple Intelligence summaries on macOS 26+, low-quota and session
 
 | | |
 |---|---|
-| **Quota tracked** | Claude Code (multi-account), Codex |
+| **Quota tracked** | Claude Code (multi-account), Codex, Cursor, Grok Build, Antigravity |
 | **Spend tracked** | Cursor, OpenCode, Pi, Sarvam Code, Vercel's fx |
-| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Grok CLI, Google's Antigravity, Zed's agent panel, and ChatGPT-hosted Codex |
+| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Zed's agent panel, and ChatGPT-hosted Codex |
 
 Toki works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): it reads the same Claude Code account registry, so accounts switch without either tool reimplementing the other's credential handling.
 
