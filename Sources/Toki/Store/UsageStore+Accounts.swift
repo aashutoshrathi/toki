@@ -311,7 +311,7 @@ extension UsageStore {
         refreshOnceIdle()
     }
 
-    private func refreshOnceIdle() {
+    func refreshOnceIdle() {
         if isRefreshing {
             refreshAfterCurrent = true
             return

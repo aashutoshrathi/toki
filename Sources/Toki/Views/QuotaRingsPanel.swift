@@ -3,10 +3,13 @@ import SwiftUI
 
 struct QuotaRingsPanel: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let snapshots: [AccountSnapshot]
     var quotaWindows: [String: String] = [:]
     var onHide: () -> Void = {}
-    @State private var hoveredSnapshotID: String?
+    @State private var hoveredCardID: String?
+    @State private var hoveredRingID: String?
+    private var hoveredSnapshotID: String? { hoveredCardID ?? hoveredRingID }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -33,7 +36,8 @@ struct QuotaRingsPanel: View {
                     snapshots: ringSnapshots,
                     colors: ringColors,
                     size: 88,
-                    hoveredSnapshotID: $hoveredSnapshotID
+                    hoveredSnapshotID: hoveredSnapshotID,
+                    onHover: { hoveredRingID = $0 }
                 )
                 .padding(.trailing, 4)
                 .padding(.vertical, 4)
@@ -42,7 +46,7 @@ struct QuotaRingsPanel: View {
         .padding(.horizontal, 10)
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .animation(.easeOut(duration: 0.12), value: hoveredSnapshotID)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hoveredSnapshotID)
     }
 
     private var hideButton: some View {
@@ -95,9 +99,9 @@ struct QuotaRingsPanel: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { hovering in
             if hovering {
-                hoveredSnapshotID = snapshot.id
-            } else if hoveredSnapshotID == snapshot.id {
-                hoveredSnapshotID = nil
+                hoveredCardID = snapshot.id
+            } else if hoveredCardID == snapshot.id {
+                hoveredCardID = nil
             }
         }
         .pointerOnHover()
@@ -127,7 +131,10 @@ struct QuotaRingsPanel: View {
         let alias = snapshot.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let sameProviderCount = ringSnapshots.filter { $0.provider == snapshot.provider }.count
         if sameProviderCount > 1, !alias.isEmpty {
-            return alias
+            return snapshot.sharedDisplayName(among: snapshots)
+        }
+        if snapshot.provider == .cursor, snapshot.sessionProviders(among: snapshots).contains(.grok) {
+            return "Cursor & Grok"
         }
         return snapshot.provider.displayName
     }
@@ -140,9 +147,9 @@ struct QuotaRingsPanel: View {
                 if let custom = colorFromHex(snap.colorHex) {
                     result[snap.id] = custom
                 } else if group.count == 1 {
-                    result[snap.id] = ringColor(snap)
+                    result[snap.id] = ringColor(snap, colorScheme: colorScheme)
                 } else {
-                    result[snap.id] = shaded(ringColor(snap), index: index, count: group.count)
+                    result[snap.id] = shaded(ringColor(snap, colorScheme: colorScheme), index: index, count: group.count)
                 }
             }
         }
@@ -150,7 +157,7 @@ struct QuotaRingsPanel: View {
     }
 
     private func color(for snapshot: AccountSnapshot) -> Color {
-        ringColors[snapshot.id] ?? ringColor(snapshot)
+        ringColors[snapshot.id] ?? ringColor(snapshot, colorScheme: colorScheme)
     }
 
     private func shaded(_ base: Color, index: Int, count: Int) -> Color {
@@ -166,39 +173,34 @@ struct QuotaRingsPanel: View {
 }
 
 private struct QuotaRingsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let snapshots: [AccountSnapshot]
     let colors: [String: Color]
     let size: CGFloat
-    @Binding var hoveredSnapshotID: String?
+    let hoveredSnapshotID: String?
+    let onHover: (String?) -> Void
 
     var body: some View {
         ZStack {
             ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
-                let diameter = size - CGFloat(index) * ringSpacing * 2
-                let color = colors[snapshot.id] ?? ringColor(snapshot)
-
-                ZStack {
-                    Circle()
-                        .stroke(color.opacity(0.16), lineWidth: lineWidth)
-                    Circle()
-                        .trim(from: 0, to: min(1, max(0, snapshot.remainingRatio ?? 0)))
-                        .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                }
-                    .frame(width: diameter, height: diameter)
-                    .contentShape(Circle())
-                    .onHover { isHovered in
-                        if isHovered {
-                            hoveredSnapshotID = snapshot.id
-                        } else if hoveredSnapshotID == snapshot.id {
-                            hoveredSnapshotID = nil
-                        }
+                if focusedSnapshot == nil || focusedSnapshot?.id == snapshot.id {
+                    let diameter = size - CGFloat(index) * ringSpacing * 2
+                    let color = colors[snapshot.id] ?? ringColor(snapshot, colorScheme: colorScheme)
+                    ZStack {
+                        Circle()
+                            .stroke(color.opacity(0.16), lineWidth: lineWidth)
+                        Circle()
+                            .trim(from: 0, to: min(1, max(0, snapshot.remainingRatio ?? 0)))
+                            .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
                     }
-                    .pointerOnHover()
+                    .frame(width: diameter, height: diameter)
+                    .transition(.opacity)
+                }
             }
 
-            if let centerProvider {
-                ProviderLogo(provider: centerProvider, size: centerBadgeSize * 0.6)
+            if let focusedSnapshot {
+                ProviderLogo(provider: focusedSnapshot.provider, size: centerBadgeSize * 0.6)
                     .frame(width: centerBadgeSize, height: centerBadgeSize)
                     .background(.fill.tertiary, in: Circle())
                     .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 1))
@@ -207,9 +209,21 @@ private struct QuotaRingsView: View {
             }
         }
         .frame(width: size, height: size)
+        .contentShape(Circle())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let point):
+                // The original ring radii remain the hit targets while the chart is focused.
+                let radius = hypot(point.x - size / 2, point.y - size / 2)
+                let index = Int(((size / 2 - radius) / ringSpacing).rounded())
+                onHover(snapshots.indices.contains(index) ? snapshots[index].id : nil)
+            case .ended:
+                onHover(nil)
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            snapshots
+            (focusedSnapshot.map { [$0] } ?? snapshots)
                 .map { snap in
                     let alias = snap.name.trimmingCharacters(in: .whitespacesAndNewlines)
                     let label = alias.isEmpty ? snap.provider.displayName : alias
@@ -219,8 +233,8 @@ private struct QuotaRingsView: View {
         )
     }
 
-    private var centerProvider: Provider? {
-        snapshots.first { $0.id == hoveredSnapshotID }?.provider
+    private var focusedSnapshot: AccountSnapshot? {
+        snapshots.first { $0.id == hoveredSnapshotID }
     }
 
     private var lineWidth: CGFloat {
@@ -236,7 +250,7 @@ private struct QuotaRingsView: View {
 }
 
 // Shared with the rail, so both surfaces colour a provider the same way.
-func ringColor(_ snapshot: AccountSnapshot) -> Color {
+func ringColor(_ snapshot: AccountSnapshot, colorScheme: ColorScheme = .dark) -> Color {
     switch snapshot.provider {
     case .claude, .claudeCode, .anthropic:
         return Color(red: 0.85, green: 0.47, blue: 0.34)
@@ -250,8 +264,16 @@ func ringColor(_ snapshot: AccountSnapshot) -> Color {
         return Color(red: 0.55, green: 0.45, blue: 0.95)
     case .pi:
         return Color(red: 0.94, green: 0.36, blue: 0.55)
+    case .cursor:
+        return colorScheme == .dark
+            ? Color(red: 0.74, green: 0.72, blue: 0.67)
+            : Color(red: 0.45, green: 0.43, blue: 0.39)
+    case .antigravity:
+        return colorScheme == .dark
+            ? Color(red: 0.68, green: 0.78, blue: 0.25)
+            : Color(red: 0.38, green: 0.47, blue: 0.12)
     case .grok:
-        return Color(red: 0.66, green: 0.68, blue: 0.72)
+        return Color(red: 0.48, green: 0.53, blue: 0.62)
     default:
         return Color(red: 0.93, green: 0.39, blue: 0.58)
     }

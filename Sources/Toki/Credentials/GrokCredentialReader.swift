@@ -5,16 +5,14 @@ import Foundation
 // only checks whether the CLI already has a live-looking credential cached, the same way
 // ProviderDetection checks Claude Code, Codex, and Gemini for onboarding.
 //
-// There is deliberately no usage/quota lookup here - the CLI's own subcommand surface
-// (`grok --help`) has no account/usage/billing command, so like Gemini and Copilot, Grok
-// is detection-only. The email is best-effort: pulled from an id_token JWT if one is
-// cached, falling back to a plain top-level field if the CLI ever stores it that way.
+// The email is best-effort: pulled from an ID-token JWT or a cached email field.
 enum GrokCredentialReader {
     struct Credentials {
         var email: String?
     }
 
-    static func readCredentials(path: String = "~/.grok/auth.json") throws -> Credentials {
+    static func readCredentials(path: String = "~/.grok/auth.json",
+                                requiresUniqueAccount: Bool = false) throws -> Credentials {
         let expanded = expandedPath(path)
         guard FileManager.default.fileExists(atPath: expanded) else {
             throw LocalizedErrorMessage("No Grok CLI credentials found")
@@ -23,10 +21,28 @@ enum GrokCredentialReader {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw LocalizedErrorMessage("No Grok CLI credentials found")
         }
-        let idToken = firstString(in: json, keys: ["id_token", "idToken"])
+        let credential: [String: Any]
+        if requiresUniqueAccount {
+            // Grok ignores WebLogin credentials, including entries at the inherited scope.
+            let candidates = json.compactMap { scope, value -> [String: Any]? in
+                guard scope.contains("::") || scope == "https://accounts.x.ai/sign-in",
+                      let entry = value as? [String: Any],
+                      let mode = entry["auth_mode"] as? String, mode == "oidc" || mode == "external",
+                      let key = entry["key"] as? String, !key.isEmpty else { return nil }
+                return entry
+            }
+            guard json["xai::api_key"] == nil, candidates.count == 1, let current = candidates.first else {
+                return Credentials(email: nil)
+            }
+            credential = current
+        } else {
+            credential = json
+        }
+        let idToken = firstString(in: credential, keys: ["id_token", "idToken"])
         let claims = idToken.flatMap(jwtPayload)
         let email = claims.flatMap { firstString(in: $0, keys: ["email", "Email"]) }
-            ?? firstString(in: json, keys: ["email", "Email"])
+            ?? firstString(in: credential, keys: ["email", "Email"])
+        if requiresUniqueAccount, email?.contains("@") != true { return Credentials(email: nil) }
         return Credentials(email: email)
     }
 }
