@@ -109,17 +109,25 @@ Vercel's `fx`. Auto-detected from its local usage ledger (`~/.fx/usage.jsonl`); 
 
 ## Cursor
 
-Detected when either the `cursor-agent` CLI or the Cursor desktop app is installed. When you are signed into Cursor, Toki reads your usage from `cursor.com` using the OAuth token in the desktop app's local state: spend this cycle against your plan's limit as a ring, token counts, and the billing-cycle reset. The desktop agent runs inside the app with no separate process, so the card also reads local AI-edit and chat activity to show **Active** and sort by recency, and falls back to that alone when signed out.
+Detected when either the `cursor-agent` CLI or the Cursor desktop app is installed. To read usage from an encrypted desktop sign-in, expand the card, select **Connect Cursor Usage**, and approve the macOS Keychain prompt. A one-time approval lasts until Toki quits. Toki reads the weekly allowance and reset for The X Subscription, and billing-cycle spend and tokens for legacy plans. The card also reads local AI-edit and chat activity.
 
-The ring's denominator is the spend cap the API reports, which for a team member is the team's shared cap. If your personal cap differs, set it (in dollars) with a configured account so the ring is yours:
+The legacy spend ring uses the cap reported by Cursor, which can be the team's shared cap. Set a personal display cap in dollars with a configured account:
 
 ```json
 { "label": "Cursor", "type": "cursor", "limit": 20 }
 ```
 
-## Copilot, Gemini, Grok, Antigravity
+## Grok Build
 
-Agent-detection only. Toki shows a local active-session count, and sign-in state for Gemini and Grok, but invents no quota, because none of GitHub, Google, or xAI expose a usage API Toki reads for these. Antigravity (Google's `agy`) is detected by its CLI; its agent rows read the conversation title and last activity from `~/.gemini/antigravity-cli` (its live history log and conversation summaries).
+Toki reads the weekly allowance and reset from the signed-in Grok Build CLI. When Cursor confirms The X Subscription and both providers report the same account and reset time, the Cursor & Grok card shows one weekly allowance and sessions from both tools.
+
+## Antigravity
+
+Toki reads each model group's five-hour and weekly quotas from the signed-in `agy` CLI (1.1.11 or later). Active sessions still show when the CLI cannot supply quota.
+
+## Copilot, Gemini
+
+Agent-detection only. Toki shows a local active-session count and detects Gemini sign-in.
 
 ## Zed
 

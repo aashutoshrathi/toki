@@ -206,7 +206,9 @@ enum ActiveAgentScanner {
             }
             let candidates = output.split(separator: "\n").compactMap(parse(line:))
             let roots = candidates.filter { candidate in
-                !candidates.contains { possibleParent in
+                if candidate.parentPID == ProcessInfo.processInfo.processIdentifier,
+                   candidate.provider == .grok || candidate.provider == .antigravity { return false }
+                return !candidates.contains { possibleParent in
                     possibleParent.pid == candidate.parentPID && possibleParent.provider == candidate.provider
                 }
             }

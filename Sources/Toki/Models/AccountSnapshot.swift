@@ -126,6 +126,12 @@ struct ResetGrantItem: Identifiable, Hashable, Sendable {
     }
 }
 
+struct WeeklySubscriptionQuota: Hashable {
+    let email: String
+    let ratio: Double
+    let window: RateLimitWindow
+}
+
 struct AccountSnapshot: Identifiable, Hashable {
     var id: String
     var name: String
@@ -216,11 +222,26 @@ struct AccountSnapshot: Identifiable, Hashable {
     // A compact value (e.g. Pi's "$1.20" today-spend) for cost-based providers that have no
     // percentage to show. When set, the menu bar renders this instead of a "--" placeholder.
     var menuBarValue: String? = nil
-    // True for providers with no usage/quota API at all (Grok, Copilot) - the card still
+    // True when usage is unavailable - the card still
     // shows identity and active-session count, but never a percentage or progress bar.
     var isAgentDetectionOnly: Bool = false
     var isSignInExpired: Bool = false
     var lastActivity: Date? = nil
+    var requiresCursorKeychainAccess: Bool = false
+    var weeklySubscriptionQuota: WeeklySubscriptionQuota? = nil
+    var sharedWithCursorID: String? = nil
+    var cursorIdentity: String? = nil
+
+    func sessionProviders(among snapshots: [AccountSnapshot]) -> Set<Provider> {
+        if provider == .cursor, snapshots.contains(where: { $0.sharedWithCursorID == id }) {
+            return [.cursor, .grok]
+        }
+        return [provider]
+    }
+
+    func sharedDisplayName(among snapshots: [AccountSnapshot]) -> String {
+        sessionProviders(among: snapshots).count > 1 ? "\(name) & Grok" : name
+    }
 
     static let loadingPrimary = "Refreshing"
 

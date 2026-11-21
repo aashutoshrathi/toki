@@ -26,14 +26,14 @@ enum WidgetDataStore {
         updatedAt: Date
     ) -> WidgetDataSnapshot {
         let widgetEntries = snapshots
-            .filter { !$0.isLoadingPlaceholder }
+            .filter { !$0.isLoadingPlaceholder && $0.sharedWithCursorID == nil }
             .map { snapshot in
                 WidgetEntry(
                     id: snapshot.id,
                     provider: snapshot.provider.rawValue,
                     // Widgets are visible on the desktop even when the popover is closed. Use
                     // the provider label rather than an account name that may contain an email.
-                    displayName: snapshot.provider.displayName,
+                    displayName: snapshot.sessionProviders(among: snapshots).count > 1 ? "Cursor & Grok" : snapshot.provider.displayName,
                     value: widgetValue(for: snapshot),
                     remainingRatio: snapshot.remainingRatio,
                     leadingText: snapshot.emoji,

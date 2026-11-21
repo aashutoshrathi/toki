@@ -17,6 +17,8 @@ struct AccountCard: View {
     @State private var selectedResetGroup: ResetCreditGroup? = nil
     @State private var unredeemableGroupNotice: ResetCreditGroup? = nil
     @State private var isHovered = false
+    @State private var isConnectingCursor = false
+    @State private var cursorConnectionFailed = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
@@ -47,7 +49,8 @@ struct AccountCard: View {
         for snapshot: AccountSnapshot,
         among snapshots: [AccountSnapshot]
     ) -> [ActiveAgent] {
-        let agents = activeAgents.filter { $0.provider == snapshot.provider }
+        let providers = snapshot.sessionProviders(among: snapshots)
+        let agents = activeAgents.filter { providers.contains($0.provider) }
         if snapshot.provider == .codex {
             return codexAttributedAgents(agents, for: snapshot, among: snapshots)
         }
@@ -234,6 +237,16 @@ struct AccountCard: View {
                 // sits above the metrics rather than under them.
                 if let serviceStatus {
                     ServiceStatusRow(status: serviceStatus)
+                }
+
+                if snapshot.requiresCursorKeychainAccess {
+                    Button("Connect Cursor Usage", action: connectCursorUsage)
+                        .disabled(isConnectingCursor)
+                        .alert("Cursor usage could not connect", isPresented: $cursorConnectionFailed) {
+                            Button("OK", role: .cancel) {}
+                        } message: {
+                            Text("Open Cursor to check your sign-in, then allow Toki to access Cursor Safe Storage in the macOS prompt.")
+                        }
                 }
 
                 // Sessions only make sense for a connected account; when the account is
@@ -503,7 +516,7 @@ struct AccountCard: View {
     // The provider logo and alias are already on the group header, so this is the part that
     // actually distinguishes one account from its sibling.
     private var compactIdentityTitle: String {
-        let raw = emailAddress(in: snapshot) ?? accountIdentifier
+        let raw = emailAddress(in: snapshot) ?? snapshot.sharedDisplayName(among: store.snapshots)
         return store.hidesSensitiveInfo ? SensitiveText.redactingEmails(raw) : raw
     }
 
@@ -517,7 +530,7 @@ struct AccountCard: View {
            accountIdentifier == "Claude - \(email)" {
             displayName = snapshot.provider.displayName
         } else {
-            displayName = accountIdentifier
+            displayName = snapshot.sharedDisplayName(among: store.snapshots)
         }
         return store.hidesSensitiveInfo ? SensitiveText.redactingEmails(displayName) : displayName
     }
@@ -730,15 +743,17 @@ struct AccountCard: View {
 
     @ViewBuilder
     private var accountSessions: some View {
+        let shared = snapshot.sessionProviders(among: store.snapshots).count > 1
+        let title = shared ? "Cursor & Grok" : snapshot.provider.displayName
         if accountAgents.isEmpty {
-            Text("No active \(snapshot.provider.displayName) sessions")
+            Text("No active \(title) sessions")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 6)
         } else {
             VStack(alignment: .leading, spacing: 4) {
-                Text("All active \(snapshot.provider.displayName) sessions")
+                Text("All active \(title) sessions")
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
                 ForEach(accountAgents) { agent in
@@ -759,8 +774,8 @@ struct AccountCard: View {
                                 }
                             }
                             Spacer()
-                            if let host = agent.hostApp {
-                                Text(host.displayName)
+                            if let source = shared ? agent.provider.displayName : agent.hostApp?.displayName {
+                                Text(source)
                                     .font(.system(size: 9))
                                     .foregroundStyle(.tertiary)
                             }
@@ -952,6 +967,23 @@ struct AccountCard: View {
     private func saveAlias() {
         store.renameAccount(snapshot: snapshot, alias: aliasDraft)
         isEditingAlias = false
+    }
+
+    private func connectCursorUsage() {
+        isConnectingCursor = true
+        Task {
+            let connected = await Task.detached(priority: .userInitiated) {
+                if case .connected = CursorAuth.read(allowPrompt: true) { return true }
+                return false
+            }.value
+            isConnectingCursor = false
+            guard connected else {
+                cursorConnectionFailed = true
+                return
+            }
+            expandedTab = .usage
+            store.refreshOnceIdle()
+        }
     }
 
     private var agentStatusActive: Bool {

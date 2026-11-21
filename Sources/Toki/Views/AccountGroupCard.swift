@@ -105,7 +105,8 @@ struct AccountGroupCard: View {
     }
 
     private var sessionCount: [ActiveAgent] {
-        store.activeAgents.filter { $0.provider == provider }
+        let providers = Set(snapshots.flatMap { $0.sessionProviders(among: store.snapshots) })
+        return store.activeAgents.filter { providers.contains($0.provider) }
     }
 
     private var rowBackground: Color {

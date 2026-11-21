@@ -167,6 +167,7 @@ private func pinnedMenuBarEntries(
         return smartMenuBarEntries(for: snapshots, quotaWindows: quotaWindows, accounts: accounts)
     }
 
+    var displayed = Set<String>()
     let entries = pinnedProviders.compactMap { provider -> MenuBarStatusEntry? in
         let match = menuBarAccount(
             for: provider,
@@ -175,7 +176,13 @@ private func pinnedMenuBarEntries(
             preferredWindow: quotaWindows[provider.rawValue],
             preferActive: provider.isClaudeAccount
         )
-        return match.map { menuBarEntry(for: $0, preferredWindow: quotaWindows[provider.rawValue]) }
+        guard let match else { return nil }
+        var representative = match.sharedWithCursorID.flatMap { id in
+            snapshots.first { $0.id == id && $0.provider == .cursor }
+        } ?? match
+        guard displayed.insert("\(representative.provider.rawValue):\(representative.id)").inserted else { return nil }
+        representative.name = representative.sharedDisplayName(among: snapshots)
+        return menuBarEntry(for: representative, preferredWindow: quotaWindows[representative.provider.rawValue])
     }
 
     // The density owns the cap, so what the settings panel promises and what the bar draws
@@ -691,6 +698,7 @@ struct AccountGroup: Identifiable {
 /// this keeps the provider's place in the list while collecting its siblings beside it.
 func accountGroups(for snapshots: [AccountSnapshot]) -> [AccountGroup] {
     snapshots.reduce(into: []) { groups, snapshot in
+        guard snapshot.sharedWithCursorID == nil else { return }
         if let index = groups.firstIndex(where: { $0.provider == snapshot.provider }) {
             groups[index].snapshots.append(snapshot)
         } else {

@@ -210,11 +210,6 @@ enum ProviderDetection {
         )
     }
 
-    // Unlike Claude Code/Codex, there's no quota API to poll here - the grok CLI's own
-    // subcommands have no account/usage/billing lookup. Still worth a config.json entry
-    // (unlike OpenCode, which is auto-tracked without one) so it gets a real card instead
-    // of only surfacing via agent detection in the Agents tab; UsageFetcher renders it as
-    // an agent-detection-only snapshot (see agentOnlySnapshot).
     private static func detectGrok() -> DetectedProvider? {
         guard let credentials = try? GrokCredentialReader.readCredentials() else { return nil }
         return DetectedProvider(
@@ -227,8 +222,7 @@ enum ProviderDetection {
         )
     }
 
-    // Same story as Grok: gemini-cli has no quota API for personal accounts either
-    // (checked its shipped source directly), so this is agent-detection-only too.
+    // gemini-cli has no quota API for personal accounts, so this is agent-detection-only.
     private static func detectGemini() -> DetectedProvider? {
         guard let credentials = try? GeminiCredentialReader.readCredentials() else { return nil }
         return DetectedProvider(
@@ -241,9 +235,6 @@ enum ProviderDetection {
         )
     }
 
-    // Cursor has no quota API, so like Grok/Gemini this is agent-detection-only: detected by
-    // the presence of the cursor-agent CLI, rendered as an agent-only card that fills with live
-    // sessions in the Agents tab.
     private static func detectCursor() -> DetectedProvider? {
         guard UsageFetcher.cursorIsInstalled() else { return nil }
         return DetectedProvider(
