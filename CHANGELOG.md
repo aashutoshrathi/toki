@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.4.4 - 2026-11-21
+
+One Line: Track Cursor, Grok, and Antigravity quotas, see shared Cursor and Grok usage once, and focus quota rings by hovering.
+
+### Added
+- **Cursor weekly allowance.** Cursor accounts on The X Subscription show their shared weekly allowance and reset time. Older plans keep their billing-cycle spend and token readouts.
+- **Grok Build weekly usage.** Toki reads the weekly allowance and reset from your signed-in Grok CLI. If quota cannot be read, active sessions remain available.
+- **Antigravity quotas by model group.** See each model group's five-hour and weekly limits from the signed-in Antigravity CLI (`agy` 1.1.11 or later). The account summary reflects the best group you can still use, while the individual bars retain each group's limits.
+- **One view for shared Cursor and Grok quota.** When both providers report the same account and weekly reset, Toki combines the allowance into a Cursor & Grok card with sessions from both tools. Pinned menu-bar entries, widgets, and Remote Control show that shared allowance once.
+
+### Changed
+- **Provider colors and focused quota rings.** Cursor, Grok, and Antigravity have distinct provider colors. All quota rings show by default; hover a provider row or ring to focus its ring.
+- **Account identity and plan details.** Cursor, Grok, and Gemini cards show the account email when available. Cursor and Grok also show plan details, with account emails covered by Hide sensitive info.
+
+### Fixed
+- **Encrypted Cursor sign-ins can connect to usage.** Expand the Cursor card, select Connect Cursor Usage, and approve the macOS Keychain prompt to read an encrypted desktop sign-in. Background refreshes do not prompt for access.
+
 ## 3.4.3 - 2026-11-20
 
 One Line: See which reset credit will be redeemed next and what is queued behind it, separate Claude Standard and Fable resets, and view Sarvam token usage.
