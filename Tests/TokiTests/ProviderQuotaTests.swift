@@ -89,6 +89,31 @@ final class ProviderQuotaTests: XCTestCase {
         XCTAssertEqual(UsageFetcher.reconcileSharedWeeklyQuota([shared])[0], grok)
     }
 
+    func testGrokReadsIdentityOnlyFromAnUnambiguousCurrentCredential() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let authFile = root.appendingPathComponent("auth.json")
+        let currentScope = "https://auth.example.com::current"
+        let current = ["auth_mode": "oidc", "key": "fixture", "email": "current@example.com"]
+        var cache = [
+            "https://accounts.x.ai/sign-in": ["auth_mode": "web_login", "key": "fixture", "email": "stale@example.com"],
+            currentScope: current,
+        ]
+        func readEmail() throws -> String? {
+            try JSONSerialization.data(withJSONObject: cache).write(to: authFile)
+            return try GrokCredentialReader.readCredentials(path: authFile.path, requiresUniqueAccount: true).email
+        }
+        XCTAssertEqual(try readEmail(), "current@example.com")
+
+        cache[currentScope]?.removeValue(forKey: "email")
+        XCTAssertNil(try readEmail())
+
+        cache[currentScope] = current
+        cache["https://auth.example.com::other"] = ["auth_mode": "oidc", "key": "fixture", "email": "other@example.com"]
+        XCTAssertNil(try readEmail())
+    }
+
     func testAntigravityEnablesSlashCommandsForUsageProbe() throws {
         let arguments = AntigravityUsageClient.usageArguments
         let index = try XCTUnwrap(arguments.firstIndex(of: "--settings"))
@@ -97,18 +122,22 @@ final class ProviderQuotaTests: XCTestCase {
         XCTAssertTrue(arguments.contains("/usage"))
     }
 
-    func testAntigravityKeepsModelGroupsAndRejectsDisabledBuckets() throws {
+    func testAntigravityAvailabilityUsesTheBestGroupAfterApplyingItsTightestWindow() throws {
         let input = Data(#"""
         {"status":"SUCCESS","num_turns":0,"command":{"name":"usage","data":{"groups":[
           {"name":"Gemini Models","buckets":[
             {"window":"weekly","remaining_fraction":0.9995}, {"window":"5h","remaining_fraction":0.8}]},
           {"name":"Claude and GPT models","buckets":[
-            {"window":"weekly","remaining_fraction":0.65}, {"window":"5h","remaining_fraction":0,"disabled":true}]}
+            {"window":"weekly","remaining_fraction":0}, {"window":"5h","remaining_fraction":0,"disabled":true}]}
         ]}}}
         """#.utf8)
         let account = AccountConfig(id: "agy", name: "Antigravity", provider: .antigravity)
         let snapshot = try XCTUnwrap(AntigravityUsageClient.snapshot(for: account, data: input, now: now))
-        XCTAssertEqual(snapshot.remainingRatio, 0.65)
+        XCTAssertEqual(snapshot.remainingRatio, 0.8)
+        XCTAssertFalse(allTrackedQuotaExhausted([snapshot]))
+        let pinned = menuBarEntries(for: [snapshot], mode: .pinned, pinnedProviders: [.antigravity])
+        XCTAssertEqual(pinned.first?.provider, .antigravity)
+        XCTAssertEqual(pinned.first?.value, "80%")
         XCTAssertEqual(snapshot.modelWindows.map(\.label), ["Gemini Models 7d", "Gemini Models 5h", "Claude and GPT models 7d"])
         XCTAssertEqual(snapshot.modelWindows.map(\.duration), [604_800, 18_000, 604_800])
         XCTAssertTrue(snapshot.planWindows.isEmpty)

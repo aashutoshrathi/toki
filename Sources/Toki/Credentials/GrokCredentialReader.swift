@@ -21,13 +21,28 @@ enum GrokCredentialReader {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw LocalizedErrorMessage("No Grok CLI credentials found")
         }
-        if requiresUniqueAccount, json.keys.filter({ $0.contains("::") }).count > 1 {
-            return Credentials(email: nil)
+        let credential: [String: Any]
+        if requiresUniqueAccount {
+            // Grok ignores WebLogin credentials, including entries at the inherited scope.
+            let candidates = json.compactMap { scope, value -> [String: Any]? in
+                guard scope.contains("::") || scope == "https://accounts.x.ai/sign-in",
+                      let entry = value as? [String: Any],
+                      let mode = entry["auth_mode"] as? String, mode == "oidc" || mode == "external",
+                      let key = entry["key"] as? String, !key.isEmpty else { return nil }
+                return entry
+            }
+            guard json["xai::api_key"] == nil, candidates.count == 1, let current = candidates.first else {
+                return Credentials(email: nil)
+            }
+            credential = current
+        } else {
+            credential = json
         }
-        let idToken = firstString(in: json, keys: ["id_token", "idToken"])
+        let idToken = firstString(in: credential, keys: ["id_token", "idToken"])
         let claims = idToken.flatMap(jwtPayload)
         let email = claims.flatMap { firstString(in: $0, keys: ["email", "Email"]) }
-            ?? firstString(in: json, keys: ["email", "Email"])
+            ?? firstString(in: credential, keys: ["email", "Email"])
+        if requiresUniqueAccount, email?.contains("@") != true { return Credentials(email: nil) }
         return Credentials(email: email)
     }
 }

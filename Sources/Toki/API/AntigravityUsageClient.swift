@@ -73,7 +73,7 @@ enum AntigravityUsageClient {
         var seen = Set<String>()
         var windows: [RateLimitWindow] = []
         var metrics: [MetricLine] = []
-        var lowest: Double?
+        var remainingByGroup: [String: Double] = [:]
         for group in report.command.data.groups where !group.name.isEmpty {
             for bucket in group.buckets {
                 guard bucket.disabled != true, let fraction = bucket.remaining_fraction,
@@ -96,14 +96,15 @@ enum AntigravityUsageClient {
                 ))
                 let precision = fraction.formatted(.percent.precision(.fractionLength(0...2)))
                 metrics.append(MetricLine(label: label, value: "\(precision) left"))
-                lowest = min(lowest ?? fraction, fraction)
+                remainingByGroup[group.name] = min(remainingByGroup[group.name] ?? fraction, fraction)
             }
         }
-        guard let lowest else { return nil }
+        // Every window constrains its own group, and any available group can still run.
+        guard let remaining = remainingByGroup.values.max() else { return nil }
         return AccountSnapshot(
             id: account.id, name: account.name, provider: .antigravity,
-            primary: "\(lowest.formatted(.percent.precision(.fractionLength(0...2)))) left in lowest window",
-            subtitle: "Model group quotas", remainingRatio: lowest,
+            primary: "\(remaining.formatted(.percent.precision(.fractionLength(0...2)))) left in best model group",
+            subtitle: "Model group quotas", remainingRatio: remaining,
             metrics: metrics, modelWindows: windows
         )
     }
