@@ -461,7 +461,8 @@ enum UsageFetcher {
     }
 
     private static func agentOnlySnapshot(for account: AccountConfig, detail: String = "No usage API") -> AccountSnapshot {
-        AccountSnapshot(
+        let email = account.provider == .gemini ? (try? GeminiCredentialReader.readCredentials())?.email : nil
+        return AccountSnapshot(
             id: account.id,
             name: account.name,
             provider: account.provider,
@@ -469,6 +470,7 @@ enum UsageFetcher {
             subtitle: detail,
             remainingRatio: nil,
             metrics: [],
+            accountInfo: emailAccountInfo(email),
             isError: false,
             isAgentDetectionOnly: true
         )

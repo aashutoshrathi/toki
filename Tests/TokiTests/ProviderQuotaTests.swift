@@ -54,6 +54,7 @@ final class ProviderQuotaTests: XCTestCase {
     func testGrokSharesOnlyAVerifiedCursorAllowanceAndRetainsItsOwnReading() throws {
         let grokAccount = AccountConfig(id: "grok", name: "Grok", provider: .grok)
         let grokBilling: [String: Any] = [
+            "subscription_tier": "Fixture Plan",
             "config": [
                 "creditUsagePercent": 13,
                 "currentPeriod": ["type": "USAGE_PERIOD_TYPE_WEEKLY", "end": reset]
@@ -67,6 +68,12 @@ final class ProviderQuotaTests: XCTestCase {
         let grok = try XCTUnwrap(GrokUsageClient.snapshot(
             for: grokAccount, billing: grokBilling, email: "account@example.com", now: now
         ))
+        XCTAssertEqual(emailAddress(in: grok), "account@example.com")
+        XCTAssertEqual(grok.accountInfo.first { $0.label == "Plan" }?.value, "Fixture Plan")
+        let standalone = RemoteControlServer.usagePayload(from: [grok], preferences: AppPreferences(), now: now)
+        XCTAssertEqual(standalone.first?["detail"] as? String, "Fixture Plan")
+        XCTAssertFalse(String(decoding: try JSONSerialization.data(withJSONObject: standalone), as: UTF8.self)
+            .contains("account@example.com"))
         let cursorWindow = try XCTUnwrap(cursor.primaryWindow)
         cursor.weeklySubscriptionQuota = WeeklySubscriptionQuota(email: "someone@example.com", ratio: 0.8675, window: cursorWindow)
         XCTAssertEqual(UsageFetcher.reconcileSharedWeeklyQuota([cursor, grok])[1].remainingRatio, 0.87)

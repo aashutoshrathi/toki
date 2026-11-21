@@ -68,11 +68,13 @@ enum GrokUsageClient {
             resetHint: reset.map { "resets in \(resetDescription(for: $0))" },
             resetAt: reset, duration: 7 * 86_400
         )
+        let plan = response.subscription_tier.map { [MetricLine(label: "Plan", value: $0)] } ?? []
         return AccountSnapshot(
             id: account.id, name: account.name, provider: .grok,
             primary: "\(window.percentLeft)% left",
             subtitle: response.subscription_tier ?? "Grok weekly allowance",
-            remainingRatio: fraction, metrics: [], primaryWindow: window,
+            remainingRatio: fraction, metrics: [],
+            accountInfo: emailAccountInfo(email) + plan, primaryWindow: window,
             weeklySubscriptionQuota: email.map { WeeklySubscriptionQuota(email: $0, ratio: fraction, window: window) }
         )
     }

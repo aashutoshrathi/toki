@@ -25,6 +25,11 @@ func emailIdentifier(in json: [String: Any]) -> String? {
     return nil
 }
 
+func emailAccountInfo(_ email: String?) -> [MetricLine] {
+    guard let email, email.contains("@") else { return [] }
+    return [MetricLine(label: "Email", value: email)]
+}
+
 func emailAddress(in snapshot: AccountSnapshot) -> String? {
     if let email = snapshot.accountInfo.first(where: { $0.label == "Email" })?.value,
        email.contains("@") {

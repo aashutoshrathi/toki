@@ -47,21 +47,25 @@ struct CursorUsageClient {
                 guard let weekly = Self.parseUnifiedUsage(shared) else {
                     return localSnapshot(activity: activity, detail: "Cursor did not report a current weekly allowance")
                 }
-                let identity = try? await dashboard("auth/me", credentials: credentials)
-                let email = identity.flatMap { firstString(in: $0, keys: ["email"]) }
+                let email = await fetchEmail(credentials: credentials)
+                try Task.checkCancellation()
                 let quota = email.map { WeeklySubscriptionQuota(email: $0, ratio: weekly.ratio, window: weekly.window) }
                 return AccountSnapshot(
                     id: account.id, name: account.name, provider: .cursor,
                     primary: "\(weekly.ratio.formatted(.percent.precision(.fractionLength(0...2)))) left",
                     subtitle: "X Subscription · shared with Grok",
                     remainingRatio: weekly.ratio, metrics: [],
+                    accountInfo: emailAccountInfo(email) + [MetricLine(label: "Plan", value: "X Subscription")],
                     primaryWindow: weekly.window, lastActivity: activity, weeklySubscriptionQuota: quota,
                     cursorIdentity: credentials.userId
                 )
             }
+            async let email = fetchEmail(credentials: credentials)
             let usage = try await fetchUsage(credentials: credentials, probeFailure: probeFailure,
                                             knownLegacy: previous != nil && previous?.primaryWindow == nil)
             var snapshot = usageSnapshot(usage: usage, activity: activity)
+            snapshot.accountInfo = emailAccountInfo(await email)
+            try Task.checkCancellation()
             snapshot.cursorIdentity = credentials.userId
             return snapshot
         } catch let error as HTTPStatusError where error.statusCode == 401 || error.statusCode == 403 {
@@ -188,6 +192,11 @@ struct CursorUsageClient {
     static func parseCycleEnd(_ object: [String: Any]) -> Double? {
         let ms = doubleFrom(object["nextCycleStart"])
         return ms > 0 ? ms : nil
+    }
+
+    private func fetchEmail(credentials: CursorAuth.Credentials) async -> String? {
+        let identity = try? await dashboard("auth/me", credentials: credentials)
+        return identity.flatMap { firstString(in: $0, keys: ["email"]) }
     }
 
     private func fetchProfile(credentials: CursorAuth.Credentials) async throws -> (plan: String?, teamId: Int?) {

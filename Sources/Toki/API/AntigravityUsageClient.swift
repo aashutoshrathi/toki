@@ -104,7 +104,7 @@ enum AntigravityUsageClient {
         return AccountSnapshot(
             id: account.id, name: account.name, provider: .antigravity,
             primary: "\(remaining.formatted(.percent.precision(.fractionLength(0...2)))) left in best model group",
-            subtitle: "Model group quotas", remainingRatio: remaining,
+            subtitle: "Antigravity - CLI usage", remainingRatio: remaining,
             metrics: metrics, modelWindows: windows
         )
     }
