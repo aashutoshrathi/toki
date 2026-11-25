@@ -569,6 +569,30 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertFalse(timer.isValid)
     }
 
+    func testStartingSnapshotPublishingReplacesHeartbeatTimer() throws {
+        let server = RemoteControlServer(tailscaleStatusReader: { _ in
+            .init(name: nil, diagnostic: nil, cliAvailable: false, serveState: .notServing, serveHost: nil)
+        })
+        let firstPipe = Pipe()
+        let firstTimer = server.startSnapshotPublishing(to: firstPipe)
+        let secondPipe = Pipe()
+        let secondTimer = server.startSnapshotPublishing(to: secondPipe)
+
+        XCTAssertFalse(firstTimer.isValid)
+        XCTAssertTrue(secondTimer.isValid)
+        firstTimer.fire()
+        secondTimer.fire()
+        server.stopSnapshotPublishing()
+        XCTAssertFalse(secondTimer.isValid)
+
+        try firstPipe.fileHandleForWriting.close()
+        try secondPipe.fileHandleForWriting.close()
+        let firstData = try XCTUnwrap(firstPipe.fileHandleForReading.readToEnd())
+        let secondData = try XCTUnwrap(secondPipe.fileHandleForReading.readToEnd())
+        XCTAssertEqual(firstData.split(separator: 0x0A).count, 2, "Invalidated timer must not emit a heartbeat")
+        XCTAssertEqual(secondData.split(separator: 0x0A).count, 4, "Only the current timer emits its heartbeat")
+    }
+
     // The payload is built from the snapshots, so the phone shows the same reading as the menu bar.
     func testUsagePayloadCarriesTheReadingTheMenuBarShows() {
         var snapshot = AccountSnapshot(
