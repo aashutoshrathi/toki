@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.5 - 2026-11-25
+
+One Line: Reduce background agent scans, skip unchanged menu-bar updates, and check Tailscale only while its settings are visible.
+
+### Changed
+- **Less background agent scanning.** Toki scans once a minute while the popover is closed and idle. Opening the popover scans immediately; scans stay at 15 seconds while it is open, an agent needs input, or Remote Control is running. Repeated manual refreshes share one follow-up scan instead of overlapping.
+- **Fewer menu-bar redraws.** Unchanged quota readouts, input counts, Remote Control indicators, and display density no longer trigger another menu-bar render.
+- **Tailscale checks follow Settings visibility.** Toki polls Tailscale while Settings is visible and Remote Control uses Tailscale or the hosted companion app. Concurrent status requests share one check, and unchanged status values no longer trigger UI updates.
+
 ## 3.4.4 - 2026-11-21
 
 One Line: Track Cursor, Grok, and Antigravity quotas, see shared Cursor and Grok usage once, and focus quota rings by hovering.
