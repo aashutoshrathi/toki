@@ -133,6 +133,19 @@ final class RemoteControlServer: ObservableObject {
     @Published private(set) var isStartingTunnel = false
     @Published private(set) var tunnelError: String?
 
+    struct TailscaleStatusSnapshot: Sendable {
+        let name: String?
+        let diagnostic: String?
+        let cliAvailable: Bool
+        let serveState: ServeState
+        let serveHost: String?
+    }
+
+    typealias TailscaleStatusReader = @MainActor (Int) async -> TailscaleStatusSnapshot
+    private let tailscaleStatusReader: TailscaleStatusReader
+    private var tailscaleRefreshTask: Task<Void, Never>?
+    private var tailscaleRefreshGeneration = 0
+
     @Published var hostMode: HostMode = .localhost {
         didSet {
             guard hostMode != oldValue else { return }
@@ -173,12 +186,31 @@ final class RemoteControlServer: ObservableObject {
     var onResetRequest: ((String) -> Void)?
     var onOpenRequest: ((Int32) -> Void)?
 
-    private init() {
+    private convenience init() {
+        self.init(tailscaleStatusReader: { port in
+            await Task.detached(priority: .utility) {
+                let status = Self.readTailscaleStatus()
+                let serve = Self.readTailscaleServe(port: port)
+                return TailscaleStatusSnapshot(
+                    name: status.name,
+                    diagnostic: status.diagnostic,
+                    cliAvailable: status.cliAvailable,
+                    serveState: serve.state,
+                    serveHost: serve.host
+                )
+            }.value
+        }, refreshOnInit: true)
+    }
+
+    init(tailscaleStatusReader: @escaping TailscaleStatusReader, refreshOnInit: Bool = false) {
+        self.tailscaleStatusReader = tailscaleStatusReader
         hostMode = Self.preferredHostMode(
             tailscaleAvailable: Self.tailscaleIP() != nil,
             localNetworkAvailable: Self.localNetworkIP() != nil
         )
-        refreshTailscaleStatus()
+        if refreshOnInit {
+            refreshTailscaleStatus()
+        }
     }
 
     var host: String? {
@@ -743,21 +775,43 @@ final class RemoteControlServer: ObservableObject {
         Self.isUsableTailscaleHost(detected: tailscaleDNSName, manual: manualTailscaleHost)
     }
 
-    func refreshTailscaleStatus() {
+    @discardableResult
+    func refreshTailscaleStatus() -> Task<Void, Never> {
+        if let tailscaleRefreshTask, !tailscaleRefreshTask.isCancelled {
+            return tailscaleRefreshTask
+        }
+
+        tailscaleRefreshGeneration &+= 1
+        let generation = tailscaleRefreshGeneration
         let checkPort = port
-        Task {
-            let result = await Task.detached(priority: .utility) {
-                let status = Self.readTailscaleStatus()
-                let serve = Self.readTailscaleServe(port: checkPort)
-                return (name: status.name, diagnostic: status.diagnostic, cli: status.cliAvailable, serve: serve)
-            }.value
-            tailscaleStatusDiagnostic = result.diagnostic
-            tailscaleCLIAvailable = result.cli
-            serveState = result.serve.state
+        let task = Task {
+            // A cancelled task can finish after its replacement; only the latest may publish or clean up.
+            defer {
+                if tailscaleRefreshGeneration == generation {
+                    tailscaleRefreshTask = nil
+                }
+            }
+            guard !Task.isCancelled else { return }
+            let result = await tailscaleStatusReader(checkPort)
+            guard !Task.isCancelled, tailscaleRefreshGeneration == generation else { return }
+            if tailscaleStatusDiagnostic != result.diagnostic {
+                tailscaleStatusDiagnostic = result.diagnostic
+            }
+            if tailscaleCLIAvailable != result.cliAvailable {
+                tailscaleCLIAvailable = result.cliAvailable
+            }
+            if serveState != result.serveState {
+                serveState = result.serveState
+            }
             // When status can't read the name, serve's own config names the same host, so use it.
-            tailscaleDNSName = result.name ?? result.serve.host
+            let name = result.name ?? result.serveHost
+            if tailscaleDNSName != name {
+                tailscaleDNSName = name
+            }
             enableTailscaleServeIfNeeded()
         }
+        tailscaleRefreshTask = task
+        return task
     }
 
     // Tailscale (or hosted) needs `tailscale serve` fronting the port for HTTPS, so Toki runs it.

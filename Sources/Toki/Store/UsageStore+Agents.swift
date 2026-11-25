@@ -1,18 +1,57 @@
 import Foundation
 
 extension UsageStore {
-    func refreshActiveAgents() {
+    func setAgentPopoverVisible(_ visible: Bool) {
+        guard agentPopoverVisible != visible else { return }
+        agentPopoverVisible = visible
+        scheduleAgentRefresh()
+        if visible {
+            // Opening is an explicit request for current data, not a reason to wait for the timer.
+            refreshActiveAgents()
+        }
+    }
+
+    func scheduleAgentRefresh() {
+        let needsFrequentRefresh = agentPopoverVisible || agentRemoteControlIsRunning()
+            || activeAgents.contains(where: \.needsInput)
+        let interval: TimeInterval = needsFrequentRefresh ? 15 : 60
+        // A scan or unrelated state change must not restart the current interval.
+        guard agentTimer?.timeInterval != interval else { return }
+        agentTimer?.invalidate()
+        agentTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshActiveAgents(manual: false)
+            }
+        }
+    }
+
+    func refreshActiveAgents(manual: Bool = true) {
         // Serialize scans: a slow scan must not overlap the next tick, or two detached
-        // tasks would race the scanner's PID cache. isScanningAgents is MainActor-isolated.
-        guard !isScanningAgents else { return }
+        // tasks would race the scanner's PID cache. Timer ticks coalesce by skipping;
+        // an explicit request retains one follow-up so it cannot be lost.
+        guard !isScanningAgents else {
+            if manual { agentRefreshAfterCurrent = true }
+            return
+        }
         isScanningAgents = true
         Task {
-            let previousAwaitingInput = activeAgents.filter(\.needsInput).count
-            let scanned = await ActiveAgentScanner.scan()
-            activeAgents = scanned
+            let scanned = await agentScan()
+            let previous = activeAgents
+            let previousAwaitingInput = previous.filter(\.needsInput).count
+            let previouslyNeededInput = previous.contains(where: \.needsInput)
+            if scanned != previous {
+                activeAgents = scanned
+            }
             isScanningAgents = false
             if scanned.filter(\.needsInput).count != previousAwaitingInput {
                 writeWidgetData(for: snapshots)
+            }
+            if previouslyNeededInput != scanned.contains(where: \.needsInput) {
+                scheduleAgentRefresh()
+            }
+            if agentRefreshAfterCurrent {
+                agentRefreshAfterCurrent = false
+                refreshActiveAgents(manual: false)
             }
         }
     }
