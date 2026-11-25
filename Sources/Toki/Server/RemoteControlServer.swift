@@ -96,6 +96,7 @@ final class RemoteControlServer: ObservableObject {
     }
 
     @Published private(set) var isRunning = false
+    @Published private(set) var isStarting = false
     @Published private(set) var pairedDevices: [PairedDevice] = []
     @Published private(set) var token: String?
     @Published private(set) var pairingCode: String?
@@ -142,7 +143,15 @@ final class RemoteControlServer: ObservableObject {
     }
 
     typealias TailscaleStatusReader = @MainActor (Int) async -> TailscaleStatusSnapshot
+    typealias CompanionProcessFactory = @MainActor (URL, [String], [String: String]) throws -> Process
+    typealias TunnelProcessFactory = @MainActor (URL, [String]) throws -> Process
+    typealias ProcessExitWaiter = @MainActor (Process, @escaping @MainActor (Process) -> Void) -> Void
+    typealias CallbackDispatcher = @Sendable (@escaping @Sendable @MainActor () -> Void) -> Void
     private let tailscaleStatusReader: TailscaleStatusReader
+    private let companionProcessFactory: CompanionProcessFactory?
+    private let tunnelProcessFactory: TunnelProcessFactory?
+    private let processExitWaiter: ProcessExitWaiter
+    nonisolated let callbackDispatcher: CallbackDispatcher
     private var tailscaleRefreshTask: Task<Void, Never>?
     private var tailscaleRefreshGeneration = 0
     private var tailscaleRefreshHasStarted = false
@@ -179,6 +188,7 @@ final class RemoteControlServer: ObservableObject {
     let port = 8765
 
     private var process: Process?
+    private var retiringProcess: Process?
     private var inputPipe: Pipe?
     private var snapshotHeartbeatTimer: Timer?
     private var outputBuffer = ""
@@ -205,8 +215,26 @@ final class RemoteControlServer: ObservableObject {
         }, refreshOnInit: true)
     }
 
-    init(tailscaleStatusReader: @escaping TailscaleStatusReader, refreshOnInit: Bool = false) {
+    init(
+        tailscaleStatusReader: @escaping TailscaleStatusReader,
+        refreshOnInit: Bool = false,
+        companionProcessFactory: CompanionProcessFactory? = nil,
+        tunnelProcessFactory: TunnelProcessFactory? = nil,
+        processExitWaiter: ProcessExitWaiter? = nil,
+        callbackDispatcher: CallbackDispatcher? = nil
+    ) {
         self.tailscaleStatusReader = tailscaleStatusReader
+        self.companionProcessFactory = companionProcessFactory
+        self.tunnelProcessFactory = tunnelProcessFactory
+        self.processExitWaiter = processExitWaiter ?? { process, completion in
+            Task.detached {
+                process.waitUntilExit()
+                await completion(process)
+            }
+        }
+        self.callbackDispatcher = callbackDispatcher ?? { work in
+            Task { @MainActor in work() }
+        }
         hostMode = Self.preferredHostMode(
             tailscaleAvailable: Self.tailscaleIP() != nil,
             localNetworkAvailable: Self.localNetworkIP() != nil
@@ -345,24 +373,17 @@ final class RemoteControlServer: ObservableObject {
     }
 
     func toggle() {
-        isRunning ? stop() : start()
+        (isRunning || isStarting) ? stop() : start()
     }
 
     /// Relaunch so a changed setting takes effect, without racing the old process for the port.
     ///
-    /// stop() only sends SIGTERM. Starting straight afterwards can bind port 8765 while the old
-    /// server still holds it, and the replacement exits with EADDRINUSE, which reads to the user
-    /// as Remote Control simply refusing to come back. Wait for the old process to actually go.
+    /// stop() only sends SIGTERM, so starting straight afterwards can bind port 8765 while the old
+    /// server still holds it and the replacement exits with EADDRINUSE. stop() therefore records
+    /// the start intent, and its exit waiter launches the replacement once the old process is gone.
     func restart() {
-        guard let previous = process else {
-            start()
-            return
-        }
         stop()
-        Task { @MainActor in
-            await Task.detached { previous.waitUntilExit() }.value
-            start()
-        }
+        start()
     }
 
     // Bundle.main holds the script in a packaged .app; `swift run` instead drops resources in an
@@ -415,6 +436,13 @@ final class RemoteControlServer: ObservableObject {
 
     func start() {
         guard !isRunning else { return }
+        isStarting = true
+        guard retiringProcess == nil else { return }
+        launchCompanionProcess()
+    }
+
+    private func launchCompanionProcess() {
+        guard retiringProcess == nil else { return }
         lastError = nil
         token = nil
         pairingCode = nil
@@ -422,16 +450,17 @@ final class RemoteControlServer: ObservableObject {
         pairedDevices = []
         outputBuffer = ""
 
-        guard let script = Self.serverScriptURL() else {
+        let script = Self.serverScriptURL()
+        if companionProcessFactory == nil, script == nil {
             lastError = "The companion server script is missing from the app bundle."
+            isStarting = false
             return
         }
+        let scriptURL = script ?? URL(fileURLWithPath: "/toki_remote.py")
 
         let reach = Self.reach(for: hostMode)
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        task.arguments = [
-            "python3", "-u", script.path,
+        let arguments = [
+            "python3", "-u", scriptURL.path,
             "--port", "\(port)",
             "--bind", reach.bind,
             "--access", reach.access,
@@ -441,32 +470,61 @@ final class RemoteControlServer: ObservableObject {
         ] + Self.allowedHostArguments(for: hostMode, customHost: customHost)
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONUNBUFFERED"] = "1"
-        task.environment = environment
+
+        let task: Process
+        do {
+            if let companionProcessFactory {
+                task = try companionProcessFactory(scriptURL, arguments, environment)
+            } else {
+                let productionTask = Process()
+                productionTask.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                productionTask.arguments = arguments
+                productionTask.environment = environment
+                task = productionTask
+            }
+        } catch {
+            isStarting = false
+            lastError = "Could not launch Python 3. Install it (xcode-select --install) and try again."
+            return
+        }
 
         let output = Pipe()
         let input = Pipe()
         task.standardInput = input
         task.standardOutput = output
         task.standardError = output
-        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        output.fileHandleForReading.readabilityHandler = { [weak self, weak task] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in self?.parseOutput(text) }
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8),
+                  let dispatcher = self?.callbackDispatcher else { return }
+            dispatcher { [weak self, weak task] in
+                guard let self, let task, self.process === task else { return }
+                self.parseOutput(text)
+            }
         }
-        task.terminationHandler = { [weak self] proc in
+        task.terminationHandler = { [weak self, weak task] proc in
             let status = proc.terminationStatus
-            Task { @MainActor in self?.handleTermination(status: status) }
+            guard let dispatcher = self?.callbackDispatcher else { return }
+            dispatcher { [weak self, weak task] in
+                guard let self, let task, self.process === task, proc === task else { return }
+                self.handleTermination(from: task, status: status)
+            }
         }
 
+        process = task
         do {
             try task.run()
         } catch {
+            task.terminationHandler = nil
+            output.fileHandleForReading.readabilityHandler = nil
+            process = nil
+            isStarting = false
             lastError = "Could not launch Python 3. Install it (xcode-select --install) and try again."
             return
         }
 
-        process = task
         startSnapshotPublishing(to: input)
+        isStarting = false
         isRunning = true
         // A fresh server is a fresh chance to front it with HTTPS, including after a host change
         // that made Tailscale the route.
@@ -477,11 +535,11 @@ final class RemoteControlServer: ObservableObject {
     }
 
     func stop() {
+        isStarting = false
         stopTunnel()
         guard let task = process else { return }
         task.terminationHandler = nil
         (task.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
-        task.terminate()
         process = nil
         stopSnapshotPublishing()
         isRunning = false
@@ -490,6 +548,18 @@ final class RemoteControlServer: ObservableObject {
         pairingCodeExpiresAt = nil
         pairedDevices = []
         outputBuffer = ""
+        retiringProcess = task
+        if task.isRunning {
+            task.terminate()
+        }
+        processExitWaiter(task) { [weak self, weak task] finishedProcess in
+            guard let self, let task, finishedProcess === task,
+                  self.retiringProcess === task else { return }
+            self.retiringProcess = nil
+            if self.isStarting {
+                self.launchCompanionProcess()
+            }
+        }
     }
 
     func updateActiveAgents(_ agents: [ActiveAgent]) {
@@ -730,8 +800,10 @@ final class RemoteControlServer: ObservableObject {
         }
     }
 
-    private func handleTermination(status: Int32) {
+    private func handleTermination(from task: Process, status: Int32) {
+        guard process === task else { return }
         process = nil
+        stopTunnel()
         stopSnapshotPublishing()
         isRunning = false
         token = nil
@@ -1154,49 +1226,69 @@ final class RemoteControlServer: ObservableObject {
 
     func startTunnel() {
         guard tunnelProcess == nil else { return }
-        guard let executable = Self.cloudflaredExecutable() else {
+        let executable = Self.cloudflaredExecutable()
+        if tunnelProcessFactory == nil, executable == nil {
             tunnelError = "cloudflared isn't installed. Install it with `brew install cloudflared`, then reopen this menu."
             return
         }
+        let executableURL = executable ?? URL(fileURLWithPath: "/cloudflared")
         tunnelError = nil
         tunnelHost = nil
         isStartingTunnel = true
 
-        let task = Process()
-        task.executableURL = executable
-        task.arguments = ["tunnel", "--url", "http://127.0.0.1:\(port)"]
-        let output = Pipe()
-        task.standardOutput = output
-        task.standardError = output
-        output.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8),
-                  let host = Self.parseTunnelHost(from: text) else { return }
-            Task { @MainActor in
-                guard RemoteControlServer.shared.tunnelHost == nil else { return }
-                RemoteControlServer.shared.tunnelHost = host
-                RemoteControlServer.shared.isStartingTunnel = false
-            }
-        }
-        task.terminationHandler = { _ in
-            Task { @MainActor in
-                let server = RemoteControlServer.shared
-                server.tunnelProcess = nil
-                if server.tunnelHost == nil, server.hostMode == .tunnel, server.tunnelError == nil {
-                    server.tunnelError = "The Cloudflare tunnel stopped before it was ready."
-                }
-                server.tunnelHost = nil
-                server.isStartingTunnel = false
-            }
-        }
+        let arguments = ["tunnel", "--url", "http://127.0.0.1:\(port)"]
+        let task: Process
         do {
-            try task.run()
+            if let tunnelProcessFactory {
+                task = try tunnelProcessFactory(executableURL, arguments)
+            } else {
+                let productionTask = Process()
+                productionTask.executableURL = executableURL
+                productionTask.arguments = arguments
+                task = productionTask
+            }
         } catch {
             isStartingTunnel = false
             tunnelError = "Couldn't launch cloudflared."
             return
         }
+        let output = Pipe()
+        task.standardOutput = output
+        task.standardError = output
+        output.fileHandleForReading.readabilityHandler = { [weak self, weak task] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8),
+                  let host = Self.parseTunnelHost(from: text),
+                  let dispatcher = self?.callbackDispatcher else { return }
+            dispatcher { [weak self, weak task] in
+                guard let self, let task, self.tunnelProcess === task, self.tunnelHost == nil else { return }
+                self.tunnelHost = host
+                self.isStartingTunnel = false
+            }
+        }
+        task.terminationHandler = { [weak self, weak task] proc in
+            guard let dispatcher = self?.callbackDispatcher else { return }
+            dispatcher { [weak self, weak task] in
+                guard let self, let task, proc === task, self.tunnelProcess === task else { return }
+                self.tunnelProcess = nil
+                if self.tunnelHost == nil, self.hostMode == .tunnel, self.tunnelError == nil {
+                    self.tunnelError = "The Cloudflare tunnel stopped before it was ready."
+                }
+                self.tunnelHost = nil
+                self.isStartingTunnel = false
+            }
+        }
         tunnelProcess = task
+        do {
+            try task.run()
+        } catch {
+            task.terminationHandler = nil
+            output.fileHandleForReading.readabilityHandler = nil
+            tunnelProcess = nil
+            isStartingTunnel = false
+            tunnelError = "Couldn't launch cloudflared."
+            return
+        }
     }
 
     func stopTunnel() {
@@ -1205,8 +1297,10 @@ final class RemoteControlServer: ObservableObject {
         guard let task = tunnelProcess else { return }
         task.terminationHandler = nil
         (task.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
-        task.terminate()
         tunnelProcess = nil
+        if task.isRunning {
+            task.terminate()
+        }
     }
 
     // `tailscale serve status --json` reports a Web handler map keyed by "<host>:<port>", each with

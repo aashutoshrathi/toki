@@ -1172,7 +1172,7 @@ struct SettingsPanel: View {
                 .pointerOnHover()
                 Spacer(minLength: 8)
                 Toggle("", isOn: Binding(
-                    get: { remoteServer.isRunning },
+                    get: { remoteServer.isRunning || remoteServer.isStarting },
                     set: { $0 ? remoteServer.start() : remoteServer.stop() }
                 ))
                 .accessibilityLabel("Remote Control Server")
@@ -1239,8 +1239,8 @@ struct SettingsPanel: View {
                             TextField("host or IP", text: $remoteServer.customHost)
                                 .textFieldStyle(.roundedBorder)
                                 .controlSize(.small)
-                                .disabled(remoteServer.isRunning)
-                                .help(remoteServer.isRunning
+                                .disabled(remoteServer.isRunning || remoteServer.isStarting)
+                                .help(remoteServer.isRunning || remoteServer.isStarting
                                     ? "Stop Remote Control to change the custom host"
                                     : "The host your phone will use to reach this Mac")
                         }
@@ -1304,15 +1304,15 @@ struct SettingsPanel: View {
                 .pickerStyle(.menu)
                 .controlSize(.small)
                 .fixedSize()
-                .disabled(remoteServer.isRunning)
-                .help(remoteServer.isRunning
+                .disabled(remoteServer.isRunning || remoteServer.isStarting)
+                .help(remoteServer.isRunning || remoteServer.isStarting
                     ? "Stop Remote Control to change the session lifetime"
                     : "How long a verified device stays connected")
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 4)
 
-            if remoteServer.isRunning {
+            if remoteServer.isRunning || remoteServer.isStarting {
                 HStack(spacing: 8) {
                     if remoteServer.connectURL != nil {
                         Button {
