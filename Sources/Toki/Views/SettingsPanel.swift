@@ -12,17 +12,57 @@ private enum ReachMode: Hashable {
     case anywhere
 }
 
+@MainActor
+final class TailscaleStatusPollingController {
+    private let timer: AnyPublisher<Void, Never>
+    private let refresh: () -> Void
+    private var connection: AnyCancellable?
+
+    init(timer: AnyPublisher<Void, Never>, refresh: @escaping () -> Void) {
+        self.timer = timer
+        self.refresh = refresh
+    }
+
+    func update(isVisible: Bool, isRelevant: Bool) {
+        guard isVisible, isRelevant else {
+            stop()
+            return
+        }
+        guard connection == nil else { return }
+        refresh()
+        connection = timer.sink { [weak self] _ in
+            self?.refresh()
+        }
+    }
+
+    func stop() {
+        connection = nil
+    }
+}
+
 // Full-page settings/config view opened from the header gear (no longer a bottom tab).
 struct ConfigPage: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
     var focusRemoteControl = false
     var onClose: () -> Void
+    @State private var isVisible = false
+    @State private var tailscalePolling = TailscaleStatusPollingController(
+        timer: Timer.publish(every: 5, on: .main, in: .common)
+            .autoconnect()
+            .map { _ in () }
+            .eraseToAnyPublisher(),
+        refresh: { RemoteControlServer.shared.refreshTailscaleStatus() }
+    )
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Button(action: onClose) {
+                Button {
+                    tailscalePolling.stop()
+                    isVisible = false
+                    onClose()
+                } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(width: 13, height: 13)
@@ -39,11 +79,30 @@ struct ConfigPage: View {
             SettingsPanel(
                 store: store,
                 updateChecker: updateChecker,
-                focusRemoteControl: focusRemoteControl
+                focusRemoteControl: focusRemoteControl,
+                isVisible: isVisible,
+                tailscalePolling: tailscalePolling
             )
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { isVisible = true }
+        .onDisappear {
+            tailscalePolling.stop()
+            isVisible = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.didShowNotification)) { _ in
+            isVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.didCloseNotification)) { _ in
+            // Nested SwiftUI popovers post the same notification. AppDelegate updates this only
+            // for Toki's main popover; defer so its delegate has run before deciding visibility.
+            DispatchQueue.main.async {
+                guard !store.agentPopoverVisible else { return }
+                tailscalePolling.stop()
+                isVisible = false
+            }
+        }
     }
 }
 
@@ -51,6 +110,8 @@ struct SettingsPanel: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var updateChecker: UpdateChecker
     var focusRemoteControl = false
+    var isVisible = true
+    var tailscalePolling: TailscaleStatusPollingController
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginNeedsApproval = LaunchAtLogin.requiresApproval
@@ -77,7 +138,14 @@ struct SettingsPanel: View {
             ? "Includes pre-releases for early testing."
             : "Stable releases only."
     }
-    private let reachabilityTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    private var tailscaleStatusIsRelevant: Bool {
+        remoteServer.isRunning
+            && (remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale)
+    }
+
+    private func updateTailscalePolling() {
+        tailscalePolling.update(isVisible: isVisible, isRelevant: tailscaleStatusIsRelevant)
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -1301,13 +1369,10 @@ struct SettingsPanel: View {
         .sheet(isPresented: $showingConnect) {
             RemoteConnectSheet()
         }
-        .onAppear { remoteServer.refreshTailscaleStatus() }
-        .onReceive(reachabilityTimer) { _ in
-            if remoteServer.isRunning,
-               remoteServer.companionAppMode == .hosted || remoteServer.hostMode == .tailscale {
-                remoteServer.refreshTailscaleStatus()
-            }
-        }
+        .onAppear(perform: updateTailscalePolling)
+        .onDisappear { tailscalePolling.stop() }
+        .onChange(of: isVisible) { _, _ in updateTailscalePolling() }
+        .onChange(of: tailscaleStatusIsRelevant) { _, _ in updateTailscalePolling() }
     }
 
     private func copyCommandButton(_ command: String, label: String) -> some View {

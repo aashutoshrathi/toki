@@ -59,6 +59,12 @@ final class UsageStore: ObservableObject {
     /// nil until something has looked.
     var notificationAuthorization: NotificationAuthorization?
     var agentTimer: Timer?
+    var agentPopoverVisible = false
+    var agentRefreshAfterCurrent = false
+    let agentScan: @MainActor () async -> [ActiveAgent]
+    let agentRemoteControlIsRunning: @MainActor () -> Bool
+    // The store owns this subscription; its weak capture does not keep the store alive.
+    var agentRemoteControlCancellable: AnyCancellable?
     // The provider scan in flight, so a caller that needs a fresh one can wait for it rather than
     // colliding with it and silently doing nothing.
     var providerScanTask: Task<Void, Never>?
@@ -71,12 +77,22 @@ final class UsageStore: ObservableObject {
     var serviceStatusCheckedAt: Date?
     var isCheckingServiceStatus = false
 
-    init() {
+    init(
+        agentScan: @escaping @MainActor () async -> [ActiveAgent] = { await ActiveAgentScanner.scan() },
+        agentRemoteControlIsRunning: (@MainActor () -> Bool)? = nil
+    ) {
+        self.agentScan = agentScan
+        self.agentRemoteControlIsRunning = agentRemoteControlIsRunning ?? { RemoteControlServer.shared.isRunning }
         reloadConfig()
+        scheduleAgentRefresh()
         refreshActiveAgents()
-        agentTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshActiveAgents() }
-        }
+        agentRemoteControlCancellable = RemoteControlServer.shared.$isRunning
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.scheduleAgentRefresh()
+                }
+            }
         connectivityMonitor.start { [weak self] isAvailable in
             Task { @MainActor [weak self] in
                 self?.connectivityDidChange(isAvailable: isAvailable)
