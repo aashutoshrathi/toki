@@ -20,8 +20,6 @@ struct CursorUsageClient {
         switch login {
         case .missing:
             return localSnapshot(activity: activity)
-        case .locked:
-            return localSnapshot(activity: activity, locked: true)
         case .connected(let login):
             credentials = login
         }
@@ -120,20 +118,18 @@ struct CursorUsageClient {
         )
     }
 
-    private func localSnapshot(activity: Date?, locked: Bool = false,
-                               detail: String = "Sign in to Cursor for usage") -> AccountSnapshot {
+    private func localSnapshot(activity: Date?, detail: String = "Local activity") -> AccountSnapshot {
         AccountSnapshot(
             id: account.id,
             name: account.name,
             provider: .cursor,
             primary: "Cursor usage unavailable",
-            subtitle: locked ? "Connect your Cursor sign-in" : detail,
+            subtitle: detail,
             remainingRatio: nil,
             metrics: [],
             isError: false,
             isAgentDetectionOnly: true,
-            lastActivity: activity,
-            requiresCursorKeychainAccess: locked
+            lastActivity: activity
         )
     }
 

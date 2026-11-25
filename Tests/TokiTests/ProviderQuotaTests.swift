@@ -48,7 +48,7 @@ final class ProviderQuotaTests: XCTestCase {
         XCTAssertEqual(CursorUsageClient.verifiedPrevious(snapshot, login: same, now: now), snapshot)
         XCTAssertNil(CursorUsageClient.verifiedPrevious(snapshot, login: switched, now: now))
         XCTAssertNil(CursorUsageClient.verifiedPrevious(snapshot, login: same, now: reset))
-        XCTAssertNil(CursorUsageClient.verifiedPrevious(snapshot, login: .locked, now: now))
+        XCTAssertNil(CursorUsageClient.verifiedPrevious(snapshot, login: .missing, now: now))
     }
 
     func testGrokSharesOnlyAVerifiedCursorAllowanceAndRetainsItsOwnReading() throws {
