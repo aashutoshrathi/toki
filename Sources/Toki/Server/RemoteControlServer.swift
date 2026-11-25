@@ -178,6 +178,7 @@ final class RemoteControlServer: ObservableObject {
 
     private var process: Process?
     private var inputPipe: Pipe?
+    private var snapshotHeartbeatTimer: Timer?
     private var outputBuffer = ""
     private var activeAgents: [ActiveAgent] = []
     private var usageSnapshots: [AccountSnapshot] = []
@@ -463,7 +464,7 @@ final class RemoteControlServer: ObservableObject {
         }
 
         process = task
-        inputPipe = input
+        startSnapshotPublishing(to: input)
         isRunning = true
         // A fresh server is a fresh chance to front it with HTTPS, including after a host change
         // that made Tailscale the route.
@@ -471,8 +472,6 @@ final class RemoteControlServer: ObservableObject {
         serveSetupFailure = nil
         refreshTailscaleStatus()
         if hostMode == .tunnel { startTunnel() }
-        sendActiveAgentSnapshot()
-        sendUsageSnapshot()
     }
 
     func stop() {
@@ -482,7 +481,7 @@ final class RemoteControlServer: ObservableObject {
         (task.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
         task.terminate()
         process = nil
-        inputPipe = nil
+        stopSnapshotPublishing()
         isRunning = false
         token = nil
         pairingCode = nil
@@ -494,9 +493,30 @@ final class RemoteControlServer: ObservableObject {
     func updateActiveAgents(_ agents: [ActiveAgent]) {
         activeAgents = agents
         sendActiveAgentSnapshot()
-        // Ride the agent heartbeat so the phone's usage reading tracks the live pipe, not the far
-        // slower usage refresh, which would otherwise read as stale between refreshes.
+    }
+
+    @discardableResult
+    func startSnapshotPublishing(to pipe: Pipe) -> Timer {
+        inputPipe = pipe
+        sendActiveAgentSnapshot()
         sendUsageSnapshot()
+
+        // The companion expires both snapshots after 90 seconds, even when nothing changes.
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.sendActiveAgentSnapshot()
+                self?.sendUsageSnapshot()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        snapshotHeartbeatTimer = timer
+        return timer
+    }
+
+    func stopSnapshotPublishing() {
+        snapshotHeartbeatTimer?.invalidate()
+        snapshotHeartbeatTimer = nil
+        inputPipe = nil
     }
 
     func updateUsage(_ snapshots: [AccountSnapshot]) {
@@ -561,7 +581,7 @@ final class RemoteControlServer: ObservableObject {
     }
 
     private func sendUsageSnapshot() {
-        guard isRunning, let inputPipe else { return }
+        guard let inputPipe else { return }
         let usage = Self.usagePayload(from: usageSnapshots, preferences: usagePreferences, now: Date())
         guard
             let data = try? JSONSerialization.data(withJSONObject: ["usage": usage]),
@@ -617,7 +637,7 @@ final class RemoteControlServer: ObservableObject {
     }
 
     private func sendActiveAgentSnapshot() {
-        guard isRunning, let inputPipe else { return }
+        guard let inputPipe else { return }
         let agents = Self.agentPayload(from: activeAgents)
         guard
             let data = try? JSONSerialization.data(withJSONObject: ["agents": agents]),
@@ -707,7 +727,7 @@ final class RemoteControlServer: ObservableObject {
 
     private func handleTermination(status: Int32) {
         process = nil
-        inputPipe = nil
+        stopSnapshotPublishing()
         isRunning = false
         token = nil
         pairingCode = nil
