@@ -25,7 +25,10 @@ private final class AgentScanProbe {
     }
 
     func finishNext(with agents: [ActiveAgent]) {
-        XCTAssertFalse(continuations.isEmpty, "No controlled agent scan is waiting")
+        guard !continuations.isEmpty else {
+            XCTFail("No controlled agent scan is waiting")
+            return
+        }
         continuations.removeFirst().resume(returning: agents)
     }
 }
@@ -37,6 +40,20 @@ private final class AgentRemoteProbe {
 
 @MainActor
 final class AgentEnergyTests: XCTestCase {
+    private var stores: [UsageStore] = []
+
+    override func tearDown() async throws {
+        await MainActor.run {
+            for store in stores {
+                store.timer?.invalidate()
+                store.agentTimer?.invalidate()
+                store.agentRemoteControlCancellable?.cancel()
+            }
+            stores.removeAll()
+        }
+        try await super.tearDown()
+    }
+
     private func agent(_ id: Int32, needsInput: Bool = false) -> ActiveAgent {
         ActiveAgent(
             id: id, provider: .claudeCode, directory: nil, chatTitle: "Agent \(id)",
@@ -53,8 +70,12 @@ final class AgentEnergyTests: XCTestCase {
         let scanner = AgentScanProbe(results: results)
         let store = UsageStore(
             agentScan: { await scanner.scan() },
-            agentRemoteControlIsRunning: { remote.isRunning }
+            agentRemoteControlIsRunning: { remote.isRunning },
+            startsAutomatically: false
         )
+        stores.append(store)
+        store.scheduleAgentRefresh()
+        store.refreshActiveAgents()
         return (store, scanner, remote)
     }
 
@@ -130,9 +151,12 @@ final class AgentEnergyTests: XCTestCase {
         let (store, scanner, _) = store(results: [[]])
         await waitForIdle(store)
 
+        // Exercise the timer callback once and wait until its queued MainActor work has started.
         store.agentTimer?.fire()
         await waitForScan(scanner, count: 2)
-        store.agentTimer?.fire()
+        // A timer request while the scan is blocked must be ignored synchronously. Avoid queuing
+        // another timer Task whose scheduling order would be independent of the controlled scan.
+        store.refreshActiveAgents(manual: false)
         store.refreshActiveAgents()
         store.refreshActiveAgents()
         XCTAssertTrue(store.agentRefreshAfterCurrent)
@@ -144,6 +168,32 @@ final class AgentEnergyTests: XCTestCase {
         XCTAssertEqual(scanner.scanCount, 3, "Two manual requests coalesce; timer ticks never queue")
         XCTAssertFalse(store.agentRefreshAfterCurrent)
         XCTAssertFalse(store.isScanningAgents)
+    }
+
+    func testOptedOutInitializationHasNoAutomaticStartupWork() async {
+        let scanner = AgentScanProbe(results: [[]])
+        var remoteProbeCalls = 0
+        let store = UsageStore(
+            agentScan: { await scanner.scan() },
+            agentRemoteControlIsRunning: { remoteProbeCalls += 1; return false },
+            startsAutomatically: false
+        )
+        stores.append(store)
+        XCTAssertEqual(scanner.scanCount, 0)
+        XCTAssertEqual(remoteProbeCalls, 0)
+        XCTAssertNil(store.timer)
+        XCTAssertNil(store.agentTimer)
+        XCTAssertNil(store.config)
+        XCTAssertNil(store.agentRemoteControlCancellable)
+        XCTAssertNil(store.providerScanTask)
+        XCTAssertFalse(store.isRefreshing)
+        XCTAssertFalse(store.isScanningProviders)
+
+        store.scheduleAgentRefresh()
+        store.refreshActiveAgents()
+        await waitForScan(scanner, count: 1)
+        XCTAssertEqual(scanner.scanCount, 1)
+        await waitForIdle(store)
     }
 
     func testUnchangedResultsDoNotPublishRegardlessOfVisibilityAndCompleteArrayChangesDo() async {

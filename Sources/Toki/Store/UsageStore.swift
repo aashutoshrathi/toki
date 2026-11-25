@@ -79,10 +79,12 @@ final class UsageStore: ObservableObject {
 
     init(
         agentScan: @escaping @MainActor () async -> [ActiveAgent] = { await ActiveAgentScanner.scan() },
-        agentRemoteControlIsRunning: (@MainActor () -> Bool)? = nil
+        agentRemoteControlIsRunning: (@MainActor () -> Bool)? = nil,
+        startsAutomatically: Bool = true
     ) {
         self.agentScan = agentScan
         self.agentRemoteControlIsRunning = agentRemoteControlIsRunning ?? { RemoteControlServer.shared.isRunning }
+        guard startsAutomatically else { return }
         reloadConfig()
         scheduleAgentRefresh()
         refreshActiveAgents()
