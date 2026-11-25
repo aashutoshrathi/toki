@@ -145,6 +145,8 @@ final class RemoteControlServer: ObservableObject {
     private let tailscaleStatusReader: TailscaleStatusReader
     private var tailscaleRefreshTask: Task<Void, Never>?
     private var tailscaleRefreshGeneration = 0
+    private var tailscaleRefreshHasStarted = false
+    private var tailscaleRecheckAfterCurrent = false
 
     @Published var hostMode: HostMode = .localhost {
         didSet {
@@ -797,39 +799,51 @@ final class RemoteControlServer: ObservableObject {
     }
 
     @discardableResult
-    func refreshTailscaleStatus() -> Task<Void, Never> {
+    func refreshTailscaleStatus(recheckAfterCurrent: Bool = false) -> Task<Void, Never> {
         if let tailscaleRefreshTask, !tailscaleRefreshTask.isCancelled {
+            if recheckAfterCurrent && tailscaleRefreshHasStarted {
+                tailscaleRecheckAfterCurrent = true
+            }
             return tailscaleRefreshTask
         }
 
         tailscaleRefreshGeneration &+= 1
         let generation = tailscaleRefreshGeneration
         let checkPort = port
+        tailscaleRefreshHasStarted = false
+        tailscaleRecheckAfterCurrent = false
         let task = Task {
             // A cancelled task can finish after its replacement; only the latest may publish or clean up.
             defer {
                 if tailscaleRefreshGeneration == generation {
                     tailscaleRefreshTask = nil
+                    tailscaleRefreshHasStarted = false
+                    tailscaleRecheckAfterCurrent = false
                 }
             }
-            guard !Task.isCancelled else { return }
-            let result = await tailscaleStatusReader(checkPort)
-            guard !Task.isCancelled, tailscaleRefreshGeneration == generation else { return }
-            if tailscaleStatusDiagnostic != result.diagnostic {
-                tailscaleStatusDiagnostic = result.diagnostic
+            while !Task.isCancelled, tailscaleRefreshGeneration == generation {
+                tailscaleRecheckAfterCurrent = false
+                tailscaleRefreshHasStarted = true
+                let result = await tailscaleStatusReader(checkPort)
+                guard !Task.isCancelled, tailscaleRefreshGeneration == generation else { return }
+                if tailscaleRecheckAfterCurrent { continue }
+                if tailscaleStatusDiagnostic != result.diagnostic {
+                    tailscaleStatusDiagnostic = result.diagnostic
+                }
+                if tailscaleCLIAvailable != result.cliAvailable {
+                    tailscaleCLIAvailable = result.cliAvailable
+                }
+                if serveState != result.serveState {
+                    serveState = result.serveState
+                }
+                // When status can't read the name, serve's own config names the same host, so use it.
+                let name = result.name ?? result.serveHost
+                if tailscaleDNSName != name {
+                    tailscaleDNSName = name
+                }
+                enableTailscaleServeIfNeeded()
+                return
             }
-            if tailscaleCLIAvailable != result.cliAvailable {
-                tailscaleCLIAvailable = result.cliAvailable
-            }
-            if serveState != result.serveState {
-                serveState = result.serveState
-            }
-            // When status can't read the name, serve's own config names the same host, so use it.
-            let name = result.name ?? result.serveHost
-            if tailscaleDNSName != name {
-                tailscaleDNSName = name
-            }
-            enableTailscaleServeIfNeeded()
         }
         tailscaleRefreshTask = task
         return task
@@ -1043,7 +1057,7 @@ final class RemoteControlServer: ObservableObject {
                 DiagnosticLogger.shared.record(.warning, component: "tailscale", code: "serve_failed",
                                                detail: failure.message)
             } else {
-                refreshTailscaleStatus()
+                refreshTailscaleStatus(recheckAfterCurrent: true)
             }
         }
     }

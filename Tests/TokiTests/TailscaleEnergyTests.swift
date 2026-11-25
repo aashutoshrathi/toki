@@ -44,82 +44,119 @@ final class TailscaleEnergyTests: XCTestCase {
     func testConcurrentRefreshesShareOneStatusRead() async {
         var readCount = 0
         var continuations: [CheckedContinuation<RemoteControlServer.TailscaleStatusSnapshot, Never>] = []
+        var entries: [XCTestExpectation] = []
         let server = RemoteControlServer(tailscaleStatusReader: { _ in
             readCount += 1
-            return await withCheckedContinuation { continuation in
-                continuations.append(continuation)
-            }
+            if !entries.isEmpty { entries.removeFirst().fulfill() }
+            return await withCheckedContinuation { continuations.append($0) }
         })
-
+        let entered = expectation(description: "first status read entered")
+        entries.append(entered)
         let first = server.refreshTailscaleStatus()
         let concurrent = server.refreshTailscaleStatus()
-        await Task.yield()
+        await fulfillment(of: [entered], timeout: 1)
         XCTAssertEqual(readCount, 1)
-
-        continuations[0].resume(returning: snapshot())
+        guard !continuations.isEmpty else { XCTFail("reader continuation missing"); return }
+        continuations.removeFirst().resume(returning: snapshot())
         await first.value
         await concurrent.value
-
-        let afterCompletion = server.refreshTailscaleStatus()
-        await Task.yield()
+        let laterEntered = expectation(description: "later status read entered")
+        entries.append(laterEntered)
+        let later = server.refreshTailscaleStatus()
+        await fulfillment(of: [laterEntered], timeout: 1)
         XCTAssertEqual(readCount, 2)
-        continuations[1].resume(returning: snapshot())
-        await afterCompletion.value
+        guard !continuations.isEmpty else { XCTFail("later continuation missing"); return }
+        continuations.removeFirst().resume(returning: snapshot())
+        await later.value
+    }
+
+    func testExplicitRefreshCoalescesOneTrailingReadAndWaitsForIt() async {
+        var readCount = 0
+        var continuations: [CheckedContinuation<RemoteControlServer.TailscaleStatusSnapshot, Never>] = []
+        var entries: [XCTestExpectation] = []
+        let server = RemoteControlServer(tailscaleStatusReader: { _ in
+            readCount += 1
+            if !entries.isEmpty { entries.removeFirst().fulfill() }
+            return await withCheckedContinuation { continuations.append($0) }
+        })
+        let firstEntry = expectation(description: "first read entered")
+        entries.append(firstEntry)
+        let task = server.refreshTailscaleStatus()
+        await fulfillment(of: [firstEntry], timeout: 1)
+        let trailingEntry = expectation(description: "trailing read entered")
+        entries.append(trailingEntry)
+        _ = server.refreshTailscaleStatus(recheckAfterCurrent: true)
+        _ = server.refreshTailscaleStatus(recheckAfterCurrent: true)
+        guard !continuations.isEmpty else { XCTFail("first continuation missing"); return }
+        continuations.removeFirst().resume(returning: snapshot(name: "stale.example.ts.net"))
+        await fulfillment(of: [trailingEntry], timeout: 1)
+        XCTAssertNil(server.tailscaleDNSName, "Superseded status must not publish")
+        XCTAssertEqual(readCount, 2)
+        guard !continuations.isEmpty else { XCTFail("trailing continuation missing"); return }
+        continuations.removeFirst().resume(returning: snapshot(name: "fresh.example.ts.net"))
+        await task.value
+        XCTAssertEqual(server.tailscaleDNSName, "fresh.example.ts.net")
+
+        let laterEntry = expectation(description: "later ordinary read entered")
+        entries.append(laterEntry)
+        let later = server.refreshTailscaleStatus()
+        await fulfillment(of: [laterEntry], timeout: 1)
+        XCTAssertEqual(readCount, 3)
+        guard !continuations.isEmpty else { XCTFail("later continuation missing"); return }
+        continuations.removeFirst().resume(returning: snapshot())
+        await later.value
     }
 
     func testCancelledRefreshDoesNotPublishOrClearItsReplacement() async {
         var continuations: [CheckedContinuation<RemoteControlServer.TailscaleStatusSnapshot, Never>] = []
+        var entries: [XCTestExpectation] = []
         let server = RemoteControlServer(tailscaleStatusReader: { _ in
-            await withCheckedContinuation { continuations.append($0) }
+            if !entries.isEmpty { entries.removeFirst().fulfill() }
+            return await withCheckedContinuation { continuations.append($0) }
         })
-
+        let oldEntry = expectation(description: "old read entered")
+        entries.append(oldEntry)
         let cancelled = server.refreshTailscaleStatus()
-        await Task.yield()
-        XCTAssertEqual(continuations.count, 1)
+        await fulfillment(of: [oldEntry], timeout: 1)
         cancelled.cancel()
-
+        let newEntry = expectation(description: "replacement read entered")
+        entries.append(newEntry)
         let replacement = server.refreshTailscaleStatus()
-        await Task.yield()
-        XCTAssertEqual(continuations.count, 2)
-
-        continuations[0].resume(returning: snapshot(name: "stale.example.ts.net"))
+        await fulfillment(of: [newEntry], timeout: 1)
+        let replacementTrailingEntry = expectation(description: "replacement trailing read entered")
+        entries.append(replacementTrailingEntry)
+        _ = server.refreshTailscaleStatus(recheckAfterCurrent: true)
+        guard continuations.count == 2 else { XCTFail("expected old and replacement reads"); return }
+        continuations.removeFirst().resume(returning: snapshot(name: "stale.example.ts.net"))
         await cancelled.value
         XCTAssertNil(server.tailscaleDNSName)
-
-        let concurrent = server.refreshTailscaleStatus()
-        await Task.yield()
-        XCTAssertEqual(continuations.count, 2, "Old cleanup must not clear the replacement task")
-
-        continuations[1].resume(returning: snapshot(name: "fresh.example.ts.net"))
+        guard continuations.count == 1 else {
+            XCTFail("Old cleanup must not clear replacement task")
+            return
+        }
+        continuations.removeFirst().resume(returning: snapshot(name: "fresh.example.ts.net"))
+        await fulfillment(of: [replacementTrailingEntry], timeout: 1)
+        guard continuations.count == 1 else {
+            XCTFail("Replacement must preserve its pending recheck")
+            return
+        }
+        continuations.removeFirst().resume(returning: snapshot(name: "newest.example.ts.net"))
         await replacement.value
-        await concurrent.value
-        XCTAssertEqual(server.tailscaleDNSName, "fresh.example.ts.net")
+        XCTAssertEqual(server.tailscaleDNSName, "newest.example.ts.net")
     }
 
     func testUnchangedStatusDoesNotRepublishReachabilityProperties() async {
-        let server = RemoteControlServer(tailscaleStatusReader: { _ in
-            self.snapshot()
-        })
+        let server = RemoteControlServer(tailscaleStatusReader: { _ in self.snapshot() })
         var publicationCount = 0
-        let observation = server.objectWillChange.sink {
-            publicationCount += 1
-        }
+        let observation = server.objectWillChange.sink { publicationCount += 1 }
         defer { observation.cancel() }
-
         await server.refreshTailscaleStatus().value
         XCTAssertEqual(publicationCount, 4)
-
         await server.refreshTailscaleStatus().value
         XCTAssertEqual(publicationCount, 4)
     }
 
     private func snapshot(name: String? = "mac.example.ts.net") -> RemoteControlServer.TailscaleStatusSnapshot {
-        RemoteControlServer.TailscaleStatusSnapshot(
-            name: name,
-            diagnostic: "Connected",
-            cliAvailable: true,
-            serveState: .ready,
-            serveHost: nil
-        )
+        .init(name: name, diagnostic: "Connected", cliAvailable: true, serveState: .ready, serveHost: nil)
     }
 }
