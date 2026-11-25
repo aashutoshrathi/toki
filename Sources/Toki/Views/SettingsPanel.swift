@@ -13,7 +13,7 @@ private enum ReachMode: Hashable {
 }
 
 @MainActor
-final class TailscaleStatusPollingController {
+final class TailscaleStatusPollingController: ObservableObject {
     private let timer: AnyPublisher<Void, Never>
     private let refresh: () -> Void
     private var connection: AnyCancellable?
@@ -58,7 +58,7 @@ struct ConfigPage: View {
     var focusRemoteControl = false
     var onClose: () -> Void
     @State private var isVisible = false
-    @State private var tailscalePolling = TailscaleStatusPollingController(
+    @StateObject private var tailscalePolling = TailscaleStatusPollingController(
         timer: Timer.publish(every: 5, on: .main, in: .common)
             .autoconnect()
             .map { _ in () }
