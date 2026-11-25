@@ -497,6 +497,7 @@ final class RemoteControlServer: ObservableObject {
 
     @discardableResult
     func startSnapshotPublishing(to pipe: Pipe) -> Timer {
+        _ = fcntl(pipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         inputPipe = pipe
         sendActiveAgentSnapshot()
         sendUsageSnapshot()

@@ -547,6 +547,28 @@ final class RemoteControlServerTests: XCTestCase {
         }
     }
 
+    func testClosedSnapshotPipeDoesNotRaiseSIGPIPE() {
+        let server = RemoteControlServer(tailscaleStatusReader: { _ in
+            .init(name: nil, diagnostic: nil, cliAvailable: false, serveState: .notServing, serveHost: nil)
+        })
+        let pipe = Pipe()
+        let timer = server.startSnapshotPublishing(to: pipe)
+        defer { server.stopSnapshotPublishing() }
+        let descriptor = pipe.fileHandleForWriting.fileDescriptor
+        guard fcntl(descriptor, F_GETNOSIGPIPE) == 1 else {
+            XCTFail("Production writer must suppress SIGPIPE")
+            return
+        }
+        _ = pipe.fileHandleForReading.availableData
+        try? pipe.fileHandleForReading.close()
+
+        timer.fire()
+        server.updateActiveAgents([])
+        server.updateUsage([])
+        server.stopSnapshotPublishing()
+        XCTAssertFalse(timer.isValid)
+    }
+
     // The payload is built from the snapshots, so the phone shows the same reading as the menu bar.
     func testUsagePayloadCarriesTheReadingTheMenuBarShows() {
         var snapshot = AccountSnapshot(
