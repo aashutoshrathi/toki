@@ -4,41 +4,40 @@ import XCTest
 
 @MainActor
 final class TailscaleEnergyTests: XCTestCase {
-    func testHiddenOrIrrelevantSettingsNeverRefreshTailscale() {
+    func testHiddenAndVisibleIrrelevantSettingsRefreshOnlyOnEntry() {
         let ticks = PassthroughSubject<Void, Never>()
         var refreshCount = 0
-        let polling = TailscaleStatusPollingController(
-            timer: ticks.eraseToAnyPublisher(),
-            refresh: { refreshCount += 1 }
-        )
-
+        let polling = TailscaleStatusPollingController(timer: ticks.eraseToAnyPublisher()) { refreshCount += 1 }
         polling.update(isVisible: false, isRelevant: true)
         polling.update(isVisible: true, isRelevant: false)
+        polling.update(isVisible: true, isRelevant: false)
         ticks.send(())
-
-        XCTAssertEqual(refreshCount, 0)
+        XCTAssertEqual(refreshCount, 1)
+        polling.update(isVisible: false, isRelevant: false)
+        polling.update(isVisible: true, isRelevant: false)
+        XCTAssertEqual(refreshCount, 2)
     }
 
-    func testPollingStopsAndRestartsAcrossVisibilityChanges() {
+    func testPollingVisibilityAndRelevanceTransitions() {
         let ticks = PassthroughSubject<Void, Never>()
         var refreshCount = 0
-        let polling = TailscaleStatusPollingController(
-            timer: ticks.eraseToAnyPublisher(),
-            refresh: { refreshCount += 1 }
-        )
-
+        let polling = TailscaleStatusPollingController(timer: ticks.eraseToAnyPublisher()) { refreshCount += 1 }
         polling.update(isVisible: true, isRelevant: true)
         polling.update(isVisible: true, isRelevant: true)
         ticks.send(())
         XCTAssertEqual(refreshCount, 2)
-
+        polling.update(isVisible: true, isRelevant: false)
+        ticks.send(())
+        XCTAssertEqual(refreshCount, 2)
+        polling.update(isVisible: true, isRelevant: true)
+        XCTAssertEqual(refreshCount, 3)
+        polling.stop()
+        polling.update(isVisible: true, isRelevant: true)
+        ticks.send(())
+        XCTAssertEqual(refreshCount, 5)
         polling.update(isVisible: false, isRelevant: true)
         ticks.send(())
-        XCTAssertEqual(refreshCount, 2)
-
-        polling.update(isVisible: true, isRelevant: true)
-        ticks.send(())
-        XCTAssertEqual(refreshCount, 4)
+        XCTAssertEqual(refreshCount, 5)
     }
 
     func testConcurrentRefreshesShareOneStatusRead() async {

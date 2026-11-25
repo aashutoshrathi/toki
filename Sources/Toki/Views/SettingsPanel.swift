@@ -17,6 +17,8 @@ final class TailscaleStatusPollingController {
     private let timer: AnyPublisher<Void, Never>
     private let refresh: () -> Void
     private var connection: AnyCancellable?
+    private var isVisible = false
+    private var wasRelevant = false
 
     init(timer: AnyPublisher<Void, Never>, refresh: @escaping () -> Void) {
         self.timer = timer
@@ -24,19 +26,28 @@ final class TailscaleStatusPollingController {
     }
 
     func update(isVisible: Bool, isRelevant: Bool) {
-        guard isVisible, isRelevant else {
+        guard isVisible else {
             stop()
             return
         }
-        guard connection == nil else { return }
-        refresh()
-        connection = timer.sink { [weak self] _ in
-            self?.refresh()
+        let entered = !self.isVisible
+        let becameRelevant = isRelevant && !wasRelevant
+        self.isVisible = true
+        wasRelevant = isRelevant
+        if entered || becameRelevant {
+            refresh()
+        }
+        if isRelevant, connection == nil {
+            connection = timer.sink { [weak self] _ in self?.refresh() }
+        } else if !isRelevant {
+            connection = nil
         }
     }
 
     func stop() {
         connection = nil
+        isVisible = false
+        wasRelevant = false
     }
 }
 
@@ -92,7 +103,10 @@ struct ConfigPage: View {
             isVisible = false
         }
         .onReceive(NotificationCenter.default.publisher(for: NSPopover.didShowNotification)) { _ in
-            isVisible = true
+            DispatchQueue.main.async {
+                guard store.agentPopoverVisible else { return }
+                isVisible = true
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSPopover.didCloseNotification)) { _ in
             // Nested SwiftUI popovers post the same notification. AppDelegate updates this only
