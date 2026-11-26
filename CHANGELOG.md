@@ -1,13 +1,19 @@
 # Changelog
 
-## 3.4.5 - 2026-11-25
+## 3.4.5 - 2026-11-26
 
-One Line: Reduce background agent scans, skip unchanged menu-bar updates, and check Tailscale only while its settings are visible.
+One Line: Cut background work, keep Remote Control stable across restarts, and read Cursor usage without a Keychain prompt.
 
 ### Changed
 - **Less background agent scanning.** Toki scans once a minute while the popover is closed and idle. Opening the popover scans immediately; scans stay at 15 seconds while it is open, an agent needs input, or Remote Control is running. Repeated manual refreshes share one follow-up scan instead of overlapping.
 - **Fewer menu-bar redraws.** Unchanged quota readouts, input counts, Remote Control indicators, and display density no longer trigger another menu-bar render.
-- **Tailscale checks follow Settings visibility.** Toki polls Tailscale while Settings is visible and Remote Control uses Tailscale or the hosted companion app. Concurrent status requests share one check, and unchanged status values no longer trigger UI updates.
+- **Tailscale checks follow Settings visibility.** Toki polls Tailscale while Settings is visible and Remote Control uses Tailscale or the hosted companion app. Concurrent status requests share one check, and unchanged status values no longer trigger UI updates. Opening Settings rechecks a stopped or LAN setup, and a successful HTTPS setup no longer reuses a status read taken before it.
+- **Cursor usage without a Keychain prompt.** Toki reads Cursor usage from a plaintext desktop sign-in or an existing CLI session in `~/.cursor/auth.json`, and shows local activity when neither is available. The Connect Cursor Usage action is gone.
+
+### Fixed
+- **Remote Control survives a closed pipe.** A companion that closes its input no longer terminates Toki with SIGPIPE.
+- **Remote Control restarts cleanly.** A restart waits for the old server to release port 8765 before launching the replacement, Stop stays available while it waits, and output from a replaced server can no longer change the new one's state.
+- **Remote Control snapshots stay fresh.** Replacing the snapshot pipe invalidates the old heartbeat timer, so only the current pipe receives heartbeats.
 
 ## 3.4.4 - 2026-11-21
 
