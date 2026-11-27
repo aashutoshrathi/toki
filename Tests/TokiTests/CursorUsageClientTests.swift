@@ -61,6 +61,42 @@ final class CursorUsageClientTests: XCTestCase {
         XCTAssertEqual(credentials.userId, "user_ABC")
     }
 
+    func testExpiredDesktopTokenFallsBackToCurrentCLISession() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storage = home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage")
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        addTeardownBlock { try FileManager.default.removeItem(at: home) }
+        let db = storage.appendingPathComponent("state.vscdb").path
+
+        let expiredDesktop = try jwt(sub: "auth0|user_DESKTOP", exp: 1)
+        _ = try Shell.require("/usr/bin/sqlite3", [db, """
+            CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);
+            INSERT INTO ItemTable VALUES ('cursorAuth/accessToken', '\(expiredDesktop)');
+            """], failureMessage: "Could not create the expired desktop sign-in fixture")
+
+        let cliDirectory = home.appendingPathComponent(".cursor")
+        try FileManager.default.createDirectory(at: cliDirectory, withIntermediateDirectories: true)
+        let session = try JSONEncoder().encode([
+            "accessToken": try jwt(sub: "auth0|user_CLI", exp: Int(Date().timeIntervalSince1970) + 3600)
+        ])
+        try SecureStore.write(data: session, to: cliDirectory.appendingPathComponent("auth.json"))
+
+        guard case .connected(let credentials) = CursorAuth.read(home: home.path) else {
+            return XCTFail("An expired desktop token must fall back to the current CLI session")
+        }
+        XCTAssertEqual(credentials.userId, "user_CLI")
+    }
+
+    private func jwt(sub: String, exp: Int?) throws -> String {
+        var claims: [String: Any] = ["sub": sub]
+        if let exp { claims["exp"] = exp }
+        let payload = try JSONSerialization.data(withJSONObject: claims).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "h.\(payload).s"
+    }
+
     func testParseAggregatedCoercesStringTokensAndNumberCents() {
         // Real shape: token totals arrive as strings, cost as a number.
         let object: [String: Any] = [

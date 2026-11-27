@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import XCTest
 @testable import Toki
@@ -74,15 +75,16 @@ final class RemoteControlLifecycleTests: XCTestCase {
     private struct LaunchFailure: Error {}
 
     private func makeServer(
+        status: RemoteControlServer.TailscaleStatusSnapshot = .init(
+            name: nil, diagnostic: nil, cliAvailable: false, serveState: .notServing, serveHost: nil
+        ),
         companion: @escaping RemoteControlServer.CompanionProcessFactory,
         tunnel: RemoteControlServer.TunnelProcessFactory? = nil,
         exitWaiter: @escaping RemoteControlServer.ProcessExitWaiter,
         dispatcher: RemoteControlServer.CallbackDispatcher? = nil
     ) -> RemoteControlServer {
         RemoteControlServer(
-            tailscaleStatusReader: { _ in
-                .init(name: nil, diagnostic: nil, cliAvailable: false, serveState: .notServing, serveHost: nil)
-            },
+            tailscaleStatusReader: { _ in status },
             companionProcessFactory: companion,
             tunnelProcessFactory: tunnel,
             processExitWaiter: exitWaiter,
@@ -358,6 +360,32 @@ final class RemoteControlLifecycleTests: XCTestCase {
             server.lastError,
             "Could not launch Python 3. Install it (xcode-select --install) and try again."
         )
+    }
+
+    func testUnchangedTailscaleSkipStateDoesNotRepublish() async {
+        let queue = CallbackQueue()
+        let conflict = RemoteControlServer.TailscaleStatusSnapshot(
+            name: "mac.example.ts.net", diagnostic: "Connected", cliAvailable: true,
+            serveState: .conflict, serveHost: nil
+        )
+        let server = makeServer(
+            status: conflict,
+            companion: { _, _, _ in FakeProcess() },
+            exitWaiter: { _, _ in },
+            dispatcher: queue.dispatcher
+        )
+        server.hostMode = .localhost
+        server.companionAppMode = .hosted
+        server.start()
+        XCTAssertTrue(server.isRunning)
+        await server.refreshTailscaleStatus().value
+        XCTAssertNotNil(server.autoServeSkipped)
+
+        var publications = 0
+        let observation = server.objectWillChange.sink { publications += 1 }
+        defer { observation.cancel() }
+        await server.refreshTailscaleStatus().value
+        XCTAssertEqual(publications, 0, "An unchanged skip state must not republish")
     }
 
     func testTunnelCallbacksBelongToTheirOwningServer() throws {

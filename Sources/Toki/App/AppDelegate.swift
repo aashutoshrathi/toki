@@ -118,6 +118,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         updateStatusItem()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
+        // The menu bar height changes when the main display changes, and the hosting view's
+        // frame is set from the button's bounds. Nothing else re-runs that layout when the
+        // readout itself is unchanged.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParametersDidChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
 
         popover.behavior = .transient
         popover.contentSize = NSSize(width: popoverWidth(), height: popoverHeight())
@@ -341,6 +350,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var hasDeferredStatusResize = false
     private var lastMenuBarRenderInputs: MenuBarRenderInputs?
+
+    @objc private func screenParametersDidChange() {
+        lastMenuBarRenderInputs = nil
+        updateStatusItem()
+    }
 
     @objc private func togglePopover() {
         guard statusItem.button != nil else { return }

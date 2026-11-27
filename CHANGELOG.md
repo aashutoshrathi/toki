@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.4.5 - 2026-11-26
+## 3.4.5 - 2026-11-27
 
 One Line: Cut background work, keep Remote Control stable across restarts, and read Cursor usage without a Keychain prompt.
 
@@ -8,7 +8,7 @@ One Line: Cut background work, keep Remote Control stable across restarts, and r
 - **Less background agent scanning.** Toki scans once a minute while the popover is closed and idle. Opening the popover scans immediately; scans stay at 15 seconds while it is open, an agent needs input, or Remote Control is running. Repeated manual refreshes share one follow-up scan instead of overlapping.
 - **Fewer menu-bar redraws.** Unchanged quota readouts, input counts, Remote Control indicators, and display density no longer trigger another menu-bar render.
 - **Tailscale checks follow Settings visibility.** Toki polls Tailscale while Settings is visible and Remote Control uses Tailscale or the hosted companion app. Concurrent status requests share one check, and unchanged status values no longer trigger UI updates. Opening Settings rechecks a stopped or LAN setup, and a successful HTTPS setup no longer reuses a status read taken before it.
-- **Cursor usage without a Keychain prompt.** Toki reads Cursor usage from a plaintext desktop sign-in or an existing CLI session in `~/.cursor/auth.json`, and shows local activity when neither is available. The Connect Cursor Usage action is gone.
+- **Cursor usage without a Keychain prompt.** Toki reads Cursor usage from a plaintext desktop sign-in or an existing CLI session in `~/.cursor/auth.json`, and shows local activity when neither is available. The Connect Cursor Usage action is gone. Encrypted desktop sign-ins now show local activity only; sign in with `cursor-agent` to see usage again.
 
 ### Fixed
 - **Remote Control survives a closed pipe.** A companion that closes its input no longer terminates Toki with SIGPIPE.

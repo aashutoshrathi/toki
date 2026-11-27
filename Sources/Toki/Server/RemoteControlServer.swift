@@ -932,14 +932,16 @@ final class RemoteControlServer: ObservableObject {
         guard tailscaleServeReady == false else { return }
         // Deliberate refusals, each explained in its own row.
         if tailscaleServeConflict {
-            autoServeSkipped = "Something else already serves HTTPS on 443, so Toki left it alone."
+            let message = "Something else already serves HTTPS on 443, so Toki left it alone."
+            if autoServeSkipped != message { autoServeSkipped = message }
             return
         }
         if tailscaleCLIAvailable != true {
-            autoServeSkipped = "Toki has no tailscale command to run."
+            let message = "Toki has no tailscale command to run."
+            if autoServeSkipped != message { autoServeSkipped = message }
             return
         }
-        autoServeSkipped = nil
+        if autoServeSkipped != nil { autoServeSkipped = nil }
         didAttemptAutoServe = true
         enableTailscaleServe()
     }

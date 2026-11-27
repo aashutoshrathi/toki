@@ -27,7 +27,11 @@ enum CursorAuth {
 
         // Encrypted desktop sign-ins require Cursor's Keychain item, which can open
         // a macOS permission dialog during refresh. Only use plaintext tokens here.
-        return credentials(token: stored)
+        guard let credentials = credentials(token: stored) else { return nil }
+        // An expired desktop token must not hide a current CLI session.
+        if let expiry = jwtPayload(stored)?["exp"] as? TimeInterval, expiry.isFinite,
+           expiry <= Date().timeIntervalSince1970 { return nil }
+        return credentials
     }
 
     private struct CLISession: Decodable {
