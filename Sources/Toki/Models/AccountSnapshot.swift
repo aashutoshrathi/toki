@@ -227,7 +227,6 @@ struct AccountSnapshot: Identifiable, Hashable {
     var isAgentDetectionOnly: Bool = false
     var isSignInExpired: Bool = false
     var lastActivity: Date? = nil
-    var requiresCursorKeychainAccess: Bool = false
     var weeklySubscriptionQuota: WeeklySubscriptionQuota? = nil
     var sharedWithCursorID: String? = nil
     var cursorIdentity: String? = nil

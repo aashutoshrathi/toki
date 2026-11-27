@@ -17,8 +17,6 @@ struct AccountCard: View {
     @State private var selectedResetGroup: ResetCreditGroup? = nil
     @State private var unredeemableGroupNotice: ResetCreditGroup? = nil
     @State private var isHovered = false
-    @State private var isConnectingCursor = false
-    @State private var cursorConnectionFailed = false
 
     private enum ExpandedTab: String, CaseIterable, Identifiable {
         case usage = "Usage"
@@ -237,16 +235,6 @@ struct AccountCard: View {
                 // sits above the metrics rather than under them.
                 if let serviceStatus {
                     ServiceStatusRow(status: serviceStatus)
-                }
-
-                if snapshot.requiresCursorKeychainAccess {
-                    Button("Connect Cursor Usage", action: connectCursorUsage)
-                        .disabled(isConnectingCursor)
-                        .alert("Cursor usage could not connect", isPresented: $cursorConnectionFailed) {
-                            Button("OK", role: .cancel) {}
-                        } message: {
-                            Text("Open Cursor to check your sign-in, then allow Toki to access Cursor Safe Storage in the macOS prompt.")
-                        }
                 }
 
                 // Sessions only make sense for a connected account; when the account is
@@ -967,23 +955,6 @@ struct AccountCard: View {
     private func saveAlias() {
         store.renameAccount(snapshot: snapshot, alias: aliasDraft)
         isEditingAlias = false
-    }
-
-    private func connectCursorUsage() {
-        isConnectingCursor = true
-        Task {
-            let connected = await Task.detached(priority: .userInitiated) {
-                if case .connected = CursorAuth.read(allowPrompt: true) { return true }
-                return false
-            }.value
-            isConnectingCursor = false
-            guard connected else {
-                cursorConnectionFailed = true
-                return
-            }
-            expandedTab = .usage
-            store.refreshOnceIdle()
-        }
     }
 
     private var agentStatusActive: Bool {

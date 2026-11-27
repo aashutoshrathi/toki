@@ -54,6 +54,28 @@ func popoverFallbackAnchorX(
     return min(max(x, screenFrame.minX + 1), screenFrame.maxX - 1)
 }
 
+struct MenuBarRenderInputs {
+    let entries: [MenuBarStatusEntry]
+    let awaitingInput: Int
+    let remoteControlOn: Bool
+    let density: MenuBarDensity
+}
+
+extension MenuBarRenderInputs: Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.awaitingInput == rhs.awaitingInput
+            && lhs.remoteControlOn == rhs.remoteControlOn
+            && lhs.density == rhs.density
+            && lhs.entries.elementsEqual(rhs.entries) { lhs, rhs in
+                lhs.provider == rhs.provider
+                    && lhs.value == rhs.value
+                    && lhs.leadingText == rhs.leadingText
+                    && lhs.windowLabel == rhs.windowLabel
+                    && lhs.accountLabel == rhs.accountLabel
+            }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
@@ -96,6 +118,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         updateStatusItem()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
+        // The menu bar height changes when the main display changes, and the hosting view's
+        // frame is set from the button's bounds. Nothing else re-runs that layout when the
+        // readout itself is unchanged.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParametersDidChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
 
         popover.behavior = .transient
         popover.contentSize = NSSize(width: popoverWidth(), height: popoverHeight())
@@ -254,10 +285,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func updateStatusItem() {
-        let content = MenuBarStatusView(entries: latestEntries, awaitingInput: agentsAwaitingInput,
-                                        remoteControlOn: RemoteControlServer.shared.isRunning,
-                                        density: store.preferences.menuBarDensity)
+        let inputs = MenuBarRenderInputs(
+            entries: latestEntries,
+            awaitingInput: agentsAwaitingInput,
+            remoteControlOn: RemoteControlServer.shared.isRunning,
+            density: store.preferences.menuBarDensity
+        )
         guard let button = statusItem.button else { return }
+        guard lastMenuBarRenderInputs != inputs else { return }
+        lastMenuBarRenderInputs = inputs
+        let content = MenuBarStatusView(entries: inputs.entries, awaitingInput: inputs.awaitingInput,
+                                        remoteControlOn: inputs.remoteControlOn,
+                                        density: inputs.density)
         // One segment per provider means the readout can only name a percentage. With more
         // than one Codex home signed in, the tooltip is the only place the account that
         // segment belongs to can be read off without opening the popover.
@@ -310,6 +349,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private var hasDeferredStatusResize = false
+    private var lastMenuBarRenderInputs: MenuBarRenderInputs?
+
+    @objc private func screenParametersDidChange() {
+        lastMenuBarRenderInputs = nil
+        updateStatusItem()
+    }
 
     @objc private func togglePopover() {
         guard statusItem.button != nil else { return }
@@ -320,7 +365,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // falls back to the screen corner. Defer and retry until the button has a position.
             presentPopover(retriesRemaining: 6, activationPoint: currentPointerActivationPoint())
             store.refresh(keepsExistingSnapshots: true, minimumRefreshInterval: 60)
-            store.refreshActiveAgents()
             store.rescanProviders()
         }
     }
@@ -440,11 +484,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         contentView.window?.backgroundColor = .clear
     }
 
+    func popoverDidShow(_ notification: Notification) {
+        store.setAgentPopoverVisible(true)
+    }
+
     // Tear the transient anchor down so it never lingers invisibly.
     func popoverDidClose(_ notification: Notification) {
+        store.setAgentPopoverVisible(false)
         fallbackAnchorWindow.orderOut(nil)
 
         if hasDeferredStatusResize {
+            lastMenuBarRenderInputs = nil
             updateStatusItem()
         }
     }

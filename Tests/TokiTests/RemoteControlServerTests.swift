@@ -496,6 +496,103 @@ final class RemoteControlServerTests: XCTestCase {
     private let usageNow = Date(timeIntervalSince1970: 1_800_000_000)
     private let usageWeek: TimeInterval = 7 * 86_400
 
+    func testSnapshotHeartbeatKeepsUnchangedAgentsAndUsageFreshPastCompanionExpiry() throws {
+        let server = RemoteControlServer(tailscaleStatusReader: { _ in
+            .init(name: nil, diagnostic: nil, cliAvailable: false, serveState: .notServing, serveHost: nil)
+        })
+        let quota = AccountSnapshot(
+            id: "claude-code", name: "Claude Code", provider: .claudeCode,
+            primary: "62%", subtitle: "", remainingRatio: 0.62, metrics: []
+        )
+        var thread = claudeAgent(pid: -10, t3Thread: nil)
+        thread.origin = .threadStore
+
+        server.updateUsage([quota])
+        for agents in [[], [thread]] {
+            server.updateActiveAgents(agents)
+            let pipe = Pipe()
+            let timer = server.startSnapshotPublishing(to: pipe)
+
+            // Advance past CANONICAL_MAX_AGE in toki_remote.py at the timer's cadence.
+            let canonicalMaxAge: TimeInterval = 90
+            let interval = timer.timeInterval
+            guard timer.isValid, interval > 0, interval < canonicalMaxAge else {
+                server.stopSnapshotPublishing()
+                XCTFail("The heartbeat timer must run within the companion expiry window")
+                return
+            }
+            let ticks = Int(canonicalMaxAge / interval) + 1
+            for _ in 0..<ticks {
+                timer.fire()
+            }
+
+            server.stopSnapshotPublishing()
+            XCTAssertFalse(timer.isValid)
+            try pipe.fileHandleForWriting.close()
+            let data = try XCTUnwrap(pipe.fileHandleForReading.readToEnd())
+            let frames = try data.split(separator: 0x0A).map {
+                try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0)) as? [String: [[String: Any]]])
+            }
+            let agentFrames = frames.compactMap { $0["agents"] }
+            let usageFrames = frames.compactMap { $0["usage"] }
+            XCTAssertEqual(agentFrames.count, ticks + 1)
+            XCTAssertEqual(usageFrames.count, ticks + 1)
+            for frame in agentFrames {
+                XCTAssertEqual(frame.compactMap { $0["pid"] as? Int32 }, agents.map(\.processID))
+                XCTAssertEqual(frame.compactMap { $0["process"] as? Bool }, agents.map { _ in false })
+            }
+            for frame in usageFrames {
+                XCTAssertEqual(frame.compactMap { $0["remaining"] as? Double }, [0.62])
+            }
+        }
+    }
+
+    func testClosedSnapshotPipeDoesNotRaiseSIGPIPE() {
+        let server = RemoteControlServer(tailscaleStatusReader: { _ in
+            .init(name: nil, diagnostic: nil, cliAvailable: false, serveState: .notServing, serveHost: nil)
+        })
+        let pipe = Pipe()
+        let timer = server.startSnapshotPublishing(to: pipe)
+        defer { server.stopSnapshotPublishing() }
+        let descriptor = pipe.fileHandleForWriting.fileDescriptor
+        guard fcntl(descriptor, F_GETNOSIGPIPE) == 1 else {
+            XCTFail("Production writer must suppress SIGPIPE")
+            return
+        }
+        _ = pipe.fileHandleForReading.availableData
+        try? pipe.fileHandleForReading.close()
+
+        timer.fire()
+        server.updateActiveAgents([])
+        server.updateUsage([])
+        server.stopSnapshotPublishing()
+        XCTAssertFalse(timer.isValid)
+    }
+
+    func testStartingSnapshotPublishingReplacesHeartbeatTimer() throws {
+        let server = RemoteControlServer(tailscaleStatusReader: { _ in
+            .init(name: nil, diagnostic: nil, cliAvailable: false, serveState: .notServing, serveHost: nil)
+        })
+        let firstPipe = Pipe()
+        let firstTimer = server.startSnapshotPublishing(to: firstPipe)
+        let secondPipe = Pipe()
+        let secondTimer = server.startSnapshotPublishing(to: secondPipe)
+
+        XCTAssertFalse(firstTimer.isValid)
+        XCTAssertTrue(secondTimer.isValid)
+        firstTimer.fire()
+        secondTimer.fire()
+        server.stopSnapshotPublishing()
+        XCTAssertFalse(secondTimer.isValid)
+
+        try firstPipe.fileHandleForWriting.close()
+        try secondPipe.fileHandleForWriting.close()
+        let firstData = try XCTUnwrap(firstPipe.fileHandleForReading.readToEnd())
+        let secondData = try XCTUnwrap(secondPipe.fileHandleForReading.readToEnd())
+        XCTAssertEqual(firstData.split(separator: 0x0A).count, 2, "Invalidated timer must not emit a heartbeat")
+        XCTAssertEqual(secondData.split(separator: 0x0A).count, 4, "Only the current timer emits its heartbeat")
+    }
+
     // The payload is built from the snapshots, so the phone shows the same reading as the menu bar.
     func testUsagePayloadCarriesTheReadingTheMenuBarShows() {
         var snapshot = AccountSnapshot(

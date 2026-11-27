@@ -109,7 +109,7 @@ Vercel's `fx`. Auto-detected from its local usage ledger (`~/.fx/usage.jsonl`); 
 
 ## Cursor
 
-Detected when either the `cursor-agent` CLI or the Cursor desktop app is installed. To read usage from an encrypted desktop sign-in, expand the card, select **Connect Cursor Usage**, and approve the macOS Keychain prompt. A one-time approval lasts until Toki quits. Toki reads the weekly allowance and reset for The X Subscription, and billing-cycle spend and tokens for legacy plans. The card also reads local AI-edit and chat activity.
+Detected when either the `cursor-agent` CLI or the Cursor desktop app is installed. Toki shows Cursor sessions and local AI-edit and chat activity. It reads usage from a plaintext desktop sign-in or, when that is unavailable, an existing file-backed CLI sign-in in `~/.cursor/auth.json`. Both sources can show the weekly allowance for The X Subscription or billing-cycle spend and tokens for legacy plans. If neither source is available, the card shows local activity only. For account usage, see [Cursor's usage guide](https://cursor.com/help/models-and-usage/usage-limits#how-do-i-check-my-usage).
 
 The legacy spend ring uses the cap reported by Cursor, which can be the team's shared cap. Set a personal display cap in dollars with a configured account:
 
