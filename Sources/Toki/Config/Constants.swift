@@ -1,6 +1,6 @@
 import Foundation
 
-let appVersion = "3.4.5"
+let appVersion = "3.4.6"
 let appUserAgent = "Toki/\(appVersion)"
 
 let claudeCodeSurfaceUserAgent = "claude-cli/2.1.280 (external, cli)"

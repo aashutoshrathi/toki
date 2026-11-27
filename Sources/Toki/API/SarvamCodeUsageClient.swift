@@ -93,10 +93,11 @@ struct SarvamCodeUsageClient {
 
     func snapshot(
         root: String? = nil,
+        openCodeDB: String? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) async throws -> AccountSnapshot {
-        let totals = try Self.aggregate(root: root, now: now, calendar: calendar)
+        let totals = try Self.aggregate(root: root, openCodeDB: openCodeDB, now: now, calendar: calendar)
         let hasCosts = !totals.todayCosts.isEmpty || !totals.allTimeCosts.isEmpty
         let todayCost = totals.todayCosts.isEmpty ? formatUSD(0) : totals.todayCosts.formatted
         let totalCost = totals.allTimeCosts.isEmpty ? formatUSD(0) : totals.allTimeCosts.formatted
@@ -148,76 +149,122 @@ struct SarvamCodeUsageClient {
 
     static func autoDetectedAccount(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        home: String = FileManager.default.homeDirectoryForCurrentUser.path
+        home: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        cliIsInstalled: (String) -> Bool = { UsageFetcher.cliIsInstalled(named: $0) }
     ) -> AccountConfig? {
         let root = sarvamHome(environment: environment, home: home)
         let stateExists = FileManager.default.fileExists(atPath: (root as NSString).appendingPathComponent("state_5.sqlite"))
         let sessionsExist = FileManager.default.fileExists(atPath: sessionRoot(environment: environment, home: home))
-        guard stateExists || sessionsExist || UsageFetcher.cliIsInstalled(named: "sarvam-code") else { return nil }
+        let openCodeSarvam = (try? OpenCodeUsageClient.usageRows(
+            db: OpenCodeUsageClient.databasePath(environment: environment, home: home)
+        ).contains { $0.providerID == "sarvam" }) == true
+        guard stateExists || sessionsExist || openCodeSarvam || cliIsInstalled("sarvam-code") else { return nil }
         return AccountConfig(id: autoDetectedID, name: "Sarvam Code", provider: .sarvamCode)
     }
 
     static func aggregate(
         root: String? = nil,
+        openCodeDB: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         home: String = FileManager.default.homeDirectoryForCurrentUser.path,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Totals {
         let resolvedRoot = root ?? sessionRoot(environment: environment, home: home)
-        guard FileManager.default.fileExists(atPath: resolvedRoot) else { return Totals() }
-
         let week = calendar.dateInterval(of: .weekOfYear, for: now)
         let month = calendar.dateInterval(of: .month, for: now)
         var totals = Totals()
-        for path in try sessionFiles(root: resolvedRoot) {
-            let file = try fileAggregate(path: path)
-            guard file.hasSession else { continue }
-            totals.sessionCount += 1
-            for contribution in file.contributions {
-                let counters = contribution.counters
-                totals.allTimeTokens += counters.total
-                totals.allTimeCosts.add(counters.costs)
-                guard let date = contribution.date else { continue }
-                if calendar.isDate(date, inSameDayAs: now) {
-                    totals.todayInput += counters.input
-                    totals.todayOutput += counters.output
-                    totals.todayCachedInput += counters.cachedInput
-                    totals.todayReasoningOutput += counters.reasoningOutput
-                    totals.todayTokens += counters.total
-                    totals.todayCosts.add(counters.costs)
-                }
-                if let week, date >= week.start, date < week.end {
-                    totals.weekTokens += counters.total
-                    totals.weekCosts.add(counters.costs)
-                }
-                if let month, date >= month.start, date < month.end {
-                    totals.monthTokens += counters.total
-                    totals.monthCosts.add(counters.costs)
+        if FileManager.default.fileExists(atPath: resolvedRoot) {
+            for path in try sessionFiles(root: resolvedRoot) {
+                let file = try fileAggregate(path: path)
+                guard file.hasSession else { continue }
+                totals.sessionCount += 1
+                for contribution in file.contributions {
+                    let counters = contribution.counters
+                    totals.allTimeTokens += counters.total
+                    totals.allTimeCosts.add(counters.costs)
+                    guard let date = contribution.date else { continue }
+                    if calendar.isDate(date, inSameDayAs: now) {
+                        totals.todayInput += counters.input
+                        totals.todayOutput += counters.output
+                        totals.todayCachedInput += counters.cachedInput
+                        totals.todayReasoningOutput += counters.reasoningOutput
+                        totals.todayTokens += counters.total
+                        totals.todayCosts.add(counters.costs)
+                    }
+                    if let week, date >= week.start, date < week.end {
+                        totals.weekTokens += counters.total
+                        totals.weekCosts.add(counters.costs)
+                    }
+                    if let month, date >= month.start, date < month.end {
+                        totals.monthTokens += counters.total
+                        totals.monthCosts.add(counters.costs)
+                    }
                 }
             }
+        }
+        if root == nil || openCodeDB != nil {
+            let db = openCodeDB ?? OpenCodeUsageClient.databasePath(environment: environment, home: home)
+            let rows = try OpenCodeUsageClient.usageRows(db: db).filter { $0.providerID == "sarvam" }
+            var sessions = Set<String>()
+            for row in rows {
+                sessions.insert(row.sessionID)
+                totals.allTimeTokens += row.total
+                totals.allTimeCosts.add(.usd(row.cost))
+                guard let date = row.date else { continue }
+                if calendar.isDate(date, inSameDayAs: now) {
+                    totals.todayInput += row.input
+                    totals.todayOutput += row.output
+                    totals.todayCachedInput += row.cacheRead
+                    totals.todayReasoningOutput += row.reasoning
+                    totals.todayTokens += row.total
+                    totals.todayCosts.add(.usd(row.cost))
+                }
+                if let week, date >= week.start, date < week.end {
+                    totals.weekTokens += row.total
+                    totals.weekCosts.add(.usd(row.cost))
+                }
+                if let month, date >= month.start, date < month.end {
+                    totals.monthTokens += row.total
+                    totals.monthCosts.add(.usd(row.cost))
+                }
+            }
+            totals.sessionCount += sessions.count
         }
         return totals
     }
 
     static func dailyTotals(
         root: String? = nil,
+        openCodeDB: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         home: String = FileManager.default.homeDirectoryForCurrentUser.path,
         calendar: Calendar = .current
     ) throws -> [Date: DayTotal] {
         let resolvedRoot = root ?? sessionRoot(environment: environment, home: home)
-        guard FileManager.default.fileExists(atPath: resolvedRoot) else { return [:] }
         var totals: [Date: DayTotal] = [:]
-        for path in try sessionFiles(root: resolvedRoot) {
-            let file = try fileAggregate(path: path)
-            guard file.hasSession else { continue }
-            for contribution in file.contributions {
-                guard let date = contribution.date else { continue }
+        if FileManager.default.fileExists(atPath: resolvedRoot) {
+            for path in try sessionFiles(root: resolvedRoot) {
+                let file = try fileAggregate(path: path)
+                guard file.hasSession else { continue }
+                for contribution in file.contributions {
+                    guard let date = contribution.date else { continue }
+                    let day = calendar.startOfDay(for: date)
+                    var total = totals[day] ?? DayTotal()
+                    total.tokens += contribution.counters.total
+                    total.costs.add(contribution.counters.costs)
+                    totals[day] = total
+                }
+            }
+        }
+        if root == nil || openCodeDB != nil {
+            let db = openCodeDB ?? OpenCodeUsageClient.databasePath(environment: environment, home: home)
+            for row in try OpenCodeUsageClient.usageRows(db: db).filter({ $0.providerID == "sarvam" }) {
+                guard let date = row.date else { continue }
                 let day = calendar.startOfDay(for: date)
                 var total = totals[day] ?? DayTotal()
-                total.tokens += contribution.counters.total
-                total.costs.add(contribution.counters.costs)
+                total.tokens += row.total
+                total.costs.add(.usd(row.cost))
                 totals[day] = total
             }
         }

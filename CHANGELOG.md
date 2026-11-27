@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.4.6 - 2026-11-28
+
+One Line: Count Sarvam usage through OpenCode and show the 5-hour quota before the weekly quota.
+
+### Changed
+- **Gemini CLI support removed.** Gemini CLI accounts, configuration entries, and detection are removed. Existing configurations continue to load, and Antigravity support remains available.
+
+### Fixed
+- **Sarvam usage through OpenCode.** Sarvam tokens and cost recorded by OpenCode now contribute to the Sarvam card and daily analytics, alongside standalone Sarvam Code history. Mixed-provider sessions attribute each message to its provider without counting Sarvam usage twice.
+- **Quota window order.** Antigravity and Codex show the 5-hour quota above the 7-day quota in account details and Remote Control. Codex keeps its provider-selected headline and reset behavior.
+
 ## 3.4.5 - 2026-11-27
 
 One Line: Cut background work, keep Remote Control stable across restarts, and read Cursor usage without a Keychain prompt.
