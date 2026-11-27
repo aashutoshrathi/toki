@@ -122,6 +122,11 @@ struct CodexRateLimits {
         if let secondaryData = limits["secondary"] as? [String: Any] {
             appendWindow(secondaryData, slot: .secondary)
         }
+        // The headline uses the provider's primary slot. The two window rows follow duration order.
+        if primaryWindow?.label == "7d", secondaryWindow?.label == "5h" {
+            (primaryWindow, secondaryWindow) = (secondaryWindow, primaryWindow)
+            metrics.swapAt(0, 1)
+        }
         // Surface the soonest window reset in the subtitle too, so the expanded card's header
         // states when quota returns without having to read it off a metric row.
         if let reset = earliestResetText, let base = subtitle {
