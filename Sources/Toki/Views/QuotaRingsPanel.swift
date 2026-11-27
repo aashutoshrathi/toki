@@ -258,8 +258,6 @@ func ringColor(_ snapshot: AccountSnapshot, colorScheme: ColorScheme = .dark) ->
         return Color(red: 0.48, green: 0.61, blue: 1)
     case .openCode:
         return Color(red: 0.20, green: 0.72, blue: 0.48)
-    case .gemini:
-        return Color(red: 0.66, green: 0.33, blue: 0.97)
     case .copilot:
         return Color(red: 0.55, green: 0.45, blue: 0.95)
     case .pi:

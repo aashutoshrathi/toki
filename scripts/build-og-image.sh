@@ -17,7 +17,7 @@ logo() {
 render() {
   local BG="$1" FG="$2" MUTED="$3" TILE="$4" SHADOW="$5" SHOT="$6" OUT="$7"
   local LOGOS=""
-  for provider in claude codex cursor opencode gemini zed; do
+  for provider in claude codex cursor opencode antigravity zed; do
     LOGOS+="$(logo "$provider")"
   done
 

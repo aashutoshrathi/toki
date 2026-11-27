@@ -102,6 +102,5 @@ final class SessionUsageTests: XCTestCase {
         XCTAssertNil(AgentSessionResolver.sessionUsage(provider: .codex, command: "", cwd: nil))
         XCTAssertNil(AgentSessionResolver.sessionUsage(provider: .grok, command: "", cwd: nil))
         XCTAssertNil(AgentSessionResolver.sessionUsage(provider: .copilot, command: "", cwd: nil))
-        XCTAssertNil(AgentSessionResolver.sessionUsage(provider: .gemini, command: "", cwd: nil))
     }
 }

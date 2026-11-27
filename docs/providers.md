@@ -125,9 +125,9 @@ Toki reads the weekly allowance and reset from the signed-in Grok Build CLI. Whe
 
 Toki reads each model group's five-hour and weekly quotas from the signed-in `agy` CLI (1.1.11 or later). Active sessions still show when the CLI cannot supply quota.
 
-## Copilot, Gemini
+## Copilot
 
-Agent-detection only. Toki shows a local active-session count and detects Gemini sign-in.
+Agent-detection only. Toki shows a local active-session count.
 
 ## Zed
 

@@ -3,7 +3,7 @@ import Foundation
 // Reads ~/.grok/auth.json - the Grok CLI's (xAI's own "Grok Build" coding agent) cached
 // sign-in. Read-only and local-only: Toki never talks to xAI's auth endpoints itself, it
 // only checks whether the CLI already has a live-looking credential cached, the same way
-// ProviderDetection checks Claude Code, Codex, and Gemini for onboarding.
+// ProviderDetection checks Claude Code and Codex for onboarding.
 //
 // The email is best-effort: pulled from an ID-token JWT or a cached email field.
 enum GrokCredentialReader {

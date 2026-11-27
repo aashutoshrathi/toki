@@ -7,8 +7,8 @@ description: Add support for a new AI coding agent/provider to Toki (e.g. Cursor
 
 Toki knows two kinds of provider:
 
-- **Agent-only** (Copilot, Grok, Gemini, Cursor): no usage/quota API. A running CLI is detected by scanning processes and shows as a row in the Agents tab. To also get a standing card on the main page (reading "No usage API available"), the provider needs either auto-detection when its CLI is installed (like Cursor) or a configured/connected account (like Grok/Gemini). A provider with neither (Copilot) only appears as an Agents row while a session runs. Most new providers are this kind, so start here.
-- **Usage-API** (Claude Code, Codex, OpenCode, Pi): has a readable data source, a quota/credential API (Claude Code, Codex) or local session history (OpenCode, Pi), so it gets a dedicated client and a real percentage/spend card.
+- **Agent-only** (Copilot, Zed): no usage/quota API. A running CLI is detected by scanning processes and shows as a row in the Agents tab. To also get a standing card on the main page (reading "No usage API available"), the provider needs either auto-detection when its host is installed (like Zed) or a configured account. A provider with neither (Copilot) only appears as an Agents row while a session runs. Most new providers are this kind, so start here.
+- **Usage-API** (Claude Code, Codex, Cursor, Grok, Antigravity, OpenCode, Pi): has a readable data source, a quota/credential API (Claude Code, Codex) or local session history (OpenCode, Pi), so it gets a dedicated client and a real percentage/spend card.
 
 The fastest reference is the **Cursor** implementation. Read commits `6345d66` (detection), `1743942` (auto-detected card), and `59be714` (logo, widget glyph, widget test); together they are the template for an agent-only provider.
 
@@ -47,7 +47,7 @@ Adding the enum case makes the compiler flag every exhaustive `switch` you still
    - Add a match. Exact executable: `if executable == "<cli>" { return .<case> }`. If it runs via node or bun, also handle `(executable == "node" || executable == "bun") && entrypoint?.contains("/<pkg>/") == true` (Codex/Copilot are node-only; Pi covers both node and bun, use whichever the CLI actually launches with, from Step 0b). Keep it narrow so unrelated processes do not match.
 
 3. **`Sources/Toki/API/UsageFetcher.swift`**, three agent-only switches:
-   - `snapshots(...)`: add the case alongside `.copilot, .grok, .gemini, .cursor`, returning `agentOnlySnapshot(for:)`.
+   - `snapshots(...)`: add the case alongside `.copilot, .zed`, returning `agentOnlySnapshot(for:)`.
    - `apiCacheKey(for:)`: add to the `nil` group.
    - `refreshInterval(for:)`: add to the `0` group.
    - Optional but recommended, auto-detect as a card: if the provider should appear whenever its CLI is installed (like Cursor), add a clause to `accountsIncludingAutoDetected` plus a small `<provider>AutoDetectedAccount()` that checks the binary exists (mirror `cursorAutoDetectedAccount`). Without this (and without a configured/connected account from step 4), the provider only appears as an agent row while a session runs, not as a standing card.

@@ -12,7 +12,6 @@ func providerAccent(_ provider: Provider) -> Color {
     case .claude, .claudeCode, .anthropic: return Color(red: 0.85, green: 0.47, blue: 0.34)
     case .openCode: return Color(red: 0.20, green: 0.72, blue: 0.48)
     case .copilot: return Color(red: 0.55, green: 0.45, blue: 0.95)
-    case .gemini: return Color(red: 0.26, green: 0.52, blue: 0.96)
     case .cursor: return Color(red: 0.40, green: 0.44, blue: 0.52)
     case .pi: return Color(red: 0.52, green: 0.42, blue: 0.90)
     case .grok: return Color(red: 0.55, green: 0.55, blue: 0.58)

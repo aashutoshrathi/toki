@@ -5,7 +5,7 @@ import XCTest
 // menu bar, and which are pinned but dropped. All three have to agree with what
 // `menuBarEntries` actually draws, which is what these cover.
 final class MenuBarPinningTests: XCTestCase {
-    private let connected: [Provider] = [.claudeCode, .codex, .cursor, .gemini]
+    private let connected: [Provider] = [.claudeCode, .codex, .cursor, .antigravity]
 
     func testPinsAreKeptInTheOrderTheyWerePinned() {
         let state = menuBarPinState(pinned: [.cursor, .claudeCode], connected: connected, density: .comfortable)
@@ -18,7 +18,7 @@ final class MenuBarPinningTests: XCTestCase {
     // block one that would have.
     func testAPinWithNoConnectedAccountDoesNotUseUpASlot() {
         let state = menuBarPinState(
-            pinned: [.gemini, .claudeCode, .codex, .cursor],
+            pinned: [.antigravity, .claudeCode, .codex, .cursor],
             connected: [.claudeCode, .codex, .cursor],
             density: .comfortable
         )
@@ -58,7 +58,7 @@ final class MenuBarPinningTests: XCTestCase {
             AccountSnapshot(id: $0.rawValue, name: $0.rawValue, provider: $0, primary: "", subtitle: "",
                             remainingRatio: 0.5, metrics: [], menuBarValue: nil)
         }
-        let pins: [Provider] = [.claudeCode, .codex, .cursor, .gemini]
+        let pins: [Provider] = [.claudeCode, .codex, .cursor, .antigravity]
 
         for density in MenuBarDensity.allCases {
             let state = menuBarPinState(pinned: pins, connected: connected, density: density)

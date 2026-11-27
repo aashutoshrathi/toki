@@ -42,7 +42,8 @@ private struct TokiTimelineProvider: TimelineProvider {
             guard let data = try? Data(contentsOf: url) else { continue }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            if let snapshot = try? decoder.decode(WidgetDataSnapshot.self, from: data) {
+            if var snapshot = try? decoder.decode(WidgetDataSnapshot.self, from: data) {
+                snapshot.entries.removeAll { $0.provider == "gemini" }
                 return snapshot
             }
         }
@@ -305,8 +306,6 @@ private func providerColor(_ provider: String) -> Color {
         return Color(red: 0.48, green: 0.61, blue: 1)
     case "openCode":
         return Color(red: 0.20, green: 0.72, blue: 0.48)
-    case "gemini":
-        return Color(red: 0.66, green: 0.33, blue: 0.97)
     case "copilot":
         return Color(red: 0.55, green: 0.45, blue: 0.95)
     case "pi":
@@ -471,7 +470,6 @@ private struct ProviderGlyph: View {
         case "claude", "claudeCode", "anthropic": return "claude-logo"
         case "codex", "openai", "chatgpt": return "codex-logo"
         case "openCode": return "opencode-logo"
-        case "gemini": return "gemini-logo"
         case "grok": return "grok-logo"
         case "pi": return "pi-logo"
         case "cursor": return "cursor-logo"
@@ -488,7 +486,6 @@ private struct ProviderGlyph: View {
         case "claude", "claudeCode", "anthropic": return "sparkle"
         case "codex", "openai", "chatgpt": return "hexagon"
         case "copilot": return "chevron.left.forwardslash.chevron.right"
-        case "gemini": return "sparkles"
         case "grok": return "asterisk"
         case "sarvamCode": return "s.circle.fill"
         default: return "terminal"
