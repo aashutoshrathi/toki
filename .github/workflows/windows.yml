@@ -1,0 +1,95 @@
+name: Windows preview
+
+on:
+  pull_request:
+    branches: [main, "release/**"]
+    paths:
+      - "Windows/**"
+      - ".github/workflows/windows.yml"
+      - "scripts/package-windows.ps1"
+      - "docs/windows.md"
+  push:
+    branches: [main, "release/**"]
+    paths:
+      - "Windows/**"
+      - ".github/workflows/windows.yml"
+      - "scripts/package-windows.ps1"
+      - "docs/windows.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and package
+    runs-on: windows-latest
+    env:
+      PREVIEW_VERSION: 4.0.0-preview.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test core
+        run: dotnet run --project Windows/Toki.Core.Tests -c Release
+
+      - name: Package
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -OutputDirectory artifacts/windows -Version $env:PREVIEW_VERSION -Runtime win-x64
+
+      - name: Smoke test packaged app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem -LiteralPath 'artifacts/windows' -Filter '*.zip' -File | Select-Object -First 1
+          if (-not $zip) {
+              throw 'No package zip was produced.'
+          }
+          $extractPath = Join-Path $env:RUNNER_TEMP 'toki-smoke'
+          if (Test-Path -LiteralPath $extractPath) {
+              Remove-Item -LiteralPath $extractPath -Recurse -Force
+          }
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $extractPath
+          $exePath = Join-Path $extractPath 'Toki.exe'
+          if (-not (Test-Path -LiteralPath $exePath)) {
+              throw "Toki.exe is missing from $($zip.Name)."
+          }
+          $env:TOKI_SMOKE_SCREENSHOT = Join-Path $PWD 'artifacts/windows/dashboard-smoke.png'
+          $process = Start-Process -FilePath $exePath -ArgumentList '--smoke-test' -PassThru
+          if (-not $process.WaitForExit(120000)) {
+              $process.Kill()
+              throw 'Toki.exe --smoke-test did not exit within 120 seconds.'
+          }
+          if ($process.ExitCode -ne 0) {
+              throw "Toki.exe --smoke-test exited with code $($process.ExitCode)."
+          }
+
+      - name: Verify checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem -LiteralPath 'artifacts/windows' -Filter '*.zip' -File | Select-Object -First 1
+          $expected = (Get-Content -LiteralPath "$($zip.FullName).sha256" -Raw).Split(' ')[0].Trim()
+          $actual = (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) {
+              throw "Checksum mismatch for $($zip.Name)."
+          }
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: toki-windows-preview-${{ env.PREVIEW_VERSION }}-win-x64
+          path: |
+            artifacts/windows/*.zip
+            artifacts/windows/*.sha256
+            artifacts/windows/dashboard-smoke.png
+          if-no-files-found: error
