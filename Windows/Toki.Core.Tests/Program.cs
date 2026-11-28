@@ -6,6 +6,7 @@ if (Environment.GetEnvironmentVariable("TOKI_FAKE_APP_SERVER") == "1") {
 }
 
 QuotaWindowTests.Run();
+FlyoutPlacementTests.Run();
 ApiContractTests.Run();
 SettingsStoreTests.Run();
 ClaudeCredentialTests.Run();

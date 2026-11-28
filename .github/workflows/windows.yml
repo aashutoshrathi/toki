@@ -29,7 +29,7 @@ jobs:
     name: Build, test and package
     runs-on: windows-latest
     env:
-      PREVIEW_VERSION: 4.0.0-preview.1
+      PREVIEW_VERSION: 4.0.0-preview.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,6 +64,8 @@ jobs:
               throw "Toki.exe is missing from $($zip.Name)."
           }
           $env:TOKI_SMOKE_SCREENSHOT = Join-Path $PWD 'artifacts/windows/dashboard-smoke.png'
+          $env:TOKI_SMOKE_FLYOUT_SCREENSHOT = Join-Path $PWD 'artifacts/windows/flyout-smoke.png'
+          $env:TOKI_SMOKE_SETTINGS_SCREENSHOT = Join-Path $PWD 'artifacts/windows/settings-smoke.png'
           $process = Start-Process -FilePath $exePath -ArgumentList '--smoke-test' -PassThru
           if (-not $process.WaitForExit(120000)) {
               $process.Kill()
@@ -91,5 +93,5 @@ jobs:
           path: |
             artifacts/windows/*.zip
             artifacts/windows/*.sha256
-            artifacts/windows/dashboard-smoke.png
+            artifacts/windows/*-smoke.png
           if-no-files-found: error

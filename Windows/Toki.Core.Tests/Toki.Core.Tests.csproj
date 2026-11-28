@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Toki.Core/Toki.Core.csproj" />
+    <Compile Include="../Toki.Windows/FlyoutPlacement.cs" Link="FlyoutPlacement.cs" />
   </ItemGroup>
 
 </Project>

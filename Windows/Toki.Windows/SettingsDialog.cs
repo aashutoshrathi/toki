@@ -119,6 +119,11 @@ internal sealed class SettingsDialog : Form {
         CancelButton = _cancelButton;
     }
 
+    protected override void OnHandleCreated(EventArgs e) {
+        base.OnHandleCreated(e);
+        WindowTheme.Apply(Handle);
+    }
+
     internal AppSettings? Settings { get; private set; }
 
     private static void ConfigureTextBox(TextBox textBox, string name, string? value) {

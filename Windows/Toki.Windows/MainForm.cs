@@ -2,11 +2,15 @@ using Toki.Core;
 
 namespace Toki.Windows;
 
-internal sealed class MainForm : Form {
+internal sealed partial class MainForm : Form {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan NotificationCooldown = TimeSpan.FromMinutes(90);
 
     private readonly bool _smokeTest;
+    private readonly TrayFlyout _flyout;
+    private IReadOnlyList<ProviderSnapshot> _latestSnapshots = Array.Empty<ProviderSnapshot>();
+    private bool _refreshing;
+    private SettingsDialog? _openSettings;
     private readonly EventWaitHandle _showSignal;
     private RegisteredWaitHandle? _showRegistration;
     private readonly CancellationTokenSource _lifetime = new();
@@ -53,11 +57,15 @@ internal sealed class MainForm : Form {
         MinimumSize = new Size(760, 600);
         Name = "TokiMainForm";
         StartPosition = FormStartPosition.CenterScreen;
-        Text = "Toki - Windows Preview 4.0.0-preview.1";
+        Text = "Toki - Windows Preview 4.0.0-preview.2";
 
         _brandIcon = BrandIcon.Load();
         _brandImage = _brandIcon.ToBitmap();
         Icon = _brandIcon;
+        _flyout = new TrayFlyout(_brandIcon);
+        _flyout.DashboardRequested += ShowDashboard;
+        _flyout.SettingsRequested += () => SettingsButton_Click(this, EventArgs.Empty);
+        _flyout.RefreshRequested += () => _ = RefreshUsageAsync();
 
         var root = new TableLayoutPanel {
             BackColor = Theme.Background,
@@ -101,7 +109,7 @@ internal sealed class MainForm : Form {
         };
         var title = Theme.CreateLabel("Toki", 22, Theme.Text, true);
         title.Margin = new Padding(0);
-        var subtitle = Theme.CreateLabel("Windows preview 4.0.0-preview.1", 9, Theme.MutedText);
+        var subtitle = Theme.CreateLabel("Windows preview 4.0.0-preview.2", 9, Theme.MutedText);
         subtitle.Margin = new Padding(0);
         titlePanel.Controls.Add(title);
         titlePanel.Controls.Add(subtitle);
@@ -165,18 +173,7 @@ internal sealed class MainForm : Form {
         root.Controls.Add(_cardsPanel, 0, 3);
         Controls.Add(root);
 
-        if (smokeTest) {
-            RenderSnapshots(new[] {
-                new ProviderSnapshot("claude-code", "Claude Code", "Smoke test fixture", new[] {
-                    new QuotaWindow("5h", 25, DateTimeOffset.UtcNow.AddHours(2)),
-                    new QuotaWindow("7d", 80, DateTimeOffset.UtcNow.AddDays(3))
-                }, null, DateTimeOffset.UtcNow),
-                new ProviderSnapshot("codex", "Codex", "Smoke test fixture", Array.Empty<QuotaWindow>(),
-                    "Offline test: sign in to see quota.", DateTimeOffset.UtcNow)
-            });
-        } else {
-            AddFullWidthMessage("Loading provider usage...", Theme.MutedText);
-        }
+        AddFullWidthMessage("Loading provider usage...", Theme.MutedText);
 
         _showMenuItem = new ToolStripMenuItem("Show dashboard");
         _showMenuItem.Click += (_, _) => ToggleDashboard();
@@ -191,7 +188,13 @@ internal sealed class MainForm : Form {
         quitMenuItem.Click += (_, _) => ExitApplication();
 
         _trayMenu = new ContextMenuStrip();
+        var usageMenuItem = new ToolStripMenuItem("Show usage");
+        usageMenuItem.Click += (_, _) => ShowFlyout();
+        var settingsMenuItem = new ToolStripMenuItem("Settings");
+        settingsMenuItem.Click += SettingsButton_Click;
+        _trayMenu.Items.Add(usageMenuItem);
         _trayMenu.Items.Add(_showMenuItem);
+        _trayMenu.Items.Add(settingsMenuItem);
         _trayMenu.Items.Add(_refreshMenuItem);
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add(_doNotDisturbMenuItem);
@@ -205,10 +208,14 @@ internal sealed class MainForm : Form {
             Text = "Toki - Windows Preview",
             Visible = true
         };
-        _trayIcon.BalloonTipClicked += (_, _) => ShowDashboard();
+        _trayIcon.BalloonTipClicked += (_, _) => ShowFlyout();
         _trayIcon.MouseClick += (_, e) => {
-            if (e.Button == MouseButtons.Left) {
-                ShowDashboard();
+            if (e.Button == MouseButtons.Left && !_exitRequested) {
+                if (_openSettings is not null) {
+                    _openSettings.Activate();
+                } else {
+                    _flyout.ToggleFromTray(Cursor.Position);
+                }
             }
         };
 
@@ -222,44 +229,58 @@ internal sealed class MainForm : Form {
         KeyDown += MainForm_KeyDown;
     }
 
-    protected override void OnShown(EventArgs e) {
-        base.OnShown(e);
+    protected override void OnHandleCreated(EventArgs e) {
+        base.OnHandleCreated(e);
+        WindowTheme.Apply(Handle);
+    }
+
+    internal void Start() {
+        _ = Handle;
+        BeginInvoke((Action)StartInTray);
+    }
+
+    private void StartInTray() {
         if (_smokeTest) {
-            _smokeTimer = new System.Windows.Forms.Timer { Interval = 300 };
-            _smokeTimer.Tick += (_, _) => {
-                _smokeTimer.Stop();
-                var screenshotPath = Environment.GetEnvironmentVariable("TOKI_SMOKE_SCREENSHOT");
-                if (!string.IsNullOrWhiteSpace(screenshotPath)) {
-                    using var bitmap = new Bitmap(Width, Height);
-                    DrawToBitmap(bitmap, new Rectangle(Point.Empty, Size));
-                    bitmap.Save(screenshotPath, System.Drawing.Imaging.ImageFormat.Png);
-                }
-                ExitApplication();
-            };
-            _smokeTimer.Start();
+            StartSmokeTest();
             return;
         }
-
         _showRegistration = ThreadPool.RegisterWaitForSingleObject(_showSignal, (_, _) => {
             try {
                 if (!IsDisposed && IsHandleCreated) {
-                    BeginInvoke((Action)ShowDashboard);
+                    BeginInvoke((Action)(() => ShowFlyout()));
                 }
             } catch (InvalidOperationException) {
             }
         }, null, Timeout.Infinite, false);
 
+        ShowFlyout();
         if (_settingsLoadFailed) {
-            MessageBox.Show(
-                this,
+            MessageBox.Show(_flyout,
                 "Toki could not read its settings. Default settings are in use, and the existing file was not changed.",
-                "Toki Settings",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                "Toki Settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
-
         _refreshTimer.Start();
         _ = RefreshUsageAsync();
+    }
+
+    private void ShowFlyout() {
+        if (_exitRequested || IsDisposed) {
+            return;
+        }
+        if (_openSettings is not null) {
+            _openSettings.Activate();
+            return;
+        }
+        UpdateFlyout();
+        _flyout.ShowAt(null);
+    }
+
+    private void UpdateFlyout() {
+        var status = _statusLabel.Text;
+        if (!_refreshing && _latestSnapshots.Count > 0) {
+            status += $" Checked {_latestSnapshots.Max(snapshot => snapshot.CheckedAt).ToLocalTime():t}.";
+        }
+        _flyout.SetUsage(_latestSnapshots, status, _refreshing);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e) {
@@ -280,6 +301,9 @@ internal sealed class MainForm : Form {
     protected override void Dispose(bool disposing) {
         if (disposing) {
             _showRegistration?.Unregister(null);
+            _flyout.Dispose();
+            _openSettings?.Dispose();
+            _smokeSettings?.Dispose();
             _refreshTimer.Dispose();
             _smokeTimer?.Dispose();
             _trayIcon.Visible = false;
@@ -343,6 +367,7 @@ internal sealed class MainForm : Form {
             _statusLabel.Text = "Refresh failed. Check provider sign-in and try again.";
             _lastCheckedLabel.Text = $"Refresh failed: {DateTimeOffset.Now:g}";
             _trayIcon.Text = "Toki - Usage unavailable";
+            _latestSnapshots = Array.Empty<ProviderSnapshot>();
         } finally {
             if (!IsDisposed && !Disposing) {
                 SetRefreshing(false);
@@ -359,6 +384,7 @@ internal sealed class MainForm : Form {
     }
 
     private void SetRefreshing(bool refreshing) {
+        _refreshing = refreshing;
         _refreshButton.Enabled = !refreshing;
         _refreshMenuItem.Enabled = !refreshing;
         _refreshButton.Text = refreshing ? "Refreshing..." : "Refresh";
@@ -366,9 +392,11 @@ internal sealed class MainForm : Form {
             _statusLabel.ForeColor = Theme.MutedText;
             _statusLabel.Text = "Refreshing provider usage...";
         }
+        UpdateFlyout();
     }
 
     private void RenderSnapshots(IReadOnlyList<ProviderSnapshot> snapshots) {
+        _latestSnapshots = snapshots;
         ClearCards();
         if (snapshots.Count == 0) {
             AddFullWidthMessage("No provider usage is available. Check your sign-in and Settings.", Theme.MutedText);
@@ -491,15 +519,29 @@ internal sealed class MainForm : Form {
     }
 
     private async void SettingsButton_Click(object? sender, EventArgs e) {
+        if (_exitRequested) {
+            return;
+        }
+        if (_openSettings is not null) {
+            _openSettings.Activate();
+            return;
+        }
+        _flyout.Hide();
         using var dialog = new SettingsDialog(_settings);
-        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Settings is not { } settings) {
-            return;
+        if (!Visible) {
+            dialog.StartPosition = FormStartPosition.CenterScreen;
         }
-        if (!TrySaveSettings(settings)) {
-            return;
+        _openSettings = dialog;
+        try {
+            if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Settings is not { } settings) {
+                return;
+            }
+            if (TrySaveSettings(settings)) {
+                await RefreshUsageAsync();
+            }
+        } finally {
+            _openSettings = null;
         }
-
-        await RefreshUsageAsync();
     }
 
     private void DoNotDisturbMenuItem_Click(object? sender, EventArgs e) {
@@ -561,6 +603,7 @@ internal sealed class MainForm : Form {
             return;
         }
 
+        _flyout.Hide();
         Show();
         if (WindowState == FormWindowState.Minimized) {
             WindowState = FormWindowState.Normal;
@@ -589,6 +632,8 @@ internal sealed class MainForm : Form {
         _smokeTimer?.Stop();
         _lifetime.Cancel();
         _trayIcon.Visible = false;
+        _flyout.Hide();
+        _openSettings?.Close();
         await _activeRefresh;
         Close();
     }

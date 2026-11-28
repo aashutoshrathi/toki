@@ -9,15 +9,20 @@ internal static class Program {
         }
         ApplicationConfiguration.Initialize();
 
-        using var showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Toki.Windows.Preview.Show");
-        using var instanceMutex = new Mutex(true, @"Local\Toki.Windows.Preview", out var isFirstInstance);
+        var instanceName = smokeTest ? $"Local\\Toki.Windows.Smoke.{Environment.ProcessId}" : @"Local\Toki.Windows.Preview";
+        using var showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, instanceName + ".Show");
+        using var instanceMutex = new Mutex(true, instanceName, out var isFirstInstance);
         if (!isFirstInstance && !smokeTest) {
             showSignal.Set();
             return 0;
         }
 
         try {
-            Application.Run(new MainForm(smokeTest, showSignal));
+            using var context = new ApplicationContext();
+            using var form = new MainForm(smokeTest, showSignal);
+            form.FormClosed += (_, _) => context.ExitThread();
+            form.Start();
+            Application.Run(context);
             return 0;
         } catch (Exception exception) when (smokeTest) {
             Console.Error.WriteLine($"Toki smoke test failed: {exception.Message}");
