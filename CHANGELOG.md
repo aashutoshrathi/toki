@@ -2,12 +2,20 @@
 
 ## 3.4.6 - 2026-11-28
 
-One Line: The surprise release: Sarvam through OpenCode, smaller Mac downloads, clearer quotas, and a provider cleanup.
+One Line: The surprise release: Rex terminal support, more reliable Remote Control, Sarvam usage fixes, and smaller Mac downloads.
 
 ### Highlights
-- **A small Sarvam fix grew into a broader release.** 3.4.6 brings usage corrections, separate Mac downloads, clearer quota ordering, and the removal of Gemini CLI support. Here is what changes when you update.
+- **A small Sarvam fix grew into a broader release.** 3.4.6 adds Rex terminal support and improves Remote Control, alongside usage corrections, separate Mac downloads, clearer quota ordering, and the removal of Gemini CLI support. Here is what changes when you update.
+
+### Added
+- **Rex joins the supported terminals.** Toki discovers agents in Rex and opens their tab and pane. Remote Control sends replies, drives pickers, and mirrors the terminal with colors through Rex's local CLI, without stealing focus or requiring macOS Automation or Accessibility permission. Rex sessions inside tmux use the exact tmux socket and pane for input and screen capture.
 
 ### Fixed
+- **Remote Control no longer duplicates messages when refreshes overlap.** Polling and send-triggered transcript refreshes are serialized, stale responses cannot append the same entries again, and a preceding assistant reply no longer breaks deduplication of the message you just sent.
+- **Remote Control shows the active Claude and Antigravity model more accurately.** Claude's synthetic records no longer replace the real model name. Antigravity prefers the model reported in its response transcript over fallback metadata that can contain subagent configuration.
+- **Clicking an agent inside tmux focuses its window and pane.** Toki selects the agent's tmux pane and raises the terminal hosting its attached client. Long terminal and editor bundle paths are no longer truncated during host detection.
+- **Terminal.app setup explains the Accessibility requirement.** When Remote Control is running with Terminal.app, the permissions checklist includes the access needed to send keystrokes through System Events. Rex does not need these permissions.
+- **Local SwiftPM builds find their logos and Remote Control server.** Resource lookup supports the nested bundle layout used by newer SwiftPM builds, so `swift run Toki` can load both.
 - **Sarvam usage from OpenCode and T3 now reaches the Sarvam card and analytics.** Toki combines usage recorded under OpenCode's `sarvam` provider with standalone Sarvam Code history, including existing local history. Mixed-provider sessions attribute each message to its provider and day, so Sarvam tokens and reported cost are counted once instead of also appearing under OpenCode. Sarvam can be detected from OpenCode history without installing the standalone CLI.
 - **The 5-hour quota comes before the 7-day quota.** Antigravity and Codex show the shorter window first in account details and Remote Control. Codex keeps its provider-selected headline and reset behavior.
 

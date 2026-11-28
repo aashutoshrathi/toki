@@ -33,6 +33,8 @@
 
 What began as a fix for missing Sarvam usage grew into a broader release:
 
+- **Rex terminal support:** discover and focus Rex agents, send replies, and mirror their terminal from your phone without macOS Automation or Accessibility permission.
+- **More reliable Remote Control:** prevent duplicate transcript bubbles, improve Claude and Antigravity model badges, and target the right tmux pane, including custom sockets.
 - **Sarvam through OpenCode and T3:** local usage now reaches the Sarvam card and daily analytics without being counted twice under OpenCode.
 - **Smaller Mac downloads:** separate Apple Silicon and Intel DMGs, automatic native-build selection, and a universal fallback for older updaters.
 - **Clearer quotas:** the 5-hour window appears before the 7-day window for Antigravity and Codex.

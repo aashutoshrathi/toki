@@ -180,6 +180,10 @@ Bare Rex sessions are addressed by their `REX_BLOCK` identifier through Rex's ow
 `send-key`, and `capture --format=vt`). Input and screen mirroring do not steal focus, keep color
 escape codes for pickers, and require neither macOS Automation nor Accessibility permissions.
 
+For agents inside tmux, Toki passes the resolved socket and pane to Remote Control, including
+custom sockets and paths containing spaces. If that known tmux route cannot be used, input and
+screen capture fail instead of falling back to the outer Rex terminal's currently active pane.
+
 ### Changing an agent's model
 
 The **Model** button in the composer opens the running CLI's own model picker (`/model` for
