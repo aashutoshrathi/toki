@@ -317,7 +317,6 @@ enum ActiveAgentScanner {
         if executable == "agy" { return .antigravity }
         if executable == "fx" { return .fx }
         if executable == "grok" { return .grok }
-        if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
         if executable == "sarvam-code" { return .sarvamCode }
         return nil
     }

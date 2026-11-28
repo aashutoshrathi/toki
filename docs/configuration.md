@@ -1,6 +1,6 @@
 # Configuration
 
-Toki connects providers automatically. Every time the popover opens it scans for Claude Code (Keychain), Codex (through its local app-server), OpenCode (its local database), Pi and Sarvam Code (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Gemini CLI (`~/.gemini/oauth_creds.json`). There is no Connect button and no JSON to hand-write; signing into a new provider later is picked up on the next open.
+Toki connects providers automatically. Every time the popover opens it scans for Claude Code (Keychain), Codex (through its local app-server), OpenCode (its local database), Pi and Sarvam Code (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Antigravity CLI (`agy`). There is no Connect button and no JSON to hand-write; signing into a new provider later is picked up on the next open.
 
 Editing the config yourself is only needed for scripting, multi-account setups, or fields the scan cannot infer — API keys, budgets, manual ledgers.
 
@@ -35,7 +35,7 @@ cp examples/config.example.json ~/.toki/config.json
 
 ## Fields
 
-**`accounts`** — each needs a `label` (display name) and a `type` (provider). `id` is optional and derived from the label. Configs using the old `name`/`provider` keys are migrated on launch, keeping a `.bak` of the original.
+**`accounts`** — each needs a `label` (display name) and a `type` (provider). `id` is optional and derived from the label. Configs using the old `name`/`provider` keys are migrated on launch, keeping a `.bak` of the original. Retired Gemini CLI account entries are ignored.
 
 **`codexAuthPath`** — optional multi-account override. Toki launches Codex with the containing directory as `CODEX_HOME`; omit it for the default `~/.codex` login, including Keychain-backed sign-ins. Toki writes it for each `~/.codex*` home it discovers, so you only set it by hand for a home in another place.
 

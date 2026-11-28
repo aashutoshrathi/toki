@@ -67,18 +67,6 @@ struct ProviderLogo: View {
                         .foregroundStyle(Color.primary)
                 }
                 .foregroundStyle(Color.primary)
-            case .gemini:
-                SVGLogoMark(asset: "gemini-logo", size: size) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: size * 0.72, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color(red: 0.26, green: 0.52, blue: 0.96), Color(red: 0.66, green: 0.33, blue: 0.97)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                }
             case .pi:
                 // Official Pi press-kit badge: https://pi.dev/press-kit
                 SVGLogoMark(asset: "pi-logo", size: size) {

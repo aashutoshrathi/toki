@@ -10,7 +10,6 @@ enum Provider: String, Codable, Sendable {
     case copilot
     case openCode
     case grok
-    case gemini
     case pi
     case cursor
     case antigravity
@@ -30,7 +29,6 @@ enum Provider: String, Codable, Sendable {
         case .copilot: return "Copilot"
         case .openCode: return "OpenCode"
         case .grok: return "Grok"
-        case .gemini: return "Gemini"
         case .pi: return "Pi"
         case .cursor: return "Cursor"
         case .antigravity: return "Antigravity"
@@ -44,7 +42,7 @@ enum Provider: String, Codable, Sendable {
     var isConsumerTracked: Bool {
         switch self {
         case .chatgpt, .claude, .manual: return true
-        case .openai, .codex, .anthropic, .claudeCode, .copilot, .openCode, .grok, .gemini, .pi, .cursor, .antigravity, .fx, .sarvamCode, .zed: return false
+        case .openai, .codex, .anthropic, .claudeCode, .copilot, .openCode, .grok, .pi, .cursor, .antigravity, .fx, .sarvamCode, .zed: return false
         }
     }
 

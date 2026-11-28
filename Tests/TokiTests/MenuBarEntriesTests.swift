@@ -158,7 +158,7 @@ final class MenuBarEntriesTests: XCTestCase {
         let entries = menuBarEntries(
             for: [snapshot(id: "codex", provider: .codex, remainingRatio: 0.5)],
             mode: .pinned,
-            pinnedProviders: [.gemini, .codex]
+            pinnedProviders: [.antigravity, .codex]
         )
         XCTAssertEqual(entries.map(\.provider), [.codex])
     }
@@ -168,7 +168,7 @@ final class MenuBarEntriesTests: XCTestCase {
             snapshot(id: "claude", provider: .claudeCode, remainingRatio: 0.8),
             snapshot(id: "codex", provider: .codex, remainingRatio: 0.5),
             snapshot(id: "cursor", provider: .cursor, remainingRatio: 0.3),
-            snapshot(id: "gemini", provider: .gemini, remainingRatio: 0.2)
+            snapshot(id: "agy", provider: .antigravity, remainingRatio: 0.2)
         ]
     }
 
@@ -176,7 +176,7 @@ final class MenuBarEntriesTests: XCTestCase {
         let entries = menuBarEntries(
             for: fourProviders,
             mode: .pinned,
-            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini],
+            pinnedProviders: [.claudeCode, .codex, .cursor, .antigravity],
             density: .comfortable
         )
         XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex, .cursor])
@@ -186,7 +186,7 @@ final class MenuBarEntriesTests: XCTestCase {
         let entries = menuBarEntries(
             for: fourProviders,
             mode: .pinned,
-            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini],
+            pinnedProviders: [.claudeCode, .codex, .cursor, .antigravity],
             density: .compact
         )
         XCTAssertEqual(entries.count, 3)
@@ -198,7 +198,7 @@ final class MenuBarEntriesTests: XCTestCase {
         let entries = menuBarEntries(
             for: fourProviders,
             mode: .pinned,
-            pinnedProviders: [.claudeCode, .codex, .cursor, .gemini],
+            pinnedProviders: [.claudeCode, .codex, .cursor, .antigravity],
             density: .stacked
         )
         XCTAssertEqual(entries.map(\.provider), [.claudeCode, .codex])
