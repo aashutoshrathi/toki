@@ -132,6 +132,23 @@ final class SetupChecklistTests: XCTestCase {
         XCTAssertTrue(row?.detail.contains("replies only needs Ghostty Automation") ?? false)
     }
 
+    func testTerminalRemoteControlExplainsItsAccessibilityRequirement() {
+        var facts = SetupFacts()
+        facts.terminalInputAccessibilityNeeded = true
+
+        let row = step(.accessibility, in: facts)
+        XCTAssertEqual(row?.status, .pending)
+        XCTAssertTrue(row?.detail.contains("Terminal") ?? false)
+        XCTAssertTrue(row?.detail.contains("System Events") ?? false)
+    }
+
+    func testRexDoesNotRequireAutomationPermission() {
+        XCTAssertFalse(
+            SetupChecklist.scriptedTerminals.contains { $0.bundleID == HostApp.rex.bundleID },
+            "Rex uses its local CLI socket and should not ask for macOS Automation permission"
+        )
+    }
+
     func testLocalNetworkIsOnlyRaisedWhileRemoteControlIsRunning() {
         var facts = SetupFacts()
         XCTAssertNil(step(.localNetwork, in: facts))
