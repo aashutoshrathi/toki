@@ -145,9 +145,7 @@ enum UpdateInstaller {
         let mainExecutable = app.appendingPathComponent("Contents/MacOS/Toki")
         let widgetExecutable = app.appendingPathComponent("Contents/PlugIns/TokiWidgets.appex/Contents/MacOS/TokiWidgets")
         for executable in [mainExecutable, widgetExecutable] {
-            let archsData = try run("/usr/bin/lipo", arguments: ["-archs", executable.path])
-            let archsOutput = String(data: archsData, encoding: .utf8) ?? ""
-            guard supportsHostArchitecture(lipoArchsOutput: archsOutput) else {
+            guard supportsHostArchitecture(executable: executable) else {
                 throw LocalizedErrorMessage("The downloaded app is not compatible with this Mac's architecture.")
             }
         }
@@ -173,11 +171,18 @@ enum UpdateInstaller {
     }
 
     static func supportsHostArchitecture(
-        lipoArchsOutput: String,
+        executable: URL,
         preferredArch: HostArchitecture = UpdateChecker.preferredArchitecture
     ) -> Bool {
-        let slices = Set(lipoArchsOutput.split(whereSeparator: \.isWhitespace).map(String.init))
-        return slices.contains(preferredArch.rawValue)
+        // /usr/bin/lipo is a developer-tool shim and fails without Xcode or Command Line Tools.
+        // Inspect the executable directly with the system API, which also avoids bundle caching.
+        guard let architectures = CFBundleCopyExecutableArchitecturesForURL(executable as CFURL) as? [NSNumber] else {
+            return false
+        }
+        let expected = preferredArch == .arm64
+            ? kCFBundleExecutableArchitectureARM64
+            : kCFBundleExecutableArchitectureX86_64
+        return architectures.contains { $0.intValue == Int(expected) }
     }
 
     // A prerelease tag (`2.5.0-beta.1`) carries a suffix the app's `CFBundleShortVersionString`

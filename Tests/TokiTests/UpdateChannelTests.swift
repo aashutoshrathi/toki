@@ -206,15 +206,7 @@ final class UpdateChannelTests: XCTestCase {
         )
     }
 
-    func testInstallerArchitectureAndReleaseMetadataVerification() {
-        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "arm64\n", preferredArch: .arm64))
-        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "arm64\n", preferredArch: .x86_64))
-        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64\n", preferredArch: .x86_64))
-        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64\n", preferredArch: .arm64))
-        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64 arm64\n", preferredArch: .arm64))
-        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64 arm64\n", preferredArch: .x86_64))
-        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "", preferredArch: .arm64))
-
+    func testInstallerReleaseMetadataVerification() {
         XCTAssertTrue(UpdateInstaller.releaseMetadataMatches(
             bundleID: "local.toki",
             marketingVersion: "3.4.6",
@@ -233,5 +225,50 @@ final class UpdateChannelTests: XCTestCase {
             releaseVersionStamp: nil,
             expectedVersion: "3.4.6"
         ))
+    }
+
+    func testInstallerReadsExecutableArchitecturesWithoutDeveloperTools() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Minimal 64-bit Mach-O headers and a universal header. No compiler or lipo is needed.
+        func words(_ values: [UInt32], bigEndian: Bool = false) -> Data {
+            values.reduce(into: Data()) { data, value in
+                var encoded = bigEndian ? value.bigEndian : value.littleEndian
+                withUnsafeBytes(of: &encoded) { data.append(contentsOf: $0) }
+            }
+        }
+        let arm = words([0xfeedfacf, 0x0100000c, 0, 2, 0, 0, 0, 0])
+        let intel = words([0xfeedfacf, 0x01000007, 3, 2, 0, 0, 0, 0])
+        var universal = words([
+            0xcafebabe, 2,
+            0x0100000c, 0, 4096, UInt32(arm.count), 12,
+            0x01000007, 3, 8192, UInt32(intel.count), 12,
+        ], bigEndian: true)
+        universal.append(Data(count: 4096 - universal.count))
+        universal.append(arm)
+        universal.append(Data(count: 8192 - universal.count))
+        universal.append(intel)
+
+        for (name, data, supportsARM, supportsIntel) in [
+            ("arm", arm, true, false),
+            ("intel", intel, false, true),
+            ("universal", universal, true, true),
+            ("invalid", Data("not an executable".utf8), false, false),
+            ("empty", Data(), false, false),
+        ] {
+            let executable = directory.appendingPathComponent(name)
+            try data.write(to: executable)
+            XCTAssertEqual(UpdateInstaller.supportsHostArchitecture(executable: executable, preferredArch: .arm64), supportsARM, name)
+            XCTAssertEqual(UpdateInstaller.supportsHostArchitecture(executable: executable, preferredArch: .x86_64), supportsIntel, name)
+        }
+        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(executable: directory.appendingPathComponent("missing")))
+
+        // Retrying an update at the same mount path must re-read the new executable.
+        let reusedPath = directory.appendingPathComponent("arm")
+        try intel.write(to: reusedPath)
+        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(executable: reusedPath, preferredArch: .arm64))
+        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(executable: reusedPath, preferredArch: .x86_64))
     }
 }
