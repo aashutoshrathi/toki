@@ -872,4 +872,18 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(payload[0]["t3"])
         XCTAssertEqual(payload[0]["pid"] as? Int32, 10)
     }
+
+    func testAgentPayloadCarriesRexBlockAndServerOnlyWhenPresent() {
+        var rexAgent = claudeAgent(pid: 20, t3Thread: nil)
+        rexAgent.rexBlock = "block:01a22155-9ff7-79eb-9d17-87e13f3572ca"
+        rexAgent.rexServer = "unix:///tmp/rex.sock"
+        let plainAgent = claudeAgent(pid: 21, t3Thread: nil)
+
+        let payload = RemoteControlServer.agentPayload(from: [rexAgent, plainAgent])
+
+        XCTAssertEqual(payload[0]["rexBlock"] as? String, "block:01a22155-9ff7-79eb-9d17-87e13f3572ca")
+        XCTAssertEqual(payload[0]["rexServer"] as? String, "unix:///tmp/rex.sock")
+        XCTAssertNil(payload[1]["rexBlock"])
+        XCTAssertNil(payload[1]["rexServer"])
+    }
 }

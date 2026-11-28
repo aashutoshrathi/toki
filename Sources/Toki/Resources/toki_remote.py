@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socketserver
 import sqlite3
 import subprocess
@@ -246,9 +247,9 @@ def qr_terminal(text):
     return "\n".join(lines)
 
 
-def shell(cmd, timeout=5):
+def shell(cmd, timeout=5, input_text=None):
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        out = subprocess.run(cmd, input=input_text, capture_output=True, text=True, timeout=timeout)
         return out.stdout if out.returncode == 0 else None
     except Exception:
         return None
@@ -358,6 +359,8 @@ def agents_from_snapshot(processes, snapshot):
         agent["host"] = item.get("host")
         agent["title"] = item.get("title")
         agent["t3"] = sanitised_t3(item.get("t3"))
+        agent["rex_block"] = item.get("rexBlock")
+        agent["rex_server"] = item.get("rexServer")
         # Toki's start-time match distinguishes co-located agents; cwd fallback cannot.
         provided = item.get("session")
         if provided:
@@ -1545,12 +1548,164 @@ ITERM_KEYS = {
 GHOSTTY_KEYS = {
     "enter": "enter", "esc": "escape", "up": "arrowUp", "down": "arrowDown", "tab": "tab",
 }
+REX_KEYS = {
+    "enter": "enter", "esc": "escape", "up": "up", "down": "down", "tab": "tab",
+}
 ITERM_BUNDLE_ID = "com.googlecode.iterm2"
 GHOSTTY_BUNDLE_ID = "com.mitchellh.ghostty"
 GHOSTTY_PROCESS_NAME = "Ghostty"
+REX_BUNDLE_ID = "com.superlogical.rex"
 TERMINAL_BUNDLE_ID = "com.apple.Terminal"
-SCRIPTED_TERMINAL_HOSTS = {ITERM_BUNDLE_ID, GHOSTTY_BUNDLE_ID, TERMINAL_BUNDLE_ID}
-NO_TERMINAL_ROUTE = "no route to tty (not tmux/iTerm/Ghostty/Terminal?)"
+SCRIPTED_TERMINAL_HOSTS = {ITERM_BUNDLE_ID, GHOSTTY_BUNDLE_ID, REX_BUNDLE_ID, TERMINAL_BUNDLE_ID}
+NO_TERMINAL_ROUTE = "no route to tty (not tmux/iTerm/Ghostty/Rex/Terminal?)"
+
+
+def safe_rex_block(block):
+    return bool(re.fullmatch(r"block:[A-Za-z0-9_-]+", block or ""))
+
+
+def safe_rex_server(server):
+    if not isinstance(server, str) or not server or server.startswith("-"):
+        return False
+    return not any(ch.isspace() or ord(ch) < 32 for ch in server)
+
+
+def rex_binary():
+    candidates = [
+        os.path.join(
+            HOME, "Library", "Application Support", "com.superlogical.rex",
+            "RexServer", "Versions", "Current", "Rex Server.app", "Contents", "MacOS", "rex",
+        ),
+        "/opt/homebrew/bin/rex",
+        "/usr/local/bin/rex",
+        os.path.join(HOME, ".local", "bin", "rex"),
+        "/usr/bin/rex",
+    ]
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return shutil.which("rex")
+
+
+def rex_base_cmd(rex, server=None):
+    cmd = [rex, "--autostart=false"]
+    if safe_rex_server(server):
+        cmd.extend(["-S", server])
+    return cmd
+
+
+def parse_rex_env(ps_output):
+    """Extract REX_BLOCK and optional REX_SERVER from `ps -ww -E` output.
+
+    Scans from the end so appended environment variables win over any literal string in argv.
+    """
+    if not ps_output:
+        return None, None
+    block, server = None, None
+    for token in reversed(ps_output.split()):
+        if block is None and token.startswith("REX_BLOCK="):
+            candidate = token[len("REX_BLOCK="):]
+            if safe_rex_block(candidate):
+                block = candidate
+        elif server is None and token.startswith("REX_SERVER="):
+            candidate = token[len("REX_SERVER="):]
+            if safe_rex_server(candidate):
+                server = candidate
+        if block is not None and server is not None:
+            break
+    return block, server
+
+
+def rex_env_for_pid(pid):
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None, None
+    out = shell(["/bin/ps", "-ww", "-E", "-p", str(pid), "-o", "command="])
+    return parse_rex_env(out)
+
+
+def rex_block_for_pids(rex, pids, server=None):
+    """Fallback lookup via Rex's own server when `ps -E` cannot read a process's environment."""
+    wanted = {p for p in pids if isinstance(p, int) and not isinstance(p, bool) and p > 0}
+    if not wanted:
+        return None
+    base = rex_base_cmd(rex, server)
+    ls_out = shell(base + ["ls", "--json"], timeout=5)
+    if not ls_out:
+        return None
+    try:
+        sessions = json.loads(ls_out).get("sessions") or []
+    except (ValueError, AttributeError):
+        return None
+    for session in sessions:
+        sid = session.get("session_id") if isinstance(session, dict) else None
+        if not sid:
+            continue
+        blocks_out = shell(base + ["block", "ls", "-s", sid, "--json"], timeout=5)
+        if not blocks_out:
+            continue
+        try:
+            blocks = json.loads(blocks_out).get("blocks") or []
+        except (ValueError, AttributeError):
+            continue
+        for block in blocks:
+            if not isinstance(block, dict) or block.get("creator_name") != "com.superlogical.terminal":
+                continue
+            bid = block.get("block_id")
+            if not safe_rex_block(bid):
+                continue
+            proc_out = shell(base + ["block", "call", "-s", sid, "-b", bid, "process"], timeout=5)
+            if not proc_out:
+                continue
+            try:
+                proc = json.loads(proc_out)
+            except ValueError:
+                continue
+            if not isinstance(proc, dict):
+                continue
+            found = set()
+            for key in ("child", "foreground"):
+                entry = proc.get(key)
+                if isinstance(entry, dict) and isinstance(entry.get("pid"), int):
+                    found.add(entry["pid"])
+            for entry in proc.get("ancestors") or []:
+                if isinstance(entry, dict) and isinstance(entry.get("pid"), int):
+                    found.add(entry["pid"])
+            if wanted & found:
+                return bid
+    return None
+
+
+def rex_target_for_agent(tty=None, pid=None, rex_block=None, rex_server=None):
+    """Resolve (rex_binary, block_id, server) for a Rex-hosted agent, or (None, None, None)."""
+    rex = rex_binary()
+    if not rex:
+        return None, None, None
+    safe_server = rex_server if safe_rex_server(rex_server) else None
+    if safe_rex_block(rex_block):
+        return rex, rex_block, safe_server
+    block, server = rex_env_for_pid(pid)
+    if block:
+        return rex, block, server
+    candidate_pids = []
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        candidate_pids.append(pid)
+    if safe_tty(tty):
+        short_tty = tty[5:] if tty.startswith("/dev/") else tty
+        out = shell(["/bin/ps", "-t", short_tty, "-o", "pid="])
+        for raw_pid in reversed((out or "").split()):
+            try:
+                candidate_pid = int(raw_pid)
+            except ValueError:
+                continue
+            if candidate_pid not in candidate_pids:
+                candidate_pids.append(candidate_pid)
+            block, server = rex_env_for_pid(candidate_pid)
+            if block:
+                return rex, block, server
+    block = rex_block_for_pids(rex, candidate_pids, server=safe_server)
+    if block:
+        return rex, block, safe_server
+    return None, None, None
 
 
 def tmux_pane_for_tty(tty):
@@ -1766,7 +1921,31 @@ def ghostty_read(tty):
         end tell''')
 
 
+def rex_write(tty, text=None, key=None, target=None, pid=None, rex_block=None, rex_server=None):
+    """Send text (via stdin) or one named key to the exact Rex block for an agent."""
+    rex, block, server = (
+        target if target is not None else rex_target_for_agent(tty=tty, pid=pid, rex_block=rex_block, rex_server=rex_server)
+    )
+    if not rex or not block:
+        return None
+    base = rex_base_cmd(rex, server)
+    if key:
+        return shell(base + ["send-key", "-b", block, REX_KEYS[key]], timeout=6) is not None
+    return shell(base + ["send", "-b", block], timeout=6, input_text=text) is not None
+
+
+def rex_read(tty, target=None, pid=None, rex_block=None, rex_server=None):
+    """Capture a Rex terminal block with VT color escapes, without stealing focus."""
+    rex, block, server = (
+        target if target is not None else rex_target_for_agent(tty=tty, pid=pid, rex_block=rex_block, rex_server=rex_server)
+    )
+    if not rex or not block:
+        return None
+    return shell(rex_base_cmd(rex, server) + ["capture", "-b", block, "--trim", "--format=vt"], timeout=6)
+
+
 ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+ANSI_OSC_RE = re.compile(r"\x1b\][\s\S]*?(?:\x07|\x1b\\)")
 
 
 def trim_screen(text):
@@ -1775,7 +1954,7 @@ def trim_screen(text):
     kept for the phone to render, but ignored when judging whether a trailing line is blank."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = text.split("\n")
-    while lines and not ANSI_SGR_RE.sub("", lines[-1]).strip():
+    while lines and not ANSI_SGR_RE.sub("", ANSI_OSC_RE.sub("", lines[-1])).strip():
         lines.pop()
     if len(lines) > MAX_SCREEN_LINES:
         lines = lines[-MAX_SCREEN_LINES:]
@@ -1793,18 +1972,20 @@ def screen_readers(host):
         return (iterm_read,)
     if host == GHOSTTY_BUNDLE_ID:
         return (ghostty_read,)
+    if host == REX_BUNDLE_ID:
+        return (rex_read,)
     if host == TERMINAL_BUNDLE_ID:
         return (terminal_read,)
-    return (iterm_read, ghostty_read, terminal_read) if host is None else ()
+    return (iterm_read, ghostty_read, rex_read, terminal_read) if host is None else ()
 
 
-def capture_screen(tty, route=None, host=None):
+def capture_screen(tty, route=None, host=None, pid=None, rex_block=None, rex_server=None, rex_target=None):
     """The visible terminal text for an agent's tty, or None when no route can read it. Mirrors an
     interactive picker (e.g. /model) on the phone through the same routes send_input writes to:
-    tmux, iTerm, Ghostty, then Terminal. tmux, iTerm, and Terminal report the visible region;
-    Ghostty's accessibility value is the terminal buffer and is bounded to its recent tail here.
+    tmux, iTerm, Ghostty, Rex, then Terminal. tmux, iTerm, and Terminal report the visible region;
+    Ghostty's accessibility value and Rex's scrollback capture are bounded to their recent tail here.
 
-    The tmux route keeps color escape codes (`-e`) so a picker whose selection is shown only by a
+    The tmux and Rex routes keep color escape codes so a picker whose selection is shown only by a
     highlight color -- OpenCode's, for one -- is legible on the phone; the app-scripted routes can
     only read plain text."""
     if not safe_tty(tty):
@@ -1814,7 +1995,10 @@ def capture_screen(tty, route=None, host=None):
         out = shell([tmux, "capture-pane", "-e", "-p", "-t", pane])
         return trim_screen(out) if out is not None else None
     for reader in screen_readers(host):
-        out = reader(tty)
+        if reader is rex_read:
+            out = reader(tty, target=rex_target, pid=pid, rex_block=rex_block, rex_server=rex_server)
+        else:
+            out = reader(tty)
         if out is not None:
             return trim_screen(out)
     return None
@@ -1849,6 +2033,21 @@ def send_ghostty_input(tty, text, key, raw):
     return ghostty_write(tty, key="enter")
 
 
+def send_rex_input(tty, text, key, raw, target=None, pid=None, rex_block=None, rex_server=None):
+    resolved = (
+        target if target is not None else rex_target_for_agent(tty=tty, pid=pid, rex_block=rex_block, rex_server=rex_server)
+    )
+    if not resolved or not resolved[0] or not resolved[1]:
+        return None
+    ok = rex_write(tty, text=text, key=key, target=resolved)
+    if not ok:
+        return False
+    if key or raw:
+        return True
+    time.sleep(SUBMIT_DELAY)
+    return bool(rex_write(tty, key="enter", target=resolved))
+
+
 def send_terminal_input(tty, text, key, raw):
     if not focus_terminal_tab(tty):
         return None
@@ -1867,18 +2066,21 @@ def scripted_input_routes(host):
         return ((send_iterm_input, "iterm"),)
     if host == GHOSTTY_BUNDLE_ID:
         return ((send_ghostty_input, "ghostty"),)
+    if host == REX_BUNDLE_ID:
+        return ((send_rex_input, "rex"),)
     if host == TERMINAL_BUNDLE_ID:
         return ((send_terminal_input, "terminal+system-events"),)
     if host is None:
         return (
             (send_iterm_input, "iterm"),
             (send_ghostty_input, "ghostty"),
+            (send_rex_input, "rex"),
             (send_terminal_input, "terminal+system-events"),
         )
     return ()
 
 
-def send_input(tty, text=None, key=None, raw=False, route=None, host=None):
+def send_input(tty, text=None, key=None, raw=False, route=None, host=None, pid=None, rex_block=None, rex_server=None, rex_target=None):
     """Deliver input to the agent's terminal. Returns (ok, how)."""
     if not safe_tty(tty):
         return False, "unsafe tty"
@@ -1886,32 +2088,41 @@ def send_input(tty, text=None, key=None, raw=False, route=None, host=None):
     if pane:
         return send_tmux_input(tmux, pane, text, key, raw), "tmux"
     for writer, name in scripted_input_routes(host):
-        result = writer(tty, text, key, raw)
+        if writer is send_rex_input:
+            result = writer(tty, text, key, raw, target=rex_target, pid=pid, rex_block=rex_block, rex_server=rex_server)
+        else:
+            result = writer(tty, text, key, raw)
         if result is not None:
             return result, name
     return False, NO_TERMINAL_ROUTE
 
 
-def send_sequence(tty, items, host=None):
+def send_sequence(tty, items, host=None, pid=None, rex_block=None, rex_server=None):
     """Deliver an ordered run of keystrokes -- named keys (Enter/Tab/arrows/Esc) and single
     characters typed as-is -- to answer a picker. Stops at the first failure so a half-delivered
     answer does not keep going. Returns (ok, how).
 
     The delivery route is resolved once for the whole run and handed to every send_input call:
-    `tmux list-panes` is a subprocess, and without this a long walkthrough would rediscover the
-    route on every key -- whichever route it turns out to be.
+    `tmux list-panes` and Rex block lookup are subprocesses, and without this a long walkthrough
+    would rediscover the route on every key -- whichever route it turns out to be.
     """
     if not safe_tty(tty):
         return False, "unsafe tty"
     route = tmux_pane_for_tty(tty)
+    extra = {}
+    if not route[1] and (host == REX_BUNDLE_ID or rex_block is not None or pid is not None):
+        if host in (None, REX_BUNDLE_ID):
+            rex_target = rex_target_for_agent(tty=tty, pid=pid, rex_block=rex_block, rex_server=rex_server)
+            if rex_target and rex_target[1]:
+                extra["rex_target"] = rex_target
     how = "sequence"
     for i, item in enumerate(items):
         if i:
             time.sleep(SEQ_KEY_DELAY)
         if item in NAMED_KEYS:
-            ok, how = send_input(tty, key=item, route=route, host=host)
+            ok, how = send_input(tty, key=item, route=route, host=host, **extra)
         else:
-            ok, how = send_input(tty, text=item, raw=True, route=route, host=host)
+            ok, how = send_input(tty, text=item, raw=True, route=route, host=host, **extra)
         if not ok:
             return False, how
     return True, how
@@ -2558,7 +2769,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "agent gone"}, 410)
             if not agent_is_writable(agent):
                 return self._json({"error": "This session has no readable terminal route."}, 422)
-            text = capture_screen(agent["tty"], host=agent.get("host"))
+            text = capture_screen(
+                agent["tty"],
+                host=agent.get("host"),
+                pid=agent.get("pid"),
+                rex_block=agent.get("rex_block"),
+                rex_server=agent.get("rex_server"),
+            )
             if text is None:
                 return self._json({"ok": False, "error": NO_TERMINAL_ROUTE})
             self._json({"ok": True, "text": text})
@@ -2700,10 +2917,26 @@ class Handler(BaseHTTPRequestHandler):
         if not agent_is_writable(agent):
             return self._json({"error": "This session has no writable terminal route."}, 422)
         if keys is not None:
-            ok, how = send_sequence(agent["tty"], keys, host=agent.get("host"))
+            ok, how = send_sequence(
+                agent["tty"],
+                keys,
+                host=agent.get("host"),
+                pid=agent.get("pid"),
+                rex_block=agent.get("rex_block"),
+                rex_server=agent.get("rex_server"),
+            )
         else:
             raw = bool(body.get("raw")) and text is not None and len(text) == 1
-            ok, how = send_input(agent["tty"], text=text, key=key, raw=raw, host=agent.get("host"))
+            ok, how = send_input(
+                agent["tty"],
+                text=text,
+                key=key,
+                raw=raw,
+                host=agent.get("host"),
+                pid=agent.get("pid"),
+                rex_block=agent.get("rex_block"),
+                rex_server=agent.get("rex_server"),
+            )
         self._json({"ok": ok, "how": how}, 200 if ok else 502)
 
 

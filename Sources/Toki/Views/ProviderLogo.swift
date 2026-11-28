@@ -119,8 +119,8 @@ enum SVGLogoAsset {
             executableDir?.deletingLastPathComponent().appendingPathComponent("Resources/\(name).svg"),
             // `swift run Toki` (the documented dev workflow, see README) never produces a
             // real .app - resources land in an SPM-generated bundle right next to the
-            // executable instead of Contents/Resources, which none of the candidates above
-            // reach.
+            // executable (nested under Contents/Resources in SwiftBuild, or flat in older SPM).
+            executableDir?.appendingPathComponent("Toki_Toki.bundle/Contents/Resources/\(name).svg"),
             executableDir?.appendingPathComponent("Toki_Toki.bundle/\(name).svg")
         ]
         guard let image = urls.compactMap({ $0 }).lazy.compactMap({ NSImage(contentsOf: $0) }).first else {

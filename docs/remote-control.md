@@ -174,6 +174,12 @@ newer than the original 1.3 releases; older builds cannot safely distinguish two
 Toki never guesses from a title or working directory, so run the agent inside tmux when using an
 older Ghostty build.
 
+### Rex works natively over its local CLI
+
+Bare Rex sessions are addressed by their `REX_BLOCK` identifier through Rex's own `rex` CLI (`send`,
+`send-key`, and `capture --format=vt`). Input and screen mirroring do not steal focus, keep color
+escape codes for pickers, and require neither macOS Automation nor Accessibility permissions.
+
 ### Changing an agent's model
 
 The **Model** button in the composer opens the running CLI's own model picker (`/model` for
@@ -182,7 +188,7 @@ phone so you can see the options and the highlighted row. You drive the selectio
 **↑ ↓ Tab Enter** controls used to answer any other picker, and **Done** closes the mirror.
 
 The mirror reads the visible terminal through the same routes replies are typed into: tmux, iTerm,
-Ghostty, and Terminal. Reading a bare Ghostty surface uses macOS Accessibility and focuses the
+Ghostty, Rex, and Terminal. Reading a bare Ghostty surface uses macOS Accessibility and focuses the
 selected terminal, so it can bring Ghostty to the front. An agent in a terminal Toki cannot read
 that way still opens its picker on the Mac, but the phone shows nothing to steer by, so the mirror
 reports it has no route.
