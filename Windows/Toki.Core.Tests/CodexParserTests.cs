@@ -18,6 +18,21 @@ internal static class CodexParserTests {
             TestHarness.True(parsed.Windows[0].ResetsAt is not null, "reset should parse");
         });
 
+        TestHarness.Run("codex parser orders reversed provider slots by quota duration", () => {
+            using var document = JsonDocument.Parse("""
+                {"rateLimits":{"primary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1893542400},
+                               "secondary":{"usedPercent":20,"windowDurationMins":300,"resetsAt":1893456000}}}
+                """);
+            var parsed = CodexUsageParser.Parse(document.RootElement, null);
+            TestHarness.Equal(2, parsed.Windows.Count);
+            TestHarness.Equal("5h", parsed.Windows[0].Label);
+            TestHarness.Equal(80.0, parsed.Windows[0].RemainingPercent);
+            TestHarness.Equal(DateTimeOffset.FromUnixTimeSeconds(1893456000), parsed.Windows[0].ResetsAt!.Value);
+            TestHarness.Equal("7d", parsed.Windows[1].Label);
+            TestHarness.Equal(60.0, parsed.Windows[1].RemainingPercent);
+            TestHarness.Equal(DateTimeOffset.FromUnixTimeSeconds(1893542400), parsed.Windows[1].ResetsAt!.Value);
+        });
+
         TestHarness.Run("codex parser falls back to rateLimits object", () => {
             using var document = JsonDocument.Parse(
                 "{\"rateLimits\":{\"primary\":{\"usedPercent\":25,\"windowDurationMins\":300}}}");

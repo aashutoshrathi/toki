@@ -15,6 +15,10 @@ internal static class CodexUsageParser {
         var windows = new List<QuotaWindow>();
         AppendWindow(limits, "primary", "5h", windows);
         AppendWindow(limits, "secondary", "7d", windows);
+        // Codex can put the weekly limit in its primary slot. Display the shorter window first.
+        if (windows.Count == 2 && windows[0].Label == "7d" && windows[1].Label == "5h") {
+            (windows[0], windows[1]) = (windows[1], windows[0]);
+        }
         if (windows.Count == 0) {
             throw new ProviderException("Codex usage unavailable");
         }

@@ -18,7 +18,13 @@ class WindowsRemoteTests(unittest.TestCase):
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory()
         cls.fixture = Path(cls.directory.name).resolve() / "session.jsonl"
-        cls.fixture.write_text(json.dumps({"type": "user", "message": {"content": "fixture question"}}) + "\n" + json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "fixture answer"}]}}) + "\n", encoding="utf-8")
+        records = [
+            {"type": "user", "message": {"content": "fixture question"}},
+            {"type": "assistant", "message": {"model": "claude-fixture-model", "content": [{"type": "text", "text": "fixture answer"}]}},
+            {"type": "assistant", "message": {"model": "<synthetic>", "content": []}},
+            {"type": "user", "message": {"model": "not-an-assistant-model", "content": "follow-up"}},
+        ]
+        cls.fixture.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             cls.port = listener.getsockname()[1]
@@ -110,6 +116,7 @@ class WindowsRemoteTests(unittest.TestCase):
         self.assertFalse(agents[0]["uploads"])
         self.assertIsNone(agents[0]["attention"])
         self.assertTrue(agents[0]["title"].startswith("Recent:"))
+        self.assertEqual("claude-fixture-model", agents[0]["model"])
         status, data = self.request("GET", "/api/transcript?pid=123", token=token)
         self.assertEqual(200, status)
         self.assertTrue(any(e.get("text") == "fixture answer" for e in data["entries"]))

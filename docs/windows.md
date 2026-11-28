@@ -56,7 +56,7 @@ The build is unsigned. Windows SmartScreen may show **Windows protected your PC*
 
 Left-click the Toki tray icon to open or dismiss the compact usage panel. If the icon is under the taskbar's hidden-icons arrow, move it into the notification area to keep it visible. Windows controls this placement.
 
-The panel shows each provider's quota and reset times. Click outside it or press Escape to dismiss it; Toki keeps refreshing in the tray. Use **Dashboard** for the larger window, or **Settings** to change configuration. Right-click the tray icon for usage, dashboard, Settings, refresh, DND, and Quit. Starting Toki again opens the existing instance's compact panel.
+The panel shows each provider's quota and reset times, with the 5-hour window before the weekly window even when Codex returns them in reverse order. Click outside it or press Escape to dismiss it; Toki keeps refreshing in the tray. Use **Dashboard** for the larger window, or **Settings** to change configuration. Right-click the tray icon for usage, dashboard, Settings, refresh, DND, and Quit. Starting Toki again opens the existing instance's compact panel.
 
 The dashboard and Settings use dark native title bars on Windows 11, including when Windows uses its light theme. Windows high-contrast mode keeps the system title-bar colors.
 
@@ -81,6 +81,8 @@ Provider failures/recovery and low-quota warnings appear in Events. DND suppress
 Connections use port 8765. Local-network mode uses HTTP, so use it only on a trusted network; Tailscale carries the connection inside its encrypted network. Do not forward this port to the public internet. If the phone cannot connect, check Windows Firewall, the selected IP, and whether the phone and PC are on the selected network. Toki must remain running and the PC must remain awake. Pairing lasts 12 hours unless revoked or the server stops.
 
 No remote setting silently enables sharing on the next launch. The bundled Python process exits when Toki closes its input pipe. The portable archive includes Python's license and uses a pinned, SHA256-verified runtime download during packaging.
+
+This preview includes the shared 3.4.6 phone-view fixes: overlapping transcript refreshes do not duplicate messages, and Claude's synthetic records do not replace its model name. Rex and tmux terminal control remain macOS features.
 
 ## Credentials and paths
 
@@ -116,7 +118,7 @@ Sign in to Claude Code and Codex in a terminal before you start.
 
 ## Build and test locally
 
-Run the core tests (currently 86 tests):
+Run the core tests (currently 87 tests):
 
 ```powershell
 dotnet run --project Windows/Toki.Core.Tests -c Release

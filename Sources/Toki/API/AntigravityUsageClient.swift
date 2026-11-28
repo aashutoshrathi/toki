@@ -75,7 +75,9 @@ enum AntigravityUsageClient {
         var metrics: [MetricLine] = []
         var remainingByGroup: [String: Double] = [:]
         for group in report.command.data.groups where !group.name.isEmpty {
-            for bucket in group.buckets {
+            // Keep each model group's windows together and show its rolling limit first.
+            let buckets = group.buckets.sorted { $0.window == "5h" && $1.window != "5h" }
+            for bucket in buckets {
                 guard bucket.disabled != true, let fraction = bucket.remaining_fraction,
                       (0...1).contains(fraction) else { continue }
                 let reset = resetDate(bucket.reset_time)

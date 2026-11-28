@@ -393,6 +393,7 @@ final class RemoteControlServer: ObservableObject {
         let executableDir = Bundle.main.executableURL?.deletingLastPathComponent()
         let candidates = [
             Bundle.main.resourceURL?.appendingPathComponent("toki_remote.py"),
+            executableDir?.appendingPathComponent("Toki_Toki.bundle/Contents/Resources/toki_remote.py"),
             executableDir?.appendingPathComponent("Toki_Toki.bundle/toki_remote.py")
         ]
         return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
@@ -706,6 +707,18 @@ final class RemoteControlServer: ObservableObject {
             ]
             if let thread = agent.t3Thread, let url = thread.url {
                 entry["t3"] = ["link": url.absoluteString, "mobile": thread.mobileOSes]
+            }
+            if let tmux = agent.tmuxRoute {
+                // Agents inside tmux (including custom `-L`/`-S` servers) must route Remote Control
+                // strictly to their tmux pane, never falling back to the outer terminal block.
+                entry["tmux"] = ["socket": tmux.socket, "pane": tmux.paneID]
+            } else {
+                if let rexBlock = agent.rexBlock {
+                    entry["rexBlock"] = rexBlock
+                }
+                if let rexServer = agent.rexServer {
+                    entry["rexServer"] = rexServer
+                }
             }
             return entry
         }

@@ -5,7 +5,7 @@
 - macOS 14 or newer
 - Swift 6 toolchain
 
-Providers are optional — Toki shows what is installed and authenticated. Claude Code plus `claude-swap` covers multi-account Claude workflows; Codex, Pi, Sarvam Code, OpenCode, Copilot CLI, Gemini CLI, and Grok CLI are each picked up when present.
+Providers are optional — Toki shows what is installed and authenticated. Claude Code plus `claude-swap` covers multi-account Claude workflows; Codex, Pi, Sarvam Code, OpenCode, Copilot CLI, Antigravity CLI, and Grok CLI are each picked up when present.
 
 ## Building
 
@@ -46,7 +46,7 @@ Every release starts from a tag push; `.github/workflows/release.yml` builds the
 - **Stable** — tag `vX.Y.Z` (e.g. `v2.5.0`). Published as a full GitHub release, offered to everyone, and both Homebrew casks are updated (`toki` and `toki-beta`).
 - **Beta** — tag with a prerelease suffix (e.g. `v2.5.0-beta.1`). Published as a GitHub prerelease, offered only to users who picked the Beta channel in Settings > Updates, and the `toki-beta` cask is updated. The stable cask is not touched.
 
-Set `appVersion` in `Sources/Toki/Config/Constants.swift` to match the tag's base version (without the `v` and without any prerelease suffix) before tagging — the packaging script, the in-app updater's version check, and the DMG verification all read it. `CFBundleShortVersionString` must stay dotted-numeric; the prerelease identity travels in the tag, which the release workflow stamps into `TokiReleaseVersion` in Info.plist. The DMG filename is built from the base version (`Toki_2.5.0_universal.dmg`) even for a beta tag.
+Set `appVersion` in `Sources/Toki/Config/Constants.swift` to match the tag's base version (without the `v` and without any prerelease suffix) before tagging — the release workflow fails early if they differ, and the packaging script, in-app updater, and DMG verification all read it. `CFBundleShortVersionString` must stay dotted-numeric; the prerelease identity travels in the tag, which the release workflow stamps into `TokiReleaseVersion` in Info.plist. Each release publishes three DMGs built from the base version even for a beta tag: `Toki_<version>_arm64.dmg` (Apple Silicon), `Toki_<version>_x86_64.dmg` (Intel), and `Toki_<version>_all.dmg` (Universal). The universal DMG uses `_all` deliberately so `all < arm64 < x86_64` under every collation in GitHub's asset listing, keeping it at index 0 for legacy `<= 3.4.5` direct-download updaters (the release workflow verifies this on the draft before publishing).
 
 To graduate a beta to production:
 
@@ -65,7 +65,7 @@ Homebrew refuses to load a cask from a third-party tap until it is trusted, and 
 
 A prerelease tag copies and stamps `toki-beta` alone. The stable cask is deliberately left untouched on that path, because its body would arrive carrying the template's placeholder version with nothing to stamp a real one over it.
 
-`scripts/update-cask.sh <cask.rb> [version]` rewrites a cask's version and DMG sha256. The version argument defaults to `appVersion`; prerelease tags must pass the full version (e.g. `3.2.0-beta.1`) because it exists only in the tag. The DMG filename always carries the base version (`Toki_3.2.0_universal.dmg`), which the script and the cask's URL handle.
+`scripts/update-cask.sh <cask.rb> [version]` rewrites a cask's version and both `arm` (`arm64`) and `intel` (`x86_64`) DMG sha256 values. The version argument defaults to `appVersion`; prerelease tags must pass the full version (e.g. `3.4.6-beta.1`) because it exists only in the tag. The DMG filenames always carry the base version (`Toki_3.4.6_arm64.dmg` and `Toki_3.4.6_x86_64.dmg`), which the script and each cask's multi-arch `url` handle. Set `TOKI_DMG_DIR` to hash local DMGs instead of downloading from GitHub when testing locally.
 
 When Toki was installed by a cask, the in-app updater detects it (`BrewCask.installedCask` — the Caskroom entry is a symlink to the installed bundle) and routes "Install update" through `brew upgrade --cask aashutoshrathi/tap/<toki|toki-beta>` instead of swapping the DMG underneath brew. This keeps brew's receipt in sync with the app on disk; the DMG path would desync it, and the next `brew upgrade` would then clobber the newer build with the cask's older one. Dev builds and manual installs keep the direct DMG path.
 

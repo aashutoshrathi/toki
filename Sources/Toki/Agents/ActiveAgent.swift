@@ -92,6 +92,13 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     // otherwise show the same one - several agents in one project can resolve to the same
     // session, and identical rows can't be told apart. Set by a post-scan pass.
     var disambiguator: String? = nil
+    // Rex terminal block and server endpoint (read from REX_BLOCK / REX_SERVER) for exact pane
+    // focus and Remote Control routing without Apple Events or Accessibility.
+    var rexBlock: String? = nil
+    var rexServer: String? = nil
+    // Attached tmux target when the agent runs inside tmux, so click-to-focus can select the
+    // exact tmux window/pane and then focus the terminal tab hosting the attached client.
+    var tmuxRoute: AgentSessionResolver.TmuxRoute? = nil
 
     var needsInput: Bool { attention != nil }
 
@@ -150,7 +157,7 @@ struct ActiveAgent: Identifiable, Hashable, Sendable {
     }
 
     // Whether navigation lands on an exact terminal tab (vs. a best-effort host-app focus).
-    var hasTerminalTarget: Bool { terminalTTY != nil }
+    var hasTerminalTarget: Bool { terminalTTY != nil || rexBlock != nil }
 }
 
 enum ActiveAgentScanner {
@@ -173,6 +180,9 @@ enum ActiveAgentScanner {
         let hostApp: HostApp?
         let hostProcessID: Int32?
         let hostViaTmux: Bool
+        let tmuxRoute: AgentSessionResolver.TmuxRoute?
+        let rexBlock: String?
+        let rexServer: String?
         let branch: String?
         let worktree: String?
         let codexHome: String?
@@ -317,7 +327,6 @@ enum ActiveAgentScanner {
         if executable == "agy" { return .antigravity }
         if executable == "fx" { return .fx }
         if executable == "grok" { return .grok }
-        if executable == "gemini" || (executable == "node" && entrypoint.map { URL(fileURLWithPath: $0).lastPathComponent } == "gemini") { return .gemini }
         if executable == "sarvam-code" { return .sarvamCode }
         return nil
     }
@@ -543,6 +552,9 @@ enum ActiveAgentScanner {
         let directory: String?
         let hostApp: HostApp?
         let hostProcessID: Int32?
+        let tmuxRoute: AgentSessionResolver.TmuxRoute?
+        let rexBlock: String?
+        let rexServer: String?
         let startTime: Date?
         let branch: String?
         let worktree: String?
@@ -576,6 +588,27 @@ enum ActiveAgentScanner {
         let hostApp = cachedHost?.hostApp ?? resolvedHost?.app
         let hostProcessID = cachedHost?.hostProcessID ?? resolvedHost?.processID
         let hostViaTmux = cachedHost?.hostViaTmux ?? (resolvedHost?.viaTmux ?? false)
+        let tmuxRoute = cachedHost?.tmuxRoute ?? resolvedHost?.tmuxRoute
+        let rexEnv: AgentSessionResolver.RexEnvironment? = {
+            if let cachedHost {
+                return cachedHost.rexBlock.map { AgentSessionResolver.RexEnvironment(blockID: $0, server: cachedHost.rexServer) }
+            }
+            guard hostApp == .rex else { return nil }
+            // When running inside tmux in Rex, read REX_BLOCK from the attached tmux client
+            // rather than the pane process (whose inherited env may name an older block).
+            let targetPID = tmuxRoute?.clientPID ?? c.pid
+            if let env = AgentSessionResolver.rexEnvironment(ofPID: targetPID) {
+                return env
+            }
+            // Fallback when macOS hides a binary's env from `ps -E` (SIP/hardened runtime) or
+            // REX_BLOCK was unset: ask the local Rex server which terminal block owns the PID.
+            if let blockID = RexCLI.blockID(forPID: targetPID) {
+                return AgentSessionResolver.RexEnvironment(blockID: blockID, server: nil)
+            }
+            return nil
+        }()
+        let rexBlock = rexEnv?.blockID
+        let rexServer = rexEnv?.server
         
         let branch = reusable?.branch ?? (cwd.flatMap { Shell.output("/usr/bin/git", ["rev-parse", "--abbrev-ref", "HEAD"], cwd: $0)?.trimmingCharacters(in: .whitespacesAndNewlines) })
         let worktree = reusable?.worktree ?? (cwd.flatMap { Shell.output("/usr/bin/git", ["rev-parse", "--show-toplevel"], cwd: $0)?.trimmingCharacters(in: .whitespacesAndNewlines) })
@@ -584,12 +617,15 @@ enum ActiveAgentScanner {
         // only once per PID.
         let codexHome = reusable?.codexHome ?? (c.provider == .codex ? Self.codexHome(ofPID: c.pid) : nil)
 
-        setCachedEntry(CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux, branch: branch, worktree: worktree, codexHome: codexHome), for: c.pid)
+        setCachedEntry(CacheEntry(command: c.command, directory: cwd, hostApp: hostApp, hostProcessID: hostProcessID, hostViaTmux: hostViaTmux, tmuxRoute: tmuxRoute, rexBlock: rexBlock, rexServer: rexServer, branch: branch, worktree: worktree, codexHome: codexHome), for: c.pid)
         return ProcessContext(
             candidate: c,
             directory: cwd,
             hostApp: hostApp,
             hostProcessID: hostProcessID,
+            tmuxRoute: tmuxRoute,
+            rexBlock: rexBlock,
+            rexServer: rexServer,
             // The launch time is what separates two agents sharing one project folder.
             startTime: startDate(fromETime: c.runtime),
             branch: branch,
@@ -652,7 +688,10 @@ enum ActiveAgentScanner {
             branch: context.branch,
             worktree: context.worktree,
             t3Thread: t3Thread,
-            codexHome: context.codexHome
+            codexHome: context.codexHome,
+            rexBlock: context.rexBlock,
+            rexServer: context.rexServer,
+            tmuxRoute: context.tmuxRoute
         )
     }
 }
@@ -680,27 +719,49 @@ enum ActiveAgentTerminator {
 
 @MainActor
 enum ActiveAgentNavigator {
-    // Off the main actor: osascript can hang on an app-chooser dialog or an unresponsive
-    // terminal, and waiting on it synchronously froze the app.
+    // Off the main actor: osascript or CLI helpers can block on an unresponsive terminal,
+    // and waiting on them synchronously froze the app.
     static func navigate(to agent: ActiveAgent) {
         if let url = agent.t3Thread?.url {
             NSWorkspace.shared.open(url)
             return
         }
+        // For tmux panes, the host terminal owns the attached tmux client's TTY rather than the
+        // pane's own PTY; select the tmux pane first, then focus the client's tab/block.
+        let targetTTY = agent.tmuxRoute?.clientTTY ?? agent.terminalTTY
         var device: String?
-        if let tty = agent.terminalTTY, isSafeTTY(tty) {
+        if let tty = targetTTY, isSafeTTY(tty) {
             device = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
         }
         let resolvedDevice = device
         let resolvedHostBundleID = agent.hostApp?.bundleID
+        let tmuxRoute = agent.tmuxRoute
+        let rexBlock = agent.rexBlock
+        let rexServer = agent.rexServer
 
         Task.detached(priority: .userInitiated) {
+            if let tmuxRoute {
+                selectTmuxPane(tmuxRoute)
+            }
+            if resolvedHostBundleID == HostApp.rex.bundleID {
+                if let rexBlock {
+                    _ = RexCLI.focus(blockID: rexBlock, server: rexServer)
+                }
+                await MainActor.run { activateHostApp(for: agent) }
+                return
+            }
             if let device = resolvedDevice,
                terminalScripts(tty: device, hostBundleID: resolvedHostBundleID).contains(where: runAppleScript) {
                 return
             }
             await MainActor.run { activateHostApp(for: agent) }
         }
+    }
+
+    nonisolated private static func selectTmuxPane(_ route: AgentSessionResolver.TmuxRoute) {
+        guard let tmux = AgentSessionResolver.tmuxBinary() else { return }
+        _ = Shell.output(tmux, ["-S", route.socket, "select-window", "-t", route.windowID])
+        _ = Shell.output(tmux, ["-S", route.socket, "select-pane", "-t", route.paneID])
     }
 
     nonisolated private static func terminalScripts(tty: String, hostBundleID: String?) -> [String] {
@@ -730,15 +791,22 @@ enum ActiveAgentNavigator {
             return
         }
 
-        // Fall back to identity: for a helper-hosted app (VS Code) this raises the real app.
-        // The host's own bundle id is matched first and exactly, so with both VS Code and VS
-        // Code Insiders running the click lands on the variant that actually holds the agent
-        // rather than whichever the system happens to list first.
+        // Fall back to identity: for a helper-hosted app (VS Code) or daemon-hosted terminal
+        // (Rex Server.app), this raises the real GUI app. The host's own bundle id is matched
+        // first and exactly, so with both VS Code and VS Code Insiders running the click lands
+        // on the variant that actually holds the agent rather than whichever the system happens
+        // to list first.
         if let host = agent.hostApp, activate(bundleID: host.bundleID, directory: agent.directory) {
             return
         }
         // Only when the ancestry walk named no host: raise any known terminal that's running.
-        for bundleID in [HostApp.iTerm.bundleID, HostApp.terminal.bundleID, "com.microsoft.VSCode"]
+        for bundleID in [
+            HostApp.iTerm.bundleID,
+            HostApp.ghostty.bundleID,
+            HostApp.rex.bundleID,
+            HostApp.terminal.bundleID,
+            "com.microsoft.VSCode"
+        ]
         where activate(bundleID: bundleID, directory: agent.directory) {
             return
         }
@@ -892,6 +960,156 @@ enum ActiveAgentNavigator {
         end if
         error "TTY not found"
         """
+    }
+}
+
+/// Thin wrapper around Rex's local CLI (`rex`) for focusing terminal blocks without macOS
+/// Automation or Accessibility permissions.
+enum RexCLI {
+    static func candidatePaths(home: String = FileManager.default.homeDirectoryForCurrentUser.path) -> [String] {
+        [
+            "\(home)/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex",
+            "/opt/homebrew/bin/rex",
+            "/usr/local/bin/rex",
+            "\(home)/.local/bin/rex",
+            "/usr/bin/rex",
+        ]
+    }
+
+    static func binaryPath(home: String = FileManager.default.homeDirectoryForCurrentUser.path) -> String? {
+        candidatePaths(home: home).first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    static func baseArguments(server: String?) -> [String] {
+        var args = ["--autostart=false"]
+        if let server, AgentSessionResolver.isSafeRexServer(server) {
+            args.append(contentsOf: ["-S", server])
+        }
+        return args
+    }
+
+    static func focus(blockID: String, server: String?) -> Bool {
+        guard AgentSessionResolver.isSafeRexBlock(blockID),
+              let binary = binaryPath() else { return false }
+        let base = baseArguments(server: server)
+        guard run(binary, base + ["focus", "-s", blockID, blockID]) != nil else { return false }
+        selectSessionIfMultiple(binary: binary, base: base, blockID: blockID)
+        return true
+    }
+
+    static func blockID(forPID pid: Int32, server: String? = nil) -> String? {
+        guard pid > 0, let binary = binaryPath() else { return nil }
+        let base = baseArguments(server: server)
+        guard let lsData = run(binary, base + ["ls", "--json"]),
+              let lsJSON = try? JSONSerialization.jsonObject(with: lsData) as? [String: Any],
+              let sessions = lsJSON["sessions"] as? [[String: Any]]
+        else { return nil }
+
+        let wanted = Int(pid)
+        for session in sessions {
+            guard let sessionID = session["session_id"] as? String,
+                  let blocksData = run(binary, base + ["block", "ls", "-s", sessionID, "--json"]),
+                  let blocksJSON = try? JSONSerialization.jsonObject(with: blocksData) as? [String: Any],
+                  let blocks = blocksJSON["blocks"] as? [[String: Any]]
+            else { continue }
+
+            for block in blocks where block["creator_name"] as? String == "com.superlogical.terminal" {
+                guard let blockID = block["block_id"] as? String,
+                      AgentSessionResolver.isSafeRexBlock(blockID),
+                      let procData = run(binary, base + ["block", "call", "-s", sessionID, "-b", blockID, "process"]),
+                      let procJSON = try? JSONSerialization.jsonObject(with: procData) as? [String: Any]
+                else { continue }
+                if processInfoMatchesPID(procJSON, wanted: wanted) {
+                    return blockID
+                }
+            }
+        }
+        return nil
+    }
+
+    static func processInfoMatchesPID(_ info: [String: Any], wanted: Int) -> Bool {
+        if let child = info["child"] as? [String: Any], child["pid"] as? Int == wanted {
+            return true
+        }
+        if let fg = info["foreground"] as? [String: Any], fg["pid"] as? Int == wanted {
+            return true
+        }
+        if let ancestors = info["ancestors"] as? [[String: Any]],
+           ancestors.contains(where: { $0["pid"] as? Int == wanted }) {
+            return true
+        }
+        return false
+    }
+
+    // Best-effort multi-session switching in Rex.app when Rex's own Remote Control setting is on.
+    // Fails silently when off or when only one session exists, keeping Rex navigation zero-permission.
+    private static func selectSessionIfMultiple(binary: String, base: [String], blockID: String) {
+        guard let lsData = run(binary, base + ["ls", "--json"]),
+              let lsJSON = try? JSONSerialization.jsonObject(with: lsData) as? [String: Any],
+              let sessions = lsJSON["sessions"] as? [[String: Any]],
+              sessions.count > 1,
+              let inspectData = run(binary, base + ["block", "inspect", blockID, "--json"]),
+              let inspectJSON = try? JSONSerialization.jsonObject(with: inspectData) as? [String: Any],
+              let sessionID = inspectJSON["session_id"] as? String,
+              let clientsData = run(binary, base + ["client", "ls", "--json"]),
+              let clientsJSON = try? JSONSerialization.jsonObject(with: clientsData) as? [String: Any],
+              let clients = clientsJSON["clients"] as? [[String: Any]],
+              let appClientID = clients.first(where: { ($0["info"] as? [String: Any])?["kind"] as? String == "app" })?["client_id"] as? String
+        else { return }
+
+        var args = base + ["-C", appClientID, "do", "session.select", "session_id=\(sessionID)"]
+        if let block = inspectJSON["block"] as? [String: Any],
+           let windowID = block["window_id"] as? String, !windowID.isEmpty {
+            args.append("window_id=\(windowID)")
+        }
+        _ = run(binary, args)
+    }
+
+    // Drains stdout concurrently while the child runs so output exceeding the ~64 KB pipe buffer
+    // never blocks the child before the timeout expires.
+    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 5) -> Data? {
+        final class OutputBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = Data()
+            func set(_ data: Data) { lock.withLock { value = data } }
+            func get() -> Data { lock.withLock { value } }
+        }
+
+        let process = Process()
+        let output = Pipe()
+        let exited = DispatchSemaphore(value: 0)
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { _ in exited.signal() }
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        let box = OutputBox()
+        let readHandle = output.fileHandleForReading
+        let readDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            box.set(readHandle.readDataToEndOfFile())
+            readDone.signal()
+        }
+
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            if exited.wait(timeout: .now() + 0.5) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = exited.wait(timeout: .now() + 0.5)
+            }
+            _ = readDone.wait(timeout: .now() + 0.5)
+            return nil
+        }
+
+        _ = readDone.wait(timeout: .now() + 1)
+        guard process.terminationStatus == 0 else { return nil }
+        return box.get()
     }
 }
 

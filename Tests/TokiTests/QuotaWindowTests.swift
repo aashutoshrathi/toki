@@ -76,6 +76,20 @@ final class QuotaWindowTests: XCTestCase {
         XCTAssertNil(limits.secondaryWindow)
     }
 
+    func testCodexOrdersFiveHourBeforeWeeklyWhenProviderSlotsAreReversed() {
+        let limits = CodexRateLimits(json: ["rateLimits": [
+            "primary": ["usedPercent": 40, "windowDurationMins": 10_080],
+            "secondary": ["usedPercent": 20, "windowDurationMins": 300]
+        ]])
+
+        XCTAssertEqual(limits.primaryWindow?.label, "5h")
+        XCTAssertEqual(limits.primaryWindow?.percentLeft, 80)
+        XCTAssertEqual(limits.secondaryWindow?.label, "7d")
+        XCTAssertEqual(limits.secondaryWindow?.percentLeft, 60)
+        XCTAssertEqual(limits.metrics.map(\.label), ["5h", "7d"])
+        XCTAssertEqual(limits.primary, "60% left")
+    }
+
     func testCompactResetDescriptionKeepsOnlyTheRelativeCountdown() {
         XCTAssertEqual(compactResetDescription("resets in 4h (18:00)"), "in 4h")
         XCTAssertEqual(compactResetDescription("resets in 6d (Sep 4 00:58)"), "in 6d")

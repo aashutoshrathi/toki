@@ -28,4 +28,7 @@ xcrun notarytool submit "$DMG_PATH" "${AUTH_ARGS[@]}" --wait
 echo "==> Stapling notarization ticket"
 xcrun stapler staple "$DMG_PATH"
 
+echo "==> Validating stapled notarization ticket"
+xcrun stapler validate "$DMG_PATH"
+
 echo "==> Notarization complete"

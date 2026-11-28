@@ -154,37 +154,19 @@ enum DailyActivityScanner {
 
     // MARK: - OpenCode
 
-    // Grouped in SQL: the timestamp is indexed, and this avoids moving every row.
-    private static func openCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
-        let cutoff = Int(earliest.timeIntervalSince1970 * 1000)
-        let query = """
-        SELECT strftime('%Y-%m-%d', time_updated/1000, 'unixepoch', 'localtime') AS day, \
-        SUM(COALESCE(cost,0)), SUM(COALESCE(tokens_input,0) + COALESCE(tokens_output,0)) \
-        FROM session WHERE time_updated >= \(cutoff) GROUP BY day;
-        """
-        // No database at all is "not installed"; a database that refuses to answer is a failure;
-        // a database that answers with no rows is an idle install. queryText keeps the last two
-        // apart - queryValue would collapse the zero-row case into the failure case.
-        guard FileManager.default.fileExists(atPath: OpenCodeUsageClient.databasePath()) else { return [] }
-        let raw: String
-        do {
-            raw = try OpenCodeUsageClient.queryText(query)
-        } catch {
-            return nil
+    static func openCodeActivity(since earliest: Date, calendar: Calendar, db: String? = nil) -> [DailyActivity]? {
+        guard FileManager.default.fileExists(atPath: db ?? OpenCodeUsageClient.databasePath()) else { return [] }
+        guard let rows = try? OpenCodeUsageClient.usageRows(db: db) else { return nil }
+        var byDay: [Date: (tokens: Int, cost: Double)] = [:]
+        for row in rows where row.providerID != "sarvam" {
+            guard let date = row.date, date >= earliest else { continue }
+            let day = calendar.startOfDay(for: date)
+            var value = byDay[day] ?? (0, 0)
+            value.tokens += row.total
+            value.cost += row.cost
+            byDay[day] = value
         }
-        guard !raw.isEmpty else { return [] }
-
-        return raw.split(separator: "\n").compactMap { line in
-            let columns = line.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
-            guard columns.count >= 3,
-                  let day = parseDay(columns[0], calendar: calendar) else { return nil }
-            return DailyActivity(
-                day: day,
-                provider: .openCode,
-                tokens: Int(Double(columns[2]) ?? 0),
-                cost: Double(columns[1]) ?? 0
-            )
-        }
+        return byDay.map { DailyActivity(day: $0.key, provider: .openCode, tokens: $0.value.tokens, cost: $0.value.cost) }
     }
 
     // MARK: - Pi
@@ -198,10 +180,13 @@ enum DailyActivityScanner {
             .map { DailyActivity(day: $0.key, provider: .pi, tokens: $0.value.tokens, cost: $0.value.cost) }
     }
 
-    private static func sarvamCodeActivity(since earliest: Date, calendar: Calendar) -> [DailyActivity]? {
-        let root = SarvamCodeUsageClient.sessionRoot()
-        guard FileManager.default.fileExists(atPath: root) else { return [] }
-        guard let totals = try? SarvamCodeUsageClient.dailyTotals(calendar: calendar) else { return nil }
+    static func sarvamCodeActivity(
+        since earliest: Date,
+        calendar: Calendar,
+        root: String? = nil,
+        openCodeDB: String? = nil
+    ) -> [DailyActivity]? {
+        guard let totals = try? SarvamCodeUsageClient.dailyTotals(root: root, openCodeDB: openCodeDB, calendar: calendar) else { return nil }
         return totals
             .filter { $0.key >= earliest }
             .map { DailyActivity(day: $0.key, provider: .sarvamCode, tokens: $0.value.tokens, costs: $0.value.costs) }
@@ -216,13 +201,6 @@ enum DailyActivityScanner {
         let requestID = json["requestId"] as? String
         guard messageID != nil || requestID != nil else { return nil }
         return "\(messageID ?? "")\u{1F}\(requestID ?? "")"
-    }
-
-    private static func parseDay(_ value: String, calendar: Calendar) -> Date? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = calendar.timeZone
-        return formatter.date(from: value.trimmingCharacters(in: .whitespaces))
     }
 
     private static func parseISO8601(_ raw: String) -> Date? {
