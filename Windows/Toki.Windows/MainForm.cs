@@ -57,7 +57,7 @@ internal sealed partial class MainForm : Form {
         MinimumSize = new Size(760, 600);
         Name = "TokiMainForm";
         StartPosition = FormStartPosition.CenterScreen;
-        Text = "Toki - Windows Preview 4.0.0-preview.2";
+        Text = "Toki - Windows Preview 4.0.0-preview.3";
 
         _brandIcon = BrandIcon.Load();
         _brandImage = _brandIcon.ToBitmap();
@@ -109,7 +109,7 @@ internal sealed partial class MainForm : Form {
         };
         var title = Theme.CreateLabel("Toki", 22, Theme.Text, true);
         title.Margin = new Padding(0);
-        var subtitle = Theme.CreateLabel("Windows preview 4.0.0-preview.2", 9, Theme.MutedText);
+        var subtitle = Theme.CreateLabel("Windows preview 4.0.0-preview.3", 9, Theme.MutedText);
         subtitle.Margin = new Padding(0);
         titlePanel.Controls.Add(title);
         titlePanel.Controls.Add(subtitle);
@@ -133,7 +133,7 @@ internal sealed partial class MainForm : Form {
         header.Controls.Add(headerButtons, 2, 0);
         root.Controls.Add(header, 0, 0);
 
-        var previewNote = Theme.CreateLabel("Preview scope: Claude Code and Codex usage only. No agent control, remote access, or automatic updates.", 9, Theme.MutedText);
+        var previewNote = Theme.CreateLabel("Claude Code and Codex quotas, recent sessions, and read-only remote viewing. No terminal control or automatic updates.", 9, Theme.MutedText);
         previewNote.Dock = DockStyle.Fill;
         previewNote.TextAlign = ContentAlignment.MiddleLeft;
         root.Controls.Add(previewNote, 0, 1);
@@ -170,7 +170,7 @@ internal sealed partial class MainForm : Form {
         };
         _cardsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         _cardsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        root.Controls.Add(_cardsPanel, 0, 3);
+        root.Controls.Add(CreateWorkspace(), 0, 3);
         Controls.Add(root);
 
         AddFullWidthMessage("Loading provider usage...", Theme.MutedText);
@@ -259,6 +259,8 @@ internal sealed partial class MainForm : Form {
                 "Toki could not read its settings. Default settings are in use, and the existing file was not changed.",
                 "Toki Settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+        _workspaceTimer.Start();
+        _ = ScanSessionsAsync();
         _refreshTimer.Start();
         _ = RefreshUsageAsync();
     }
@@ -284,7 +286,7 @@ internal sealed partial class MainForm : Form {
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e) {
-        if (_exitRequested && !_activeRefresh.IsCompleted && e.CloseReason == CloseReason.UserClosing) {
+        if (_exitRequested && (!_activeRefresh.IsCompleted || !_activeScan.IsCompleted) && e.CloseReason == CloseReason.UserClosing) {
             e.Cancel = true;
             return;
         }
@@ -304,6 +306,8 @@ internal sealed partial class MainForm : Form {
             _flyout.Dispose();
             _openSettings?.Dispose();
             _smokeSettings?.Dispose();
+            _workspaceTimer.Dispose();
+            _remote.Dispose();
             _refreshTimer.Dispose();
             _smokeTimer?.Dispose();
             _trayIcon.Visible = false;
@@ -343,6 +347,9 @@ internal sealed partial class MainForm : Form {
             }
 
             RenderSnapshots(snapshots);
+            _activity.Observe(snapshots, DateTimeOffset.UtcNow);
+            RenderActivity();
+            PublishRemote();
             _statusLabel.ForeColor = Theme.MutedText;
             var failures = snapshots.Count(snapshot => snapshot.Error is not null);
             if (snapshots.Count == 0) {
@@ -368,6 +375,7 @@ internal sealed partial class MainForm : Form {
             _lastCheckedLabel.Text = $"Refresh failed: {DateTimeOffset.Now:g}";
             _trayIcon.Text = "Toki - Usage unavailable";
             _latestSnapshots = Array.Empty<ProviderSnapshot>();
+            PublishRemote();
         } finally {
             if (!IsDisposed && !Disposing) {
                 SetRefreshing(false);
@@ -468,10 +476,6 @@ internal sealed partial class MainForm : Form {
     }
 
     private void DeliverLowQuotaNotifications(IReadOnlyList<ProviderSnapshot> snapshots, DateTimeOffset refreshStarted) {
-        if (!_settings.NotificationsEnabled || _settings.DoNotDisturb) {
-            return;
-        }
-
         var now = DateTimeOffset.UtcNow;
         var messages = new List<string>();
         var notificationKeys = new List<string>();
@@ -512,7 +516,17 @@ internal sealed partial class MainForm : Form {
         if (text.Length > 240) {
             text = $"{text[..237]}...";
         }
-        _trayIcon.ShowBalloonTip(8000, "Toki quota low", text, ToolTipIcon.Warning);
+        var suppression = "";
+        if (_settings.DoNotDisturb) {
+            suppression = " (DND)";
+        } else if (!_settings.NotificationsEnabled) {
+            suppression = " (notifications disabled)";
+        }
+        _activity.Record("Quota", text + suppression, now);
+        RenderActivity();
+        if (_settings.NotificationsEnabled && !_settings.DoNotDisturb) {
+            _trayIcon.ShowBalloonTip(8000, "Toki quota low", text, ToolTipIcon.Warning);
+        }
         foreach (var key in notificationKeys) {
             _notificationHistory[key] = now;
         }
@@ -574,7 +588,14 @@ internal sealed partial class MainForm : Form {
             return false;
         }
 
+        if (_settings.ClaudeConfigDirectory != settings.ClaudeConfigDirectory || _settings.CodexHome != settings.CodexHome) {
+            _remote.Stop();
+            _sessions = [];
+            _sessionList.Items.Clear();
+            RenderRemote();
+        }
         _settings = settings;
+        _ = ScanSessionsAsync();
         _settingsLoadFailed = false;
         _doNotDisturbMenuItem.Checked = settings.DoNotDisturb;
         return true;
@@ -628,6 +649,8 @@ internal sealed partial class MainForm : Form {
 
         _exitRequested = true;
         Enabled = false;
+        _workspaceTimer.Stop();
+        _remote.Stop();
         _refreshTimer.Stop();
         _smokeTimer?.Stop();
         _lifetime.Cancel();
@@ -635,6 +658,7 @@ internal sealed partial class MainForm : Form {
         _flyout.Hide();
         _openSettings?.Close();
         await _activeRefresh;
+        await _activeScan;
         Close();
     }
 }

@@ -17,11 +17,14 @@ The preview is for testers who run Claude Code and Codex on Windows. It is not f
 - Do Not Disturb to suppress notifications.
 - Settings for the Claude directory, Codex home, Codex executable, notifications, and DND.
 - Closing the dashboard hides it to the tray. Quit exits the app.
+- Session timer and quota burn, with an in-memory Events view (latest 200 events).
+- Recent Claude/Codex conversations from local session history.
+- Optional read-only phone access to quotas and transcripts, with pairing and device revocation.
 
 ## Not in this preview
 
-- Remote Control.
-- Agent and session list.
+- Remote replies, terminal mirroring, and agent control.
+- Live-process detection and waiting-for-input alerts. The session list shows recent history, not proof an agent is running.
 - Multiple accounts.
 - Widgets.
 - WSL support.
@@ -33,7 +36,8 @@ The preview is for testers who run Claude Code and Codex on Windows. It is not f
 - Windows 11 x64.
 - Claude Code and/or Codex installed and signed in.
 - No admin rights.
-- No .NET install. The package is self-contained.
+- No .NET or Python install. The package includes both runtimes.
+- Remote access may need an inbound Windows Firewall rule for the bundled `python\python.exe`. Only enable the network scope you intend to use; organization policy may require IT approval.
 
 ## Get a build
 
@@ -42,8 +46,8 @@ There is no released Windows installer. Get a build from GitHub Actions:
 1. Sign in to GitHub.
 2. Open the **Actions** tab, then the **Windows preview** workflow.
 3. Open the latest run for `release/v4.0.0`, or a run for your pull request.
-4. Download the `toki-windows-preview-4.0.0-preview.2-win-x64` artifact.
-5. Unzip the artifact, then unzip `Toki-windows-preview-4.0.0-preview.2-win-x64.zip`.
+4. Download the `toki-windows-preview-4.0.0-preview.3-win-x64` artifact.
+5. Unzip the artifact, then unzip `Toki-windows-preview-4.0.0-preview.3-win-x64.zip`.
 6. If an older Toki is running, choose **Quit Toki** from its tray menu first. Keep the new extracted files together, then run `Toki.exe`. The compact usage panel opens; the full dashboard stays closed.
 
 The build is unsigned. Windows SmartScreen may show **Windows protected your PC**. Click **More info**, then **Run anyway**. Do not turn off SmartScreen or Defender. If your organization blocks unsigned apps, ask IT or build from source.
@@ -55,6 +59,28 @@ Left-click the Toki tray icon to open or dismiss the compact usage panel. If the
 The panel shows each provider's quota and reset times. Click outside it or press Escape to dismiss it; Toki keeps refreshing in the tray. Use **Dashboard** for the larger window, or **Settings** to change configuration. Right-click the tray icon for usage, dashboard, Settings, refresh, DND, and Quit. Starting Toki again opens the existing instance's compact panel.
 
 The dashboard and Settings use dark native title bars on Windows 11, including when Windows uses its light theme. Windows high-contrast mode keeps the system title-bar colors.
+
+## Sessions and Events
+
+Open Dashboard > Session & Events. **Start session** records the current fresh quota readings. The summary shows elapsed minutes and percentage points used. A quota reset or unavailable reading is not treated as burn. **End session** records a summary. Tracking and the latest 200 events stay in memory and reset when Toki exits. **Clear events** clears the event list.
+
+Provider failures/recovery and low-quota warnings appear in Events. DND suppresses the notification but still records the warning. Events do not contain conversation titles, paths, prompts, or credentials.
+
+**Recent sessions** reads up to 32 Claude/Codex conversation files, refreshed every 15 seconds. These are recent conversations, not a live-agent list. Scans are bounded to 6,000 filesystem entries and skip symlinks/junctions and files larger than 16 MiB. The view reports incomplete scans. Settings and `CLAUDE_CONFIG_DIR` / `CODEX_HOME` select the roots. A file still being written is read without locking the CLI out.
+
+## Read-only Remote Control
+
+1. Open Dashboard > **Remote viewing**. Sharing is off after every app start.
+2. Choose **Local network** for a phone on the same trusted network, or **Tailscale** for devices on the same tailnet. **This computer** is for testing in a browser on this PC only.
+3. Choose this PC's reachable IP address. If only `127.0.0.1` appears, no matching network adapter was found; connect to that network before starting. This address cannot be reached from a phone.
+4. Optionally enable **Share recent conversation transcripts**. Paired devices can then read prompts, assistant messages and tool output from the recent-session list. Leave it off for quotas only.
+5. Click **Start sharing**, then **Copy connect link**. Open that link on the phone and enter the six-digit code displayed separately in Toki. The code rotates every two minutes. This preview uses a copied link, not a QR code.
+6. Read quota or select a recent conversation. Replies, uploads, terminal keys, account resets and opening host apps are blocked by the Windows server, not just hidden by the UI.
+7. Select a paired device and click **Revoke selected device** to end its access. **Stop sharing**, changing transcript sharing, or quitting Toki ends all paired sessions. Restart sharing to get a new link and pair again.
+
+Connections use port 8765. Local-network mode uses HTTP, so use it only on a trusted network; Tailscale carries the connection inside its encrypted network. Do not forward this port to the public internet. If the phone cannot connect, check Windows Firewall, the selected IP, and whether the phone and PC are on the selected network. Toki must remain running and the PC must remain awake. Pairing lasts 12 hours unless revoked or the server stops.
+
+No remote setting silently enables sharing on the next launch. The bundled Python process exits when Toki closes its input pipe. The portable archive includes Python's license and uses a pinned, SHA256-verified runtime download during packaging.
 
 ## Credentials and paths
 
@@ -79,14 +105,18 @@ Sign in to Claude Code and Codex in a terminal before you start.
 - **Panel.** Left-click the tray icon to toggle the panel. Click outside or press Escape to dismiss it. Reopen it and confirm the same quota remains. No extra taskbar button appears for the panel.
 - **Dashboard.** Choose Dashboard in the panel or tray menu. Close its window and confirm Toki stays running. Start Toki again and confirm only the compact panel opens.
 - **Dark title bars.** Check the dashboard and Settings with Windows in light mode. Their title bars should match Toki's dark UI; native minimize/maximize/close buttons should still work.
-- **Quit.** Quit from the tray and check that the process exits.
+- **Session tracking.** Start tracking, refresh quotas, then end it. Check the elapsed time, quota changes and Events summary. DND should still leave low-quota events.
+- **Recent conversations.** Use Claude/Codex, wait 15 seconds, and confirm the conversation appears. Closed conversations can remain listed; this is expected.
+- **Remote viewing.** Pair a phone, verify quotas, then stop and enable transcript sharing. Re-pair and confirm the selected conversation's transcript. There must be no working send/upload controls.
+- **Revoke and stop.** Revoke the phone and confirm its next request fails. Stop sharing and confirm the link stops working. Restart Toki and confirm sharing is off.
+- **Quit.** Quit from the tray and check that Toki and its Python companion exit.
 - **Scaling.** Try 100, 125, 150, and 200 percent display scaling. Text and layout stay readable. Open the panel on each monitor and confirm it stays within that display above or beside the taskbar.
 - **Notifications.** Enable notifications and wait for a low quota. Turn on DND and check that notifications stop.
 - **Feedback.** Report the Windows version, the steps, and the exact error text. Do not send tokens, credentials, or transcripts.
 
 ## Build and test locally
 
-Run the core tests:
+Run the core tests (currently 86 tests):
 
 ```powershell
 dotnet run --project Windows/Toki.Core.Tests -c Release
@@ -95,33 +125,33 @@ dotnet run --project Windows/Toki.Core.Tests -c Release
 Build the portable package:
 
 ```powershell
-pwsh ./scripts/package-windows.ps1 -OutputDirectory artifacts/windows -Version 4.0.0-preview.2 -Runtime win-x64
+pwsh ./scripts/package-windows.ps1 -OutputDirectory artifacts/windows -Version 4.0.0-preview.3 -Runtime win-x64
 ```
 
-The script writes `artifacts/windows/Toki-windows-preview-4.0.0-preview.2-win-x64.zip` and `Toki-windows-preview-4.0.0-preview.2-win-x64.zip.sha256`.
+The script writes `artifacts/windows/Toki-windows-preview-4.0.0-preview.3-win-x64.zip` and `Toki-windows-preview-4.0.0-preview.3-win-x64.zip.sha256`.
 
-The publish is self-contained, so the tester machine needs no .NET install. Trimming and ReadyToRun are off, so the same publish works from macOS with the .NET 10 SDK and `EnableWindowsTargeting`.
+Packaging downloads the pinned Python runtime from python.org and verifies its SHA256. The tester needs no separate .NET or Python install. Running the UI directly from source does not include Python; use the packaged build for Remote Control. Trimming and ReadyToRun are off, so the same publish works from macOS with the .NET 10 SDK and `EnableWindowsTargeting`.
 
 ARM64 is optional and untested:
 
 ```powershell
-pwsh ./scripts/package-windows.ps1 -OutputDirectory artifacts/windows -Version 4.0.0-preview.2 -Runtime win-arm64
+pwsh ./scripts/package-windows.ps1 -OutputDirectory artifacts/windows -Version 4.0.0-preview.3 -Runtime win-arm64
 ```
 
 ## Continuous integration
 
-`.github/workflows/windows.yml` runs on pull requests to `main` and `release/**`, on pushes to `main` and `release/**` (including `release/v4.0.0`), and on manual dispatch. It runs the core tests, publishes the self-contained `win-x64` package, starts the packaged `Toki.exe` with `--smoke-test`, and uploads images of the compact panel, dashboard, and Settings with the zip with its SHA256 file.
+`.github/workflows/windows.yml` runs on pull requests to `main` and `release/**`, on pushes to `main` and `release/**` (including `release/v4.0.0`), and on manual dispatch. It runs the core tests, publishes the self-contained `win-x64` package, starts the packaged `Toki.exe` with `--smoke-test`, runs real HTTP pairing/transcript/revocation tests against the bundled Python runtime, and uploads UI smoke images with the zip and its SHA256 file.
 
-The artifact is versioned as `toki-windows-preview-4.0.0-preview.2-win-x64`. It is a preview build, not a stable release or a public installer.
+The artifact is versioned as `toki-windows-preview-4.0.0-preview.3-win-x64`. It is a preview build, not a stable release or a public installer.
 
-The smoke test checks tray-first startup, compact-panel placement, dashboard close-to-tray, outside-click dismissal, and supported native dark-frame attributes before exiting with code 0. It uses no credentials and no network. It does not validate real provider calls. Real validation needs a signed-in tester on Windows.
+The smoke test checks tray-first startup, compact-panel placement, dashboard close-to-tray, outside-click dismissal, and supported native dark-frame attributes before exiting with code 0. It uses fixture quotas and loopback HTTP only, with no provider credentials or provider requests. It does not validate real provider calls. Real validation needs a signed-in tester on Windows.
 
 ## Verify a download
 
 Compare the zip hash with the `.sha256` file:
 
 ```powershell
-Get-FileHash .\Toki-windows-preview-4.0.0-preview.2-win-x64.zip -Algorithm SHA256
+Get-FileHash .\Toki-windows-preview-4.0.0-preview.3-win-x64.zip -Algorithm SHA256
 ```
 
 ## Limits

@@ -4,6 +4,8 @@ namespace Toki.Windows;
 
 internal sealed partial class MainForm {
     private int _smokeStep;
+    private int _remoteSmokeWait;
+    private Task? _remoteSmokeCheck;
     private SettingsDialog? _smokeSettings;
 
     private void StartSmokeTest() {
@@ -61,11 +63,65 @@ internal sealed partial class MainForm {
                 break;
             case 4:
                 Require(!_flyout.Visible, "Clicking away must dismiss the usage panel.");
+                _workspaceTabs!.SelectedIndex = 1;
+                _activity.Start(_latestSnapshots, DateTimeOffset.UtcNow);
+                RenderActivity();
+                break;
+            case 5:
+                Require(_sessionSummary.Visible && _eventList.Items.Count > 0, "Session tracking and Events must be visible.");
+                SaveSmokeImage(this, "TOKI_SMOKE_ACTIVITY_SCREENSHOT");
+                _workspaceTabs!.SelectedIndex = 3;
+                break;
+            case 6:
+                Require(!_remote.Running && !_shareTranscripts.Checked && _remoteToggle.Visible, "Remote sharing must start off with transcript sharing disabled.");
+                SaveSmokeImage(this, "TOKI_SMOKE_REMOTE_SCREENSHOT");
+                _remote.Start("loopback");
+                break;
+            case 7:
+                Require(++_remoteSmokeWait < 50, "Packaged companion must become ready within 20 seconds.");
+                if (_remote.Token is null || _remote.PairingCode is null) {
+                    _smokeStep--;
+                    break;
+                }
+                _remoteSmokeCheck = VerifyRemoteSmokeAsync();
+                break;
+            case 8:
+                Require(++_remoteSmokeWait < 75, "Packaged companion protocol test must complete.");
+                if (!_remoteSmokeCheck!.IsCompleted) {
+                    _smokeStep--;
+                    break;
+                }
+                _remoteSmokeCheck.GetAwaiter().GetResult();
+                _remote.Stop();
+                Require(!_remote.Running, "Stop sharing must stop the companion.");
                 HideDashboard();
                 _smokeTimer!.Stop();
                 ExitApplication();
                 break;
         }
+    }
+
+    private async Task VerifyRemoteSmokeAsync() {
+        using var client = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:8765"), Timeout = TimeSpan.FromSeconds(5) };
+        client.DefaultRequestHeaders.Add("Origin", "http://127.0.0.1:8765");
+        using var body = new StringContent(System.Text.Json.JsonSerializer.Serialize(new { code = _remote.PairingCode }), System.Text.Encoding.UTF8, "application/json");
+        using var paired = await client.PostAsync("/api/pair?token=" + _remote.Token, body);
+        paired.EnsureSuccessStatusCode();
+        using var pairing = System.Text.Json.JsonDocument.Parse(await paired.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", pairing.RootElement.GetProperty("token").GetString());
+        _remote.Publish([new ProviderSnapshot("codex", "Codex", "", [new QuotaWindow("5h", 25, null)], null, DateTimeOffset.UtcNow)], [], false);
+        for (var attempt = 0; attempt < 20; attempt++) {
+            using var usage = System.Text.Json.JsonDocument.Parse(await client.GetStringAsync("/api/usage"));
+            var accounts = usage.RootElement.GetProperty("accounts");
+            if (accounts.GetArrayLength() > 0) {
+                Require(accounts[0].GetProperty("windows")[0].GetProperty("left").GetDouble() == 75, "C# quota snapshots must use the phone's wire format.");
+                using var send = await client.PostAsync("/api/send", new StringContent("{}"));
+                Require(send.StatusCode == System.Net.HttpStatusCode.Forbidden, "Packaged companion must reject writes.");
+                return;
+            }
+            await Task.Delay(50);
+        }
+        throw new InvalidOperationException("C# snapshots did not reach the packaged companion.");
     }
 
     private static void Require(bool condition, string message) {

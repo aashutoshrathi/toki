@@ -70,6 +70,22 @@ if (-not (Test-Path -LiteralPath $exePath)) {
     throw "Publish did not produce Toki.exe at $exePath."
 }
 
+$pythonArch = if ($Runtime -eq 'win-arm64') { 'arm64' } else { 'amd64' }
+$pythonHash = if ($Runtime -eq 'win-arm64') { 'f6773983c8959d4281e48c4540cb0bdd23e42391e4e951ce17e7ceb52658f21c' } else { 'd297e5ff019966817ad8502465176139f2d3d840fa4ed84b13bed399a6ab1f15' }
+$pythonZip = Join-Path $stagingPath 'python.zip'
+Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.14.7/python-3.14.7-embed-$pythonArch.zip" -OutFile $pythonZip
+if ((Get-FileHash -LiteralPath $pythonZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pythonHash) {
+    throw 'Bundled Python checksum mismatch.'
+}
+$pythonPath = Join-Path $appPath 'python'
+Expand-Archive -LiteralPath $pythonZip -DestinationPath $pythonPath
+Add-Content -LiteralPath (Join-Path $pythonPath 'python314._pth') -Value '../remote' -Encoding ascii
+$remotePath = Join-Path $appPath 'remote'
+New-Item -ItemType Directory -Path $remotePath -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot 'Windows/Remote/toki_windows_remote.py') -Destination $remotePath
+Copy-Item -LiteralPath (Join-Path $repoRoot 'Sources/Toki/Resources/toki_remote.py') -Destination $remotePath
+Copy-Item -LiteralPath (Join-Path $repoRoot 'Sources/Toki/Resources/webui') -Destination $remotePath -Recurse
+
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination $appPath
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/windows.md') -Destination (Join-Path $appPath 'WINDOWS-README.md')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $appPath

@@ -73,7 +73,7 @@ internal sealed class CodexAppServerTransport : IDisposable {
         var response = await RequestAsync(
             1,
             "initialize",
-            "{\"clientInfo\":{\"name\":\"Toki\",\"version\":\"4.0.0-preview.2\"},\"capabilities\":{\"experimentalApi\":true}}",
+            "{\"clientInfo\":{\"name\":\"Toki\",\"version\":\"4.0.0-preview.3\"},\"capabilities\":{\"experimentalApi\":true}}",
             cancellationToken);
         if (response.Error is { } error) {
             throw new ProviderException("Codex app-server initialization failed: " + DescribeError(error));

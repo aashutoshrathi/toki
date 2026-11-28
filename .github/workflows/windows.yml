@@ -5,6 +5,8 @@ on:
     branches: [main, "release/**"]
     paths:
       - "Windows/**"
+      - "Sources/Toki/Resources/toki_remote.py"
+      - "Sources/Toki/Resources/webui/**"
       - ".github/workflows/windows.yml"
       - "scripts/package-windows.ps1"
       - "docs/windows.md"
@@ -12,6 +14,8 @@ on:
     branches: [main, "release/**"]
     paths:
       - "Windows/**"
+      - "Sources/Toki/Resources/toki_remote.py"
+      - "Sources/Toki/Resources/webui/**"
       - ".github/workflows/windows.yml"
       - "scripts/package-windows.ps1"
       - "docs/windows.md"
@@ -29,7 +33,7 @@ jobs:
     name: Build, test and package
     runs-on: windows-latest
     env:
-      PREVIEW_VERSION: 4.0.0-preview.2
+      PREVIEW_VERSION: 4.0.0-preview.3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,14 +70,28 @@ jobs:
           $env:TOKI_SMOKE_SCREENSHOT = Join-Path $PWD 'artifacts/windows/dashboard-smoke.png'
           $env:TOKI_SMOKE_FLYOUT_SCREENSHOT = Join-Path $PWD 'artifacts/windows/flyout-smoke.png'
           $env:TOKI_SMOKE_SETTINGS_SCREENSHOT = Join-Path $PWD 'artifacts/windows/settings-smoke.png'
-          $process = Start-Process -FilePath $exePath -ArgumentList '--smoke-test' -PassThru
+          $env:TOKI_SMOKE_ACTIVITY_SCREENSHOT = Join-Path $PWD 'artifacts/windows/activity-smoke.png'
+          $env:TOKI_SMOKE_REMOTE_SCREENSHOT = Join-Path $PWD 'artifacts/windows/remote-smoke.png'
+          $errorPath = Join-Path $env:RUNNER_TEMP 'toki-smoke-error.txt'
+          $process = Start-Process -FilePath $exePath -ArgumentList '--smoke-test' -PassThru -RedirectStandardError $errorPath
           if (-not $process.WaitForExit(120000)) {
               $process.Kill()
               throw 'Toki.exe --smoke-test did not exit within 120 seconds.'
           }
           if ($process.ExitCode -ne 0) {
+              if (Test-Path -LiteralPath $errorPath) {
+                  Get-Content -LiteralPath $errorPath
+              }
               throw "Toki.exe --smoke-test exited with code $($process.ExitCode)."
           }
+
+      - name: Test packaged remote server
+        shell: pwsh
+        run: |
+          $env:TOKI_TEST_PYTHON = Join-Path $env:RUNNER_TEMP 'toki-smoke/python/python.exe'
+          $env:TOKI_TEST_REMOTE = Join-Path $env:RUNNER_TEMP 'toki-smoke/remote/toki_windows_remote.py'
+          python Windows/Remote/test_windows_remote.py
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged remote integration tests failed.' }
 
       - name: Verify checksum
         shell: pwsh
