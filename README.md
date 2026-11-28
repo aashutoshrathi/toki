@@ -81,7 +81,7 @@ The `-r` matters. It also clears the bundled widget extension: right-clicking To
 
 ### Direct download
 
-Grab the latest `Toki_<version>_universal.dmg` from the [releases page](https://github.com/aashutoshrathi/toki/releases/latest), open it, and drag Toki to Applications. Updates install in-app once running.
+Grab the DMG for your Mac from the [releases page](https://github.com/aashutoshrathi/toki/releases/latest) — `Toki_<version>_arm64.dmg` for Apple Silicon, `Toki_<version>_x86_64.dmg` for Intel, or `Toki_<version>_all.dmg` for a universal bundle — open it, and drag Toki to Applications. Homebrew and in-app updates pick your Mac's native architecture automatically.
 
 ### From source
 

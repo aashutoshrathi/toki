@@ -117,4 +117,121 @@ final class UpdateChannelTests: XCTestCase {
         XCTAssertNil(UpdateChecker.whyUpdateLine(fromNotes: "## 3.3.7\n- Added things"))
         XCTAssertNil(UpdateChecker.whyUpdateLine(fromNotes: "One Line:   "))
     }
+
+    // MARK: - Architecture-aware asset selection & verification
+
+    private func asset(_ name: String) -> GitHubRelease.Asset {
+        GitHubRelease.Asset(
+            name: name,
+            browserDownloadURL: URL(string: "https://github.com/aashutoshrathi/toki/releases/download/v3.4.6/\(name)")!
+        )
+    }
+
+    func testUniversalDMGNameSortsBeforePerArchDMGs() {
+        // Shipped builds <= 3.4.5 pick the first ".dmg" asset in GitHub's alphabetically sorted
+        // release listing, so Toki_<v>_all.dmg must sort before _arm64 and _x86_64 under both
+        // byte-order and Unicode/locale case-insensitive comparisons.
+        let names = ["Toki_3.4.6_x86_64.dmg", "Toki_3.4.6_arm64.dmg", "Toki_3.4.6_all.dmg"]
+        XCTAssertEqual(names.sorted().first, "Toki_3.4.6_all.dmg")
+        XCTAssertEqual(
+            names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }.first,
+            "Toki_3.4.6_all.dmg"
+        )
+    }
+
+    func testSelectDMGAssetPicksNativeArchitectureRegardlessOfOrder() {
+        let releaseAssets = [
+            asset("Toki-windows-preview-4.0.0-win-x64.zip"),
+            asset("Toki_3.4.6_all.dmg"),
+            asset("Toki_3.4.6_arm64.dmg"),
+            asset("Toki_3.4.6_x86_64.dmg"),
+        ]
+
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: releaseAssets, releaseVersion: "3.4.6", preferredArch: .arm64)?.name,
+            "Toki_3.4.6_arm64.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: releaseAssets, releaseVersion: "3.4.6", preferredArch: .x86_64)?.name,
+            "Toki_3.4.6_x86_64.dmg"
+        )
+        // Reversed ordering must return the exact same architecture-specific assets.
+        let reversed = Array(releaseAssets.reversed())
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: reversed, releaseVersion: "3.4.6-beta.1", preferredArch: .arm64)?.name,
+            "Toki_3.4.6_arm64.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: reversed, releaseVersion: "3.4.6-beta.1", preferredArch: .x86_64)?.name,
+            "Toki_3.4.6_x86_64.dmg"
+        )
+    }
+
+    func testSelectDMGAssetFallsBackToUniversalWhenThinAssetMissing() {
+        let newUniversalOnly = [asset("Toki_3.4.6_all.dmg")]
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: newUniversalOnly, releaseVersion: "3.4.6", preferredArch: .arm64)?.name,
+            "Toki_3.4.6_all.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: newUniversalOnly, releaseVersion: "3.4.6", preferredArch: .x86_64)?.name,
+            "Toki_3.4.6_all.dmg"
+        )
+
+        let legacyUniversalOnly = [asset("Toki_3.4.5_universal.dmg")]
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: legacyUniversalOnly, releaseVersion: "3.4.5", preferredArch: .arm64)?.name,
+            "Toki_3.4.5_universal.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: legacyUniversalOnly, releaseVersion: "3.4.5", preferredArch: .x86_64)?.name,
+            "Toki_3.4.5_universal.dmg"
+        )
+    }
+
+    func testSelectDMGAssetNeverSelectsOppositeArchitecture() {
+        let armOnly = [asset("Toki_3.4.6_arm64.dmg")]
+        XCTAssertNil(
+            UpdateChecker.selectDMGAsset(from: armOnly, releaseVersion: "3.4.6", preferredArch: .x86_64)
+        )
+
+        let intelOnly = [asset("Toki_3.4.6_x86_64.dmg")]
+        XCTAssertNil(
+            UpdateChecker.selectDMGAsset(from: intelOnly, releaseVersion: "3.4.6", preferredArch: .arm64)
+        )
+
+        let nonDMGOnly = [asset("Toki-windows-preview-4.0.0-win-x64.zip")]
+        XCTAssertNil(
+            UpdateChecker.selectDMGAsset(from: nonDMGOnly, releaseVersion: "4.0.0", preferredArch: .arm64)
+        )
+    }
+
+    func testInstallerArchitectureAndReleaseMetadataVerification() {
+        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "arm64\n", preferredArch: .arm64))
+        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "arm64\n", preferredArch: .x86_64))
+        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64\n", preferredArch: .x86_64))
+        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64\n", preferredArch: .arm64))
+        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64 arm64\n", preferredArch: .arm64))
+        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "x86_64 arm64\n", preferredArch: .x86_64))
+        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(lipoArchsOutput: "", preferredArch: .arm64))
+
+        XCTAssertTrue(UpdateInstaller.releaseMetadataMatches(
+            bundleID: "local.toki",
+            marketingVersion: "3.4.6",
+            releaseVersionStamp: "3.4.6-beta.2",
+            expectedVersion: "3.4.6-beta.2"
+        ))
+        XCTAssertFalse(UpdateInstaller.releaseMetadataMatches(
+            bundleID: "local.toki",
+            marketingVersion: "3.4.6",
+            releaseVersionStamp: "3.4.6-beta.1",
+            expectedVersion: "3.4.6-beta.2"
+        ))
+        XCTAssertTrue(UpdateInstaller.releaseMetadataMatches(
+            bundleID: "local.toki",
+            marketingVersion: "3.4.6",
+            releaseVersionStamp: nil,
+            expectedVersion: "3.4.6"
+        ))
+    }
 }
