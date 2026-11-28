@@ -348,7 +348,7 @@ def sanitised_tmux(raw):
         not isinstance(socket, str)
         or not socket.startswith("/")
         or len(socket) > 1024
-        or any(ch.isspace() or ord(ch) < 32 for ch in socket)
+        or any(ord(ch) < 32 for ch in socket)
     ):
         return None
     if not isinstance(pane, str) or not re.fullmatch(r"%[0-9]+", pane):

@@ -1013,6 +1013,22 @@ class RexRemoteControlTests(unittest.TestCase):
         self.assertEqual(result[0]["rex_block"], self.BLOCK)
         self.assertEqual(result[0]["rex_server"], self.SERVER)
 
+    def test_tmux_snapshot_preserves_socket_paths_with_spaces(self):
+        route = {"socket": "/private/tmp/tmux-501/work socket", "pane": "%7"}
+        processes = [{"pid": 21, "ppid": 1, "provider": "codex", "command": "codex", "tty": "ttys006"}]
+        snapshot = [{
+            "pid": 21, "provider": "codex", "tty": "ttys006",
+            "host": toki_remote.REX_BUNDLE_ID, "tmux": route,
+            "rexBlock": self.BLOCK, "rexServer": self.SERVER,
+        }]
+        with mock.patch.object(toki_remote, "newest_codex_session", return_value="/tmp/session.jsonl"):
+            agent = toki_remote.agents_from_snapshot(processes, snapshot)[0]
+        self.assertEqual(agent["tmux"], route)
+        self.assertIsNone(agent["rex_block"])
+        self.assertIsNone(agent["rex_server"])
+        for socket in ("relative/socket", "--flag", "/tmp/socket\x00suffix", "/tmp/socket\n"):
+            self.assertIsNone(toki_remote.sanitised_tmux({"socket": socket, "pane": "%7"}))
+
     def test_parse_rex_env_prefers_tail_env_and_validates(self):
         argv = "agy -i REX_BLOCK=block:from-argv"
         ps_out = f"{argv} PATH=/usr/bin REX_BLOCK={self.BLOCK} REX_SERVER={self.SERVER}"
