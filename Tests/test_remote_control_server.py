@@ -1343,5 +1343,47 @@ class MachineNameTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+class ModelExtractionTests(unittest.TestCase):
+    def setUp(self):
+        toki_remote._model_stream.clear()
+
+    def test_claude_ignores_synthetic_model_records(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            self.addCleanup(os.unlink, f.name)
+            f.write(json.dumps({"type": "assistant", "message": {"model": "claude-opus-5-5"}}) + "\n")
+            f.write(json.dumps({"type": "assistant", "message": {"model": "<synthetic>"}}) + "\n")
+            path = f.name
+        self.assertEqual(toki_remote.model_of({"provider": "claude", "session": path}), "claude-opus-5-5")
+
+    def test_antigravity_prefers_planner_response_model_from_transcript(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            self.addCleanup(os.unlink, f.name)
+            f.write(json.dumps({"type": "USER_INPUT", "content": "hi"}) + "\n")
+            f.write(json.dumps({"type": "PLANNER_RESPONSE", "model": "gemini-4-neon-high", "content": "ok"}) + "\n")
+            path = f.name
+        self.assertEqual(toki_remote.agy_model(path), "gemini-4-neon-high")
+
+    def test_antigravity_gen_metadata_fallback_takes_last_model_not_subagent_config(self):
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as home:
+            cid = "34e003e5-112a-4086-a004-6bebde670a8b"
+            logs_dir = os.path.join(home, ".gemini", "antigravity-cli", "brain", cid, ".system_generated", "logs")
+            conv_dir = os.path.join(home, ".gemini", "antigravity-cli", "conversations")
+            os.makedirs(logs_dir)
+            os.makedirs(conv_dir)
+            transcript = os.path.join(logs_dir, "transcript_full.jsonl")
+            open(transcript, "w").close()
+            db = os.path.join(conv_dir, cid + ".db")
+            con = sqlite3.connect(db)
+            con.execute("CREATE TABLE gen_metadata (idx INTEGER, data BLOB)")
+            blob = b"flash_lite\x15gemini-3.5-flash-lite\x10pro\x1egemini-4-hydrogen-tiered-xhigh\x00\rgemini-4-neon"
+            con.execute("INSERT INTO gen_metadata VALUES (1, ?)", (blob,))
+            con.commit()
+            con.close()
+            with mock.patch.object(toki_remote, "HOME", home):
+                self.assertEqual(toki_remote.agy_model(transcript), "gemini-4-neon")
+
+
 if __name__ == "__main__":
     unittest.main()

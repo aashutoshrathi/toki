@@ -1192,6 +1192,7 @@ let awaitingReply = false;
 let pendingEcho = null;
 
 function addEcho(text) {
+  if (pendingEcho) pendingEcho.node.classList.remove("pending");
   const d = document.createElement("div");
   d.className = "m user pending";
   d.innerHTML = linkify(text);
@@ -1253,6 +1254,10 @@ function clearPending() {
 // Epoch invalidates polls that began against an earlier transcript.
 let logSession = null;
 let logEpoch = 0;
+// Only one transcript fetch in flight at a time: a poll overlapping send()'s refreshLog() would
+// otherwise request the same offset twice and append duplicate messages.
+let logInflight = false;
+let logQueued = false;
 
 // Tool results resolve earlier rows by tool-use id.
 let toolNodes = {};
@@ -1260,6 +1265,8 @@ let toolNodes = {};
 function resetTranscript() {
   logEpoch++;
   logSession = null;
+  logInflight = false;
+  logQueued = false;
   offset = 0;
   toolNodes = {};
   $("#log").innerHTML = "";
@@ -1301,9 +1308,22 @@ function resolveToolNode(entry) {
 
 async function refreshLog() {
   if (!current) return;
+  if (logInflight) {
+    logQueued = true;
+    return;
+  }
+  logInflight = true;
+  logQueued = false;
   const epoch = logEpoch;
-  const r = await api(`/api/transcript?pid=${current}&offset=${offset}`);
+  const reqOffset = offset;
+  let r;
+  try {
+    r = await api(`/api/transcript?pid=${current}&offset=${reqOffset}`);
+  } finally {
+    if (epoch == logEpoch) logInflight = false;
+  }
   if (epoch != logEpoch) return;
+  if (reqOffset != offset) return;
   if (r.reset) {
     resetTranscript();
     return;
@@ -1332,7 +1352,9 @@ async function refreshLog() {
     }
     if (e.role == "assistant") {
       awaitingReply = false;
-      pendingEcho = null;
+      // Settle the bubble visually without dropping pendingEcho: an earlier assistant message can
+      // arrive in the same poll right before the newly-sent user entry, which still needs to dedupe.
+      if (pendingEcho) pendingEcho.node.classList.remove("pending");
     }
     if (!added) hideTyping();
     const d = document.createElement("div");
@@ -1354,6 +1376,10 @@ async function refreshLog() {
   if (added) {
     if (stick) scrollToLatest();
     else $("#tolatest").hidden = false;
+  }
+  if (logQueued) {
+    logQueued = false;
+    refreshLog().catch(() => {});
   }
 }
 

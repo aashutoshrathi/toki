@@ -1288,8 +1288,20 @@ def opencode_attention(session_id):
 
 
 def _claude_model(j):
+    if j.get("type") != "assistant":
+        return None
     msg = j.get("message")
-    return msg.get("model") if isinstance(msg, dict) else None
+    model = msg.get("model") if isinstance(msg, dict) else None
+    if not isinstance(model, str) or not model or model == "<synthetic>":
+        return None
+    return model
+
+
+def _agy_model(j):
+    if j.get("type") != "PLANNER_RESPONSE":
+        return None
+    model = j.get("model")
+    return model if isinstance(model, str) and model else None
 
 
 def _codex_model(j):
@@ -1319,8 +1331,13 @@ AGY_MODEL_RE = re.compile(r"gemini-[0-9]+(?:\.[0-9]+)*(?:-[a-z]+)*", re.I)
 
 
 def agy_model(session_path):
-    """Antigravity keeps the model only inside a metadata blob in its per-conversation db, so read
-    the newest gen_metadata row and pull the id out of it. Best-effort: None when it is not found."""
+    """Antigravity records the active model on each PLANNER_RESPONSE in its transcript. Fall back
+    to the newest gen_metadata blob in its per-conversation db when the transcript has none yet,
+    taking the last model match because the blob header lists subagent tier defaults (e.g.
+    flash_lite) ahead of the active model."""
+    from_transcript = jsonl_model(session_path, _agy_model)
+    if from_transcript:
+        return from_transcript
     parts = session_path.split(os.sep)
     try:
         cid = parts[parts.index("brain") + 1]
@@ -1340,8 +1357,8 @@ def agy_model(session_path):
     if not row or row[0] is None:
         return None
     blob = row[0] if isinstance(row[0], str) else row[0].decode("utf-8", "replace")
-    m = AGY_MODEL_RE.search(blob)
-    return m.group(0) if m else None
+    matches = AGY_MODEL_RE.findall(blob)
+    return matches[-1] if matches else None
 
 
 def opencode_model(session_id):
