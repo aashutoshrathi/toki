@@ -2,9 +2,10 @@
 
 ## 3.4.6 - 2026-11-28
 
-One Line: Count Sarvam usage through OpenCode and show the 5-hour quota before the weekly quota.
+One Line: Count Sarvam usage through OpenCode and deliver smaller downloads for Apple Silicon and Intel Macs.
 
 ### Changed
+- **Downloads for each Mac architecture.** Homebrew and the in-app updater choose the Apple Silicon or Intel DMG for this Mac. A universal DMG remains available for older updaters, and the installer checks app and widget compatibility without requiring developer tools.
 - **Gemini CLI support removed.** Gemini CLI accounts, configuration entries, and detection are removed. Existing configurations continue to load, and Antigravity support remains available.
 
 ### Fixed
