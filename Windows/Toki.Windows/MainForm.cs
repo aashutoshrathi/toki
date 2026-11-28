@@ -7,6 +7,8 @@ internal sealed partial class MainForm : Form {
     private static readonly TimeSpan NotificationCooldown = TimeSpan.FromMinutes(90);
 
     private readonly bool _smokeTest;
+    private readonly bool _background;
+    private readonly ToolStripMenuItem _privacyMenuItem;
     private readonly TrayFlyout _flyout;
     private IReadOnlyList<ProviderSnapshot> _latestSnapshots = Array.Empty<ProviderSnapshot>();
     private bool _refreshing;
@@ -35,7 +37,8 @@ internal sealed partial class MainForm : Form {
     private bool _exitRequested;
     private Task _activeRefresh = Task.CompletedTask;
 
-    internal MainForm(bool smokeTest, EventWaitHandle showSignal) {
+    internal MainForm(bool smokeTest, EventWaitHandle showSignal, bool background) {
+        _background = background;
         _smokeTest = smokeTest;
         _showSignal = showSignal;
         _settings = new AppSettings();
@@ -57,7 +60,7 @@ internal sealed partial class MainForm : Form {
         MinimumSize = new Size(760, 600);
         Name = "TokiMainForm";
         StartPosition = FormStartPosition.CenterScreen;
-        Text = "Toki - Windows Preview 4.0.0-preview.3";
+        Text = "Toki - Windows Preview 4.0.0-preview.4";
 
         _brandIcon = BrandIcon.Load();
         _brandImage = _brandIcon.ToBitmap();
@@ -109,7 +112,7 @@ internal sealed partial class MainForm : Form {
         };
         var title = Theme.CreateLabel("Toki", 22, Theme.Text, true);
         title.Margin = new Padding(0);
-        var subtitle = Theme.CreateLabel("Windows preview 4.0.0-preview.3", 9, Theme.MutedText);
+        var subtitle = Theme.CreateLabel("Windows preview 4.0.0-preview.4", 9, Theme.MutedText);
         subtitle.Margin = new Padding(0);
         titlePanel.Controls.Add(title);
         titlePanel.Controls.Add(subtitle);
@@ -198,6 +201,9 @@ internal sealed partial class MainForm : Form {
         _trayMenu.Items.Add(_refreshMenuItem);
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add(_doNotDisturbMenuItem);
+        _privacyMenuItem = new ToolStripMenuItem("Hide sensitive info") { Checked = _settings.HideSensitiveInfo };
+        _privacyMenuItem.Click += (_, _) => TrySaveSettings(_settings with { HideSensitiveInfo = !_settings.HideSensitiveInfo });
+        _trayMenu.Items.Add(_privacyMenuItem);
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add(quitMenuItem);
 
@@ -240,6 +246,9 @@ internal sealed partial class MainForm : Form {
     }
 
     private void StartInTray() {
+        if (!_background) {
+            ShowFlyout();
+        }
         if (_smokeTest) {
             StartSmokeTest();
             return;
@@ -253,7 +262,6 @@ internal sealed partial class MainForm : Form {
             }
         }, null, Timeout.Infinite, false);
 
-        ShowFlyout();
         if (_settingsLoadFailed) {
             MessageBox.Show(_flyout,
                 "Toki could not read its settings. Default settings are in use, and the existing file was not changed.",
@@ -282,7 +290,7 @@ internal sealed partial class MainForm : Form {
         if (!_refreshing && _latestSnapshots.Count > 0) {
             status += $" Checked {_latestSnapshots.Max(snapshot => snapshot.CheckedAt).ToLocalTime():t}.";
         }
-        _flyout.SetUsage(_latestSnapshots, status, _refreshing);
+        _flyout.SetUsage(_latestSnapshots.Select(DisplaySnapshot).ToArray(), status, _refreshing);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e) {
@@ -417,7 +425,7 @@ internal sealed partial class MainForm : Form {
             _cardsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, LogicalToDeviceUnits(326)));
         }
         for (var index = 0; index < snapshots.Count; index++) {
-            var card = new ProviderCard(snapshots[index]) {
+            var card = new ProviderCard(DisplaySnapshot(snapshots[index])) {
                 Dock = DockStyle.Fill
             };
             _cardsPanel.Controls.Add(card, index % 2, index / 2);
@@ -541,7 +549,9 @@ internal sealed partial class MainForm : Form {
             return;
         }
         _flyout.Hide();
-        using var dialog = new SettingsDialog(_settings);
+        bool? startupRegistered = null;
+        try { startupRegistered = LaunchAtLogin.IsRegistered(); } catch (Exception) { }
+        using var dialog = new SettingsDialog(_settings, startupRegistered);
         if (!Visible) {
             dialog.StartPosition = FormStartPosition.CenterScreen;
         }
@@ -551,6 +561,13 @@ internal sealed partial class MainForm : Form {
                 return;
             }
             if (TrySaveSettings(settings)) {
+                if (dialog.LaunchAtLoginEnabled is { } enabled) {
+                    try {
+                        LaunchAtLogin.SetEnabled(enabled);
+                    } catch (Exception) {
+                        MessageBox.Show(this, "Preferences were saved, but the startup registration could not be changed. Keep Toki in a permanent folder with a short path, and check Windows Startup apps and your account permissions.", "Launch at sign-in", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }
                 await RefreshUsageAsync();
             }
         } finally {
@@ -598,7 +615,23 @@ internal sealed partial class MainForm : Form {
         _ = ScanSessionsAsync();
         _settingsLoadFailed = false;
         _doNotDisturbMenuItem.Checked = settings.DoNotDisturb;
+        ApplyPrivacy();
         return true;
+    }
+
+    private ProviderSnapshot DisplaySnapshot(ProviderSnapshot snapshot) => PrivacyDisplay.Snapshot(snapshot, _settings.HideSensitiveInfo);
+
+    private void ApplyPrivacy() {
+        _privacyMenuItem.Checked = _settings.HideSensitiveInfo;
+        if (_settings.HideSensitiveInfo) {
+            _sessionSearch.Clear();
+        }
+        _sessionSearch.Enabled = !_settings.HideSensitiveInfo;
+        RenderSnapshots(_latestSnapshots);
+        UpdateFlyout();
+        RenderSessionList();
+        RenderActivity();
+        RenderRemote();
     }
 
     private void MainForm_KeyDown(object? sender, KeyEventArgs e) {

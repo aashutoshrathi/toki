@@ -9,14 +9,18 @@ internal sealed class SettingsDialog : Form {
     private readonly CheckBox _notificationsCheckBox = new();
     private readonly CheckBox _doNotDisturbCheckBox = new();
     private readonly Label _errorLabel = new();
+    private readonly CheckBox _privacyCheckBox = new();
+    private readonly CheckBox _startupCheckBox = new();
+    private readonly bool? _startupRegistered;
     private readonly Button _saveButton;
     private readonly Button _cancelButton;
 
-    internal SettingsDialog(AppSettings settings) {
+    internal SettingsDialog(AppSettings settings, bool? startupRegistered) {
+        _startupRegistered = startupRegistered;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = Theme.Background;
-        ClientSize = new Size(720, 470);
+        ClientSize = new Size(720, 550);
         Font = new Font("Segoe UI", 9, FontStyle.Regular, GraphicsUnit.Point);
         ForeColor = Theme.Text;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -39,7 +43,7 @@ internal sealed class SettingsDialog : Form {
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 152));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
 
@@ -71,8 +75,8 @@ internal sealed class SettingsDialog : Form {
         var options = new FlowLayoutPanel {
             BackColor = Theme.Background,
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false
         };
         _notificationsCheckBox.AutoSize = true;
         _notificationsCheckBox.Checked = settings.NotificationsEnabled;
@@ -88,6 +92,23 @@ internal sealed class SettingsDialog : Form {
         _doNotDisturbCheckBox.Text = "&Do not disturb";
         options.Controls.Add(_notificationsCheckBox);
         options.Controls.Add(_doNotDisturbCheckBox);
+        _privacyCheckBox.AutoSize = true;
+        _privacyCheckBox.Text = "Hide sensitive info on this PC";
+        _privacyCheckBox.Name = "PrivacyCheckBox";
+        _privacyCheckBox.Checked = settings.HideSensitiveInfo;
+        _privacyCheckBox.CheckedChanged += (_, _) => MaskPaths();
+        options.Controls.Add(_privacyCheckBox);
+        _startupCheckBox.AutoSize = true;
+        _startupCheckBox.Text = "Launch at Windows sign-in (tray only)";
+        _startupCheckBox.Name = "StartupCheckBox";
+        _startupCheckBox.Checked = startupRegistered == true;
+        _startupCheckBox.Enabled = startupRegistered is not null;
+        options.Controls.Add(_startupCheckBox);
+        var startupNote = Theme.CreateLabel(startupRegistered is null
+            ? "Startup registration could not be read. Check Windows Startup apps."
+            : "Windows Startup apps can override this registration.", 9, Theme.MutedText);
+        options.Controls.Add(startupNote);
+        MaskPaths();
         root.Controls.Add(options, 0, 3);
 
         _errorLabel.AutoSize = false;
@@ -125,6 +146,20 @@ internal sealed class SettingsDialog : Form {
     }
 
     internal AppSettings? Settings { get; private set; }
+    internal bool? LaunchAtLoginEnabled {
+        get {
+            if (_startupRegistered is null || (_startupRegistered == false && !_startupCheckBox.Checked)) {
+                return null;
+            }
+            return _startupCheckBox.Checked;
+        }
+    }
+
+    private void MaskPaths() {
+        foreach (var box in new[] { _claudeDirectoryTextBox, _codexHomeTextBox, _codexExecutableTextBox }) {
+            box.UseSystemPasswordChar = _privacyCheckBox.Checked;
+        }
+    }
 
     private static void ConfigureTextBox(TextBox textBox, string name, string? value) {
         textBox.BackColor = Theme.Card;
@@ -214,7 +249,8 @@ internal sealed class SettingsDialog : Form {
             codexHome,
             codexExecutable,
             _notificationsCheckBox.Checked,
-            _doNotDisturbCheckBox.Checked);
+            _doNotDisturbCheckBox.Checked,
+            _privacyCheckBox.Checked);
         DialogResult = DialogResult.OK;
         Close();
     }

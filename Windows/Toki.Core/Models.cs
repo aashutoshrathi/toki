@@ -5,7 +5,8 @@ public sealed record AppSettings(
     string? CodexHome = null,
     string? CodexExecutable = null,
     bool NotificationsEnabled = true,
-    bool DoNotDisturb = false);
+    bool DoNotDisturb = false,
+    bool HideSensitiveInfo = false);
 
 public sealed record QuotaWindow(string Label, double UsedPercent, DateTimeOffset? ResetsAt) {
     public double RemainingPercent => Math.Clamp(100 - UsedPercent, 0, 100);

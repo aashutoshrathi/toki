@@ -9,6 +9,8 @@ internal sealed partial class MainForm {
     private SettingsDialog? _smokeSettings;
 
     private void StartSmokeTest() {
+        Require(!Visible && _flyout.Visible != _background, "Startup visibility must respect --background.");
+        VerifyStartupRegistration();
         RenderSnapshots(new[] {
             new ProviderSnapshot("claude-code", "Claude Code", "Offline fixture", new[] {
                 new QuotaWindow("5h", 25, DateTimeOffset.UtcNow.AddHours(2)),
@@ -42,17 +44,23 @@ internal sealed partial class MainForm {
                 SaveSmokeImage(this, "TOKI_SMOKE_SCREENSHOT");
                 Close();
                 Require(!IsDisposed && !Visible, "Dashboard X must hide to tray rather than exit.");
-                _smokeSettings = new SettingsDialog(new AppSettings());
+                _smokeSettings = new SettingsDialog(new AppSettings(), false);
                 _smokeSettings.Show();
                 break;
             case 2:
                 WindowTheme.VerifySupportedAttributes(_smokeSettings!.Handle);
+                foreach (var control in Descendants(_smokeSettings).Where(c => c is CheckBox or Button)) {
+                    Require(control.Visible, "All settings options must be visible.");
+                    for (Control? child = control; child?.Parent is { } parent; child = parent) {
+                        Require(parent.ClientRectangle.Contains(child.Bounds), "Settings options must not be clipped.");
+                    }
+                }
                 SaveSmokeImage(_smokeSettings, "TOKI_SMOKE_SETTINGS_SCREENSHOT");
                 _smokeSettings.Close();
                 _smokeSettings.Dispose();
                 _smokeSettings = null;
                 RenderSnapshots(new[] {
-                    new ProviderSnapshot("codex", "Codex", "Offline fixture", Array.Empty<QuotaWindow>(), "Test connection error - no quota available.", DateTimeOffset.UtcNow)
+                    new ProviderSnapshot("codex", "Codex", "private@example.test", Array.Empty<QuotaWindow>(), "Test connection error - no quota available.", DateTimeOffset.UtcNow)
                 });
                 ShowFlyout();
                 break;
@@ -70,14 +78,21 @@ internal sealed partial class MainForm {
             case 5:
                 Require(_sessionSummary.Visible && _eventList.Items.Count > 0, "Session tracking and Events must be visible.");
                 SaveSmokeImage(this, "TOKI_SMOKE_ACTIVITY_SCREENSHOT");
-                _workspaceTabs!.SelectedIndex = 3;
+                VerifyDesktopFeatures();
+                _workspaceTabs!.SelectedIndex = 2;
                 break;
             case 6:
+                SaveSmokeImage(this, "TOKI_SMOKE_PRIVACY_SCREENSHOT");
+                _settings = _settings with { HideSensitiveInfo = false };
+                ApplyPrivacy();
+                _workspaceTabs!.SelectedIndex = 3;
+                break;
+            case 7:
                 Require(!_remote.Running && !_shareTranscripts.Checked && _remoteToggle.Visible, "Remote sharing must start off with transcript sharing disabled.");
                 SaveSmokeImage(this, "TOKI_SMOKE_REMOTE_SCREENSHOT");
                 _remote.Start("loopback");
                 break;
-            case 7:
+            case 8:
                 Require(++_remoteSmokeWait < 50, "Packaged companion must become ready within 20 seconds.");
                 if (_remote.Token is null || _remote.PairingCode is null) {
                     _smokeStep--;
@@ -85,7 +100,7 @@ internal sealed partial class MainForm {
                 }
                 _remoteSmokeCheck = VerifyRemoteSmokeAsync();
                 break;
-            case 8:
+            case 9:
                 Require(++_remoteSmokeWait < 75, "Packaged companion protocol test must complete.");
                 if (!_remoteSmokeCheck!.IsCompleted) {
                     _smokeStep--;
@@ -98,6 +113,44 @@ internal sealed partial class MainForm {
                 _smokeTimer!.Stop();
                 ExitApplication();
                 break;
+        }
+    }
+
+    private void VerifyDesktopFeatures() {
+        _sessions = [
+            new LocalSession(1, "claude", "Private launch plan", "fixture1.jsonl", @"C:\private-project", DateTimeOffset.UtcNow),
+            new LocalSession(2, "codex", "Fix the parser", "fixture2.jsonl", @"C:\project-two", DateTimeOffset.UtcNow)
+        ];
+        RenderSessionList();
+        _sessionSearch.Text = "PARSER";
+        Require(_sessionList.Items.Count == 1 && _sessionList.Items[0].Text == "Codex", "Search must filter conversations case-insensitively.");
+        _sessionProvider.SelectedIndex = 1;
+        Require(_sessionList.Items.Count == 0, "Provider and query filters must combine.");
+        _sessionProvider.SelectedIndex = 0;
+        _settings = _settings with { HideSensitiveInfo = true };
+        ApplyPrivacy();
+        Require(_sessionSearch.Text == "" && !_sessionSearch.Enabled, "Privacy must clear and disable title searches.");
+        Require(_sessionList.Items.Count == 2 && _sessionList.Items.Cast<ListViewItem>().All(i => i.SubItems[1].Text == "Conversation hidden"), "Privacy must mask every conversation title.");
+        Require(!Descendants(this).Concat(Descendants(_flyout)).Any(c => c.Text.Contains("private@example.test")), "Private account details must not reach controls.");
+        Require(_latestSnapshots.Single().Detail == "private@example.test", "Privacy must preserve the original provider data.");
+        using var settings = new SettingsDialog(new AppSettings(ClaudeConfigDirectory: @"C:\private", HideSensitiveInfo: true), false);
+        Require(Descendants(settings).OfType<TextBox>().All(t => t.UseSystemPasswordChar), "Private settings paths must be masked.");
+    }
+
+    private static void VerifyStartupRegistration() {
+        var path = @"Software\Toki\Smoke-" + Guid.NewGuid().ToString("N");
+        try {
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(path);
+            key.SetValue("Unrelated", "keep");
+            LaunchAtLogin.SetRegistration(key, true, Application.ExecutablePath);
+            Require((string?)key.GetValue(LaunchAtLogin.ValueName) == $"\"{Application.ExecutablePath}\" --background", "Startup must quote the executable path and launch quietly.");
+            var rejected = false;
+            try { LaunchAtLogin.SetRegistration(key, true, "relative.exe"); } catch (InvalidOperationException) { rejected = true; }
+            Require(rejected && key.GetValue(LaunchAtLogin.ValueName) is string, "Invalid startup paths must preserve the existing registration.");
+            LaunchAtLogin.SetRegistration(key, false, Application.ExecutablePath);
+            Require(key.GetValue(LaunchAtLogin.ValueName) is null && (string?)key.GetValue("Unrelated") == "keep", "Removing startup must preserve other entries.");
+        } finally {
+            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
         }
     }
 

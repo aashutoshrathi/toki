@@ -33,7 +33,7 @@ jobs:
     name: Build, test and package
     runs-on: windows-latest
     env:
-      PREVIEW_VERSION: 4.0.0-preview.3
+      PREVIEW_VERSION: 4.0.0-preview.4
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,18 +71,23 @@ jobs:
           $env:TOKI_SMOKE_FLYOUT_SCREENSHOT = Join-Path $PWD 'artifacts/windows/flyout-smoke.png'
           $env:TOKI_SMOKE_SETTINGS_SCREENSHOT = Join-Path $PWD 'artifacts/windows/settings-smoke.png'
           $env:TOKI_SMOKE_ACTIVITY_SCREENSHOT = Join-Path $PWD 'artifacts/windows/activity-smoke.png'
+          $env:TOKI_SMOKE_PRIVACY_SCREENSHOT = Join-Path $PWD 'artifacts/windows/privacy-smoke.png'
           $env:TOKI_SMOKE_REMOTE_SCREENSHOT = Join-Path $PWD 'artifacts/windows/remote-smoke.png'
           $errorPath = Join-Path $env:RUNNER_TEMP 'toki-smoke-error.txt'
-          $process = Start-Process -FilePath $exePath -ArgumentList '--smoke-test' -PassThru -RedirectStandardError $errorPath
-          if (-not $process.WaitForExit(120000)) {
-              $process.Kill()
-              throw 'Toki.exe --smoke-test did not exit within 120 seconds.'
-          }
-          if ($process.ExitCode -ne 0) {
-              if (Test-Path -LiteralPath $errorPath) {
-                  Get-Content -LiteralPath $errorPath
+          foreach ($background in @($false, $true)) {
+              $smokeArguments = @('--smoke-test')
+              if ($background) { $smokeArguments += '--background' }
+              $process = Start-Process -FilePath $exePath -ArgumentList $smokeArguments -PassThru -RedirectStandardError $errorPath
+              if (-not $process.WaitForExit(120000)) {
+                  $process.Kill()
+                  throw 'Toki.exe --smoke-test did not exit within 120 seconds.'
               }
-              throw "Toki.exe --smoke-test exited with code $($process.ExitCode)."
+              if ($process.ExitCode -ne 0) {
+                  if (Test-Path -LiteralPath $errorPath) {
+                      Get-Content -LiteralPath $errorPath
+                  }
+                  throw "Toki.exe --smoke-test exited with code $($process.ExitCode)."
+              }
           }
 
       - name: Test packaged remote server

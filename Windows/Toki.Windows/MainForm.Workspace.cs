@@ -15,6 +15,9 @@ internal sealed partial class MainForm {
     private readonly ListBox _eventList = new();
     private readonly ListView _sessionList = new();
     private readonly Label _scanStatus = new();
+    private readonly TextBox _sessionSearch = new() { PlaceholderText = "Search conversation or project", Width = 340, Name = "SessionSearch" };
+    private readonly ComboBox _sessionProvider = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140, Name = "SessionProviderFilter" };
+    private bool _scanIncomplete;
     private readonly ComboBox _reach = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _addresses = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _shareTranscripts = new() { Text = "Share recent conversation transcripts with paired devices", AutoSize = true };
@@ -53,10 +56,22 @@ internal sealed partial class MainForm {
         layout.Controls.Add(_eventList, 0, 2);
         activity.Controls.Add(layout);
         var sessions = Page("Recent sessions");
-        var sessionLayout = VerticalLayout(62, -1);
+        var sessionLayout = VerticalLayout(42, 62, -1);
+        var filters = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+        _sessionSearch.BackColor = Theme.Card;
+        _sessionSearch.ForeColor = Theme.Text;
+        _sessionSearch.AccessibleName = "Search recent conversations";
+        _sessionSearch.Enabled = !_settings.HideSensitiveInfo;
+        _sessionProvider.AccessibleName = "Filter by provider";
+        _sessionProvider.Items.AddRange(["All providers", "Claude Code", "Codex"]);
+        _sessionProvider.SelectedIndex = 0;
+        _sessionSearch.TextChanged += (_, _) => RenderSessionList();
+        _sessionProvider.SelectedIndexChanged += (_, _) => RenderSessionList();
+        filters.Controls.AddRange([_sessionSearch, _sessionProvider]);
+        sessionLayout.Controls.Add(filters, 0, 0);
         _scanStatus.Dock = DockStyle.Fill;
         _scanStatus.Text = "Recent local conversations, not a list of live agents. Refreshes every 15 seconds.";
-        sessionLayout.Controls.Add(_scanStatus, 0, 0);
+        sessionLayout.Controls.Add(_scanStatus, 0, 1);
         _sessionList.Dock = DockStyle.Fill;
         _sessionList.View = View.Details;
         _sessionList.FullRowSelect = true;
@@ -65,7 +80,7 @@ internal sealed partial class MainForm {
         _sessionList.Columns.Add("Provider", 100);
         _sessionList.Columns.Add("Conversation", 400);
         _sessionList.Columns.Add("Last written", 180);
-        sessionLayout.Controls.Add(_sessionList, 0, 1);
+        sessionLayout.Controls.Add(_sessionList, 0, 2);
         sessions.Controls.Add(sessionLayout);
         Page("Remote viewing").Controls.Add(CreateRemotePanel());
         _workspaceTimer.Tick += async (_, _) => {
@@ -201,11 +216,15 @@ internal sealed partial class MainForm {
         _reach.Enabled = !running;
         _remoteToggle.Text = running ? "Stop sharing" : "Start sharing";
         _connectLink.Text = running && _remote.Token is { } token && _addresses.SelectedItem is string address ? $"http://{address}:8765/?token={token}" : "";
+        _connectLink.UseSystemPasswordChar = _settings.HideSensitiveInfo;
         _remoteStatus.Text = "Off. Recent conversations stay on this computer.";
         if (running) {
             _remoteStatus.Text = _remote.PairingCode is { } code
                 ? $"Verification code: {code} (rotates every 2 minutes). Devices below can be revoked."
                 : "Starting server... If this persists, stop and check port 8765.";
+            if (_settings.HideSensitiveInfo && _remote.PairingCode is not null) {
+                _remoteStatus.Text = "Sharing is on. Pairing details hidden on this PC.";
+            }
         }
         var selected = _devices.SelectedIndex >= 0 && _devices.SelectedIndex < _deviceIds.Count ? _deviceIds[_devices.SelectedIndex] : null;
         _devices.Items.Clear();
@@ -215,7 +234,8 @@ internal sealed partial class MainForm {
             if (json.RootElement.ValueKind == JsonValueKind.Object && json.RootElement.TryGetProperty("devices", out var devices)) {
                 foreach (var device in devices.EnumerateArray()) {
                     _deviceIds.Add(device.GetProperty("id").GetString()!);
-                    _devices.Items.Add($"{device.GetProperty("name").GetString()} - {device.GetProperty("id").GetString()}");
+                    _devices.Items.Add(_settings.HideSensitiveInfo ? $"Paired device {_deviceIds.Count}"
+                        : $"{device.GetProperty("name").GetString()} - {device.GetProperty("id").GetString()}");
                 }
             }
         } catch (JsonException) {
@@ -247,13 +267,8 @@ internal sealed partial class MainForm {
                 return;
             }
             _sessions = result.Sessions;
-            _scanStatus.Text = "Recent conversations, not live agents. Up to 32 files; refreshed every 15 seconds." + (result.Incomplete ? " Some history was unreadable or exceeded scan limits." : "");
-            _sessionList.BeginUpdate();
-            _sessionList.Items.Clear();
-            foreach (var session in _sessions) {
-                _sessionList.Items.Add(new ListViewItem([session.Provider == "claude" ? "Claude Code" : "Codex", session.Title, session.Modified.ToLocalTime().ToString("g")]));
-            }
-            _sessionList.EndUpdate();
+            _scanIncomplete = result.Incomplete;
+            RenderSessionList();
         } catch (OperationCanceledException) { } catch (Exception) {
             if (!CanApplyRefreshResults()) {
                 return;
@@ -264,6 +279,21 @@ internal sealed partial class MainForm {
         }
     }
 
+    private void RenderSessionList() {
+        var provider = _sessionProvider.SelectedIndex switch { 1 => "claude", 2 => "codex", _ => null };
+        var visible = SessionFilter.Apply(_sessions, provider, _settings.HideSensitiveInfo ? "" : _sessionSearch.Text);
+        _scanStatus.Text = $"{visible.Count} of {_sessions.Count} recent conversations (not live agents). Refreshes every 15 seconds."
+            + (_settings.HideSensitiveInfo ? " Reveal sensitive info to search." : "")
+            + (_scanIncomplete ? " Some history was unreadable or exceeded scan limits." : "");
+        _sessionList.BeginUpdate();
+        _sessionList.Items.Clear();
+        foreach (var session in visible) {
+            _sessionList.Items.Add(new ListViewItem([session.Provider == "claude" ? "Claude Code" : "Codex",
+                _settings.HideSensitiveInfo ? "Conversation hidden" : session.Title, session.Modified.ToLocalTime().ToString("g")]));
+        }
+        _sessionList.EndUpdate();
+    }
+
     private void PublishRemote() => _remote.Publish(_latestSnapshots, _sessions, _shareTranscripts.Checked);
 
     private void RenderActivity() {
@@ -271,7 +301,8 @@ internal sealed partial class MainForm {
         _eventList.BeginUpdate();
         _eventList.Items.Clear();
         foreach (var entry in _activity.Events) {
-            _eventList.Items.Add($"{entry.At.ToLocalTime():g}  {entry.Category}: {entry.Detail}");
+            var detail = _settings.HideSensitiveInfo ? "Details hidden" : entry.Detail;
+            _eventList.Items.Add($"{entry.At.ToLocalTime():g}  {entry.Category}: {detail}");
         }
         _eventList.EndUpdate();
     }
