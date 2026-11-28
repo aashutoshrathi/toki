@@ -10,3 +10,8 @@ __pycache__/
 *.ts.net.crt
 *.ts.net.key
 graphify-out/
+
+# Windows preview build outputs
+Windows/**/bin/
+Windows/**/obj/
+artifacts/windows/

@@ -103,6 +103,10 @@ swift run Toki                # run in place
 scripts/install-app.sh        # build a bundle and install to ~/Applications
 ```
 
+### Windows preview
+
+A native Windows 11 x64 preview is in progress. It is not a released installer yet. Builds come from GitHub Actions. See [Windows preview](docs/windows.md) for setup, the tester checklist, and current limits.
+
 ## Documentation
 
 | | |
