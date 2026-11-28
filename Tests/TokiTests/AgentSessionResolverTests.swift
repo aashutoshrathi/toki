@@ -47,20 +47,38 @@ final class AgentSessionResolverTests: XCTestCase {
     }
 
     func testRexEnvironmentParsesTailEnvVarsAndRejectsUnsafeValues() {
-        // Prompt text in argv may mention REX_BLOCK; the real env vars appear at the tail of `ps -E`.
-        let output = """
-        /Users/me/.local/bin/agy -i inspect REX_BLOCK=block:fake-from-argv PATH=/usr/bin REX_BLOCK=block:01a22155-9ff7-79eb-9d17-87e13f3572ca REX_SERVER=unix:///Users/me/Library/Application%20Support/rex/server.sock
-        """
-        let env = AgentSessionResolver.rexEnvironment(fromPSOutput: output)
+        // Prompt text in argv may mention REX_BLOCK; only the environment suffix after argv is parsed.
+        let argv = "/Users/me/.local/bin/agy -i inspect REX_BLOCK=block:fake-from-argv"
+        let output = "\(argv) PATH=/usr/bin REX_BLOCK=block:01a22155-9ff7-79eb-9d17-87e13f3572ca REX_SERVER=unix:///Users/me/Library/Application%20Support/rex/server.sock"
+        let env = AgentSessionResolver.rexEnvironment(fromPSOutput: output, commandOutput: argv)
         XCTAssertEqual(env?.blockID, "block:01a22155-9ff7-79eb-9d17-87e13f3572ca")
         XCTAssertEqual(env?.server, "unix:///Users/me/Library/Application%20Support/rex/server.sock")
 
-        XCTAssertNil(AgentSessionResolver.rexEnvironment(fromPSOutput: "claude REX_BLOCK=../bad"))
+        // When macOS hides the environment, `ps -E` equals `ps` and argv REX_BLOCK must be ignored.
+        XCTAssertNil(AgentSessionResolver.rexEnvironment(fromPSOutput: argv, commandOutput: argv))
+        // When the env suffix carries no REX_BLOCK, argv REX_BLOCK must still be ignored.
+        XCTAssertNil(AgentSessionResolver.rexEnvironment(fromPSOutput: "\(argv) PATH=/usr/bin", commandOutput: argv))
+
+        XCTAssertNil(AgentSessionResolver.rexEnvironment(fromPSOutput: "claude REX_BLOCK=../bad", commandOutput: "claude"))
         let flagServer = AgentSessionResolver.rexEnvironment(
-            fromPSOutput: "claude REX_BLOCK=block:abc123 REX_SERVER=--malicious"
+            fromPSOutput: "claude REX_BLOCK=block:abc123 REX_SERVER=--malicious",
+            commandOutput: "claude"
         )
         XCTAssertEqual(flagServer?.blockID, "block:abc123")
         XCTAssertNil(flagServer?.server)
+    }
+
+    func testRexCLIRunDrainsLargeOutputBeyondPipeBuffer() throws {
+        // Exceeds the ~64 KB macOS pipe buffer; waiting before draining would deadlock until timeout.
+        let data = try XCTUnwrap(RexCLI.run("/usr/bin/python3", ["-c", "import sys; sys.stdout.write('x' * 262144)"], timeout: 5))
+        XCTAssertEqual(data.count, 262_144)
+    }
+
+    func testRexCLIRunReturnsNilOnTimeout() {
+        let started = Date()
+        let result = RexCLI.run("/bin/sleep", ["10"], timeout: 0.25)
+        XCTAssertNil(result)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2.0)
     }
 
     func testRexCLIBaseArgumentsAlwaysDisableAutostart() {

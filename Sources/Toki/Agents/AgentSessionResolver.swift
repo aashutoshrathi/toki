@@ -823,18 +823,26 @@ enum AgentSessionResolver {
     }
 
     static func rexEnvironment(ofPID pid: Int32) -> RexEnvironment? {
-        guard let output = Shell.output("/bin/ps", ["-ww", "-E", "-p", String(pid), "-o", "command="]) else {
+        guard let commandOutput = Shell.output("/bin/ps", ["-ww", "-p", String(pid), "-o", "command="]),
+              let envOutput = Shell.output("/bin/ps", ["-ww", "-E", "-p", String(pid), "-o", "command="]) else {
             return nil
         }
-        return rexEnvironment(fromPSOutput: output)
+        return rexEnvironment(fromPSOutput: envOutput, commandOutput: commandOutput)
     }
 
-    // Reads REX_BLOCK (and optional REX_SERVER) from `ps -ww -E` output. Scanning from the tail
-    // prefers the appended environment variables over any matching substring in argv itself.
-    static func rexEnvironment(fromPSOutput output: String) -> RexEnvironment? {
+    // Reads REX_BLOCK (and optional REX_SERVER) strictly from the environment suffix appended by
+    // `ps -ww -E` after argv (`ps -ww`). When macOS hides the environment (SIP/hardened runtime),
+    // both outputs are identical and this returns nil rather than misreading argv prompt text.
+    static func rexEnvironment(fromPSOutput output: String, commandOutput: String) -> RexEnvironment? {
+        let trimmedOutput = output.trimmingCharacters(in: CharacterSet.newlines)
+        let trimmedCommand = commandOutput.trimmingCharacters(in: CharacterSet.newlines)
+        guard !trimmedCommand.isEmpty, trimmedOutput.hasPrefix(trimmedCommand) else { return nil }
+        let suffix = trimmedOutput.dropFirst(trimmedCommand.count)
+        guard let first = suffix.first, first.isWhitespace else { return nil }
+
         var blockID: String?
         var server: String?
-        for token in output.split(whereSeparator: { $0.isWhitespace }).reversed() {
+        for token in suffix.split(whereSeparator: { $0.isWhitespace }).reversed() {
             if blockID == nil, token.hasPrefix("REX_BLOCK=") {
                 let candidate = String(token.dropFirst("REX_BLOCK=".count))
                 if isSafeRexBlock(candidate) {

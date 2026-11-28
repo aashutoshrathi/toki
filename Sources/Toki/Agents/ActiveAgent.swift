@@ -1065,29 +1065,51 @@ enum RexCLI {
         _ = run(binary, args)
     }
 
-    private static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 5) -> Data? {
+    // Drains stdout concurrently while the child runs so output exceeding the ~64 KB pipe buffer
+    // never blocks the child before the timeout expires.
+    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 5) -> Data? {
+        final class OutputBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = Data()
+            func set(_ data: Data) { lock.withLock { value = data } }
+            func get() -> Data { lock.withLock { value } }
+        }
+
         let process = Process()
         let output = Pipe()
+        let exited = DispatchSemaphore(value: 0)
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { _ in exited.signal() }
         do {
             try process.run()
         } catch {
             return nil
         }
 
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
+        let box = OutputBox()
+        let readHandle = output.fileHandleForReading
+        let readDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            box.set(readHandle.readDataToEndOfFile())
+            readDone.signal()
         }
-        guard !process.isRunning else {
+
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
+            if exited.wait(timeout: .now() + 0.5) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = exited.wait(timeout: .now() + 0.5)
+            }
+            _ = readDone.wait(timeout: .now() + 0.5)
             return nil
         }
+
+        _ = readDone.wait(timeout: .now() + 1)
         guard process.terminationStatus == 0 else { return nil }
-        return output.fileHandleForReading.readDataToEndOfFile()
+        return box.get()
     }
 }
 

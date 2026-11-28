@@ -339,6 +339,23 @@ def sanitised_t3(raw):
     return {"link": link, "mobile": systems[:T3_MOBILE_MAX]}
 
 
+def sanitised_tmux(raw):
+    if not isinstance(raw, dict):
+        return None
+    socket = raw.get("socket")
+    pane = raw.get("pane")
+    if (
+        not isinstance(socket, str)
+        or not socket.startswith("/")
+        or len(socket) > 1024
+        or any(ch.isspace() or ord(ch) < 32 for ch in socket)
+    ):
+        return None
+    if not isinstance(pane, str) or not re.fullmatch(r"%[0-9]+", pane):
+        return None
+    return {"socket": socket, "pane": pane}
+
+
 def agents_from_snapshot(processes, snapshot):
     """Enrich only the agents Toki's canonical scanner says are active."""
     by_pid = {process["pid"]: process for process in processes}
@@ -359,8 +376,10 @@ def agents_from_snapshot(processes, snapshot):
         agent["host"] = item.get("host")
         agent["title"] = item.get("title")
         agent["t3"] = sanitised_t3(item.get("t3"))
-        agent["rex_block"] = item.get("rexBlock")
-        agent["rex_server"] = item.get("rexServer")
+        tmux = sanitised_tmux(item.get("tmux"))
+        agent["tmux"] = tmux
+        agent["rex_block"] = None if tmux else item.get("rexBlock")
+        agent["rex_server"] = None if tmux else item.get("rexServer")
         # Toki's start-time match distinguishes co-located agents; cwd fallback cannot.
         provided = item.get("session")
         if provided:
@@ -1611,15 +1630,24 @@ def rex_base_cmd(rex, server=None):
     return cmd
 
 
-def parse_rex_env(ps_output):
-    """Extract REX_BLOCK and optional REX_SERVER from `ps -ww -E` output.
+def parse_rex_env(ps_output, command_output=None):
+    """Extract REX_BLOCK and optional REX_SERVER strictly from the environment suffix of `ps -ww -E`.
 
-    Scans from the end so appended environment variables win over any literal string in argv.
+    `command_output` is the matching `ps -ww` argv output without `-E`. When macOS hides a process's
+    environment (SIP/hardened runtime), both outputs match and the suffix is empty, preventing
+    REX_BLOCK=... inside argv prompt text from being misread as an environment variable.
     """
-    if not ps_output:
+    if not ps_output or not command_output:
+        return None, None
+    trimmed_env = ps_output.rstrip("\r\n")
+    trimmed_cmd = command_output.rstrip("\r\n")
+    if not trimmed_cmd or not trimmed_env.startswith(trimmed_cmd):
+        return None, None
+    suffix = trimmed_env[len(trimmed_cmd):]
+    if not suffix or not suffix[0].isspace():
         return None, None
     block, server = None, None
-    for token in reversed(ps_output.split()):
+    for token in reversed(suffix.split()):
         if block is None and token.startswith("REX_BLOCK="):
             candidate = token[len("REX_BLOCK="):]
             if safe_rex_block(candidate):
@@ -1636,8 +1664,11 @@ def parse_rex_env(ps_output):
 def rex_env_for_pid(pid):
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return None, None
-    out = shell(["/bin/ps", "-ww", "-E", "-p", str(pid), "-o", "command="])
-    return parse_rex_env(out)
+    cmd_out = shell(["/bin/ps", "-ww", "-p", str(pid), "-o", "command="])
+    if not cmd_out:
+        return None, None
+    env_out = shell(["/bin/ps", "-ww", "-E", "-p", str(pid), "-o", "command="])
+    return parse_rex_env(env_out, cmd_out)
 
 
 def rex_block_for_pids(rex, pids, server=None):
@@ -1725,6 +1756,17 @@ def rex_target_for_agent(tty=None, pid=None, rex_block=None, rex_server=None):
     return None, None, None
 
 
+def tmux_binary():
+    for tmux in ("/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/opt/local/bin/tmux", "/usr/bin/tmux"):
+        if os.path.exists(tmux):
+            return tmux
+    return None
+
+
+def tmux_cmd(tmux, socket, *args):
+    return [tmux, "-S", socket, *args] if socket else [tmux, *args]
+
+
 def tmux_pane_for_tty(tty):
     dev = tty if tty.startswith("/dev/") else f"/dev/{tty}"
     for tmux in ("/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"):
@@ -1740,6 +1782,19 @@ def tmux_pane_for_tty(tty):
     return None, None
 
 
+def resolve_tmux_route(tty, route=None, tmux_route=None):
+    """Return (tmux_bin, socket, pane) from an explicit route, Toki's tmux metadata, or default tmux."""
+    if route is not None:
+        if len(route) == 3:
+            return route
+        return route[0], None, route[1]
+    if tmux_route:
+        tmux = tmux_binary()
+        return (tmux, tmux_route["socket"], tmux_route["pane"]) if tmux else (None, tmux_route["socket"], None)
+    tmux, pane = tmux_pane_for_tty(tty)
+    return tmux, None, pane
+
+
 def osascript(source):
     return shell(["/usr/bin/osascript", "-e", source], timeout=6) is not None
 
@@ -1752,6 +1807,8 @@ def agent_is_writable(agent):
     tty = agent.get("tty")
     if not safe_tty(tty):
         return False
+    if agent.get("tmux"):
+        return tmux_binary() is not None
     host = agent.get("host")
     if host is None or host in SCRIPTED_TERMINAL_HOSTS:
         return True
@@ -1996,7 +2053,7 @@ def screen_readers(host):
     return (iterm_read, ghostty_read, rex_read, terminal_read) if host is None else ()
 
 
-def capture_screen(tty, route=None, host=None, pid=None, rex_block=None, rex_server=None, rex_target=None):
+def capture_screen(tty, route=None, host=None, pid=None, rex_block=None, rex_server=None, rex_target=None, tmux_route=None):
     """The visible terminal text for an agent's tty, or None when no route can read it. Mirrors an
     interactive picker (e.g. /model) on the phone through the same routes send_input writes to:
     tmux, iTerm, Ghostty, Rex, then Terminal. tmux, iTerm, and Terminal report the visible region;
@@ -2007,10 +2064,13 @@ def capture_screen(tty, route=None, host=None, pid=None, rex_block=None, rex_ser
     only read plain text."""
     if not safe_tty(tty):
         return None
-    tmux, pane = route if route is not None else tmux_pane_for_tty(tty)
+    tmux, socket, pane = resolve_tmux_route(tty, route=route, tmux_route=tmux_route)
     if pane:
-        out = shell([tmux, "capture-pane", "-e", "-p", "-t", pane])
+        out = shell(tmux_cmd(tmux, socket, "capture-pane", "-e", "-p", "-t", pane))
         return trim_screen(out) if out is not None else None
+    if tmux_route:
+        # Agent is known to live inside tmux; never read the outer terminal surface instead.
+        return None
     for reader in screen_readers(host):
         if reader is rex_read:
             out = reader(tty, target=rex_target, pid=pid, rex_block=rex_block, rex_server=rex_server)
@@ -2021,14 +2081,14 @@ def capture_screen(tty, route=None, host=None, pid=None, rex_block=None, rex_ser
     return None
 
 
-def send_tmux_input(tmux, pane, text, key, raw):
+def send_tmux_input(tmux, pane, text, key, raw, socket=None):
     if key:
-        return shell([tmux, "send-keys", "-t", pane, TMUX_KEYS[key]]) is not None
-    ok = shell([tmux, "send-keys", "-t", pane, "-l", text]) is not None
+        return shell(tmux_cmd(tmux, socket, "send-keys", "-t", pane, TMUX_KEYS[key])) is not None
+    ok = shell(tmux_cmd(tmux, socket, "send-keys", "-t", pane, "-l", text)) is not None
     if raw:
         return ok
     time.sleep(SUBMIT_DELAY)
-    return ok and shell([tmux, "send-keys", "-t", pane, "Enter"]) is not None
+    return ok and shell(tmux_cmd(tmux, socket, "send-keys", "-t", pane, "Enter")) is not None
 
 
 def send_iterm_input(tty, text, key, raw):
@@ -2097,13 +2157,18 @@ def scripted_input_routes(host):
     return ()
 
 
-def send_input(tty, text=None, key=None, raw=False, route=None, host=None, pid=None, rex_block=None, rex_server=None, rex_target=None):
+def send_input(tty, text=None, key=None, raw=False, route=None, host=None, pid=None, rex_block=None, rex_server=None, rex_target=None, tmux_route=None):
     """Deliver input to the agent's terminal. Returns (ok, how)."""
     if not safe_tty(tty):
         return False, "unsafe tty"
-    tmux, pane = route if route is not None else tmux_pane_for_tty(tty)
+    tmux, socket, pane = resolve_tmux_route(tty, route=route, tmux_route=tmux_route)
     if pane:
+        if socket:
+            return send_tmux_input(tmux, pane, text, key, raw, socket=socket), "tmux"
         return send_tmux_input(tmux, pane, text, key, raw), "tmux"
+    if tmux_route:
+        # Agent is known to live inside tmux; never deliver input to the outer terminal block.
+        return False, NO_TERMINAL_ROUTE
     for writer, name in scripted_input_routes(host):
         if writer is send_rex_input:
             result = writer(tty, text, key, raw, target=rex_target, pid=pid, rex_block=rex_block, rex_server=rex_server)
@@ -2114,7 +2179,7 @@ def send_input(tty, text=None, key=None, raw=False, route=None, host=None, pid=N
     return False, NO_TERMINAL_ROUTE
 
 
-def send_sequence(tty, items, host=None, pid=None, rex_block=None, rex_server=None):
+def send_sequence(tty, items, host=None, pid=None, rex_block=None, rex_server=None, tmux_route=None):
     """Deliver an ordered run of keystrokes -- named keys (Enter/Tab/arrows/Esc) and single
     characters typed as-is -- to answer a picker. Stops at the first failure so a half-delivered
     answer does not keep going. Returns (ok, how).
@@ -2125,13 +2190,17 @@ def send_sequence(tty, items, host=None, pid=None, rex_block=None, rex_server=No
     """
     if not safe_tty(tty):
         return False, "unsafe tty"
-    route = tmux_pane_for_tty(tty)
     extra = {}
-    if not route[1] and (host == REX_BUNDLE_ID or rex_block is not None or pid is not None):
-        if host in (None, REX_BUNDLE_ID):
-            rex_target = rex_target_for_agent(tty=tty, pid=pid, rex_block=rex_block, rex_server=rex_server)
-            if rex_target and rex_target[1]:
-                extra["rex_target"] = rex_target
+    if tmux_route:
+        route = resolve_tmux_route(tty, tmux_route=tmux_route)
+        extra["tmux_route"] = tmux_route
+    else:
+        route = tmux_pane_for_tty(tty)
+        if not route[1] and (host == REX_BUNDLE_ID or rex_block is not None or pid is not None):
+            if host in (None, REX_BUNDLE_ID):
+                rex_target = rex_target_for_agent(tty=tty, pid=pid, rex_block=rex_block, rex_server=rex_server)
+                if rex_target and rex_target[1]:
+                    extra["rex_target"] = rex_target
     how = "sequence"
     for i, item in enumerate(items):
         if i:
@@ -2792,6 +2861,7 @@ class Handler(BaseHTTPRequestHandler):
                 pid=agent.get("pid"),
                 rex_block=agent.get("rex_block"),
                 rex_server=agent.get("rex_server"),
+                tmux_route=agent.get("tmux"),
             )
             if text is None:
                 return self._json({"ok": False, "error": NO_TERMINAL_ROUTE})
@@ -2941,6 +3011,7 @@ class Handler(BaseHTTPRequestHandler):
                 pid=agent.get("pid"),
                 rex_block=agent.get("rex_block"),
                 rex_server=agent.get("rex_server"),
+                tmux_route=agent.get("tmux"),
             )
         else:
             raw = bool(body.get("raw")) and text is not None and len(text) == 1
@@ -2953,6 +3024,7 @@ class Handler(BaseHTTPRequestHandler):
                 pid=agent.get("pid"),
                 rex_block=agent.get("rex_block"),
                 rex_server=agent.get("rex_server"),
+                tmux_route=agent.get("tmux"),
             )
         self._json({"ok": ok, "how": how}, 200 if ok else 502)
 

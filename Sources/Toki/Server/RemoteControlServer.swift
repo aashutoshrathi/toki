@@ -708,11 +708,17 @@ final class RemoteControlServer: ObservableObject {
             if let thread = agent.t3Thread, let url = thread.url {
                 entry["t3"] = ["link": url.absoluteString, "mobile": thread.mobileOSes]
             }
-            if let rexBlock = agent.rexBlock {
-                entry["rexBlock"] = rexBlock
-            }
-            if let rexServer = agent.rexServer {
-                entry["rexServer"] = rexServer
+            if let tmux = agent.tmuxRoute {
+                // Agents inside tmux (including custom `-L`/`-S` servers) must route Remote Control
+                // strictly to their tmux pane, never falling back to the outer terminal block.
+                entry["tmux"] = ["socket": tmux.socket, "pane": tmux.paneID]
+            } else {
+                if let rexBlock = agent.rexBlock {
+                    entry["rexBlock"] = rexBlock
+                }
+                if let rexServer = agent.rexServer {
+                    entry["rexServer"] = rexServer
+                }
             }
             return entry
         }

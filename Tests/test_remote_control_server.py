@@ -1014,11 +1014,15 @@ class RexRemoteControlTests(unittest.TestCase):
         self.assertEqual(result[0]["rex_server"], self.SERVER)
 
     def test_parse_rex_env_prefers_tail_env_and_validates(self):
-        ps_out = f"agy -i REX_BLOCK=block:from-argv PATH=/usr/bin REX_BLOCK={self.BLOCK} REX_SERVER={self.SERVER}"
-        self.assertEqual(toki_remote.parse_rex_env(ps_out), (self.BLOCK, self.SERVER))
-        self.assertEqual(toki_remote.parse_rex_env("claude REX_BLOCK=../bad"), (None, None))
+        argv = "agy -i REX_BLOCK=block:from-argv"
+        ps_out = f"{argv} PATH=/usr/bin REX_BLOCK={self.BLOCK} REX_SERVER={self.SERVER}"
+        self.assertEqual(toki_remote.parse_rex_env(ps_out, argv), (self.BLOCK, self.SERVER))
+        # When macOS hides env (ps -E == ps) or env omits REX_BLOCK, argv prompt text is ignored.
+        self.assertEqual(toki_remote.parse_rex_env(argv, argv), (None, None))
+        self.assertEqual(toki_remote.parse_rex_env(f"{argv} PATH=/usr/bin", argv), (None, None))
+        self.assertEqual(toki_remote.parse_rex_env("claude REX_BLOCK=../bad", "claude"), (None, None))
         self.assertEqual(
-            toki_remote.parse_rex_env(f"claude REX_BLOCK={self.BLOCK} REX_SERVER=--bad"),
+            toki_remote.parse_rex_env(f"claude REX_BLOCK={self.BLOCK} REX_SERVER=--bad", "claude"),
             (self.BLOCK, None),
         )
 
@@ -1082,6 +1086,56 @@ class RexRemoteControlTests(unittest.TestCase):
         self.assertEqual(how, "tmux")
         send_tmux.assert_called_once()
         send_rex.assert_not_called()
+
+    def test_custom_socket_tmux_inside_rex_targets_socket_and_never_falls_back_to_rex(self):
+        tmux_route = {"socket": "/private/tmp/tmux-501/work", "pane": "%7"}
+        calls = []
+
+        def fake_shell(cmd, timeout=5, input_text=None):
+            calls.append(cmd)
+            return "pane output\n"
+
+        with mock.patch.object(toki_remote, "tmux_binary", return_value="/opt/homebrew/bin/tmux"), \
+                mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "shell", fake_shell), \
+                mock.patch.object(toki_remote, "send_rex_input") as send_rex, \
+                mock.patch.object(toki_remote, "rex_read") as rex_read, \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, how = toki_remote.send_input(
+                "ttys006", text="hello", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+            screen = toki_remote.capture_screen(
+                "ttys006", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(how, "tmux")
+        self.assertEqual(screen, "pane output")
+        self.assertEqual(calls, [
+            ["/opt/homebrew/bin/tmux", "-S", "/private/tmp/tmux-501/work", "send-keys", "-t", "%7", "-l", "hello"],
+            ["/opt/homebrew/bin/tmux", "-S", "/private/tmp/tmux-501/work", "send-keys", "-t", "%7", "Enter"],
+            ["/opt/homebrew/bin/tmux", "-S", "/private/tmp/tmux-501/work", "capture-pane", "-e", "-p", "-t", "%7"],
+        ])
+        send_rex.assert_not_called()
+        rex_read.assert_not_called()
+
+        # Even if tmux binary is unavailable, a known tmux agent never falls back to Rex.
+        with mock.patch.object(toki_remote, "tmux_binary", return_value=None), \
+                mock.patch.object(toki_remote, "send_rex_input") as send_rex, \
+                mock.patch.object(toki_remote, "rex_read") as rex_read:
+            ok, _ = toki_remote.send_input(
+                "ttys006", key="enter", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+            screen = toki_remote.capture_screen(
+                "ttys006", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+        self.assertFalse(ok)
+        self.assertIsNone(screen)
+        send_rex.assert_not_called()
+        rex_read.assert_not_called()
 
     def test_rex_screen_capture_uses_vt_and_trims_osc_trailing_lines(self):
         vt_output = "\x1b[32mmodel-a\x1b[0m\n\x1b]8;;file:///tmp/a\x1b\\\x1b]8;;\x1b\\   \n"
