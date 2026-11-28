@@ -990,6 +990,237 @@ class GhosttyRemoteControlTests(unittest.TestCase):
         terminal.assert_not_called()
 
 
+class RexRemoteControlTests(unittest.TestCase):
+    BLOCK = "block:01a22155-9ff7-79eb-9d17-87e13f3572ca"
+    SERVER = "unix:///Users/me/Library/Application%20Support/rex/server.sock"
+
+    def test_rex_agent_is_writable(self):
+        self.assertTrue(toki_remote.agent_is_writable({
+            "tty": "ttys006", "host": toki_remote.REX_BUNDLE_ID,
+        }))
+
+    def test_canonical_snapshot_carries_rex_block_and_server(self):
+        processes = [
+            {"pid": 21, "ppid": 1, "provider": "codex", "command": "codex", "tty": "ttys006"},
+        ]
+        snapshot = [{
+            "pid": 21, "provider": "codex", "cwd": None, "title": "Rex chat",
+            "tty": "ttys006", "host": toki_remote.REX_BUNDLE_ID,
+            "rexBlock": self.BLOCK, "rexServer": self.SERVER,
+        }]
+        with mock.patch.object(toki_remote, "newest_codex_session", return_value="/tmp/session.jsonl"):
+            result = toki_remote.agents_from_snapshot(processes, snapshot)
+        self.assertEqual(result[0]["rex_block"], self.BLOCK)
+        self.assertEqual(result[0]["rex_server"], self.SERVER)
+
+    def test_tmux_snapshot_preserves_socket_paths_with_spaces(self):
+        route = {"socket": "/private/tmp/tmux-501/work socket", "pane": "%7"}
+        processes = [{"pid": 21, "ppid": 1, "provider": "codex", "command": "codex", "tty": "ttys006"}]
+        snapshot = [{
+            "pid": 21, "provider": "codex", "tty": "ttys006",
+            "host": toki_remote.REX_BUNDLE_ID, "tmux": route,
+            "rexBlock": self.BLOCK, "rexServer": self.SERVER,
+        }]
+        with mock.patch.object(toki_remote, "newest_codex_session", return_value="/tmp/session.jsonl"):
+            agent = toki_remote.agents_from_snapshot(processes, snapshot)[0]
+        self.assertEqual(agent["tmux"], route)
+        self.assertIsNone(agent["rex_block"])
+        self.assertIsNone(agent["rex_server"])
+        for socket in ("relative/socket", "--flag", "/tmp/socket\x00suffix", "/tmp/socket\n"):
+            self.assertIsNone(toki_remote.sanitised_tmux({"socket": socket, "pane": "%7"}))
+
+    def test_parse_rex_env_prefers_tail_env_and_validates(self):
+        argv = "agy -i REX_BLOCK=block:from-argv"
+        ps_out = f"{argv} PATH=/usr/bin REX_BLOCK={self.BLOCK} REX_SERVER={self.SERVER}"
+        self.assertEqual(toki_remote.parse_rex_env(ps_out, argv), (self.BLOCK, self.SERVER))
+        # When macOS hides env (ps -E == ps) or env omits REX_BLOCK, argv prompt text is ignored.
+        self.assertEqual(toki_remote.parse_rex_env(argv, argv), (None, None))
+        self.assertEqual(toki_remote.parse_rex_env(f"{argv} PATH=/usr/bin", argv), (None, None))
+        self.assertEqual(toki_remote.parse_rex_env("claude REX_BLOCK=../bad", "claude"), (None, None))
+        self.assertEqual(
+            toki_remote.parse_rex_env(f"claude REX_BLOCK={self.BLOCK} REX_SERVER=--bad", "claude"),
+            (self.BLOCK, None),
+        )
+
+    def test_text_is_sent_via_stdin_with_autostart_disabled(self):
+        calls = []
+
+        def fake_shell(cmd, timeout=5, input_text=None):
+            calls.append((cmd, input_text))
+            return ""
+
+        with mock.patch.object(toki_remote, "shell", fake_shell):
+            ok = toki_remote.rex_write(
+                "ttys006", text="--dash hello",
+                target=("/path/to/rex", self.BLOCK, self.SERVER),
+            )
+        self.assertTrue(ok)
+        self.assertEqual(calls, [(
+            ["/path/to/rex", "--autostart=false", "-S", self.SERVER, "send", "-b", self.BLOCK],
+            "--dash hello",
+        )])
+
+    def test_named_keys_use_rex_send_key_identifiers(self):
+        expected = {"enter": "enter", "esc": "escape", "up": "up", "down": "down", "tab": "tab"}
+        for toki_key, rex_key in expected.items():
+            calls = []
+            with mock.patch.object(toki_remote, "shell", lambda cmd, timeout=5, input_text=None: calls.append(cmd) or ""):
+                self.assertTrue(toki_remote.rex_write(
+                    "ttys006", key=toki_key, target=("/path/to/rex", self.BLOCK, None),
+                ))
+            self.assertEqual(calls[0], ["/path/to/rex", "--autostart=false", "send-key", "-b", self.BLOCK, rex_key])
+
+    def test_rex_text_is_submitted_without_probing_other_terminals(self):
+        calls = []
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "rex_binary", return_value="/path/to/rex"), \
+                mock.patch.object(toki_remote, "iterm_write") as iterm, \
+                mock.patch.object(toki_remote, "ghostty_write") as ghostty, \
+                mock.patch.object(toki_remote, "rex_write", side_effect=lambda tty, text=None, key=None, target=None: calls.append((text, key, target)) or True), \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, how = toki_remote.send_input(
+                "ttys006", text="hello", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, rex_server=self.SERVER,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(how, "rex")
+        self.assertEqual(calls, [
+            ("hello", None, ("/path/to/rex", self.BLOCK, self.SERVER)),
+            (None, "enter", ("/path/to/rex", self.BLOCK, self.SERVER)),
+        ])
+        iterm.assert_not_called()
+        ghostty.assert_not_called()
+
+    def test_tmux_inside_rex_prefers_tmux(self):
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=("/opt/homebrew/bin/tmux", "%2")), \
+                mock.patch.object(toki_remote, "send_tmux_input", return_value=True) as send_tmux, \
+                mock.patch.object(toki_remote, "send_rex_input") as send_rex:
+            ok, how = toki_remote.send_input(
+                "ttys006", key="enter", host=toki_remote.REX_BUNDLE_ID, rex_block=self.BLOCK,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(how, "tmux")
+        send_tmux.assert_called_once()
+        send_rex.assert_not_called()
+
+    def test_custom_socket_tmux_inside_rex_targets_socket_and_never_falls_back_to_rex(self):
+        tmux_route = {"socket": "/private/tmp/tmux-501/work", "pane": "%7"}
+        calls = []
+
+        def fake_shell(cmd, timeout=5, input_text=None):
+            calls.append(cmd)
+            return "pane output\n"
+
+        with mock.patch.object(toki_remote, "tmux_binary", return_value="/opt/homebrew/bin/tmux"), \
+                mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "shell", fake_shell), \
+                mock.patch.object(toki_remote, "send_rex_input") as send_rex, \
+                mock.patch.object(toki_remote, "rex_read") as rex_read, \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, how = toki_remote.send_input(
+                "ttys006", text="hello", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+            screen = toki_remote.capture_screen(
+                "ttys006", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(how, "tmux")
+        self.assertEqual(screen, "pane output")
+        self.assertEqual(calls, [
+            ["/opt/homebrew/bin/tmux", "-S", "/private/tmp/tmux-501/work", "send-keys", "-t", "%7", "-l", "hello"],
+            ["/opt/homebrew/bin/tmux", "-S", "/private/tmp/tmux-501/work", "send-keys", "-t", "%7", "Enter"],
+            ["/opt/homebrew/bin/tmux", "-S", "/private/tmp/tmux-501/work", "capture-pane", "-e", "-p", "-t", "%7"],
+        ])
+        send_rex.assert_not_called()
+        rex_read.assert_not_called()
+
+        # Even if tmux binary is unavailable, a known tmux agent never falls back to Rex.
+        with mock.patch.object(toki_remote, "tmux_binary", return_value=None), \
+                mock.patch.object(toki_remote, "send_rex_input") as send_rex, \
+                mock.patch.object(toki_remote, "rex_read") as rex_read:
+            ok, _ = toki_remote.send_input(
+                "ttys006", key="enter", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+            screen = toki_remote.capture_screen(
+                "ttys006", host=toki_remote.REX_BUNDLE_ID,
+                rex_block=self.BLOCK, tmux_route=tmux_route,
+            )
+        self.assertFalse(ok)
+        self.assertIsNone(screen)
+        send_rex.assert_not_called()
+        rex_read.assert_not_called()
+
+    def test_rex_screen_capture_uses_vt_and_trims_osc_trailing_lines(self):
+        vt_output = "\x1b[32mmodel-a\x1b[0m\n\x1b]8;;file:///tmp/a\x1b\\\x1b]8;;\x1b\\   \n"
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "rex_binary", return_value="/path/to/rex"), \
+                mock.patch.object(toki_remote, "shell", return_value=vt_output) as sh, \
+                mock.patch.object(toki_remote, "iterm_read") as iterm, \
+                mock.patch.object(toki_remote, "ghostty_read") as ghostty, \
+                mock.patch.object(toki_remote, "terminal_read") as terminal:
+            screen = toki_remote.capture_screen(
+                "ttys006", host=toki_remote.REX_BUNDLE_ID, rex_block=self.BLOCK,
+            )
+        self.assertEqual(screen, "\x1b[32mmodel-a\x1b[0m")
+        sh.assert_called_once_with(
+            ["/path/to/rex", "--autostart=false", "capture", "-b", self.BLOCK, "--trim", "--format=vt"],
+            timeout=6,
+        )
+        iterm.assert_not_called()
+        ghostty.assert_not_called()
+        terminal.assert_not_called()
+
+    def test_rex_sequence_resolves_target_once_and_reuses_it(self):
+        lookups = []
+        targets = []
+
+        def fake_target(tty=None, pid=None, rex_block=None, rex_server=None):
+            lookups.append((tty, pid, rex_block))
+            return ("/path/to/rex", self.BLOCK, None)
+
+        def fake_rex_write(tty, text=None, key=None, target=None):
+            targets.append((text, key, target))
+            return True
+
+        with mock.patch.object(toki_remote, "tmux_pane_for_tty", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "rex_target_for_agent", fake_target), \
+                mock.patch.object(toki_remote, "rex_write", fake_rex_write), \
+                mock.patch.object(toki_remote.time, "sleep", lambda *_: None):
+            ok, how = toki_remote.send_sequence(
+                "ttys006", ["1", "down", "enter"],
+                host=toki_remote.REX_BUNDLE_ID, pid=42, rex_block=self.BLOCK,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(how, "rex")
+        self.assertEqual(len(lookups), 1)
+        self.assertEqual(len(targets), 3)
+
+    def test_rex_target_falls_back_to_cli_process_inspection_when_env_hidden(self):
+        responses = {
+            ("/path/to/rex", "--autostart=false", "ls", "--json"): json.dumps({
+                "sessions": [{"session_id": "session:1"}],
+            }),
+            ("/path/to/rex", "--autostart=false", "block", "ls", "-s", "session:1", "--json"): json.dumps({
+                "blocks": [{"block_id": self.BLOCK, "creator_name": "com.superlogical.terminal"}],
+            }),
+            ("/path/to/rex", "--autostart=false", "block", "call", "-s", "session:1", "-b", self.BLOCK, "process"): json.dumps({
+                "child": {"pid": 100},
+                "foreground": {"pid": 555},
+                "ancestors": [{"pid": 101}],
+            }),
+        }
+        with mock.patch.object(toki_remote, "rex_binary", return_value="/path/to/rex"), \
+                mock.patch.object(toki_remote, "rex_env_for_pid", return_value=(None, None)), \
+                mock.patch.object(toki_remote, "shell", side_effect=lambda cmd, timeout=5, input_text=None: responses.get(tuple(cmd))):
+            self.assertEqual(
+                toki_remote.rex_target_for_agent(tty="ttys009", pid=555),
+                ("/path/to/rex", self.BLOCK, None),
+            )
+
+
 class SendSequenceTests(unittest.TestCase):
     def test_sequence_delivers_named_keys_and_characters_in_order(self):
         calls = []
@@ -1180,6 +1411,48 @@ class MachineNameTests(unittest.TestCase):
             toki_remote.machine_name()
             toki_remote.machine_name()
         self.assertEqual(len(calls), 1)
+
+
+class ModelExtractionTests(unittest.TestCase):
+    def setUp(self):
+        toki_remote._model_stream.clear()
+
+    def test_claude_ignores_synthetic_model_records(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            self.addCleanup(os.unlink, f.name)
+            f.write(json.dumps({"type": "assistant", "message": {"model": "claude-opus-5-5"}}) + "\n")
+            f.write(json.dumps({"type": "assistant", "message": {"model": "<synthetic>"}}) + "\n")
+            path = f.name
+        self.assertEqual(toki_remote.model_of({"provider": "claude", "session": path}), "claude-opus-5-5")
+
+    def test_antigravity_prefers_planner_response_model_from_transcript(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            self.addCleanup(os.unlink, f.name)
+            f.write(json.dumps({"type": "USER_INPUT", "content": "hi"}) + "\n")
+            f.write(json.dumps({"type": "PLANNER_RESPONSE", "model": "gemini-4-neon-high", "content": "ok"}) + "\n")
+            path = f.name
+        self.assertEqual(toki_remote.agy_model(path), "gemini-4-neon-high")
+
+    def test_antigravity_gen_metadata_fallback_takes_last_model_not_subagent_config(self):
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as home:
+            cid = "34e003e5-112a-4086-a004-6bebde670a8b"
+            logs_dir = os.path.join(home, ".gemini", "antigravity-cli", "brain", cid, ".system_generated", "logs")
+            conv_dir = os.path.join(home, ".gemini", "antigravity-cli", "conversations")
+            os.makedirs(logs_dir)
+            os.makedirs(conv_dir)
+            transcript = os.path.join(logs_dir, "transcript_full.jsonl")
+            open(transcript, "w").close()
+            db = os.path.join(conv_dir, cid + ".db")
+            con = sqlite3.connect(db)
+            con.execute("CREATE TABLE gen_metadata (idx INTEGER, data BLOB)")
+            blob = b"flash_lite\x15gemini-3.5-flash-lite\x10pro\x1egemini-4-hydrogen-tiered-xhigh\x00\rgemini-4-neon"
+            con.execute("INSERT INTO gen_metadata VALUES (1, ?)", (blob,))
+            con.commit()
+            con.close()
+            with mock.patch.object(toki_remote, "HOME", home):
+                self.assertEqual(toki_remote.agy_model(transcript), "gemini-4-neon")
 
 
 if __name__ == "__main__":

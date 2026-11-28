@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 3.4.0" src="https://img.shields.io/badge/version-3.4.0-2f80ed">
+  <img alt="Version 3.4.6" src="https://img.shields.io/badge/version-3.4.6-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -28,6 +28,19 @@
     <img src="docs/screenshot.png" alt="Toki menu bar popover with quota bars for Claude Code, Codex, Cursor, and OpenCode" width="420">
   </picture>
 </p>
+
+## 3.4.6 - The surprise release
+
+What began as a fix for missing Sarvam usage grew into a broader release:
+
+- **Rex terminal support:** discover and focus Rex agents, send replies, and mirror their terminal from your phone without macOS Automation or Accessibility permission.
+- **More reliable Remote Control:** prevent duplicate transcript bubbles, improve Claude and Antigravity model badges, and target the right tmux pane, including custom sockets.
+- **Sarvam through OpenCode and T3:** local usage now reaches the Sarvam card and daily analytics without being counted twice under OpenCode.
+- **Smaller Mac downloads:** separate Apple Silicon and Intel DMGs, automatic native-build selection, and a universal fallback for older updaters.
+- **Clearer quotas:** the 5-hour window appears before the 7-day window for Antigravity and Codex.
+- **Provider cleanup:** Gemini CLI support is removed. Existing configs still load, and Antigravity remains supported.
+
+See the [full 3.4.6 changelog](CHANGELOG.md#346---2026-11-28) for update behavior and compatibility details.
 
 ## What Toki does
 
@@ -49,7 +62,7 @@ Also: on-device Apple Intelligence summaries on macOS 26+, low-quota and session
 |---|---|
 | **Quota tracked** | Claude Code (multi-account), Codex, Cursor, Grok Build, Antigravity |
 | **Spend tracked** | Cursor, OpenCode, Pi, Sarvam Code, Vercel's fx |
-| **Sessions detected** | All of the above, plus Copilot CLI, Gemini CLI, Zed's agent panel, and ChatGPT-hosted Codex |
+| **Sessions detected** | All of the above, plus Copilot CLI, Zed's agent panel, and ChatGPT-hosted Codex |
 
 Toki works especially well with [`claude-swap`](https://github.com/realiti4/claude-swap): it reads the same Claude Code account registry, so accounts switch without either tool reimplementing the other's credential handling.
 
@@ -81,7 +94,7 @@ The `-r` matters. It also clears the bundled widget extension: right-clicking To
 
 ### Direct download
 
-Grab the latest `Toki_<version>_universal.dmg` from the [releases page](https://github.com/aashutoshrathi/toki/releases/latest), open it, and drag Toki to Applications. Updates install in-app once running.
+Grab the DMG for your Mac from the [releases page](https://github.com/aashutoshrathi/toki/releases/latest) — `Toki_<version>_arm64.dmg` for Apple Silicon, `Toki_<version>_x86_64.dmg` for Intel, or `Toki_<version>_all.dmg` for a universal bundle — open it, and drag Toki to Applications. Homebrew and in-app updates pick your Mac's native architecture automatically.
 
 ### From source
 

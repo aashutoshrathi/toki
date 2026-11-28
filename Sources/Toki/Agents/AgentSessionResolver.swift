@@ -716,6 +716,28 @@ enum AgentSessionResolver {
         return title ?? preview
     }
 
+    /// Resolved tmux location for an agent running inside a tmux pane, including the attached
+    /// client so click-to-focus can select the tmux pane and then focus the terminal tab hosting it.
+    struct TmuxRoute: Hashable, Sendable {
+        let socket: String
+        let windowID: String
+        let paneID: String
+        let clientPID: Int32
+        let clientTTY: String?
+    }
+
+    struct ResolvedHost: Equatable, Sendable {
+        let app: HostApp
+        let processID: Int32
+        let viaTmux: Bool
+        let tmuxRoute: TmuxRoute?
+    }
+
+    struct RexEnvironment: Equatable, Sendable {
+        let blockID: String
+        let server: String?
+    }
+
     // Walks the process ancestry for the hosting app. Returns the PID too: two builds of a
     // terminal share a bundle identifier, so identity alone cannot pick the right copy.
     //
@@ -727,20 +749,21 @@ enum AgentSessionResolver {
     // `viaTmux` marks a host reached by hopping through the tmux server. Such a host can change
     // without the agent's PID changing (detach/reattach from another terminal), so the caller
     // must re-resolve it rather than trust a cached value.
-    static func hostApp(ofPID pid: Int32, terminalTTY: String? = nil) -> (app: HostApp, processID: Int32, viaTmux: Bool)? {
+    static func hostApp(ofPID pid: Int32, terminalTTY: String? = nil) -> ResolvedHost? {
         var current = pid
         for _ in 0..<8 {
-            guard let output = Shell.output("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
+            // `-ww` keeps macOS `ps` from truncating long app paths (such as Rex Server.app or
+            // nested editor bundles) at 80 columns when stdout is not a TTY.
+            guard let output = Shell.output("/bin/ps", ["-ww", "-o", "ppid=,comm=", "-p", "\(current)"]) else { return nil }
             let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
                 .split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
             guard parts.count == 2, let ppid = Int32(parts[0]) else { return nil }
             let comm = String(parts[1]).lowercased()
             if let app = HostApp.match(comm: comm) {
-                return (app, current, false)
+                return ResolvedHost(app: app, processID: current, viaTmux: false, tmuxRoute: nil)
             }
             if comm.contains("tmux") {
-                guard let resolved = tmuxClientHostApp(paneTTY: terminalTTY, serverPID: current) else { return nil }
-                return (resolved.app, resolved.processID, true)
+                return tmuxClientHostApp(paneTTY: terminalTTY, serverPID: current)
             }
             if ppid <= 1 { return nil }
             current = ppid
@@ -752,38 +775,99 @@ enum AgentSessionResolver {
     // session and walking up from that client's process. Best effort: it needs a client
     // currently attached (a detached session isn't shown anywhere to focus) and the tmux
     // binary present in a standard location.
-    private static func tmuxClientHostApp(paneTTY: String?, serverPID: Int32) -> (app: HostApp, processID: Int32)? {
+    private static func tmuxClientHostApp(paneTTY: String?, serverPID: Int32) -> ResolvedHost? {
         guard let paneTTY,
               let tmux = tmuxBinary(),
               let socket = tmuxSocket(serverPID: serverPID) else { return nil }
         let wantedTTY = normalizedTTY(paneTTY)
 
-        guard let session = tmuxField(tmux, socket, ["list-panes", "-a", "-F", "#{pane_tty}\t#{session_name}"])
-            .first(where: { normalizedTTY($0.0) == wantedTTY })?.1 else { return nil }
+        guard let paneRow = tmuxColumns(tmux, socket, ["list-panes", "-a", "-F", "#{pane_tty}\t#{session_name}\t#{window_id}\t#{pane_id}"], count: 4)
+            .first(where: { normalizedTTY($0[0]) == wantedTTY }) else { return nil }
+        let session = paneRow[1]
+        let windowID = paneRow[2]
+        let paneID = paneRow[3]
 
-        for (clientSession, clientPID) in tmuxField(tmux, socket, ["list-clients", "-F", "#{session_name}\t#{client_pid}"])
-        where clientSession == session {
+        for clientRow in tmuxColumns(tmux, socket, ["list-clients", "-F", "#{session_name}\t#{client_pid}\t#{client_tty}"], count: 3)
+        where clientRow[0] == session {
             // The client process is itself named `tmux`, so start one level up to avoid
             // re-detecting tmux and looping; its parent chain descends from the terminal.
-            guard let pid = Int32(clientPID), let parent = parentPID(ofPID: pid) else { continue }
-            if let resolved = hostApp(ofPID: parent) { return (resolved.app, resolved.processID) }
+            guard let pid = Int32(clientRow[1]), let parent = parentPID(ofPID: pid) else { continue }
+            if let resolved = hostApp(ofPID: parent) {
+                let clientTTY = clientRow[2].isEmpty ? nil : clientRow[2]
+                let route = TmuxRoute(
+                    socket: socket,
+                    windowID: windowID,
+                    paneID: paneID,
+                    clientPID: pid,
+                    clientTTY: clientTTY
+                )
+                return ResolvedHost(app: resolved.app, processID: resolved.processID, viaTmux: true, tmuxRoute: route)
+            }
         }
         return nil
     }
 
-    // Splits a two-column tab-separated tmux `-F` listing into pairs. The server is targeted
+    // Splits a tab-separated tmux `-F` listing into fixed-width rows. The server is targeted
     // by its own socket so a custom `-L`/`-S` server resolves like the default one.
-    private static func tmuxField(_ tmux: String, _ socket: String, _ args: [String]) -> [(String, String)] {
+    private static func tmuxColumns(_ tmux: String, _ socket: String, _ args: [String], count: Int) -> [[String]] {
         guard let output = Shell.output(tmux, ["-S", socket] + args) else { return [] }
         return output.split(separator: "\n").compactMap { line in
-            let cols = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
-            return cols.count == 2 ? (cols[0], cols[1]) : nil
+            let cols = line.split(separator: "\t", maxSplits: count - 1, omittingEmptySubsequences: false).map(String.init)
+            return cols.count == count ? cols : nil
         }
     }
 
-    private static func tmuxBinary() -> String? {
+    static func tmuxBinary() -> String? {
         ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/opt/local/bin/tmux", "/usr/bin/tmux"]
             .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    static func rexEnvironment(ofPID pid: Int32) -> RexEnvironment? {
+        guard let commandOutput = Shell.output("/bin/ps", ["-ww", "-p", String(pid), "-o", "command="]),
+              let envOutput = Shell.output("/bin/ps", ["-ww", "-E", "-p", String(pid), "-o", "command="]) else {
+            return nil
+        }
+        return rexEnvironment(fromPSOutput: envOutput, commandOutput: commandOutput)
+    }
+
+    // Reads REX_BLOCK (and optional REX_SERVER) strictly from the environment suffix appended by
+    // `ps -ww -E` after argv (`ps -ww`). When macOS hides the environment (SIP/hardened runtime),
+    // both outputs are identical and this returns nil rather than misreading argv prompt text.
+    static func rexEnvironment(fromPSOutput output: String, commandOutput: String) -> RexEnvironment? {
+        let trimmedOutput = output.trimmingCharacters(in: CharacterSet.newlines)
+        let trimmedCommand = commandOutput.trimmingCharacters(in: CharacterSet.newlines)
+        guard !trimmedCommand.isEmpty, trimmedOutput.hasPrefix(trimmedCommand) else { return nil }
+        let suffix = trimmedOutput.dropFirst(trimmedCommand.count)
+        guard let first = suffix.first, first.isWhitespace else { return nil }
+
+        var blockID: String?
+        var server: String?
+        for token in suffix.split(whereSeparator: { $0.isWhitespace }).reversed() {
+            if blockID == nil, token.hasPrefix("REX_BLOCK=") {
+                let candidate = String(token.dropFirst("REX_BLOCK=".count))
+                if isSafeRexBlock(candidate) {
+                    blockID = candidate
+                }
+            } else if server == nil, token.hasPrefix("REX_SERVER=") {
+                let candidate = String(token.dropFirst("REX_SERVER=".count))
+                if isSafeRexServer(candidate) {
+                    server = candidate
+                }
+            }
+            if blockID != nil, server != nil { break }
+        }
+        guard let blockID else { return nil }
+        return RexEnvironment(blockID: blockID, server: server)
+    }
+
+    static func isSafeRexBlock(_ value: String) -> Bool {
+        value.range(of: #"^block:[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil
+    }
+
+    static func isSafeRexServer(_ value: String) -> Bool {
+        !value.isEmpty
+            && !value.hasPrefix("-")
+            && !value.contains(where: { $0.isWhitespace || $0.isNewline })
     }
 
     // The server's listening socket, read from its open unix-domain sockets so `-S` can
@@ -933,6 +1017,14 @@ struct HostApp: Hashable, Sendable {
     static let ghostty = HostApp(
         displayName: "Ghostty", bundleID: "com.mitchellh.ghostty", matchers: ["ghostty"]
     )
+    // Rex spawns terminal blocks from its background Rex Server.app daemon (LSUIElement) while
+    // the visible GUI lives in Rex.app under `com.superlogical.rex`. Matching either bundle lets
+    // discovery attribute the agent to Rex and activation fall through to the GUI app.
+    static let rex = HostApp(
+        displayName: "Rex",
+        bundleID: "com.superlogical.rex",
+        matchers: ["com.superlogical.rex", "rex server.app/contents/macos/rex", "rex.app/contents/macos/rex"]
+    )
     static let terminal = HostApp(
         displayName: "Terminal", bundleID: "com.apple.Terminal", matchers: ["terminal"]
     )
@@ -958,6 +1050,7 @@ struct HostApp: Hashable, Sendable {
         HostApp(displayName: "Alacritty", bundleID: "org.alacritty", matchers: ["alacritty"]),
         HostApp(displayName: "kitty", bundleID: "net.kovidgoyal.kitty", matchers: ["kitty"]),
         ghostty,
+        rex,
         terminal,
     ]
 

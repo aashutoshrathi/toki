@@ -872,4 +872,39 @@ final class RemoteControlServerTests: XCTestCase {
         XCTAssertNil(payload[0]["t3"])
         XCTAssertEqual(payload[0]["pid"] as? Int32, 10)
     }
+
+    func testAgentPayloadCarriesRexBlockAndServerOnlyWhenPresent() {
+        var rexAgent = claudeAgent(pid: 20, t3Thread: nil)
+        rexAgent.rexBlock = "block:01a22155-9ff7-79eb-9d17-87e13f3572ca"
+        rexAgent.rexServer = "unix:///tmp/rex.sock"
+        let plainAgent = claudeAgent(pid: 21, t3Thread: nil)
+
+        let payload = RemoteControlServer.agentPayload(from: [rexAgent, plainAgent])
+
+        XCTAssertEqual(payload[0]["rexBlock"] as? String, "block:01a22155-9ff7-79eb-9d17-87e13f3572ca")
+        XCTAssertEqual(payload[0]["rexServer"] as? String, "unix:///tmp/rex.sock")
+        XCTAssertNil(payload[0]["tmux"])
+        XCTAssertNil(payload[1]["rexBlock"])
+        XCTAssertNil(payload[1]["rexServer"])
+    }
+
+    func testAgentPayloadCarriesTmuxSocketAndPaneAndDropsRexFallbackForTmuxAgents() {
+        var tmuxInRex = claudeAgent(pid: 22, t3Thread: nil)
+        tmuxInRex.rexBlock = "block:01a22155-9ff7-79eb-9d17-87e13f3572ca"
+        tmuxInRex.rexServer = "unix:///tmp/rex.sock"
+        tmuxInRex.tmuxRoute = AgentSessionResolver.TmuxRoute(
+            socket: "/private/tmp/tmux-501/work",
+            windowID: "@1",
+            paneID: "%7",
+            clientPID: 500,
+            clientTTY: "/dev/ttys003"
+        )
+
+        let payload = RemoteControlServer.agentPayload(from: [tmuxInRex])
+        let tmux = payload[0]["tmux"] as? [String: String]
+        XCTAssertEqual(tmux?["socket"], "/private/tmp/tmux-501/work")
+        XCTAssertEqual(tmux?["pane"], "%7")
+        XCTAssertNil(payload[0]["rexBlock"])
+        XCTAssertNil(payload[0]["rexServer"])
+    }
 }

@@ -95,6 +95,8 @@ assert.match(app, /function resetTranscript/);
 assert.match(app, /if\s*\(ok\)\s*resetTranscript\(\)/);
 assert.match(app, /const epoch = logEpoch/);
 assert.match(app, /if\s*\(epoch\s*!=\s*logEpoch\)\s*return/);
+assert.match(app, /if\s*\(logInflight\)/);
+assert.match(app, /if\s*\(reqOffset\s*!=\s*offset\)\s*return/);
 assert.match(app, /r\.session\s*!==\s*logSession/);
 // Every kind of message links its URLs: the agent's reply through the Markdown renderer, your own
 // messages and the tool rows through linkify, which escapes as it goes.

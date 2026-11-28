@@ -145,8 +145,14 @@ final class ProviderQuotaTests: XCTestCase {
         let pinned = menuBarEntries(for: [snapshot], mode: .pinned, pinnedProviders: [.antigravity])
         XCTAssertEqual(pinned.first?.provider, .antigravity)
         XCTAssertEqual(pinned.first?.value, "80%")
-        XCTAssertEqual(snapshot.modelWindows.map(\.label), ["Gemini Models 7d", "Gemini Models 5h", "Claude and GPT models 7d"])
-        XCTAssertEqual(snapshot.modelWindows.map(\.duration), [604_800, 18_000, 604_800])
+        let labels = ["Gemini Models 5h", "Gemini Models 7d", "Claude and GPT models 7d"]
+        XCTAssertEqual(snapshot.allWindows.map(\.label), labels)
+        XCTAssertEqual(snapshot.allWindows.map(\.duration), [18_000, 604_800, 604_800])
+        XCTAssertEqual(snapshot.metrics.map(\.label), labels)
         XCTAssertTrue(snapshot.planWindows.isEmpty)
+
+        let payload = RemoteControlServer.usagePayload(from: [snapshot], preferences: AppPreferences(), now: now)
+        let remoteWindows = try XCTUnwrap(payload.first?["windows"] as? [[String: Any]])
+        XCTAssertEqual(remoteWindows.compactMap { $0["label"] as? String }, labels)
     }
 }

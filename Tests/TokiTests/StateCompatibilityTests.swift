@@ -159,7 +159,7 @@ final class StateCompatibilityTests: XCTestCase {
     // A state file written by a newer build that knows a provider this one doesn't must lose
     // only that pin, not the whole decode.
     func testUnknownPinnedProviderIsDroppedRatherThanThrown() throws {
-        let state = try decodeState(#"{"preferences": {"menuBarMode": "pinned", "menuBarPinnedProviders": ["codex", "sentientOverlord"]}}"#)
+        let state = try decodeState(#"{"preferences": {"menuBarMode": "pinned", "menuBarPinnedProviders": ["codex", "gemini", "sentientOverlord"]}}"#)
         XCTAssertEqual(state.preferences.menuBarPinnedProviders, [.codex])
     }
 
@@ -169,6 +169,43 @@ final class StateCompatibilityTests: XCTestCase {
         let state = try decodeState(#"{"preferences": {"menuBarMode": "smart"}}"#)
         XCTAssertEqual(state.preferences.menuBarDensity, .stacked)
         XCTAssertEqual(state.preferences.menuBarMode, .smart, "a stored mode still wins over the default")
+    }
+}
+
+final class ConfigCompatibilityTests: XCTestCase {
+    func testConfigSkipsGeminiCLIAccountsWithEitherSavedKey() throws {
+        let json = """
+        {
+          "refreshMinutes": 12,
+          "accountLabels": [{"email": "work@example.com", "nickname": "Work"}],
+          "accounts": [
+            {"id": "codex", "label": "Codex", "type": "codex", "notes": "Keep this"},
+            {"label": "Gemini", "type": "gemini"},
+            {"name": "Legacy Gemini", "provider": "gemini"},
+            {"id": "agy", "name": "Antigravity", "provider": "antigravity"}
+          ],
+          "aiInstructions": "Keep this too"
+        }
+        """
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+        try ConfigLoader.validate(config)
+        XCTAssertEqual(config.accounts.map(\.id), ["codex", "agy"])
+        XCTAssertEqual(config.accounts.map(\.provider), [.codex, .antigravity])
+        XCTAssertEqual(config.accounts.first?.notes, "Keep this")
+        XCTAssertEqual(config.accountLabels?.first?.nickname, "Work")
+        XCTAssertEqual(config.refreshMinutes, 12)
+        XCTAssertEqual(config.aiInstructions, "Keep this too")
+    }
+
+    func testConfigWithOnlyGeminiCLIAccountsLoadsForOnboarding() throws {
+        let json = #"{"accounts":[{"label":"Gemini","type":"gemini"}]}"#
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+        XCTAssertTrue(config.accounts.isEmpty)
+    }
+
+    func testConfigStillRejectsUnknownAccountTypes() {
+        let json = #"{"accounts":[{"label":"Other","type":"unrecognized"}]}"#
+        XCTAssertThrowsError(try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8)))
     }
 }
 

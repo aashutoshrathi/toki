@@ -31,6 +31,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate tag version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_BASE="${TAG_VERSION%%-*}"
+          APP_VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
+          if [[ "$TAG_BASE" != "$APP_VERSION" ]]; then
+            echo "Tag base version ($TAG_BASE) does not match appVersion ($APP_VERSION) in Constants.swift" >&2
+            exit 1
+          fi
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "TAG_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+
       - name: Import Developer ID certificate
         if: ${{ env.APPLE_CERTIFICATE_P12 != '' }}
         run: |
@@ -59,26 +71,46 @@ jobs:
 
       - name: Build and package
         env:
-          TOKI_RELEASE_VERSION: ${{ github.ref_name }}
+          TOKI_RELEASE_VERSION: ${{ env.TAG_VERSION }}
         run: |
-          export TOKI_RELEASE_VERSION="${TOKI_RELEASE_VERSION#v}"
           bash scripts/package-release.sh
 
-      - name: Notarize DMG
+      - name: Notarize DMGs
         # notarytool rejects ad-hoc signed binaries outright, so if notarization creds are
         # configured but the signing identity isn't, running this unconditionally would
         # fail the step (and so the whole release) instead of just skipping notarization
         # the way notarize.sh's own credential check does.
         if: ${{ env.APPLE_SIGNING_IDENTITY != '' }}
         run: |
-          VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
-          bash scripts/notarize.sh ".build/Toki_${VERSION}_universal.dmg"
+          PIDS=()
+          DMGS=(
+            ".build/Toki_${APP_VERSION}_all.dmg"
+            ".build/Toki_${APP_VERSION}_arm64.dmg"
+            ".build/Toki_${APP_VERSION}_x86_64.dmg"
+          )
+          for dmg in "${DMGS[@]}"; do
+            log="$RUNNER_TEMP/notarize-$(basename "$dmg").log"
+            bash scripts/notarize.sh "$dmg" > "$log" 2>&1 &
+            PIDS+=("$!:$dmg:$log")
+          done
+          FAILED=0
+          for entry in "${PIDS[@]}"; do
+            pid="${entry%%:*}"
+            rest="${entry#*:}"
+            dmg="${rest%%:*}"
+            log="${rest#*:}"
+            if ! wait "$pid"; then
+              FAILED=1
+            fi
+            echo "==> Notarization output for $dmg"
+            cat "$log"
+          done
+          exit "$FAILED"
 
-      - name: Create release and upload DMG
+      - name: Create release and upload DMGs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(grep '^let appVersion' Sources/Toki/Config/Constants.swift | sed 's/.*"\(.*\)"/\1/')
           # A hyphen in the tag (v2.5.0-beta.1) marks a GitHub prerelease: the in-app beta
           # channel offers it, while releases/latest (the stable channel) never returns it.
           PRERELEASE_FLAG=""
@@ -95,10 +127,39 @@ jobs:
           else
             NOTES_FLAGS=(--generate-notes)
           fi
+
+          UNIVERSAL_DMG="Toki_${APP_VERSION}_all.dmg"
+          ARM64_DMG="Toki_${APP_VERSION}_arm64.dmg"
+          X86_64_DMG="Toki_${APP_VERSION}_x86_64.dmg"
+
+          # Upload all three DMGs into a draft first so a partial upload never publishes an
+          # incomplete release, and so we can verify GitHub's asset order before going live.
           gh release create "${GITHUB_REF_NAME}" \
-            ".build/Toki_${VERSION}_universal.dmg" \
+            ".build/${UNIVERSAL_DMG}" \
+            ".build/${ARM64_DMG}" \
+            ".build/${X86_64_DMG}" \
+            --draft \
             --title "${GITHUB_REF_NAME}" \
             "${NOTES_FLAGS[@]}" $PRERELEASE_FLAG
+
+          # Shipped builds <= 3.4.5 pick the first ".dmg" asset in GitHub's response. Assert
+          # all three DMGs landed and the universal DMG sorts first before publishing, so legacy
+          # Intel direct-download updaters can never receive an arm64-only bundle.
+          ASSETS_LIST="$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name | select(ascii_downcase | endswith(".dmg"))')"
+          FIRST_DMG="$(printf '%s\n' "$ASSETS_LIST" | head -n 1)"
+          if [[ "$FIRST_DMG" != "$UNIVERSAL_DMG" ]]; then
+            echo "Expected first DMG asset to be $UNIVERSAL_DMG, got '$FIRST_DMG'" >&2
+            printf 'All DMG assets:\n%s\n' "$ASSETS_LIST" >&2
+            exit 1
+          fi
+          for expected in "$UNIVERSAL_DMG" "$ARM64_DMG" "$X86_64_DMG"; do
+            if ! printf '%s\n' "$ASSETS_LIST" | grep -Fxq "$expected"; then
+              echo "Missing expected DMG asset $expected on draft release" >&2
+              exit 1
+            fi
+          done
+
+          gh release edit "${GITHUB_REF_NAME}" --draft=false
 
       - name: Update Homebrew tap
         # Stable tags bump the stable cask; prerelease tags bump the beta cask only, except
@@ -119,15 +180,12 @@ jobs:
           # template's placeholder version, and nothing on this path stamps a real one over it.
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             cp homebrew/toki-beta.rb "$TAP_DIR/Casks/toki-beta.rb"
-            # Prerelease: the cask version is the full tag; the DMG filename carries only
-            # the base version, which update-cask.sh handles.
-            bash scripts/update-cask.sh "$TAP_DIR/Casks/toki-beta.rb" "${GITHUB_REF_NAME#v}"
+            bash scripts/update-cask.sh "$TAP_DIR/Casks/toki-beta.rb" "${TAG_VERSION}"
           else
             cp homebrew/toki.rb "$TAP_DIR/Casks/toki.rb"
             cp homebrew/toki-beta.rb "$TAP_DIR/Casks/toki-beta.rb"
-            # Both casks take the same stable version, which is update-cask.sh's default.
-            bash scripts/update-cask.sh "$TAP_DIR/Casks/toki.rb"
-            bash scripts/update-cask.sh "$TAP_DIR/Casks/toki-beta.rb"
+            bash scripts/update-cask.sh "$TAP_DIR/Casks/toki.rb" "${TAG_VERSION}"
+            bash scripts/update-cask.sh "$TAP_DIR/Casks/toki-beta.rb" "${TAG_VERSION}"
           fi
           cd "$TAP_DIR"
           # Stage before checking: a cask the tap does not carry yet is untracked, and

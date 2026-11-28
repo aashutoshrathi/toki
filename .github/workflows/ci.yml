@@ -41,8 +41,9 @@ jobs:
   # one thing CI never exercised. This runs the same script the release does, so packaging
   # breaks on the branch that caused it instead of on the tag.
   #
-  # Only on main and release branches: it is a universal build, so it costs far more than the
-  # test job and earns that cost only where a tag is actually going to come from.
+  # Only on main and release branches: it builds both architectures and packages all three
+  # release DMGs (arm64, x86_64, universal), so it costs far more than the test job and earns
+  # that cost only where a tag is actually going to come from.
   package:
     name: Package
     # On pull requests too, not just the push after merge. The trigger above already limits

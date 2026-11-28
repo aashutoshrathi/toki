@@ -63,10 +63,9 @@ of the Keys page.
 
 `notarize.sh` uses the API key style if it is set, otherwise the Apple ID style.
 
-### Not required for betas
+### Homebrew tap token
 
-`HOMEBREW_TAP_TOKEN` is a GitHub token for the `homebrew-tap` repository. It is only used on
-stable tags (no hyphen) to update the Homebrew cask. Beta tags such as `v2.5.3-beta.2` skip it.
+`HOMEBREW_TAP_TOKEN` is a GitHub token for the `homebrew-tap` repository. Stable tags update both `toki.rb` and `toki-beta.rb`; prerelease tags such as `v3.4.6-beta.1` update `toki-beta.rb` only. If the secret is unset, the tap update step is skipped.
 
 ## Setting the secrets
 
@@ -96,5 +95,4 @@ Confirm what is already configured with `gh secret list`.
 - Signing: `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`
 - Notarization: one style from section 2
 
-With those in place, a tag push produces a signed and notarized DMG. Without them, the workflow
-still builds and publishes an ad-hoc signed DMG.
+With those in place, a tag push signs, notarizes, and staples all three release DMGs (`Toki_<v>_all.dmg`, `Toki_<v>_arm64.dmg`, and `Toki_<v>_x86_64.dmg`). Without them, the workflow still builds and publishes ad-hoc signed DMGs.

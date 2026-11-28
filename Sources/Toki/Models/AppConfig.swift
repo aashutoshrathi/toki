@@ -7,6 +7,30 @@ struct AppConfig: Codable {
     var aiInstructions: String?
 }
 
+extension AppConfig {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        var entries = try container.nestedUnkeyedContainer(forKey: .accounts)
+        var accounts: [AccountConfig] = []
+        while !entries.isAtEnd {
+            let entry = try entries.superDecoder()
+            let keys = try entry.container(keyedBy: AccountConfig.CodingKeys.self)
+            let type = try keys.decodeIfPresent(String.self, forKey: .type)
+                ?? keys.decodeIfPresent(String.self, forKey: .provider)
+            // Onboarding persisted Gemini CLI accounts. Skip those entries so they
+            // cannot block access to other accounts in the same config.
+            guard type != "gemini" else { continue }
+            accounts.append(try AccountConfig(from: entry))
+        }
+        self.init(
+            refreshMinutes: try container.decodeIfPresent(Int.self, forKey: .refreshMinutes),
+            accountLabels: try container.decodeIfPresent([AccountLabelConfig].self, forKey: .accountLabels),
+            accounts: accounts,
+            aiInstructions: try container.decodeIfPresent(String.self, forKey: .aiInstructions)
+        )
+    }
+}
+
 struct AccountLabelConfig: Codable {
     var email: String
     var organizationUuid: String?
@@ -40,7 +64,7 @@ struct AccountConfig: Codable, Identifiable, Sendable {
     var codexAuthPath: String?
     var notes: String?
 
-    private enum CodingKeys: String, CodingKey {
+    fileprivate enum CodingKeys: String, CodingKey {
         case id
         case label, name
         case type, provider
