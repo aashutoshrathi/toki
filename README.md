@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 3.4.0" src="https://img.shields.io/badge/version-3.4.0-2f80ed">
+  <img alt="Version 3.4.6" src="https://img.shields.io/badge/version-3.4.6-2f80ed">
   <img alt="Downloads" src="https://img.shields.io/github/downloads/aashutoshrathi/toki/total">
   <img alt="Stars" src="https://img.shields.io/github/stars/aashutoshrathi/toki">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
@@ -28,6 +28,17 @@
     <img src="docs/screenshot.png" alt="Toki menu bar popover with quota bars for Claude Code, Codex, Cursor, and OpenCode" width="420">
   </picture>
 </p>
+
+## 3.4.6 - The surprise release
+
+What began as a fix for missing Sarvam usage grew into a broader release:
+
+- **Sarvam through OpenCode and T3:** local usage now reaches the Sarvam card and daily analytics without being counted twice under OpenCode.
+- **Smaller Mac downloads:** separate Apple Silicon and Intel DMGs, automatic native-build selection, and a universal fallback for older updaters.
+- **Clearer quotas:** the 5-hour window appears before the 7-day window for Antigravity and Codex.
+- **Provider cleanup:** Gemini CLI support is removed. Existing configs still load, and Antigravity remains supported.
+
+See the [full 3.4.6 changelog](CHANGELOG.md#346---2026-11-28) for update behavior and compatibility details.
 
 ## What Toki does
 

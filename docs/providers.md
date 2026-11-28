@@ -97,11 +97,15 @@ Override paths must be absolute, exactly `~`, or start with `~/`. Project-local 
 
 No configuration needed. Toki auto-detects the `sarvam-code` CLI or its state under `$SARVAM_HOME` (normally `~/.sarvam`) and reads cumulative token counters from local session JSONL without loading transcript content. Input, cached input, output, reasoning, daily, weekly, monthly, and all-time usage are shown.
 
-When a log contains cost data, Toki uses its currency; otherwise it assumes USD. Current Sarvam Code logs do not record cost, so the card shows `$0.00` while keeping the parser ready for future cost fields. Sarvam Code does not expose usable quota limits through its local app-server, so Toki does not invent a quota ring.
+Since 3.4.6, Toki also detects Sarvam usage recorded under OpenCode's `sarvam` provider, including sessions run through T3. The standalone Sarvam CLI is not required for this path. The Sarvam card and daily analytics combine that usage with standalone history. Mixed-provider OpenCode sessions are split by message and day, and Sarvam usage is excluded from OpenCode's totals to avoid counting it twice. Toki reads usage metadata, not transcript content.
+
+When the source records cost, Toki displays it alongside tokens. Without cost data, the card and menu bar show token usage without inventing a price. Sarvam Code does not expose usable quota limits through its local app-server, so Toki does not invent a quota ring.
 
 ## OpenCode
 
 Auto-detected from its local database and surfaced as an account. Also the second provider (with Claude Code) where Toki can tell that a session is parked waiting on you. With an OpenCode Go subscription, the card also shows the plan's 5-hour, weekly and monthly allowances, read through the local OpenCode CLI.
+
+Usage recorded under OpenCode's `sarvam` provider appears under Sarvam Code instead of OpenCode. Other providers in the same session remain in OpenCode's usage totals.
 
 ## fx
 

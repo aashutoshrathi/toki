@@ -1,6 +1,8 @@
 # Configuration
 
-Toki connects providers automatically. Every time the popover opens it scans for Claude Code (Keychain), Codex (through its local app-server), OpenCode (its local database), Pi and Sarvam Code (local JSONL session history), Grok CLI (`~/.grok/auth.json`), and Antigravity CLI (`agy`). There is no Connect button and no JSON to hand-write; signing into a new provider later is picked up on the next open.
+Toki connects providers automatically. Every time the popover opens it scans for Claude Code (Keychain), Codex (through its local app-server), OpenCode (its local database), Pi (local JSONL session history), Sarvam Code (local JSONL history or Sarvam usage in OpenCode), Grok CLI (`~/.grok/auth.json`), and Antigravity CLI (`agy`). There is no Connect button and no JSON to hand-write; signing into a new provider later is picked up on the next open.
+
+In 3.4.6, Sarvam used through OpenCode or T3 is detected without the standalone Sarvam CLI. Gemini CLI support is removed; existing configuration files still load and ignore retired Gemini CLI entries. Antigravity remains supported.
 
 Editing the config yourself is only needed for scripting, multi-account setups, or fields the scan cannot infer — API keys, budgets, manual ledgers.
 

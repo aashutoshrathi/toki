@@ -2,15 +2,21 @@
 
 ## 3.4.6 - 2026-11-28
 
-One Line: Count Sarvam usage through OpenCode and deliver smaller downloads for Apple Silicon and Intel Macs.
+One Line: The surprise release: Sarvam through OpenCode, smaller Mac downloads, clearer quotas, and a provider cleanup.
 
-### Changed
-- **Downloads for each Mac architecture.** Homebrew and the in-app updater choose the Apple Silicon or Intel DMG for this Mac. A universal DMG remains available for older updaters, and the installer checks app and widget compatibility without requiring developer tools.
-- **Gemini CLI support removed.** Gemini CLI accounts, configuration entries, and detection are removed. Existing configurations continue to load, and Antigravity support remains available.
+### Highlights
+- **A small Sarvam fix grew into a broader release.** 3.4.6 brings usage corrections, separate Mac downloads, clearer quota ordering, and the removal of Gemini CLI support. Here is what changes when you update.
 
 ### Fixed
-- **Sarvam usage through OpenCode.** Sarvam tokens and cost recorded by OpenCode now contribute to the Sarvam card and daily analytics, alongside standalone Sarvam Code history. Mixed-provider sessions attribute each message to its provider without counting Sarvam usage twice.
-- **Quota window order.** Antigravity and Codex show the 5-hour quota above the 7-day quota in account details and Remote Control. Codex keeps its provider-selected headline and reset behavior.
+- **Sarvam usage from OpenCode and T3 now reaches the Sarvam card and analytics.** Toki combines usage recorded under OpenCode's `sarvam` provider with standalone Sarvam Code history, including existing local history. Mixed-provider sessions attribute each message to its provider and day, so Sarvam tokens and reported cost are counted once instead of also appearing under OpenCode. Sarvam can be detected from OpenCode history without installing the standalone CLI.
+- **The 5-hour quota comes before the 7-day quota.** Antigravity and Codex show the shorter window first in account details and Remote Control. Codex keeps its provider-selected headline and reset behavior.
+
+### Changed
+- **Smaller Apple Silicon and Intel downloads, with a universal fallback.** Each release includes `_arm64.dmg` for Apple Silicon, `_x86_64.dmg` for Intel, and `_all.dmg` for both. Homebrew and the in-app updater choose the native build automatically; older updaters continue to receive the universal build.
+- **Updates check compatibility without requiring developer tools.** The installer verifies both the app and widget for this Mac before replacing the installed app. Apple Silicon Macs running Toki through Rosetta receive the native Apple Silicon build on their next direct-download update. The release workflow checks all three DMGs and uploads them before publishing the release.
+
+### Removed
+- **Gemini CLI support is removed; Antigravity remains supported.** Gemini CLI accounts and detection are no longer available in Toki. Existing configuration files still load: retired Gemini CLI entries are ignored while other providers remain available. Gemini CLI users will no longer see that provider after updating.
 
 ## 3.4.5 - 2026-11-27
 
