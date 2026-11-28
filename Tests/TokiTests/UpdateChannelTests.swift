@@ -117,4 +117,158 @@ final class UpdateChannelTests: XCTestCase {
         XCTAssertNil(UpdateChecker.whyUpdateLine(fromNotes: "## 3.3.7\n- Added things"))
         XCTAssertNil(UpdateChecker.whyUpdateLine(fromNotes: "One Line:   "))
     }
+
+    // MARK: - Architecture-aware asset selection & verification
+
+    private func asset(_ name: String) -> GitHubRelease.Asset {
+        GitHubRelease.Asset(
+            name: name,
+            browserDownloadURL: URL(string: "https://github.com/aashutoshrathi/toki/releases/download/v3.4.6/\(name)")!
+        )
+    }
+
+    func testUniversalDMGNameSortsBeforePerArchDMGs() {
+        // Shipped builds <= 3.4.5 pick the first ".dmg" asset in GitHub's alphabetically sorted
+        // release listing, so Toki_<v>_all.dmg must sort before _arm64 and _x86_64 under both
+        // byte-order and Unicode/locale case-insensitive comparisons.
+        let names = ["Toki_3.4.6_x86_64.dmg", "Toki_3.4.6_arm64.dmg", "Toki_3.4.6_all.dmg"]
+        XCTAssertEqual(names.sorted().first, "Toki_3.4.6_all.dmg")
+        XCTAssertEqual(
+            names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }.first,
+            "Toki_3.4.6_all.dmg"
+        )
+    }
+
+    func testSelectDMGAssetPicksNativeArchitectureRegardlessOfOrder() {
+        let releaseAssets = [
+            asset("Toki-windows-preview-4.0.0-win-x64.zip"),
+            asset("Toki_3.4.6_all.dmg"),
+            asset("Toki_3.4.6_arm64.dmg"),
+            asset("Toki_3.4.6_x86_64.dmg"),
+        ]
+
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: releaseAssets, releaseVersion: "3.4.6", preferredArch: .arm64)?.name,
+            "Toki_3.4.6_arm64.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: releaseAssets, releaseVersion: "3.4.6", preferredArch: .x86_64)?.name,
+            "Toki_3.4.6_x86_64.dmg"
+        )
+        // Reversed ordering must return the exact same architecture-specific assets.
+        let reversed = Array(releaseAssets.reversed())
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: reversed, releaseVersion: "3.4.6-beta.1", preferredArch: .arm64)?.name,
+            "Toki_3.4.6_arm64.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: reversed, releaseVersion: "3.4.6-beta.1", preferredArch: .x86_64)?.name,
+            "Toki_3.4.6_x86_64.dmg"
+        )
+    }
+
+    func testSelectDMGAssetFallsBackToUniversalWhenThinAssetMissing() {
+        let newUniversalOnly = [asset("Toki_3.4.6_all.dmg")]
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: newUniversalOnly, releaseVersion: "3.4.6", preferredArch: .arm64)?.name,
+            "Toki_3.4.6_all.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: newUniversalOnly, releaseVersion: "3.4.6", preferredArch: .x86_64)?.name,
+            "Toki_3.4.6_all.dmg"
+        )
+
+        let legacyUniversalOnly = [asset("Toki_3.4.5_universal.dmg")]
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: legacyUniversalOnly, releaseVersion: "3.4.5", preferredArch: .arm64)?.name,
+            "Toki_3.4.5_universal.dmg"
+        )
+        XCTAssertEqual(
+            UpdateChecker.selectDMGAsset(from: legacyUniversalOnly, releaseVersion: "3.4.5", preferredArch: .x86_64)?.name,
+            "Toki_3.4.5_universal.dmg"
+        )
+    }
+
+    func testSelectDMGAssetNeverSelectsOppositeArchitecture() {
+        let armOnly = [asset("Toki_3.4.6_arm64.dmg")]
+        XCTAssertNil(
+            UpdateChecker.selectDMGAsset(from: armOnly, releaseVersion: "3.4.6", preferredArch: .x86_64)
+        )
+
+        let intelOnly = [asset("Toki_3.4.6_x86_64.dmg")]
+        XCTAssertNil(
+            UpdateChecker.selectDMGAsset(from: intelOnly, releaseVersion: "3.4.6", preferredArch: .arm64)
+        )
+
+        let nonDMGOnly = [asset("Toki-windows-preview-4.0.0-win-x64.zip")]
+        XCTAssertNil(
+            UpdateChecker.selectDMGAsset(from: nonDMGOnly, releaseVersion: "4.0.0", preferredArch: .arm64)
+        )
+    }
+
+    func testInstallerReleaseMetadataVerification() {
+        XCTAssertTrue(UpdateInstaller.releaseMetadataMatches(
+            bundleID: "local.toki",
+            marketingVersion: "3.4.6",
+            releaseVersionStamp: "3.4.6-beta.2",
+            expectedVersion: "3.4.6-beta.2"
+        ))
+        XCTAssertFalse(UpdateInstaller.releaseMetadataMatches(
+            bundleID: "local.toki",
+            marketingVersion: "3.4.6",
+            releaseVersionStamp: "3.4.6-beta.1",
+            expectedVersion: "3.4.6-beta.2"
+        ))
+        XCTAssertTrue(UpdateInstaller.releaseMetadataMatches(
+            bundleID: "local.toki",
+            marketingVersion: "3.4.6",
+            releaseVersionStamp: nil,
+            expectedVersion: "3.4.6"
+        ))
+    }
+
+    func testInstallerReadsExecutableArchitecturesWithoutDeveloperTools() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Minimal 64-bit Mach-O headers and a universal header. No compiler or lipo is needed.
+        func words(_ values: [UInt32], bigEndian: Bool = false) -> Data {
+            values.reduce(into: Data()) { data, value in
+                var encoded = bigEndian ? value.bigEndian : value.littleEndian
+                withUnsafeBytes(of: &encoded) { data.append(contentsOf: $0) }
+            }
+        }
+        let arm = words([0xfeedfacf, 0x0100000c, 0, 2, 0, 0, 0, 0])
+        let intel = words([0xfeedfacf, 0x01000007, 3, 2, 0, 0, 0, 0])
+        var universal = words([
+            0xcafebabe, 2,
+            0x0100000c, 0, 4096, UInt32(arm.count), 12,
+            0x01000007, 3, 8192, UInt32(intel.count), 12,
+        ], bigEndian: true)
+        universal.append(Data(count: 4096 - universal.count))
+        universal.append(arm)
+        universal.append(Data(count: 8192 - universal.count))
+        universal.append(intel)
+
+        for (name, data, supportsARM, supportsIntel) in [
+            ("arm", arm, true, false),
+            ("intel", intel, false, true),
+            ("universal", universal, true, true),
+            ("invalid", Data("not an executable".utf8), false, false),
+            ("empty", Data(), false, false),
+        ] {
+            let executable = directory.appendingPathComponent(name)
+            try data.write(to: executable)
+            XCTAssertEqual(UpdateInstaller.supportsHostArchitecture(executable: executable, preferredArch: .arm64), supportsARM, name)
+            XCTAssertEqual(UpdateInstaller.supportsHostArchitecture(executable: executable, preferredArch: .x86_64), supportsIntel, name)
+        }
+        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(executable: directory.appendingPathComponent("missing")))
+
+        // Retrying an update at the same mount path must re-read the new executable.
+        let reusedPath = directory.appendingPathComponent("arm")
+        try intel.write(to: reusedPath)
+        XCTAssertFalse(UpdateInstaller.supportsHostArchitecture(executable: reusedPath, preferredArch: .arm64))
+        XCTAssertTrue(UpdateInstaller.supportsHostArchitecture(executable: reusedPath, preferredArch: .x86_64))
+    }
 }

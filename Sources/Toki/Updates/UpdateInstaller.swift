@@ -127,13 +127,62 @@ enum UpdateInstaller {
     }
 
     private static func verify(app: URL, expectedVersion: String) throws {
-        guard let bundle = Bundle(url: app),
-              bundle.bundleIdentifier == "local.toki",
-              let bundleVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-              versionMatchesRelease(bundleVersion: bundleVersion, releaseVersion: expectedVersion) else {
+        // Read Info.plist directly off disk rather than through `Bundle(url:)`, which caches
+        // per path and can return stale metadata if a retry mounts another image at the same
+        // `/Volumes/Toki X.Y.Z` mount point.
+        let plistURL = app.appendingPathComponent("Contents/Info.plist")
+        guard let plistData = try? Data(contentsOf: plistURL),
+              let info = (try? PropertyListSerialization.propertyList(from: plistData, format: nil)) as? [String: Any],
+              releaseMetadataMatches(
+                bundleID: info["CFBundleIdentifier"] as? String,
+                marketingVersion: info["CFBundleShortVersionString"] as? String,
+                releaseVersionStamp: info["TokiReleaseVersion"] as? String,
+                expectedVersion: expectedVersion
+              ) else {
             throw LocalizedErrorMessage("The downloaded app identity or version does not match the release.")
         }
+
+        let mainExecutable = app.appendingPathComponent("Contents/MacOS/Toki")
+        let widgetExecutable = app.appendingPathComponent("Contents/PlugIns/TokiWidgets.appex/Contents/MacOS/TokiWidgets")
+        for executable in [mainExecutable, widgetExecutable] {
+            guard supportsHostArchitecture(executable: executable) else {
+                throw LocalizedErrorMessage("The downloaded app is not compatible with this Mac's architecture.")
+            }
+        }
+
         _ = try run("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", app.path])
+    }
+
+    static func releaseMetadataMatches(
+        bundleID: String?,
+        marketingVersion: String?,
+        releaseVersionStamp: String?,
+        expectedVersion: String
+    ) -> Bool {
+        guard bundleID == "local.toki",
+              let marketingVersion,
+              versionMatchesRelease(bundleVersion: marketingVersion, releaseVersion: expectedVersion) else {
+            return false
+        }
+        if let releaseVersionStamp, !releaseVersionStamp.isEmpty {
+            return releaseVersionStamp == expectedVersion
+        }
+        return true
+    }
+
+    static func supportsHostArchitecture(
+        executable: URL,
+        preferredArch: HostArchitecture = UpdateChecker.preferredArchitecture
+    ) -> Bool {
+        // /usr/bin/lipo is a developer-tool shim and fails without Xcode or Command Line Tools.
+        // Inspect the executable directly with the system API, which also avoids bundle caching.
+        guard let architectures = CFBundleCopyExecutableArchitecturesForURL(executable as CFURL) as? [NSNumber] else {
+            return false
+        }
+        let expected = preferredArch == .arm64
+            ? kCFBundleExecutableArchitectureARM64
+            : kCFBundleExecutableArchitectureX86_64
+        return architectures.contains { $0.intValue == Int(expected) }
     }
 
     // A prerelease tag (`2.5.0-beta.1`) carries a suffix the app's `CFBundleShortVersionString`

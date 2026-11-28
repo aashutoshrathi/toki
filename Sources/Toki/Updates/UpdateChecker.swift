@@ -1,5 +1,11 @@
 import AppKit
+import Darwin
 import Foundation
+
+enum HostArchitecture: String, Equatable, Sendable {
+    case arm64
+    case x86_64
+}
 
 /// Which GitHub releases the updater is willing to offer.
 ///
@@ -28,8 +34,8 @@ struct AvailableUpdate: Equatable {
     var whyUpdate: String? = nil
 }
 
-private struct GitHubRelease: Decodable {
-    struct Asset: Decodable {
+struct GitHubRelease: Decodable, Sendable {
+    struct Asset: Decodable, Equatable, Sendable {
         let name: String
         let browserDownloadURL: URL
 
@@ -450,9 +456,10 @@ final class UpdateChecker: ObservableObject {
     private func checkForUpdates() async {
         if let mockVersion {
             let version = Self.normalizedVersion(mockVersion)
+            let baseVersion = Self.baseVersion(from: version)
             guard Self.isNewerVersion(version, than: currentVersion),
                   let url = URL(string: "https://github.com/aashutoshrathi/toki/releases/tag/v\(version)"),
-                  let downloadURL = URL(string: "https://github.com/aashutoshrathi/toki/releases/download/v\(version)/Toki_\(version)_universal.dmg") else {
+                  let downloadURL = URL(string: "https://github.com/aashutoshrathi/toki/releases/download/v\(version)/Toki_\(baseVersion)_\(Self.preferredArchitecture.rawValue).dmg") else {
                 return
             }
             availableUpdate = AvailableUpdate(
@@ -469,8 +476,12 @@ final class UpdateChecker: ObservableObject {
         do {
             guard let release = try await fetchCandidateRelease() else { return }
             let releaseVersion = Self.normalizedVersion(release.tagName)
-            guard let asset = release.assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }) else {
-                checkMessage = "The latest release has no DMG."
+            guard let asset = Self.selectDMGAsset(
+                from: release.assets,
+                releaseVersion: releaseVersion
+            ) else {
+                availableUpdate = nil
+                checkMessage = "The latest release has no compatible DMG for this Mac."
                 return
             }
             guard release.htmlURL.scheme == "https", release.htmlURL.host == "github.com",
@@ -555,6 +566,74 @@ final class UpdateChecker: ObservableObject {
             return nil
         }
         return data
+    }
+
+    /// Native CPU architecture of the Mac, even when an x86_64 binary is running under Rosetta 2.
+    /// `hw.optional.arm64` reports 1 on Apple Silicon regardless of translation, so a direct-
+    /// download install running under Rosetta self-heals to native arm64 on its next update.
+    nonisolated static var preferredArchitecture: HostArchitecture {
+        var isARM64: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        if sysctlbyname("hw.optional.arm64", &isARM64, &size, nil, 0) == 0, isARM64 == 1 {
+            return .arm64
+        }
+        #if arch(arm64)
+        return .arm64
+        #else
+        return .x86_64
+        #endif
+    }
+
+    /// Picks the best macOS DMG for this Mac from a release's asset list.
+    ///
+    /// Priority:
+    /// 1. Architecture-specific DMG (`Toki_<base>_<arch>.dmg`, or any `_<arch>.dmg`).
+    /// 2. Universal DMG (`Toki_<base>_all.dmg`, `Toki_<base>.dmg`, or legacy `_universal.dmg`).
+    /// 3. Any other `.dmg` that does not explicitly name the opposite architecture.
+    ///
+    /// Never selects an opposite-architecture DMG, and ignores non-DMG release files.
+    nonisolated static func selectDMGAsset(
+        from assets: [GitHubRelease.Asset],
+        releaseVersion: String,
+        preferredArch: HostArchitecture = preferredArchitecture
+    ) -> GitHubRelease.Asset? {
+        let dmgAssets = assets.filter { $0.name.lowercased().hasSuffix(".dmg") }
+        guard !dmgAssets.isEmpty else { return nil }
+
+        let base = baseVersion(from: normalizedVersion(releaseVersion)).lowercased()
+        let archSuffix = "_\(preferredArch.rawValue).dmg"
+        let oppositeSuffix = preferredArch == .arm64 ? "_x86_64.dmg" : "_arm64.dmg"
+
+        if !base.isEmpty {
+            let exactArchName = "toki_\(base)\(archSuffix)"
+            if let exact = dmgAssets.first(where: { $0.name.lowercased() == exactArchName }) {
+                return exact
+            }
+        }
+        if let archMatch = dmgAssets.first(where: { $0.name.lowercased().hasSuffix(archSuffix) }) {
+            return archMatch
+        }
+        if !base.isEmpty {
+            for candidate in ["toki_\(base)_all.dmg", "toki_\(base).dmg", "toki_\(base)_universal.dmg"] {
+                if let match = dmgAssets.first(where: { $0.name.lowercased() == candidate }) {
+                    return match
+                }
+            }
+        }
+        if let universal = dmgAssets.first(where: {
+            let lower = $0.name.lowercased()
+            return lower.hasSuffix("_all.dmg") || lower.hasSuffix("_universal.dmg")
+        }) {
+            return universal
+        }
+        return dmgAssets.first { !$0.name.lowercased().hasSuffix(oppositeSuffix) }
+    }
+
+    nonisolated static func baseVersion(from version: String) -> String {
+        version
+            .split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init) ?? version
     }
 
     nonisolated static func whyUpdateLine(fromNotes notes: String) -> String? {
